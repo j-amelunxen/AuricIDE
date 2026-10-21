@@ -5,6 +5,7 @@ import { writeMenuBarPrefs } from '@/lib/quickAccess/supervisorMenuBar';
 import { saveAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
 import { useSupervisorMenuBar } from './useSupervisorMenuBar';
+import controlFixtures from '@/lib/agents/agentControl.fixtures.json';
 
 const mockSync = vi.fn();
 vi.mock('@/lib/tauri/menuBar', async (importOriginal) => ({
@@ -12,7 +13,8 @@ vi.mock('@/lib/tauri/menuBar', async (importOriginal) => ({
   menuBarSync: (...args: unknown[]) => mockSync(...args),
 }));
 
-let launchListener: ((event: { payload: { skillId?: string } }) => void) | null = null;
+let launchListener:
+  ((event: { payload: { skillId?: string; newSupervisor?: boolean } }) => void) | null = null;
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (_name: string, handler: typeof launchListener) => {
     launchListener = handler;
@@ -54,6 +56,30 @@ describe('useSupervisorMenuBar', () => {
     );
   });
 
+  it('tells the menu bar how many supervisors run, stopped ones and workers not counted', async () => {
+    const supervisor = (id: string, status: 'running' | 'idle', startedAt: number) => ({
+      id,
+      name: id,
+      model: 'm',
+      provider: 'claude',
+      status,
+      startedAt,
+      role: 'supervisor' as const,
+    });
+    useStore.setState({
+      agents: [
+        supervisor('sv-1', 'running', 1),
+        supervisor('sv-2', 'running', 2),
+        supervisor('sv-0', 'idle', 0),
+        { id: 'w', name: 'w', model: 'm', provider: 'claude', status: 'running', startedAt: 3 },
+      ],
+    });
+    renderHook(() => useSupervisorMenuBar(vi.fn()));
+
+    await waitFor(() => expect(mockSync.mock.lastCall?.[0]).toMatchObject({ running: 2 }));
+    useStore.setState({ agents: [] });
+  });
+
   it('starts the picked library skill through the supervisor launch', async () => {
     saveAuricSkills([{ id: 'vtt', name: 'video to tasklist', prompt: '/video-to-tasklist live' }]);
     const spawnSupervisor = vi.fn().mockResolvedValue({ kind: 'started', agent: { id: 'sv-1' } });
@@ -69,5 +95,22 @@ describe('useSupervisorMenuBar', () => {
       model: undefined,
     });
     expect(selectAgent).toHaveBeenCalledWith('sv-1');
+  });
+
+  it('starts a new supervisor on "Start Supervisor" and opens the newest on "Open Supervisor"', async () => {
+    const spawnSupervisor = vi.fn().mockResolvedValue({ kind: 'spawned', agent: { id: 'sv-2' } });
+    const selectAgent = vi.fn();
+    useStore.setState({ spawnSupervisor, selectAgent } as never);
+    renderHook(() => useSupervisorMenuBar(vi.fn()));
+
+    await waitFor(() => expect(launchListener).not.toBeNull());
+    // The payloads Rust's menu items emit (agentControl.fixtures.json, supervisors.menuBar).
+    const entries = controlFixtures.supervisors.menuBar.items.at(-1)!.entries;
+    const payloadOf = (id: string) => entries.find((entry) => entry.id === id)!.payload;
+    await act(async () => launchListener?.({ payload: payloadOf('start') }));
+    expect(spawnSupervisor).toHaveBeenLastCalledWith({ task: '', forceNew: true });
+
+    await act(async () => launchListener?.({ payload: payloadOf('open') }));
+    expect(spawnSupervisor).toHaveBeenLastCalledWith(undefined);
   });
 });

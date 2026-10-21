@@ -30,6 +30,7 @@ pub fn persisted_from_config(
         review_of_ticket_id: config.review_of_ticket_id.clone(),
         role: config.role,
         spawned_by_agent_id: config.spawned_by_agent_id.clone(),
+        supervisor_key: config.supervisor_key.clone(),
     }
 }
 
@@ -39,6 +40,7 @@ pub fn resumed_config(
     persisted: PersistedAgent,
     launch_request_uid: Option<String>,
 ) -> AgentConfig {
+    let is_supervisor = persisted.role == Some(AgentRole::Supervisor);
     AgentConfig {
         task: resume_task_prompt(&persisted.task),
         name: persisted.name,
@@ -60,10 +62,12 @@ pub fn resumed_config(
         run_kind: persisted.run_kind,
         review_of_ticket_id: persisted.review_of_ticket_id,
         // A supervisor picks its own run folder up again rather than
-        // starting over in an empty one.
-        resume_run_dir: (persisted.role == Some(AgentRole::Supervisor))
-            .then(|| persisted.cwd.clone())
-            .flatten(),
+        // starting over in an empty one, under its key, and takes over the
+        // children of the id it had before the restart.
+        resume_run_dir: is_supervisor.then(|| persisted.cwd.clone()).flatten(),
+        replaces_agent_id: is_supervisor.then(|| persisted.id.clone()),
+        resumed_run_dir: None,
+        supervisor_key: persisted.supervisor_key,
         cwd: persisted.cwd,
         role: persisted.role,
         spawned_by_agent_id: persisted.spawned_by_agent_id,

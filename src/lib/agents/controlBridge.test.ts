@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import fixtures from './agentControl.fixtures.json';
+import linkFixtures from './supervisorLink.fixtures.json';
 
 const { events } = fixtures;
 
@@ -388,8 +389,12 @@ describe('control-request spawn for a supervisor', () => {
     );
   });
 
-  it('starts a supervisor with its role and no launch defaults', async () => {
-    const h = host();
+  it('starts a supervisor the way the tile and the link do, key and first task included', async () => {
+    const spawnLinkedSupervisor = vi.fn(async () => ({
+      kind: 'spawned' as const,
+      agent: agent('agent-9', { name: 'Supervisor', role: 'supervisor' }),
+    }));
+    const h = host({ spawnLinkedSupervisor });
     await handleControlRequest(
       {
         reqId: 's5',
@@ -400,50 +405,102 @@ describe('control-request spawn for a supervisor', () => {
           provider: 'claude',
           model: 'sonnet',
           role: 'supervisor',
+          supervisorKey: 'mail-triage',
         },
         expiresAt: fresh(),
       },
       h
     );
-    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0]).toMatchObject({
-      role: 'supervisor',
+    expect(spawnLinkedSupervisor).toHaveBeenCalledWith({
+      task: 'supervise',
       provider: 'claude',
       model: 'sonnet',
-      spawnedByAgentId: null,
-      headless: false,
+      key: 'mail-triage',
+      name: null,
     });
+    // Not the verbatim path: that one skipped the launch prompt and the policy.
+    expect(h.spawnNewAgent).not.toHaveBeenCalled();
     expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
-    expect(h.showToast).toHaveBeenCalledWith(
-      expect.stringMatching(/ started by an MCP client$/),
-      'success'
-    );
+    expect(answered()[0].args).toEqual({ reqId: 's5', ok: true, result: { agentId: 'agent-9' } });
+    expect(h.showToast).toHaveBeenCalledWith('Supervisor started by an MCP client', 'success');
   });
 
-  it("starts a supervisor without provider on Claude at that provider's default model", async () => {
-    const claude = {
-      id: 'claude',
-      name: 'Claude',
-      models: [],
-      permissionModes: [],
-      defaultModel: 'sonnet',
-      defaultPermissionMode: 'default',
-    };
-    const h = host({ providers: [claude] });
+  it("does not ask for the supervisor's project folder to exist: Rust gives it a run folder", async () => {
+    isDirMock.mockResolvedValue(false);
+    const spawnLinkedSupervisor = vi.fn(async () => ({
+      kind: 'spawned' as const,
+      agent: agent('agent-9', { role: 'supervisor' }),
+    }));
+    const h = host({ spawnLinkedSupervisor });
     await handleControlRequest(
       {
         reqId: 's8',
         method: 'spawn',
-        params: { projectPath: '/tmp/example-project', prompt: 'supervise', role: 'supervisor' },
+        params: { projectPath: '/nowhere', prompt: 'supervise', role: 'supervisor' },
         expiresAt: fresh(),
       },
       h
     );
-    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0]).toMatchObject({
-      role: 'supervisor',
-      provider: 'claude',
-      model: 'sonnet',
+    expect(spawnLinkedSupervisor).toHaveBeenCalledWith({
+      task: 'supervise',
+      provider: null,
+      model: null,
+      key: null,
+      name: null,
     });
-    expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+    expect(answered()[0].args).toMatchObject({ ok: true });
+  });
+
+  it("answers a supervisor spawn the policy refuses in the socket's own codes", async () => {
+    const outcomes = [
+      { kind: 'nothing-visible' as const },
+      { kind: 'provider-not-allowed' as const, provider: 'codex', allowed: ['claude'] },
+      { kind: 'provider-unsupported' as const, provider: 'gemini', supported: ['claude'] },
+    ];
+    for (const [i, outcome] of outcomes.entries()) {
+      const h = host({ spawnLinkedSupervisor: vi.fn(async () => outcome) });
+      await handleControlRequest(
+        {
+          reqId: `r${i}`,
+          method: 'spawn',
+          params: { projectPath: '/tmp/example-project', prompt: 'x', role: 'supervisor' },
+          expiresAt: fresh(),
+        },
+        h
+      );
+    }
+    expect(answered().map(({ args }) => args)).toMatchObject([
+      { reqId: 'r0', ok: false, error: { code: 'invalid_params' } },
+      { reqId: 'r1', ok: false, error: { code: 'invalid_params' } },
+      { reqId: 'r2', ok: false, error: { code: 'invalid_params' } },
+    ]);
+  });
+
+  it("maps Rust's refusal of a taken key onto supervisor_key_in_use", async () => {
+    const [refusal] = fixtures.spawnRefusals.filter((r) => r.code === 'supervisor_key_in_use');
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => {
+        throw new Error(refusal.sample);
+      }),
+    });
+    await handleControlRequest(
+      {
+        reqId: 's9',
+        method: 'spawn',
+        params: {
+          projectPath: '/tmp/example-project',
+          prompt: 'x',
+          role: 'supervisor',
+          supervisorKey: 'mail-triage',
+        },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(answered()[0].args).toMatchObject({
+      ok: false,
+      error: { code: 'supervisor_key_in_use', message: refusal.sample },
+    });
   });
 
   it('refuses provenance of the wrong shape as invalid_params', async () => {
@@ -582,6 +639,91 @@ describe('control-request spawn_supervisor (supervisor link)', () => {
 
     expect(spawnLinkedSupervisor).toHaveBeenCalledWith({ task: 'plan the export' });
     expect(answered()[0].args).toEqual({ reqId: 'l1', ok: true, result: { agentId: 'agent-7' } });
+  });
+
+  it('carries the supervisor key the link asked for', async () => {
+    const spawnLinkedSupervisor = vi.fn(async () => ({
+      kind: 'spawned' as const,
+      agent: { ...spawned, supervisorKey: 'mail-triage' },
+    }));
+    const h = host({ spawnLinkedSupervisor });
+    await handleControlRequest(
+      {
+        reqId: 'l6',
+        method: 'spawn_supervisor',
+        params: { supervisorKey: 'mail-triage', task: 'triage' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+
+    expect(spawnLinkedSupervisor).toHaveBeenCalledWith({ key: 'mail-triage', task: 'triage' });
+    expect(answered()[0].args).toMatchObject({ ok: true, result: { agentId: 'agent-7' } });
+  });
+
+  it('reads every spawn_supervisor shape Rust forwards and answers { agentId }', async () => {
+    const { method, cases, answer } = linkFixtures.frontendSpawnSupervisor;
+    for (const [i, { name, frontend }] of cases.entries()) {
+      invokeMock.mockClear();
+      const spawnLinkedSupervisor = vi.fn(async () => ({
+        kind: 'spawned' as const,
+        agent: agent(answer.agentId, { role: 'supervisor' }),
+      }));
+      await handleControlRequest(
+        {
+          reqId: `f${i}`,
+          method: method as 'spawn_supervisor',
+          params: frontend,
+          expiresAt: fresh(),
+        },
+        host({ spawnLinkedSupervisor })
+      );
+      const { supervisorKey, ...rest } = frontend as { supervisorKey?: string };
+      expect(spawnLinkedSupervisor, name).toHaveBeenCalledWith(
+        supervisorKey ? { ...rest, key: supervisorKey } : rest
+      );
+      expect(answered()[0].args, name).toEqual({ reqId: `f${i}`, ok: true, result: answer });
+    }
+  });
+
+  it("maps Rust's refusal of a key taken meanwhile onto supervisor_key_in_use", async () => {
+    // Rust answers a lost key race with the winner only when it reads this code;
+    // `internal` would hand the client an error. Tauri rejects with a plain string.
+    const [refusal] = fixtures.spawnRefusals.filter((r) => r.code === 'supervisor_key_in_use');
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => {
+        throw refusal.sample;
+      }),
+    });
+    await handleControlRequest(
+      {
+        reqId: 'l8',
+        method: 'spawn_supervisor',
+        params: { supervisorKey: 'mail-triage' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(answered()[0].args).toMatchObject({
+      ok: false,
+      error: { code: 'supervisor_key_in_use', message: refusal.sample },
+    });
+  });
+
+  it('refuses `if`: Rust settles it and never forwards it', async () => {
+    const spawnLinkedSupervisor = vi.fn();
+    const h = host({ spawnLinkedSupervisor });
+    await handleControlRequest(
+      {
+        reqId: 'l7',
+        method: 'spawn_supervisor',
+        params: { supervisorKey: 'mail-triage', if: 'existing' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'invalid_params' } });
+    expect(spawnLinkedSupervisor).not.toHaveBeenCalled();
   });
 
   it('answers supervisor_unavailable when the policy shows no project', async () => {

@@ -149,7 +149,10 @@ export function useAgentAndCommandHandlers({
         const agent = await state.resumeInterruptedAgent(id);
         showAgentTerminal(agent);
       } catch (err) {
-        console.error('Failed to resume interrupted agent', err);
+        // Rust's refusal is a sentence meant for the human (a run folder or a
+        // supervisor key already taken); the offer stays in the list.
+        const detail = err instanceof Error ? err.message : String(err);
+        useStore.getState().showToast(`Could not resume the agent: ${detail}`, 'error');
       }
     },
     [state, showAgentTerminal]

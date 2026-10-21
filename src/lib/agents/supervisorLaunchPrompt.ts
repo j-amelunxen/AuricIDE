@@ -373,8 +373,9 @@ function describeResumedRun(folder: string): string {
     'whatever else it wrote. Before anything else, get back up to speed. List the files by ' +
     'modification time, newest first (Glob returns them in that order), read the most ' +
     'recent ones first and go back only as far as you need to understand where the run ' +
-    'stopped. The agents that run started are not your children: list_agents will not show ' +
-    'them, so take open work from the files, not from them. Then tell the human in a few ' +
+    'stopped. The agents that run started are now your children: list_agents shows them as ' +
+    'yours, so read what the finished ones left with await_agent_result and check on any ' +
+    'still running before you start new ones. Then tell the human in a few ' +
     'sentences what the earlier run was working on, what got done, what is still open and ' +
     'what you would do next, and wait for the go-ahead before you start any agent.'
   );

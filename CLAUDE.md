@@ -466,9 +466,21 @@ ADR 0004.
   after symlinks are resolved, never the root or anything below a run,
   because that folder is all its `--restricted` file tools reach. The launch
   prompt tells it to read the folder newest first, summarise where the run
-  stopped and wait before starting agents; the old run's children are not
-  its own. A supervisor restored after an app restart resumes its own folder
-  the same way. Never while another supervisor runs.
+  stopped and wait before starting agents. The old run's children are
+  adopted: Rust rewrites their `spawnedByAgentId` (live, persisted, run
+  results) to the new id and emits `supervisor-children-adopted`. A
+  supervisor restored after an app restart resumes its own folder the same
+  way. A run folder is live in one supervisor at most (`run_dir_in_use`).
+- **Several run side by side.** Each has its own scope, run folder and limits
+  (`max_running*` count per supervisor, so N supervisors may run N times as
+  many children). A plain tile click opens the newest running one; a skill,
+  a resume or "Start new Supervisor" always starts another. An optional
+  `supervisorKey` (`^[a-z0-9][a-z0-9-]{0,47}$`, not `agent-<digits>`, unique
+  among live supervisors, kept in the run's `supervisor.json`) is the stable
+  address external clients use, because the agent id changes on every resume.
+  In the agent tabs a supervisor and its descendants form one group with one
+  colour on the left edge (`supervisorFamilyColors`, `groupAgentTabs`); a
+  marker still wins, Alt shows per-agent colours.
 - **What it may start is `<app_data_dir>/supervisor-policy.json`**, Rust-owned,
   0600, fail closed: an unlisted project allows nothing. It is intersected with
   the project's provider policy, and a mode that runs unattended is refused
@@ -517,16 +529,18 @@ ADR 0004.
   application-wide (`supervisorPresets.ts`, app pref
   `auric.supervisor.quick-access`) and are prompts; a `/skill` call works only
   for a skill approved in Settings → Supervisor, because `--restricted` loads
-  no skills from disk otherwise. A skill becomes the first task of
-  a new supervisor, or a message to the running one. Model is the only launch
-  option; there are no combos.
+  no skills from disk otherwise. A skill always becomes the first task of
+  a new supervisor, never a message to a running one. Model is the only
+  launch option; there are no combos.
 - **It also lives in the macOS menu bar.** Settings → Supervisor → Menu bar
   switches on an icon (`menu_bar.rs`) listing the same skills as the tile's
   right-click menu, and global shortcuts per pinned skill (recorded under the
   skill's Launch options, field `shortcut`). The frontend sends the finished
   list through `menu_bar_sync` (`useSupervisorMenuBar`, main window only);
   Rust draws, registers and emits `menu-bar-launch` back, which runs the
-  tile's own path (`openSupervisor`). Both switches are off by default.
+  tile's own path (`openSupervisor`). "Start Supervisor" always starts a new
+  one (`{newSupervisor}`), "Open Supervisor (N)" appears while N run
+  (`running` is a count). Both switches are off by default.
 - **Wheels offer the Settings → Skills library too**, as the right-click menu
   does. Putting a library skill on a slot pins it under its `auric:<id>`
   (`pinSlottedLibrarySkills`) — for project tiles inside
@@ -557,11 +571,20 @@ that is per-project configuration.
   64 waiting requests per connection, 10 s handshake and write timeouts; over
   one the answer is `busy` with the limit as `reason`. A `rev` is a commit id,
   branch or tag name only (fixture `revs`), never a revision expression.
-- **`supervisors.spawn` is the tile's path**, not `spawn { role }`:
+- **`supervisors.spawn` is the tile's path**, and so is the control
+  socket's `spawn { role: "supervisor" }` (which used to skip it):
   Rust sends the control request `spawn_supervisor`, the bridge calls
-  `spawnLinkedSupervisor` (launch prompt, instructions, policy; always a new
-  supervisor, never the provider picker). Its codes pass through raw
-  (`via_frontend_raw`).
+  `spawnLinkedSupervisor` (launch prompt, instructions, policy; never the
+  provider picker). Its codes pass through raw (`via_frontend_raw`).
+- **Several supervisors are addressed by key.** `supervisors.spawn { key,
+if: "existing" }` is idempotent (a lost race answers the winner);
+  `agents.read/send/kill { supervisor: key }` resolve at call time;
+  `events.subscribe { supervisors }` follows a whole subtree, later children,
+  grandchildren and the jobs it requested (`jobs.create { supervisor }`,
+  which also pings that supervisor when the job ends) included;
+  `supervisors.list` and `LinkAgent.rootSupervisorId` spare clients the
+  chain walk. A key is an address, not a permission. Fixtures
+  `supervisorKeys` and `subtree`.
 - **Events are polled, not hooked**: a per-connection loop diffs the tree, the
   output buffers and the job register every 250 ms (`subscription.rs`).
   Requests run in order on a worker thread, so a 30 s spawn does not hold

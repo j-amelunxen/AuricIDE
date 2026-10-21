@@ -26,6 +26,7 @@ document is and which jobs exist is configuration you write per project.
 - [Security model and limits](#security-model-and-limits)
 - [Messages](#messages)
 - [Methods](#methods)
+- [Several supervisors](#several-supervisors)
 - [Events](#events)
 - [Document types and job kinds](#document-types-and-job-kinds)
 - [Policy proposals](#policy-proposals)
@@ -120,8 +121,14 @@ There is no login. After the WebSocket upgrade the connection is ready.
 ← { "v": 1, "type": "response", "id": 1, "ok": true,
     "result": { "protocol": 1, "server": "AuricIDE",
                 "methods": ["session.hello", "supervisors.spawn", "…"],
-                "events": ["agent.added", "…"] } }
+                "events": ["agent.added", "…"],
+                "features": ["supervisorKeys"] } }
 ```
+
+`features` names what this build added within protocol 1. `supervisorKeys`
+means everything under [Several supervisors](#several-supervisors) is there:
+check for it before you send a `key` or a `supervisor` param to an older build,
+which would refuse the unknown param with `invalid_params`.
 
 Every message carries `"v": 1`. A message with another `v` is answered with
 `unsupported_version`. The request path `/v1` and the `v` field change
@@ -233,39 +240,65 @@ type LinkError = { code: string; message: string; reason?: string };
 
 ## Methods
 
-| method               | params                                                                                             | result                                  |
-| -------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `session.hello`      | `{ client?: string }`                                                                              | `{ protocol, server, methods, events }` |
-| `supervisors.spawn`  | `{ task?: string, provider?: string, model?: string }`                                             | `{ agentId }`                           |
-| `agents.list`        | —                                                                                                  | `{ agents: LinkAgent[] }`               |
-| `agents.read`        | `{ agentId, sinceOffset?: number, tailBytes?: number }`                                            | `OutputChunk`                           |
-| `agents.send`        | `{ agentId, text: string, submit?: boolean }` (`submit` defaults to `true`)                        | `{ agentId, bytesWritten }`             |
-| `agents.kill`        | `{ agentId }`                                                                                      | `{ agentId, killed: true }`             |
-| `events.subscribe`   | `{ agentIds?: string[], output?: boolean, sinceOffsets?: Record<string, number>, jobs?: boolean }` | `{ agents: LinkAgent[] }`               |
-| `events.unsubscribe` | —                                                                                                  | `{ subscribed: false }`                 |
-| `documents.projects` | —                                                                                                  | `{ projects: DocumentProject[] }`       |
-| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                              | `{ documents: DocumentEntry[] }`        |
-| `documents.get`      | `{ project, type, id, rev?: string }`                                                              | `Document`                              |
-| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                       | `Document`                              |
-| `documents.asset`    | `{ project, path, rev?: string }`                                                                  | `Asset`                                 |
-| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string }`              | `Proposal`                              |
-| `jobs.create`        | `{ project, kind, payload }` (`payload` required, `null` allowed)                                  | `JobStarted`                            |
-| `jobs.list`          | `{ project?: string, status?: 'running' \| 'finished' \| 'failed', limit?: number }`               | `{ jobs: Job[] }`                       |
-| `jobs.cancel`        | `{ jobId }`                                                                                        | `{ jobId, cancelled, status }`          |
+| method               | params                                                                                                                     | result                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `session.hello`      | `{ client?: string }`                                                                                                      | `{ protocol, server, methods, events, features }` |
+| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }` (`if` only with `key`)      | `{ agentId, key: string \| null, existing }`      |
+| `supervisors.list`   | —                                                                                                                          | `{ supervisors: LinkSupervisor[] }`               |
+| `agents.list`        | —                                                                                                                          | `{ agents: LinkAgent[] }`                         |
+| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                                      | `OutputChunk`                                     |
+| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean }` (`submit` defaults to `true`)                                  | `{ agentId, bytesWritten }`                       |
+| `agents.kill`        | `{ agentId \| supervisor }`                                                                                                | `{ agentId, killed: true }`                       |
+| `events.subscribe`   | `{ agentIds?: string[], supervisors?: string[], output?: boolean, sinceOffsets?: Record<string, number>, jobs?: boolean }` | `{ agents: LinkAgent[] }`                         |
+| `events.unsubscribe` | —                                                                                                                          | `{ subscribed: false }`                           |
+| `documents.projects` | —                                                                                                                          | `{ projects: DocumentProject[] }`                 |
+| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                                      | `{ documents: DocumentEntry[] }`                  |
+| `documents.get`      | `{ project, type, id, rev?: string }`                                                                                      | `Document`                                        |
+| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                                               | `Document`                                        |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                                                          | `Asset`                                           |
+| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }`                 | `Proposal`                                        |
+| `jobs.create`        | `{ project, kind, payload, supervisor?: string }` (`payload` required, `null` allowed)                                     | `JobStarted`                                      |
+| `jobs.list`          | `{ project?: string, status?: 'running' \| 'finished' \| 'failed', limit?: number }`                                       | `{ jobs: Job[] }`                                 |
+| `jobs.cancel`        | `{ jobId }`                                                                                                                | `{ jobId, cancelled, status }`                    |
+
+`agentId | supervisor` means exactly one of the two: an agent id, or a
+[supervisor key](#several-supervisors) resolved when the request runs. Both or
+neither is `invalid_params`.
 
 `project` is always an absolute path, as `documents.projects` lists it.
 
 ### Supervisors and agents
 
-**`supervisors.spawn`** starts a **new** supervisor exactly like the
-Supervisor tile in the IDE: its launch prompt, your standing instructions, its
-approved skills and tools. `task` becomes its first task; `provider` and
-`model` default to your supervisor settings. A running supervisor is never
-reused — to talk to one, use `agents.send`.
+**`supervisors.spawn`** starts a supervisor exactly like the Supervisor tile
+in the IDE: its launch prompt, your standing instructions, its approved skills
+and tools. `task` becomes its first task; `provider` and `model` default to
+your supervisor settings. Several supervisors may run at once, each with its
+own children.
+
+Without `key` every call starts a **new** supervisor. With `key` the new one
+carries that address (see [Several supervisors](#several-supervisors)), and
+`if` says what a key a live supervisor already carries means: `"new"` (the
+default) refuses with `supervisor_key_in_use`; `"existing"` answers that
+supervisor with `existing: true` and starts nothing — the `task` is **not**
+sent to it, use `agents.send` for that.
 
 ```json
-→ { "v": 1, "id": "s", "method": "supervisors.spawn", "params": { "task": "Plan the export feature" } }
-← { "v": 1, "type": "response", "id": "s", "ok": true, "result": { "agentId": "agent-12" } }
+→ { "v": 1, "id": "s", "method": "supervisors.spawn", "params": { "key": "mail-triage", "if": "existing", "task": "Triage the inbox" } }
+← { "v": 1, "type": "response", "id": "s", "ok": true, "result": { "agentId": "agent-12", "key": "mail-triage", "existing": false } }
+```
+
+**`supervisors.list`** answers the live supervisors and the finished ones whose
+result AuricIDE still keeps, live first:
+
+```ts
+type LinkSupervisor = {
+  agentId: string;
+  key: string | null;
+  name: string;
+  status: LinkAgent['status'];
+  run: string | null; // the run folder's name, e.g. "2026-10-21_090000"
+  children: { running: number; total: number }; // its whole subtree, grandchildren included; jobs are not children
+};
 ```
 
 **`agents.list`** answers the supervisor tree. A `LinkAgent` carries at least:
@@ -279,6 +312,8 @@ type LinkAgent = {
   status: 'running' | 'idle' | 'queued' | 'error';
   role: 'worker' | 'supervisor';
   spawnedByAgentId: string | null; // the supervisor that started it
+  supervisorKey: string | null; // a supervisor's key, else null
+  rootSupervisorId: string | null; // the topmost supervisor of its chain; a supervisor's own id
   currentTask: string | null;
   startedAt: number; // ms since the epoch
   lastActivityAt: number | null;
@@ -317,6 +352,9 @@ submitted; `bytesWritten` then counts the paste markers too. Headless agents
 ```
 
 **`agents.kill`** is the same as the stop button in the IDE.
+
+All three take `supervisor: "<key>"` instead of `agentId` to reach the live
+supervisor carrying that key; none does: `unknown_supervisor`.
 
 ### Documents
 
@@ -486,6 +524,7 @@ type Job = {
   otherFiles: string[]; // changed paths outside its writes — check before merging
   error: { code: JobErrorCode; message: string } | null;
   cancelRequested: boolean;
+  requestedBy: { key: string; agentId: string } | null; // jobs.create { supervisor }
 };
 
 type JobErrorCode =
@@ -517,10 +556,18 @@ its own on a new branch.
                 "provider": "claude", "model": "…" } }
 ```
 
+`supervisor: "<key>"` records which supervisor wants the job (`requestedBy`,
+with the agent id the key named at creation; a key no live supervisor carries
+is `unknown_supervisor`, checked before anything starts). The job's agent is
+still no child of that supervisor: it counts against the job counter, not
+against the supervisor's child limit.
+
 When the agent stops, AuricIDE commits whatever it left uncommitted **in the
 paths it may write**, compares the branch with its base and ends the job with
 `job.finished` or `job.failed`. Either way one notification lands in the
-project's inbox.
+project's inbox. A job with `requestedBy` also gets one line typed into that
+supervisor's console — whoever carries the key at that moment, else the agent
+that asked, if it still runs and nobody is halfway through typing there.
 
 A running job is stopped by AuricIDE itself (ending as `cancelled`, with the
 reason in `error.message`) when you remove its project from the link settings
@@ -536,19 +583,57 @@ next tick (every 2 s). A job that already ended answers
 `{ "cancelled": false, "status": "<its status>" }`; an unknown id is
 `unknown_job`.
 
+## Several supervisors
+
+Any number of supervisors may run at once; each manages only the agents it
+started. A supervisor's `agentId` is a counter and changes when it is resumed
+or AuricIDE restarts, so a client that wants **its** supervisor back after a
+reconnect gives it a **key**: an address it chooses, `^[a-z0-9][a-z0-9-]{0,47}$` and not shaped like an
+agent id (`agent-12` is refused).
+
+- A key is unique among **live** supervisors. When one ends, its key is free.
+- The key is kept with the supervisor across a restart and in its run folder,
+  so a supervisor resumed from the IDE (tile, Supervisor Runs) answers to the
+  same key.
+- A resumed supervisor takes over the children of the one it replaces: their
+  `spawnedByAgentId` (and `rootSupervisorId`) name the new id.
+- A key is an **address, not a permission.** Any client of the link may use
+  any key; there is no ownership per connection.
+
+The reconnect pattern, the same on the first connect and on every later one:
+
+```json
+→ { "v": 1, "id": 1, "method": "supervisors.spawn", "params": { "key": "mail-triage", "if": "existing", "task": "Triage the inbox every hour" } }
+← { "v": 1, "type": "response", "id": 1, "ok": true, "result": { "agentId": "agent-12", "key": "mail-triage", "existing": true } }
+→ { "v": 1, "id": 2, "method": "events.subscribe", "params": { "supervisors": ["mail-triage"] } }
+← { "v": 1, "type": "response", "id": 2, "ok": true, "result": { "agents": [ … the supervisor and its subtree … ] } }
+→ { "v": 1, "id": 3, "method": "agents.send", "params": { "supervisor": "mail-triage", "text": "Anything new?" } }
+```
+
+`existing: true` means the supervisor was already running and the `task` was
+not sent; send what it should do now with `agents.send`. To learn what ran
+while you were away, `supervisors.list` and `jobs.list`.
+
 ## Events
 
 `events.subscribe` replaces the connection's subscription and returns the tree
 as it is now, so you start from a consistent picture.
 
 - `agentIds` — only these agents (ids outside the tree: `unknown_agent`).
-  Omitted: the whole tree, including agents that join later.
+  Omitted (and no `supervisors`): the whole tree, including agents that join
+  later.
+- `supervisors` — keys or agent ids. Each covers that supervisor, every agent
+  below it through `spawnedByAgentId` (worked out again every 250 ms, so a
+  child started later joins), and the jobs it asked for with their agents. An
+  entry nothing matches yet is not an error: it covers a supervisor that
+  starts later under that key. With `agentIds`, the union of both.
 - `output` (default `true`) — push console text.
 - `sinceOffsets` — per agent, the output offset to continue from after a
   reconnect. Without it, output starts at the current end; use `agents.read`
   for history.
 - `jobs` (default `true`) — push `job.*` events for every job, whichever
-  client created it.
+  client created it; with `supervisors`, only for the jobs those supervisors
+  asked for.
 
 | event           | data                                                                      | when                                              |
 | --------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -821,36 +906,40 @@ back frees no slot, setting it forward by a day does.
 
 ## Error codes
 
-| code                     | meaning                                                                                   |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| `invalid_request`        | not JSON, not a text frame, no `method`, an `id` that is neither string nor number        |
-| `unsupported_version`    | `v` is not `1`                                                                            |
-| `unknown_method`         | no such method in this build                                                              |
-| `invalid_params`         | params missing, of the wrong type, unknown or out of range (also a bad `rev`)             |
-| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                           |
-| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                             |
-| `agent_not_running`      | the agent is in the tree but not running                                                  |
-| `headless_no_stdin`      | a headless agent cannot be typed into                                                     |
-| `supervisor_unavailable` | no project is open to supervisors yet (Settings → Supervisor)                             |
-| `provider_denied`        | the project's provider policy refused the spawn                                           |
-| `provider_unsupported`   | a supervisor cannot run on that provider                                                  |
-| `frontend_unavailable`   | the IDE window did not answer within 30 s                                                 |
-| `document_not_visible`   | the project is not shared with the link                                                   |
-| `document_not_found`     | no such document (at that revision)                                                       |
-| `document_invalid`       | not a JSON object, or too large                                                           |
-| `document_conflict`      | `baseHash` does not match `HEAD`                                                          |
-| `not_a_git_repo`         | the project is not the root of a git repository, or has no commit                         |
-| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule                      |
-| `job_kind_not_allowed`   | the project does not list that job kind                                                   |
-| `quota_exceeded`         | the job counter is full (`reason` `daily_limit`, `project_daily_limit`) or 0 (`disabled`) |
-| `unknown_job`            | no such job                                                                               |
-| `busy`                   | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests`    |
-| `internal`               | anything else; the message says what                                                      |
+| code                     | meaning                                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `invalid_request`        | not JSON, not a text frame, no `method`, an `id` that is neither string nor number                 |
+| `unsupported_version`    | `v` is not `1`                                                                                     |
+| `unknown_method`         | no such method in this build                                                                       |
+| `invalid_params`         | params missing, of the wrong type, unknown or out of range (also a bad `rev`)                      |
+| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                                    |
+| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                                      |
+| `agent_not_running`      | the agent is in the tree but not running                                                           |
+| `headless_no_stdin`      | a headless agent cannot be typed into                                                              |
+| `supervisor_unavailable` | no project is open to supervisors yet (Settings → Supervisor)                                      |
+| `provider_denied`        | the project's provider policy refused the spawn                                                    |
+| `provider_unsupported`   | a supervisor cannot run on that provider                                                           |
+| `frontend_unavailable`   | the IDE window did not answer within 30 s                                                          |
+| `document_not_visible`   | the project is not shared with the link                                                            |
+| `document_not_found`     | no such document (at that revision)                                                                |
+| `document_invalid`       | not a JSON object, or too large                                                                    |
+| `document_conflict`      | `baseHash` does not match `HEAD`                                                                   |
+| `not_a_git_repo`         | the project is not the root of a git repository, or has no commit                                  |
+| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule                               |
+| `job_kind_not_allowed`   | the project does not list that job kind                                                            |
+| `quota_exceeded`         | the job counter is full (`reason` `daily_limit`, `project_daily_limit`) or 0 (`disabled`)          |
+| `unknown_job`            | no such job                                                                                        |
+| `busy`                   | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests`             |
+| `supervisor_key_invalid` | a key is not 1–48 of `a-z`, `0-9`, `-`, starting with a letter or digit, or looks like `agent-<n>` |
+| `supervisor_key_in_use`  | `supervisors.spawn` with `if: "new"` and a live supervisor already carries that key                |
+| `unknown_supervisor`     | no live supervisor carries that key                                                                |
+| `internal`               | anything else; the message says what                                                               |
 
 ## A minimal client
 
-Node.js 18+, `npm install ws`. It connects, says hello, subscribes, lists the
-shared projects and prints events until you press Ctrl-C.
+Node.js 18+, `npm install ws`. It connects, says hello, starts its own
+supervisor under a key (or finds it again), subscribes to that supervisor's
+subtree, lists the shared projects and prints events until you press Ctrl-C.
 
 ```js
 // supervisor-client.mjs — node supervisor-client.mjs
@@ -900,8 +989,12 @@ ws.on('open', async () => {
   try {
     const hello = await call('session.hello', { client: 'example-client' });
     console.log(`connected to ${hello.server}, protocol ${hello.protocol}`);
-    const { agents } = await call('events.subscribe', {});
-    console.log(`${agents.length} agent(s) in the supervisor tree`);
+    // Our own supervisor, by key: started on the first run, found again later.
+    const KEY = 'example-client';
+    const mine = await call('supervisors.spawn', { key: KEY, if: 'existing' });
+    console.log(`supervisor ${mine.agentId} (${mine.existing ? 'already running' : 'started'})`);
+    const { agents } = await call('events.subscribe', { supervisors: [KEY] });
+    console.log(`${agents.length} agent(s) in its subtree`);
     const { projects } = await call('documents.projects');
     for (const project of projects) {
       const types = project.documentTypes.map((t) => t.name).join(', ') || 'none';

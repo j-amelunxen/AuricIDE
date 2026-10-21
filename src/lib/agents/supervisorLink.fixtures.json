@@ -1,6 +1,7 @@
 {
   "$comment": "Machine-checkable half of docs/design-supervisor-link.md (the Supervisor Control API). Rust reads it in supervisor_link tests, TypeScript in the settings. Change this first.",
   "protocol": 1,
+  "features": ["supervisorKeys"],
   "socketFileName": "supervisor-link.sock",
   "policyFileName": "supervisor-link.json",
   "path": "/v1",
@@ -17,6 +18,7 @@
   "methods": [
     "session.hello",
     "supervisors.spawn",
+    "supervisors.list",
     "agents.list",
     "agents.read",
     "agents.send",
@@ -67,6 +69,9 @@
     "quota_exceeded",
     "unknown_job",
     "busy",
+    "supervisor_key_invalid",
+    "supervisor_key_in_use",
+    "unknown_supervisor",
     "internal"
   ],
   "messages": [
@@ -219,6 +224,105 @@
       "name": "subscribe without job events",
       "line": "{\"v\":1,\"id\":17,\"method\":\"events.subscribe\",\"params\":{\"jobs\":false}}",
       "accepted": true
+    },
+    {
+      "name": "list the supervisors",
+      "line": "{\"v\":1,\"id\":40,\"method\":\"supervisors.list\",\"params\":{}}",
+      "accepted": true
+    },
+    {
+      "name": "supervisors.list takes no params",
+      "line": "{\"v\":1,\"id\":41,\"method\":\"supervisors.list\",\"params\":{\"key\":\"mail-triage\"}}",
+      "error": "invalid_params",
+      "id": 41
+    },
+    {
+      "name": "spawn a supervisor under a key",
+      "line": "{\"v\":1,\"id\":42,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"mail-triage\",\"if\":\"existing\",\"task\":\"triage the inbox\"}}",
+      "accepted": true
+    },
+    {
+      "name": "spawn with if new",
+      "line": "{\"v\":1,\"id\":43,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"mail-triage\",\"if\":\"new\"}}",
+      "accepted": true
+    },
+    {
+      "name": "if without a key",
+      "line": "{\"v\":1,\"id\":44,\"method\":\"supervisors.spawn\",\"params\":{\"if\":\"existing\"}}",
+      "error": "invalid_params",
+      "id": 44
+    },
+    {
+      "name": "if outside new and existing",
+      "line": "{\"v\":1,\"id\":45,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"mail-triage\",\"if\":\"always\"}}",
+      "error": "invalid_params",
+      "id": 45
+    },
+    {
+      "name": "a key outside the format",
+      "line": "{\"v\":1,\"id\":46,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"Mail Triage\"}}",
+      "error": "supervisor_key_invalid",
+      "id": 46
+    },
+    {
+      "name": "send to a supervisor by key",
+      "line": "{\"v\":1,\"id\":47,\"method\":\"agents.send\",\"params\":{\"supervisor\":\"mail-triage\",\"text\":\"status?\"}}",
+      "accepted": true
+    },
+    {
+      "name": "send with both agentId and supervisor",
+      "line": "{\"v\":1,\"id\":48,\"method\":\"agents.send\",\"params\":{\"agentId\":\"agent-1\",\"supervisor\":\"mail-triage\",\"text\":\"x\"}}",
+      "error": "invalid_params",
+      "id": 48
+    },
+    {
+      "name": "read by key",
+      "line": "{\"v\":1,\"id\":49,\"method\":\"agents.read\",\"params\":{\"supervisor\":\"mail-triage\",\"tailBytes\":4096}}",
+      "accepted": true
+    },
+    {
+      "name": "kill by key",
+      "line": "{\"v\":1,\"id\":50,\"method\":\"agents.kill\",\"params\":{\"supervisor\":\"mail-triage\"}}",
+      "accepted": true
+    },
+    {
+      "name": "kill with both",
+      "line": "{\"v\":1,\"id\":51,\"method\":\"agents.kill\",\"params\":{\"agentId\":\"agent-1\",\"supervisor\":\"mail-triage\"}}",
+      "error": "invalid_params",
+      "id": 51
+    },
+    {
+      "name": "read by a malformed key",
+      "line": "{\"v\":1,\"id\":52,\"method\":\"agents.read\",\"params\":{\"supervisor\":\"-x\"}}",
+      "error": "supervisor_key_invalid",
+      "id": 52
+    },
+    {
+      "name": "subscribe to a supervisor subtree",
+      "line": "{\"v\":1,\"id\":53,\"method\":\"events.subscribe\",\"params\":{\"supervisors\":[\"mail-triage\",\"agent-4\"],\"agentIds\":[\"agent-9\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "a job for a supervisor",
+      "line": "{\"v\":1,\"id\":54,\"method\":\"jobs.create\",\"params\":{\"project\":\"/p\",\"kind\":\"k\",\"payload\":null,\"supervisor\":\"mail-triage\"}}",
+      "accepted": true
+    },
+    {
+      "name": "a job for a malformed key",
+      "line": "{\"v\":1,\"id\":55,\"method\":\"jobs.create\",\"params\":{\"project\":\"/p\",\"kind\":\"k\",\"payload\":null,\"supervisor\":\"Mail\"}}",
+      "error": "supervisor_key_invalid",
+      "id": 55
+    },
+    {
+      "name": "a proposal named for a supervisor",
+      "line": "{\"v\":1,\"id\":56,\"method\":\"documents.propose\",\"params\":{\"project\":\"/p\",\"type\":\"diagram\",\"id\":\"docs/a.diagram.json\",\"document\":{},\"baseHash\":null,\"supervisor\":\"mail-triage\"}}",
+      "accepted": true
+    },
+    {
+      "name": "a key shaped like an agent id",
+      "line": "{\"v\":1,\"id\":57,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"agent-3\"}}",
+      "error": "supervisor_key_invalid",
+      "id": 57
     }
   ],
   "resolve": [
@@ -881,5 +985,437 @@
         "mentions": "as it is"
       }
     ]
+  },
+  "supervisorKeys": {
+    "$comment": "A supervisor key is an address a client picks for a supervisor; it is not a permission. Unique among live supervisors (a finished one frees its key). spawn: what supervisors.spawn does with key and if against the live supervisors; a key that resolves to nobody on agents.read/send/kill or jobs.create is unknown_supervisor. Keys shaped like an agent id (reservedPattern) are refused, so a supervisors entry in events.subscribe never names two supervisors at once.",
+    "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+    "maxLength": 48,
+    "valid": [
+      "mail-triage",
+      "a",
+      "7",
+      "docs-",
+      "team-2-review",
+      "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "agent-x",
+      "agent-"
+    ],
+    "invalid": [
+      "",
+      "-lead",
+      "Mail",
+      "mail_triage",
+      "mail triage",
+      "mail.triage",
+      "mäil",
+      "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "agent-3",
+      "agent-12"
+    ],
+    "spawn": {
+      "live": [
+        {
+          "agentId": "agent-3",
+          "key": "mail-triage",
+          "status": "running"
+        },
+        {
+          "agentId": "agent-4",
+          "key": null,
+          "status": "running"
+        }
+      ],
+      "finished": [
+        {
+          "agentId": "agent-1",
+          "key": "old-run",
+          "status": "idle"
+        }
+      ],
+      "cases": [
+        {
+          "name": "no key always starts a new supervisor",
+          "params": {},
+          "expected": {
+            "started": true,
+            "existing": false,
+            "key": null
+          }
+        },
+        {
+          "name": "a free key starts a new one under it",
+          "params": {
+            "key": "docs"
+          },
+          "expected": {
+            "started": true,
+            "existing": false,
+            "key": "docs"
+          }
+        },
+        {
+          "name": "a live key is in use (if defaults to new)",
+          "params": {
+            "key": "mail-triage"
+          },
+          "expected": {
+            "error": "supervisor_key_in_use"
+          }
+        },
+        {
+          "name": "a live key with if new is in use",
+          "params": {
+            "key": "mail-triage",
+            "if": "new"
+          },
+          "expected": {
+            "error": "supervisor_key_in_use"
+          }
+        },
+        {
+          "name": "a live key with if existing answers that supervisor and sends no task",
+          "params": {
+            "key": "mail-triage",
+            "if": "existing",
+            "task": "triage"
+          },
+          "expected": {
+            "started": false,
+            "existing": true,
+            "key": "mail-triage",
+            "agentId": "agent-3"
+          }
+        },
+        {
+          "name": "a free key with if existing starts a new one",
+          "params": {
+            "key": "docs",
+            "if": "existing"
+          },
+          "expected": {
+            "started": true,
+            "existing": false,
+            "key": "docs"
+          }
+        },
+        {
+          "name": "a finished supervisor frees its key",
+          "params": {
+            "key": "old-run",
+            "if": "new"
+          },
+          "expected": {
+            "started": true,
+            "existing": false,
+            "key": "old-run"
+          }
+        },
+        {
+          "name": "if without a key",
+          "params": {
+            "if": "existing"
+          },
+          "expected": {
+            "error": "invalid_params"
+          }
+        },
+        {
+          "name": "a malformed key",
+          "params": {
+            "key": "Mail"
+          },
+          "expected": {
+            "error": "supervisor_key_invalid"
+          }
+        }
+      ]
+    },
+    "reservedPattern": "^agent-\\d+$"
+  },
+  "subtree": {
+    "$comment": "events.subscribe { supervisors } and supervisors.list over one agent list. A supervisors entry is a key or an agent id; it covers the supervisor, every descendant through the spawnedByAgentId chain (recomputed every poll, so a child started later joins), the agents of jobs it requested and those jobs. An unknown entry covers nothing and is no error. agentIds and supervisors together are their union. Without supervisors, job events are not filtered (as before); with them, only the covered jobs. rootSupervisorIds is LinkAgent.rootSupervisorId: the topmost supervisor of the chain, null where the chain reaches no listed supervisor. finished is what run results still keep after a supervisor ended.",
+    "agents": [
+      {
+        "id": "agent-1",
+        "name": "Mail triage",
+        "role": "supervisor",
+        "status": "running",
+        "supervisorKey": "mail-triage",
+        "spawnedByAgentId": null,
+        "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+      },
+      {
+        "id": "agent-2",
+        "name": "Worker agent-2",
+        "role": "worker",
+        "status": "running",
+        "supervisorKey": null,
+        "spawnedByAgentId": "agent-1",
+        "repoPath": "/work/alpha"
+      },
+      {
+        "id": "agent-3",
+        "name": "Worker agent-3",
+        "role": "worker",
+        "status": "idle",
+        "supervisorKey": null,
+        "spawnedByAgentId": "agent-2",
+        "repoPath": "/work/alpha"
+      },
+      {
+        "id": "agent-4",
+        "name": "Supervisor",
+        "role": "supervisor",
+        "status": "running",
+        "supervisorKey": null,
+        "spawnedByAgentId": null,
+        "repoPath": "/home/user/.auric/supervisors/2026-10-21_093000"
+      },
+      {
+        "id": "agent-5",
+        "name": "Worker agent-5",
+        "role": "worker",
+        "status": "running",
+        "supervisorKey": null,
+        "spawnedByAgentId": "agent-4",
+        "repoPath": "/work/alpha"
+      },
+      {
+        "id": "agent-6",
+        "name": "Worker agent-6",
+        "role": "worker",
+        "status": "running",
+        "supervisorKey": null,
+        "spawnedByAgentId": "agent-gone",
+        "repoPath": "/work/alpha"
+      },
+      {
+        "id": "agent-7",
+        "name": "Job agent",
+        "role": "worker",
+        "status": "running",
+        "supervisorKey": null,
+        "spawnedByAgentId": null,
+        "repoPath": "/work/alpha.auric-wt/job-1"
+      },
+      {
+        "id": "agent-8",
+        "name": "Worker agent-8",
+        "role": "worker",
+        "status": "error",
+        "supervisorKey": null,
+        "spawnedByAgentId": "agent-1",
+        "repoPath": "/work/alpha"
+      }
+    ],
+    "finished": [
+      {
+        "id": "agent-0",
+        "name": "Docs",
+        "role": "supervisor",
+        "status": "idle",
+        "supervisorKey": "docs",
+        "spawnedByAgentId": null,
+        "repoPath": "/home/user/.auric/supervisors/2026-10-20_170000"
+      }
+    ],
+    "jobs": [
+      {
+        "jobId": "job-1",
+        "agentId": "agent-7",
+        "requestedBy": {
+          "key": "mail-triage",
+          "agentId": "agent-1"
+        }
+      },
+      {
+        "jobId": "job-2",
+        "agentId": "agent-x",
+        "requestedBy": null
+      },
+      {
+        "jobId": "job-3",
+        "agentId": "agent-y",
+        "requestedBy": {
+          "key": "docs",
+          "agentId": "agent-0"
+        }
+      }
+    ],
+    "rootSupervisorIds": {
+      "agent-1": "agent-1",
+      "agent-2": "agent-1",
+      "agent-3": "agent-1",
+      "agent-4": "agent-4",
+      "agent-5": "agent-4",
+      "agent-6": null,
+      "agent-7": null,
+      "agent-8": "agent-1"
+    },
+    "cases": [
+      {
+        "name": "by key: the supervisor, children, grandchildren and its job",
+        "supervisors": ["mail-triage"],
+        "agents": ["agent-1", "agent-2", "agent-3", "agent-7", "agent-8"],
+        "jobs": ["job-1"]
+      },
+      {
+        "name": "by agent id works like the key",
+        "supervisors": ["agent-1"],
+        "agents": ["agent-1", "agent-2", "agent-3", "agent-7", "agent-8"],
+        "jobs": ["job-1"]
+      },
+      {
+        "name": "a supervisor without a key, by id; no foreign children",
+        "supervisors": ["agent-4"],
+        "agents": ["agent-4", "agent-5"],
+        "jobs": []
+      },
+      {
+        "name": "a child started after subscribing joins",
+        "supervisors": ["agent-4"],
+        "addLater": [
+          {
+            "id": "agent-9",
+            "name": "Worker agent-9",
+            "role": "worker",
+            "status": "running",
+            "supervisorKey": null,
+            "spawnedByAgentId": "agent-5",
+            "repoPath": "/work/alpha"
+          },
+          {
+            "id": "agent-10",
+            "name": "Worker agent-10",
+            "role": "worker",
+            "status": "running",
+            "supervisorKey": null,
+            "spawnedByAgentId": "agent-4",
+            "repoPath": "/work/alpha"
+          }
+        ],
+        "agents": ["agent-4", "agent-5", "agent-9", "agent-10"],
+        "jobs": []
+      },
+      {
+        "name": "an unknown key covers nothing and is no error",
+        "supervisors": ["not-started-yet"],
+        "agents": [],
+        "jobs": []
+      },
+      {
+        "name": "a key whose supervisor starts later covers it from then on",
+        "supervisors": ["night-shift"],
+        "addLater": [
+          {
+            "id": "agent-11",
+            "name": "Night shift",
+            "role": "supervisor",
+            "status": "running",
+            "supervisorKey": "night-shift",
+            "spawnedByAgentId": null,
+            "repoPath": "/home/user/.auric/supervisors/2026-10-21_220000"
+          },
+          {
+            "id": "agent-12",
+            "name": "Worker agent-12",
+            "role": "worker",
+            "status": "running",
+            "supervisorKey": null,
+            "spawnedByAgentId": "agent-11",
+            "repoPath": "/work/alpha"
+          }
+        ],
+        "agents": ["agent-11", "agent-12"],
+        "jobs": []
+      },
+      {
+        "name": "agentIds and supervisors are a union",
+        "supervisors": ["agent-4"],
+        "agentIds": ["agent-6"],
+        "agents": ["agent-4", "agent-5", "agent-6"],
+        "jobs": []
+      },
+      {
+        "name": "a finished supervisor key still covers its jobs by agent id",
+        "supervisors": ["agent-0"],
+        "agents": [],
+        "jobs": ["job-3"]
+      }
+    ],
+    "list": [
+      {
+        "agentId": "agent-1",
+        "key": "mail-triage",
+        "name": "Mail triage",
+        "status": "running",
+        "run": "2026-10-21_090000",
+        "children": {
+          "running": 1,
+          "total": 3
+        }
+      },
+      {
+        "agentId": "agent-4",
+        "key": null,
+        "name": "Supervisor",
+        "status": "running",
+        "run": "2026-10-21_093000",
+        "children": {
+          "running": 1,
+          "total": 1
+        }
+      },
+      {
+        "agentId": "agent-0",
+        "key": "docs",
+        "name": "Docs",
+        "status": "idle",
+        "run": "2026-10-20_170000",
+        "children": {
+          "running": 0,
+          "total": 0
+        }
+      }
+    ]
+  },
+  "frontendSpawnSupervisor": {
+    "$comment": "What Rust hands the frontend bridge for supervisors.spawn, as the control request spawn_supervisor. if is decided in Rust and never sent; key travels as supervisorKey; absent fields are left out. The bridge answers { agentId }.",
+    "method": "spawn_supervisor",
+    "cases": [
+      {
+        "name": "no params",
+        "link": {},
+        "frontend": {}
+      },
+      {
+        "name": "a task, provider and model",
+        "link": {
+          "task": "plan it",
+          "provider": "claude",
+          "model": "sonnet"
+        },
+        "frontend": {
+          "task": "plan it",
+          "provider": "claude",
+          "model": "sonnet"
+        }
+      },
+      {
+        "name": "a key and if",
+        "link": {
+          "key": "mail-triage",
+          "if": "existing",
+          "task": "triage"
+        },
+        "frontend": {
+          "task": "triage",
+          "supervisorKey": "mail-triage"
+        }
+      }
+    ],
+    "answer": {
+      "agentId": "agent-12"
+    }
   }
 }

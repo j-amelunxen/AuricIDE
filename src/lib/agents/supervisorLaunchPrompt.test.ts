@@ -231,7 +231,9 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('## Picking up an earlier run');
     expect(text).toContain('2026-10-16_185017');
     expect(text).toContain('modification time, newest first');
-    expect(text).toContain('not your children');
+    // Rust re-parents the earlier run's children onto the resumed supervisor.
+    expect(text).not.toContain('not your children');
+    expect(text).toContain('list_agents shows them as yours');
     expect(text.indexOf('## Reporting')).toBeLessThan(text.indexOf('## Picking up an earlier run'));
     expect(text.indexOf('## Picking up an earlier run')).toBeLessThan(
       text.indexOf('## Your first task')

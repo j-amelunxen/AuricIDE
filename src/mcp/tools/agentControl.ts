@@ -175,8 +175,39 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
   };
 }
 
+const sendTextParams = {
+  text: z.string().describe('What to type; may be empty for a bare Enter'),
+  enter: z.boolean().optional().describe('Press Enter after the text (default true)'),
+};
+
+/**
+ * Only the control server addresses a supervisor by key: a supervisor's own
+ * server reaches its children, which never carry one.
+ */
+const sendByAgentOrKey = z
+  .object({
+    agentId: agentIdParam.optional(),
+    supervisor: z
+      .string()
+      .optional()
+      .describe(
+        'Instead of agentId: the key of a running supervisor (as list_agents shows it in ' +
+          'supervisorKey). Resolved when the call arrives, so it still reaches the supervisor ' +
+          'after a resume gave it a new agentId.'
+      ),
+    ...sendTextParams,
+  })
+  .refine((p) => (p.agentId === undefined) !== (p.supervisor === undefined), {
+    message: 'name exactly one of agentId or supervisor',
+    path: ['agentId'],
+  });
+
 /** `send_agent_input`, the same for the control and the supervisor server. */
-export function sendAgentInputTool(call: ControlCaller, scopeNote = '') {
+export function sendAgentInputTool(
+  call: ControlCaller,
+  scopeNote = '',
+  { bySupervisorKey = false }: { bySupervisorKey?: boolean } = {}
+) {
   return {
     name: 'send_agent_input',
     description:
@@ -185,12 +216,14 @@ export function sendAgentInputTool(call: ControlCaller, scopeNote = '') {
       'permission prompts — "1", "y" or a menu choice approves whatever the prompt asks, so ' +
       'read the output first. Empty text with enter true is a bare Enter nudge. Headless ' +
       'agents do not read input and refuse it.' +
+      (bySupervisorKey
+        ? ' Name the agent by agentId, or a supervisor by its key (supervisor), never both; ' +
+          'a key no running supervisor holds answers unknown_supervisor.'
+        : '') +
       scopeNote,
-    parameters: z.object({
-      agentId: agentIdParam,
-      text: z.string().describe('What to type; may be empty for a bare Enter'),
-      enter: z.boolean().optional().describe('Press Enter after the text (default true)'),
-    }),
+    parameters: bySupervisorKey
+      ? sendByAgentOrKey
+      : z.object({ agentId: agentIdParam, ...sendTextParams }),
     execute: async (args: ControlParamsInput<'send_input'>) => runControl(call, 'send_input', args),
   };
 }
@@ -205,14 +238,16 @@ export function registerAgentControlTools(
       'List every agent the running AuricIDE knows, across all projects: id, name, provider, ' +
       'model, status (running | idle | queued | error), the task it was started with, its ' +
       'project, whether it runs headless, and outputBytes — the byte offset of its console ' +
-      'output so far. Pass outputBytes as sinceOffset to read_agent_output to get only what is new.',
+      'output so far. Pass outputBytes as sinceOffset to read_agent_output to get only what is ' +
+      'new. Several supervisors may run at once; role tells them apart, spawnedByAgentId names ' +
+      "a child's supervisor, and supervisorKey is the key a supervisor was started under.",
     parameters: z.object({}),
     execute: async () => runControl(call, 'list_agents', {}),
   });
 
   server.addTool(readAgentOutputTool(call));
 
-  server.addTool(sendAgentInputTool(call));
+  server.addTool(sendAgentInputTool(call, '', { bySupervisorKey: true }));
 
   server.addTool({
     name: 'kill_agent',
@@ -247,8 +282,18 @@ export function registerAgentControlTools(
         .literal('supervisor')
         .optional()
         .describe(
-          'Start a supervisor instead of a worker: Claude, interactive, scoped to the projects ' +
-            'its policy (Settings → Supervisor) allows. Leave out for an ordinary agent.'
+          'Start a supervisor instead of a worker: interactive, with the same launch prompt ' +
+            'and policy (Settings → Supervisor) as the one the IDE tile starts, prompt as its ' +
+            'first task. It works in a run folder of its own, not in projectPath. Several may ' +
+            'run at once. Leave out for an ordinary agent.'
+        ),
+      supervisorKey: z
+        .string()
+        .optional()
+        .describe(
+          'With role "supervisor" only: a key to reach it by later (send_agent_input ' +
+            'supervisor), 1-48 lowercase letters, digits and dashes. A key a running ' +
+            'supervisor already holds is refused (supervisor_key_in_use).'
         ),
     }),
     execute: async (args) => runControl(call, 'spawn', args),

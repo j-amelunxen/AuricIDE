@@ -20,6 +20,7 @@ pub const LAUNCH_EVENT: &str = "menu-bar-launch";
 const TRAY_ID: &str = "auric-supervisor";
 const SKILL_PREFIX: &str = "skill:";
 const ITEM_START: &str = "start";
+const ITEM_OPEN: &str = "open";
 const ITEM_SHOW: &str = "show";
 /// The menu stays a shortcut list; past this the rest live in the app.
 const MAX_MENU_SKILLS: usize = 12;
@@ -38,7 +39,8 @@ pub struct MenuBarSkill {
 pub struct MenuBarConfig {
     pub tray: bool,
     pub shortcuts: bool,
-    pub running: bool,
+    /// How many supervisors run. Above zero the menu also offers to open one.
+    pub running: u32,
     pub skills: Vec<MenuBarSkill>,
 }
 
@@ -47,6 +49,11 @@ pub struct MenuBarConfig {
 pub struct LaunchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill_id: Option<String>,
+    /// "Start Supervisor": always a new one, however many run. Neither this
+    /// nor a skill: "Open Supervisor", the newest running one comes forward.
+    /// A skill always starts a new supervisor too (the frontend's rule).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub new_supervisor: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -65,12 +72,32 @@ pub struct MenuBarState {
 
 /// What a menu item id asks for. `None` means the item is not a launch ("show").
 fn launch_for_item(item_id: &str) -> Option<LaunchRequest> {
-    if item_id == ITEM_START {
-        return Some(LaunchRequest { skill_id: None });
+    match item_id {
+        ITEM_START => Some(LaunchRequest {
+            skill_id: None,
+            new_supervisor: true,
+        }),
+        ITEM_OPEN => Some(LaunchRequest {
+            skill_id: None,
+            new_supervisor: false,
+        }),
+        _ => item_id.strip_prefix(SKILL_PREFIX).map(|id| LaunchRequest {
+            skill_id: Some(id.to_string()),
+            new_supervisor: false,
+        }),
     }
-    item_id.strip_prefix(SKILL_PREFIX).map(|id| LaunchRequest {
-        skill_id: Some(id.to_string()),
-    })
+}
+
+/// The supervisor entries below the skills: starting one is always there,
+/// opening one only while some run, with the count once there is a choice.
+fn supervisor_items(running: u32) -> Vec<(&'static str, String)> {
+    let mut items = vec![(ITEM_START, "Start Supervisor".to_string())];
+    match running {
+        0 => {}
+        1 => items.push((ITEM_OPEN, "Open Supervisor".to_string())),
+        n => items.push((ITEM_OPEN, format!("Open Supervisor ({n})"))),
+    }
+    items
 }
 
 /// Parses every shortcut once. A malformed one, or one a second skill already
@@ -134,6 +161,7 @@ pub fn on_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &Shortcut, event: S
             app,
             LaunchRequest {
                 skill_id: Some(skill_id),
+                new_supervisor: false,
             },
         );
     }
@@ -168,18 +196,9 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, config: &MenuBarConfig) -> tauri::
         }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
-    let start = if config.running {
-        "Open Supervisor"
-    } else {
-        "Start Supervisor"
-    };
-    menu.append(&MenuItem::with_id(
-        app,
-        ITEM_START,
-        start,
-        true,
-        None::<&str>,
-    )?)?;
+    for (id, label) in supervisor_items(config.running) {
+        menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+    }
     menu.append(&MenuItem::with_id(
         app,
         ITEM_SHOW,
@@ -275,12 +294,23 @@ mod tests {
     fn menu_items_map_to_launches() {
         assert_eq!(
             launch_for_item("start"),
-            Some(LaunchRequest { skill_id: None })
+            Some(LaunchRequest {
+                skill_id: None,
+                new_supervisor: true
+            })
+        );
+        assert_eq!(
+            launch_for_item("open"),
+            Some(LaunchRequest {
+                skill_id: None,
+                new_supervisor: false
+            })
         );
         assert_eq!(
             launch_for_item("skill:auric:vtt"),
             Some(LaunchRequest {
-                skill_id: Some("auric:vtt".into())
+                skill_id: Some("auric:vtt".into()),
+                new_supervisor: false
             })
         );
         assert_eq!(launch_for_item("show"), None);
@@ -328,12 +358,65 @@ mod tests {
 
     #[test]
     fn launch_request_serializes_like_the_frontend_expects() {
-        let json = serde_json::to_value(LaunchRequest {
-            skill_id: Some("p1".into()),
-        })
-        .unwrap();
+        let json = serde_json::to_value(launch_for_item("skill:p1").unwrap()).unwrap();
         assert_eq!(json, serde_json::json!({ "skillId": "p1" }));
-        let json = serde_json::to_value(LaunchRequest { skill_id: None }).unwrap();
+        let json = serde_json::to_value(launch_for_item("start").unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({ "newSupervisor": true }));
+        let json = serde_json::to_value(launch_for_item("open").unwrap()).unwrap();
         assert_eq!(json, serde_json::json!({}));
+    }
+
+    #[test]
+    fn the_menu_and_its_payloads_are_the_contracts() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(crate::control_socket::protocol::tests::FIXTURES).unwrap();
+        let bar = &fixtures["supervisors"]["menuBar"];
+        assert_eq!(bar["launchEvent"], LAUNCH_EVENT);
+        let config: MenuBarConfig = serde_json::from_value(bar["config"].clone()).unwrap();
+        assert_eq!(serde_json::json!(config.running), bar["config"]["running"]);
+        for case in bar["items"].as_array().unwrap() {
+            let running = case["running"].as_u64().unwrap() as u32;
+            let items = supervisor_items(running);
+            let entries = case["entries"].as_array().unwrap();
+            assert_eq!(items.len(), entries.len(), "running {running}");
+            for ((id, label), entry) in items.iter().zip(entries) {
+                assert_eq!(entry["id"], *id);
+                assert_eq!(entry["label"], label.as_str());
+                let payload = serde_json::to_value(launch_for_item(id).unwrap()).unwrap();
+                assert_eq!(payload, entry["payload"], "{id}");
+            }
+        }
+        let skill = &bar["skill"];
+        let payload =
+            serde_json::to_value(launch_for_item(skill["itemId"].as_str().unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(payload, skill["payload"]);
+    }
+
+    #[test]
+    fn start_is_always_offered_and_open_names_how_many_run() {
+        assert_eq!(
+            supervisor_items(0),
+            vec![("start", "Start Supervisor".to_string())]
+        );
+        assert_eq!(
+            supervisor_items(1),
+            vec![
+                ("start", "Start Supervisor".to_string()),
+                ("open", "Open Supervisor".to_string())
+            ]
+        );
+        assert_eq!(
+            supervisor_items(3),
+            vec![
+                ("start", "Start Supervisor".to_string()),
+                ("open", "Open Supervisor (3)".to_string())
+            ]
+        );
+        let config: MenuBarConfig = serde_json::from_value(serde_json::json!({
+            "tray": true, "shortcuts": false, "running": 2, "skills": []
+        }))
+        .unwrap();
+        assert_eq!(config.running, 2);
     }
 }

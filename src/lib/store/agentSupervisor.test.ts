@@ -131,18 +131,40 @@ describe('spawnSupervisor', () => {
     expect(config.model).toBe('haiku');
   });
 
-  it('resumes an earlier run: its folder goes to Rust and nothing goes to a running one', async () => {
+  it('resumes an earlier run in a new supervisor, even while another one runs', async () => {
     const policy = emptySupervisorPolicy();
     policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
     const folder = '/home/me/.auric/supervisors/2026-10-16_185017';
+    const sendAgentInput = vi.fn();
+    store.setState({
+      agents: [
+        {
+          id: 'sup-0',
+          name: 'Supervisor',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          role: 'supervisor',
+          repoPath: '/home/me/.auric/supervisors/2026-10-20_080000',
+        },
+      ],
+      sendAgentInput,
+    } as Partial<StoreState>);
 
-    await store.getState().spawnSupervisor({ task: '', resumeRunDir: folder });
+    const launch = await store.getState().spawnSupervisor({ task: '', resumeRunDir: folder });
+
+    expect(launch.kind).toBe('spawned');
     const config = vi.mocked(spawnAgent).mock.calls[0][0];
     expect(config.resumeRunDir).toBe(folder);
     expect(config.task).toContain('## Picking up an earlier run');
+    expect(sendAgentInput).not.toHaveBeenCalled();
+  });
 
-    const running: AgentInfo = {
+  it('refuses to resume a run folder a live supervisor already works in, before asking Rust', async () => {
+    const folder = '/home/me/.auric/supervisors/2026-10-16_185017';
+    const live: AgentInfo = {
       id: 'sup-0',
       name: 'Supervisor',
       model: 'sonnet',
@@ -150,17 +172,20 @@ describe('spawnSupervisor', () => {
       status: 'running',
       startedAt: 1,
       role: 'supervisor',
+      repoPath: folder,
     };
-    vi.mocked(spawnAgent).mockClear();
-    store.setState({ agents: [running], sendAgentInput: vi.fn() } as Partial<StoreState>);
+    store.setState({ agents: [live] });
+
     expect(
       await store.getState().spawnSupervisor({ task: 'carry on', resumeRunDir: folder })
-    ).toEqual({ kind: 'running', agent: running });
-    expect(store.getState().sendAgentInput).not.toHaveBeenCalled();
+    ).toEqual({ kind: 'run_in_use', agent: live });
     expect(spawnAgent).not.toHaveBeenCalled();
   });
 
-  it('sends a skill to the running supervisor instead of starting a second', async () => {
+  it('starts a second supervisor on a skill while one runs, and types nothing into the first', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
     const running: AgentInfo = {
       id: 'sup-0',
       name: 'Supervisor',
@@ -173,12 +198,52 @@ describe('spawnSupervisor', () => {
     const sendAgentInput = vi.fn(async () => undefined);
     store.setState({ agents: [running], sendAgentInput });
 
-    expect(await store.getState().spawnSupervisor({ task: 'Ask for the build status' })).toEqual({
-      kind: 'sent',
-      agent: running,
+    const launch = await store.getState().spawnSupervisor({ task: 'Ask for the build status' });
+
+    expect(launch.kind).toBe('spawned');
+    expect(vi.mocked(spawnAgent).mock.calls[0][0].task).toMatch(
+      /## Your first task\n\nAsk for the build status$/
+    );
+    expect(sendAgentInput).not.toHaveBeenCalled();
+  });
+
+  it('starts a second supervisor without a task when asked to start a new one', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+    store.setState({
+      agents: [
+        {
+          id: 'sup-0',
+          name: 'Supervisor',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          role: 'supervisor',
+        },
+      ],
     });
-    // Enter is \r: \n only adds a line in Claude Code's input box.
-    expect(sendAgentInput).toHaveBeenCalledWith('sup-0', 'Ask for the build status\r');
+
+    const launch = await store.getState().spawnSupervisor({ task: '', forceNew: true });
+
+    expect(launch.kind).toBe('spawned');
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the newest of several running supervisors on a plain click', async () => {
+    const older: AgentInfo = {
+      id: 'sup-0',
+      name: 'Supervisor',
+      model: 'sonnet',
+      provider: 'claude',
+      status: 'running',
+      startedAt: 1,
+      role: 'supervisor',
+    };
+    const newer: AgentInfo = { ...older, id: 'sup-1', name: 'Supervisor 2', startedAt: 5 };
+    store.setState({ agents: [newer, older] });
+    expect(await store.getState().spawnSupervisor()).toEqual({ kind: 'running', agent: newer });
     expect(spawnAgent).not.toHaveBeenCalled();
   });
 
@@ -320,6 +385,21 @@ describe('spawnLinkedSupervisor (supervisor link)', () => {
     const config = vi.mocked(spawnAgent).mock.calls[0][0];
     expect(config).toMatchObject({ role: 'supervisor', provider: 'claude', headless: false });
     expect(config.task).toContain('plan the export');
+  });
+
+  it('starts the supervisor under the key and name the client chose', async () => {
+    await store.getState().spawnLinkedSupervisor({ key: 'mail-triage', name: 'Mail triage' });
+
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).toMatchObject({
+      role: 'supervisor',
+      supervisorKey: 'mail-triage',
+      name: 'Mail triage',
+    });
+  });
+
+  it('sends no key when the client chose none', async () => {
+    await store.getState().spawnLinkedSupervisor({ task: 'x' });
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).not.toHaveProperty('supervisorKey');
   });
 
   it('refuses a provider the supervisor policy does not list', async () => {

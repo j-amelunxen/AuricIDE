@@ -52,20 +52,45 @@ describe('openSupervisor', () => {
     expect(store.showToast).not.toHaveBeenCalled();
   });
 
-  it('shows toast and calls onShow when result is sent', async () => {
+  it('starts a new supervisor for a skill, without a toast, and shows it', async () => {
     const store: SupervisorStore = {
-      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'sent', agent: dummyAgent }),
+      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'spawned', agent: dummyAgent }),
       showToast: vi.fn(),
     };
-    const hooks = {
-      onNothingVisible: vi.fn(),
-      onShow: vi.fn(),
+    const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
+
+    await openSupervisor(store, { id: 'skill-1', label: 'Build status', prompt: 'Ask' }, hooks);
+
+    expect(store.spawnSupervisor).toHaveBeenCalledWith({ task: 'Ask', model: undefined });
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-123');
+    expect(store.showToast).not.toHaveBeenCalled();
+  });
+
+  it('asks for a new supervisor without a skill when told to start a new one', async () => {
+    const store: SupervisorStore = {
+      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'spawned', agent: dummyAgent }),
+      showToast: vi.fn(),
     };
+    const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
+
+    await openSupervisor(store, undefined, hooks, { forceNew: true });
+
+    expect(store.spawnSupervisor).toHaveBeenCalledWith({ task: '', forceNew: true });
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-123');
+  });
+
+  it('shows the running supervisor on a plain open', async () => {
+    const store: SupervisorStore = {
+      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'running', agent: dummyAgent }),
+      showToast: vi.fn(),
+    };
+    const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
 
     await openSupervisor(store, undefined, hooks);
 
+    expect(store.spawnSupervisor).toHaveBeenCalledWith(undefined);
     expect(hooks.onShow).toHaveBeenCalledWith('agent-123');
-    expect(store.showToast).toHaveBeenCalledWith(expect.stringContaining('Sent'), 'success');
+    expect(store.showToast).not.toHaveBeenCalled();
   });
 
   it('calls onShow when result is spawned', async () => {
@@ -128,15 +153,28 @@ describe('resumeSupervisor', () => {
     expect(store.showToast).not.toHaveBeenCalled();
   });
 
-  it('says why nothing started while a supervisor runs, and shows that one', async () => {
+  it('starts the resume even while another supervisor runs', async () => {
     const store = {
-      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'running', agent }),
+      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'spawned', agent }),
+      showToast: vi.fn(),
+    };
+    const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
+    await resumeSupervisor(store, folder, hooks);
+    expect(store.showToast).not.toHaveBeenCalled();
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-9');
+  });
+
+  it('says which supervisor already works in that run, and shows it', async () => {
+    const store = {
+      spawnSupervisor: vi
+        .fn()
+        .mockResolvedValue({ kind: 'run_in_use', agent: { ...agent, name: 'Supervisor 2' } }),
       showToast: vi.fn(),
     };
     const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
     await resumeSupervisor(store, folder, hooks);
     expect(store.showToast).toHaveBeenCalledWith(
-      'A supervisor is already running. Stop it to resume an earlier run.',
+      'This run is already open in "Supervisor 2".',
       'info'
     );
     expect(hooks.onShow).toHaveBeenCalledWith('agent-9');

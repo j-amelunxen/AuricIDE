@@ -72,6 +72,16 @@ pub struct JobError {
     pub message: String,
 }
 
+/// The supervisor a job was created for (`jobs.create { supervisor }`): its
+/// key, and the agent id that key named at creation. The key is what a
+/// resumed supervisor still answers to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestedBy {
+    pub key: String,
+    pub agent_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobRecord {
@@ -104,6 +114,10 @@ pub struct JobRecord {
     pub error: Option<JobError>,
     #[serde(default)]
     pub cancel_requested: bool,
+    /// `None` for a job no supervisor asked for, and on registers written
+    /// before jobs could name one.
+    #[serde(default)]
+    pub requested_by: Option<RequestedBy>,
     /// Why the IDE itself cancelled the job (its project or kind left the
     /// policy). Not on the wire: the job's `error.message` carries it.
     #[serde(skip)]
@@ -293,6 +307,15 @@ impl Jobs {
             .iter()
             .filter(|job| job.status == JobStatus::Running)
             .cloned()
+            .collect()
+    }
+
+    /// Every job's agent and the supervisor it was created for.
+    pub fn requesters(&self) -> Vec<(String, Option<RequestedBy>)> {
+        self.lock()
+            .jobs
+            .iter()
+            .map(|job| (job.agent_id.clone(), job.requested_by.clone()))
             .collect()
     }
 

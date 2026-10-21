@@ -27,7 +27,7 @@ export function SupervisorMenuBarSettings() {
     <SettingsSection title="Menu bar" icon="keyboard_command_key">
       <SettingsToggle
         label="Show the supervisor in the menu bar"
-        description="An icon at the top of the screen lists the supervisor's Quick Access skills. A click starts one, or sends it to the supervisor already running."
+        description="An icon at the top of the screen lists the supervisor's Quick Access skills. A click starts a new supervisor with that skill as its first task."
         checked={prefs.tray}
         onChange={(tray) => change({ tray })}
         testId="supervisor-menu-bar-toggle"

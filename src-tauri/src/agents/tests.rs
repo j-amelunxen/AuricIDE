@@ -312,6 +312,9 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         role: None,
         spawned_by_agent_id: None,
         resume_run_dir: None,
+        supervisor_key: None,
+        resumed_run_dir: None,
+        replaces_agent_id: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");
@@ -648,6 +651,7 @@ fn agent_info_tells_the_frontend_the_run_is_headless() {
         headless: true,
         role: AgentRole::Worker,
         spawned_by_agent_id: None,
+        supervisor_key: None,
     };
     let json = serde_json::to_value(&info).expect("serializes");
     assert_eq!(json["headless"], serde_json::Value::Bool(true));
@@ -1153,4 +1157,271 @@ fn a_supervisor_restored_after_a_restart_resumes_its_own_folder() {
 
     persisted.role = Some(AgentRole::Worker);
     assert_eq!(resumed_config(persisted, None).resume_run_dir, None);
+}
+
+// ── Several supervisors ─────────────────────────────────────────────────────
+
+fn live_supervisor(id: &str, key: Option<&str>, run_dir: &std::path::Path) -> AgentInfo {
+    AgentInfo {
+        id: id.into(),
+        role: AgentRole::Supervisor,
+        supervisor_key: key.map(str::to_string),
+        repo_path: Some(run_dir.to_string_lossy().into_owned()),
+        project_path: None,
+        ..crate::control_socket::protocol::tests::sample_agent()
+    }
+}
+
+#[test]
+fn a_run_folder_a_live_supervisor_works_in_is_not_resumed_twice() {
+    let app_data = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let run = crate::supervisor::new_supervisor_run_dir(home.path(), "2026-10-21_090000").unwrap();
+    let other =
+        crate::supervisor::new_supervisor_run_dir(home.path(), "2026-10-21_100000").unwrap();
+    let resume = |dir: &std::path::Path, live: &[AgentInfo]| {
+        admit_spawn(
+            supervisor_test_config(serde_json::json!({
+                "role": "supervisor", "resumeRunDir": dir.to_string_lossy()
+            })),
+            Some(app_data.path()),
+            Some(home.path()),
+            live,
+            &offered_claude(),
+            &no_modes,
+        )
+    };
+    let live = [live_supervisor("agent-3", None, &run)];
+    let refused = resume(&run, &live).unwrap_err();
+    assert!(
+        refused.contains("is already in use by the running supervisor agent-3"),
+        "{refused}"
+    );
+    let admitted = resume(&other, &live).expect("another run resumes");
+    assert_eq!(
+        admitted.resumed_run_dir, admitted.cwd,
+        "the resume is remembered"
+    );
+
+    let mut finished = live[0].clone();
+    finished.status = AgentStatus::Idle;
+    assert!(
+        resume(&run, &[finished]).is_ok(),
+        "a finished one holds nothing"
+    );
+}
+
+#[test]
+fn a_supervisor_key_is_checked_written_to_the_run_and_taken_back_on_resume() {
+    let app_data = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let admit = |extra: serde_json::Value, live: &[AgentInfo]| {
+        let mut config = serde_json::json!({ "role": "supervisor" });
+        for (key, value) in extra.as_object().unwrap() {
+            config[key] = value.clone();
+        }
+        admit_spawn(
+            supervisor_test_config(config),
+            Some(app_data.path()),
+            Some(home.path()),
+            live,
+            &offered_claude(),
+            &no_modes,
+        )
+    };
+    let keyed = admit(serde_json::json!({ "supervisorKey": "mail-triage" }), &[]).unwrap();
+    assert_eq!(keyed.supervisor_key.as_deref(), Some("mail-triage"));
+    let run = std::path::PathBuf::from(keyed.cwd.clone().unwrap());
+    assert_eq!(
+        crate::supervisor::several::read_run_key(&run).as_deref(),
+        Some("mail-triage")
+    );
+
+    let holder = [live_supervisor(
+        "agent-3",
+        Some("mail-triage"),
+        std::path::Path::new("/x"),
+    )];
+    let taken = admit(
+        serde_json::json!({ "supervisorKey": "mail-triage" }),
+        &holder,
+    );
+    assert!(taken
+        .unwrap_err()
+        .contains("is already the key of a running supervisor (agent-3)"));
+    let malformed = admit(serde_json::json!({ "supervisorKey": "Mail" }), &[]);
+    assert!(malformed
+        .unwrap_err()
+        .contains("is not a valid supervisor key"));
+
+    let resumed = admit(
+        serde_json::json!({ "resumeRunDir": run.to_string_lossy() }),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        resumed.supervisor_key.as_deref(),
+        Some("mail-triage"),
+        "a resume without a key of its own takes the run's"
+    );
+    let taken_on_resume = admit(
+        serde_json::json!({ "resumeRunDir": run.to_string_lossy() }),
+        &holder,
+    );
+    let refusal = taken_on_resume.unwrap_err();
+    assert!(
+        refusal.contains("remembers the key 'mail-triage'") && refusal.contains("(agent-3)"),
+        "the refusal says the run's own key is taken, and by whom: {refusal}"
+    );
+    assert!(crate::supervisor::several::is_busy_refusal(&refusal));
+
+    let worker = admit_spawn(
+        supervisor_test_config(serde_json::json!({ "supervisorKey": "mail-triage" })),
+        Some(app_data.path()),
+        Some(home.path()),
+        &[],
+        &offered_claude(),
+        &no_modes,
+    );
+    assert_eq!(
+        worker.unwrap_err(),
+        crate::supervisor::several::WORKER_KEY_MESSAGE
+    );
+}
+
+#[test]
+fn a_restored_supervisor_names_the_id_it_replaces_and_keeps_its_key() {
+    let mut persisted = persisted_from_config(
+        &supervisor_test_config(serde_json::json!({
+            "role": "supervisor", "supervisorKey": "mail-triage",
+            "cwd": "/Users/dev/.auric/supervisors/2026-10-01_090000"
+        })),
+        "agent-sup",
+        "claude",
+        0,
+    );
+    persisted.role = Some(AgentRole::Supervisor);
+    let resumed = resumed_config(persisted, None);
+    assert_eq!(resumed.supervisor_key.as_deref(), Some("mail-triage"));
+    assert_eq!(resumed.replaces_agent_id.as_deref(), Some("agent-sup"));
+}
+
+#[test]
+fn the_loser_of_a_launch_race_is_stopped_before_it_is_refused() {
+    let run = std::path::Path::new("/r/2026-10-21_090000");
+    let winner = live_supervisor("agent-3", Some("mail-triage"), run);
+    let keyed = supervisor_test_config(serde_json::json!({
+        "role": "supervisor", "supervisorKey": "mail-triage"
+    }));
+    let mut killed = false;
+    let refused = super::manager::refuse_late_supervisor(&[winner.clone()], &keyed, || {
+        killed = true;
+    });
+    assert!(refused.is_err() && killed, "same key: refused and stopped");
+
+    let mut resumed = supervisor_test_config(serde_json::json!({ "role": "supervisor" }));
+    resumed.resumed_run_dir = Some(run.to_string_lossy().into_owned());
+    let mut killed = false;
+    assert!(
+        super::manager::refuse_late_supervisor(&[winner.clone()], &resumed, || killed = true)
+            .is_err()
+            && killed,
+        "same run folder: refused and stopped"
+    );
+
+    let free = supervisor_test_config(serde_json::json!({
+        "role": "supervisor", "supervisorKey": "docs"
+    }));
+    let mut killed = false;
+    assert!(super::manager::refuse_late_supervisor(&[winner], &free, || killed = true).is_ok());
+    assert!(!killed, "the winner of nothing is left alone");
+}
+
+#[test]
+fn a_resumed_supervisor_takes_over_live_persisted_and_finished_children_and_says_so() {
+    let run = "/home/user/.auric/supervisors/2026-10-21_090000";
+    let persistence = crate::agent_persistence::new_agent_persistence_state(None);
+    {
+        let mut p = persistence.lock().unwrap();
+        let mut old = persisted_from_config(
+            &supervisor_test_config(serde_json::json!({ "role": "supervisor", "cwd": run })),
+            "agent-1",
+            "claude",
+            0,
+        );
+        old.role = Some(AgentRole::Supervisor);
+        p.record_spawn(old).unwrap();
+        let child = persisted_from_config(
+            &supervisor_test_config(serde_json::json!({ "spawnedByAgentId": "agent-1" })),
+            "agent-2",
+            "claude",
+            0,
+        );
+        p.record_spawn(child).unwrap();
+    }
+    let results = super::run_results::RunResults::default();
+    let finished_child = AgentInfo {
+        id: "agent-4".into(),
+        spawned_by_agent_id: Some("agent-1".into()),
+        ..crate::control_socket::protocol::tests::sample_agent()
+    };
+    results.record_finished(
+        super::run_results::RunResult::from_finish(
+            "agent-4",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || None,
+            1,
+        ),
+        finished_child,
+    );
+    let mut live = vec![
+        AgentInfo {
+            id: "agent-2".into(),
+            spawned_by_agent_id: Some("agent-1".into()),
+            ..crate::control_socket::protocol::tests::sample_agent()
+        },
+        AgentInfo {
+            id: "agent-5".into(),
+            spawned_by_agent_id: Some("agent-9".into()),
+            ..crate::control_socket::protocol::tests::sample_agent()
+        },
+    ];
+    let mut emitted = Vec::new();
+    let adoption = super::manager::adopt_into(
+        live.iter_mut(),
+        Some(&persistence),
+        Some(&results),
+        (run, None, "agent-20"),
+        |adoption| emitted.push(serde_json::to_value(adoption).unwrap()),
+    )
+    .expect("the run had a supervisor before");
+    assert_eq!(adoption.from_ids, vec!["agent-1"]);
+    assert_eq!(live[0].spawned_by_agent_id.as_deref(), Some("agent-20"));
+    assert_eq!(live[1].spawned_by_agent_id.as_deref(), Some("agent-9"));
+    assert_eq!(results.parent_of("agent-4").as_deref(), Some("agent-20"));
+    let persisted_parent = persistence
+        .lock()
+        .unwrap()
+        .agents()
+        .find(|agent| agent.id == "agent-2")
+        .and_then(|agent| agent.spawned_by_agent_id.clone());
+    assert_eq!(persisted_parent.as_deref(), Some("agent-20"));
+    assert_eq!(
+        emitted,
+        vec![serde_json::json!({ "fromIds": ["agent-1"], "toId": "agent-20" })],
+        "one event with exactly what moved"
+    );
+
+    let mut nothing = Vec::new();
+    assert!(super::manager::adopt_into(
+        live.iter_mut(),
+        Some(&persistence),
+        Some(&results),
+        ("/home/user/.auric/supervisors/other", None, "agent-21"),
+        |adoption| nothing.push(adoption.clone()),
+    )
+    .is_none());
+    assert!(nothing.is_empty(), "no earlier supervisor: no event");
 }

@@ -16,9 +16,36 @@ import {
   supervisorPromptSkills,
 } from './supervisorLaunchPrompt';
 
-/** One supervisor at a time: the tile focuses this one instead of starting a second. */
-export function findRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefined {
-  return agents.find((agent) => agent.role === 'supervisor' && !isFinishedAgent(agent));
+/**
+ * Every supervisor that still runs, newest first: by start time, a tie going
+ * to the one listed later. Several may run side by side, each over its own
+ * children.
+ */
+export function runningSupervisors(agents: AgentInfo[]): AgentInfo[] {
+  return agents
+    .map((agent, index) => ({ agent, index }))
+    .filter(({ agent }) => agent.role === 'supervisor' && !isFinishedAgent(agent))
+    .sort((a, b) => b.agent.startedAt - a.agent.startedAt || b.index - a.index)
+    .map(({ agent }) => agent);
+}
+
+/** The one a plain click on the tile brings forward instead of starting another. */
+export function newestRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefined {
+  return runningSupervisors(agents)[0];
+}
+
+const withoutTrailingSlash = (path: string) => path.replace(/\/+$/, '');
+
+/**
+ * The live supervisor already working in this run folder (its cwd is the
+ * folder). A run folder holds one supervisor at a time; Rust refuses a second
+ * with `run_dir_in_use`, this only says so before asking.
+ */
+export function supervisorUsingRunDir(agents: AgentInfo[], runDir: string): AgentInfo | undefined {
+  const wanted = withoutTrailingSlash(runDir);
+  return runningSupervisors(agents).find(
+    (agent) => agent.repoPath !== undefined && withoutTrailingSlash(agent.repoPath) === wanted
+  );
 }
 
 import {

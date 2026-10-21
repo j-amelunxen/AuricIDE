@@ -49,6 +49,7 @@ impl Dispatcher {
                 self.dismiss(params)
             }
             Request::SendInput(params) => {
+                let params = self.input_target(params)?;
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.send_input(params)
             }

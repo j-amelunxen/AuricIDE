@@ -16,9 +16,10 @@ pub const MAX_PAYLOAD_BYTES: usize = 16_384;
 pub const DEFAULT_JOBS_LIMIT: u32 = 50;
 pub const MAX_JOBS_LIMIT: u32 = 200;
 
-pub const METHODS: [&str; 17] = [
+pub const METHODS: [&str; 18] = [
     "session.hello",
     "supervisors.spawn",
+    "supervisors.list",
     "agents.list",
     "agents.read",
     "agents.send",
@@ -50,7 +51,7 @@ pub const EVENTS: [&str; 8] = [
 /// Every code the link may answer with. A code from elsewhere (the control
 /// dispatcher, the frontend) that is not in this list goes out as `internal`
 /// with the original code kept in the message.
-pub const ERROR_CODES: [&str; 23] = [
+pub const ERROR_CODES: [&str; 26] = [
     "invalid_request",
     "unsupported_version",
     "unknown_method",
@@ -73,8 +74,15 @@ pub const ERROR_CODES: [&str; 23] = [
     "quota_exceeded",
     "unknown_job",
     "busy",
+    "supervisor_key_invalid",
+    "supervisor_key_in_use",
+    "unknown_supervisor",
     "internal",
 ];
+
+/// What this server can do beyond protocol 1 as first published; a client
+/// checks before it relies on it (`session.hello`).
+pub const FEATURES: [&str; 1] = ["supervisorKeys"];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LinkError {
@@ -130,40 +138,141 @@ pub struct HelloParams {
     pub client: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SpawnSupervisorParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+/// `supervisors.spawn { if }`: what a key a live supervisor already carries
+/// means.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SpawnIf {
+    /// Refuse it: `supervisor_key_in_use`.
+    #[default]
+    New,
+    /// Answer that supervisor instead of starting one.
+    Existing,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SpawnSupervisorParams {
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Only with `key`.
+    #[serde(default, rename = "if")]
+    pub if_live: Option<SpawnIf>,
+    #[serde(default)]
+    pub task: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// What the frontend gets for `supervisors.spawn` (`spawn_supervisor`):
+/// `if` is decided before, here, and the key travels as `supervisorKey`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendSupervisorSpawn {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supervisor_key: Option<String>,
+}
+
+/// Exactly one of `agentId` and `supervisor` (a key) names the agent of
+/// `agents.read`, `agents.send` and `agents.kill`. The key is resolved when
+/// the request runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    Agent(String),
+    Supervisor(String),
+}
+
+fn target(
+    method: &str,
+    agent_id: Option<String>,
+    supervisor: Option<String>,
+) -> Result<Target, LinkError> {
+    match (agent_id, supervisor) {
+        (Some(agent_id), None) => Ok(Target::Agent(agent_id)),
+        (None, Some(key)) => {
+            check_key_format(&key)?;
+            Ok(Target::Supervisor(key))
+        }
+        _ => Err(LinkError::invalid_params(format!(
+            "{method}: give exactly one of agentId and supervisor"
+        ))),
+    }
+}
+
+/// A key a client passed that cannot be one: `supervisor_key_invalid`.
+pub fn check_key_format(key: &str) -> Result<(), LinkError> {
+    if crate::supervisor::several::is_valid_key(key) {
+        return Ok(());
+    }
+    Err(LinkError::new(
+        "supervisor_key_invalid",
+        crate::supervisor::several::key_invalid_message(key),
+    ))
+}
+
+fn check_optional_key(key: Option<&str>) -> Result<(), LinkError> {
+    key.map_or(Ok(()), check_key_format)
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RawRead {
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    supervisor: Option<String>,
+    #[serde(default)]
+    since_offset: Option<u64>,
+    #[serde(default)]
+    tail_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReadParams {
-    pub agent_id: String,
-    #[serde(default)]
+    pub target: Target,
     pub since_offset: Option<u64>,
-    #[serde(default)]
     pub tail_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SendParams {
-    pub agent_id: String,
-    pub text: String,
+struct RawSend {
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    supervisor: Option<String>,
+    text: String,
     #[serde(default = "default_true")]
+    submit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SendParams {
+    pub target: Target,
+    pub text: String,
     pub submit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RawAgent {
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    supervisor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct AgentParams {
-    pub agent_id: String,
+    pub target: Target,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -175,9 +284,14 @@ pub struct SubscribeParams {
     pub output: Option<bool>,
     #[serde(default)]
     pub since_offsets: Option<BTreeMap<String, u64>>,
-    /// Default `true`: `job.*` events for every job of the register.
+    /// Default `true`: `job.*` events for every job of the register, or with
+    /// `supervisors` for the jobs those supervisors asked for.
     #[serde(default)]
     pub jobs: Option<bool>,
+    /// Keys or agent ids: each supervisor's whole subtree, recomputed every
+    /// poll (`subtree.rs`). With `agentIds`, the union of both.
+    #[serde(default)]
+    pub supervisors: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -242,6 +356,9 @@ pub struct ProposeParams {
     pub base_hash: Value,
     #[serde(default)]
     pub message: Option<String>,
+    /// The supervisor the proposal is for: named in the inbox notification.
+    #[serde(default)]
+    pub supervisor: Option<String>,
 }
 
 impl ProposeParams {
@@ -264,6 +381,9 @@ pub struct CreateJobParams {
     pub kind: String,
     /// Opaque to the IDE; handed to the agent as data. Required, `null` included.
     pub payload: Value,
+    /// The supervisor that wants the job: it is told when the job ends.
+    #[serde(default)]
+    pub supervisor: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,6 +419,7 @@ fn default_true() -> bool {
 pub enum LinkRequest {
     Hello(HelloParams),
     SpawnSupervisor(SpawnSupervisorParams),
+    ListSupervisors,
     ListAgents,
     Read(ReadParams),
     Send(SendParams),
@@ -393,22 +514,51 @@ pub fn parse_message(text: &str) -> Result<(Value, LinkRequest), Rejected> {
 fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
     let request = match method {
         "session.hello" => LinkRequest::Hello(params(method, raw)?),
-        "supervisors.spawn" => LinkRequest::SpawnSupervisor(params(method, raw)?),
+        "supervisors.spawn" => {
+            let spawn: SpawnSupervisorParams = params(method, raw)?;
+            if spawn.key.is_none() && spawn.if_live.is_some() {
+                return Err(LinkError::invalid_params(
+                    "supervisors.spawn: if needs a key",
+                ));
+            }
+            check_optional_key(spawn.key.as_deref())?;
+            LinkRequest::SpawnSupervisor(spawn)
+        }
+        "supervisors.list" => {
+            params::<Empty>(method, raw)?;
+            LinkRequest::ListSupervisors
+        }
         "agents.list" => {
             params::<Empty>(method, raw)?;
             LinkRequest::ListAgents
         }
         "agents.read" => {
-            let read: ReadParams = params(method, raw)?;
+            let read: RawRead = params(method, raw)?;
             if read.tail_bytes.is_some_and(|tail| tail > MAX_TAIL_BYTES) {
                 return Err(LinkError::invalid_params(format!(
                     "agents.read: tailBytes is at most {MAX_TAIL_BYTES}"
                 )));
             }
-            LinkRequest::Read(read)
+            LinkRequest::Read(ReadParams {
+                target: target(method, read.agent_id, read.supervisor)?,
+                since_offset: read.since_offset,
+                tail_bytes: read.tail_bytes,
+            })
         }
-        "agents.send" => LinkRequest::Send(params(method, raw)?),
-        "agents.kill" => LinkRequest::Kill(params(method, raw)?),
+        "agents.send" => {
+            let send: RawSend = params(method, raw)?;
+            LinkRequest::Send(SendParams {
+                target: target(method, send.agent_id, send.supervisor)?,
+                text: send.text,
+                submit: send.submit,
+            })
+        }
+        "agents.kill" => {
+            let kill: RawAgent = params(method, raw)?;
+            LinkRequest::Kill(AgentParams {
+                target: target(method, kill.agent_id, kill.supervisor)?,
+            })
+        }
         "events.subscribe" => LinkRequest::Subscribe(params(method, raw)?),
         "events.unsubscribe" => {
             params::<Empty>(method, raw)?;
@@ -436,6 +586,7 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
         "documents.propose" => {
             let propose: ProposeParams = params(method, raw)?;
             propose.base()?;
+            check_optional_key(propose.supervisor.as_deref())?;
             LinkRequest::DocumentPropose(propose)
         }
         "jobs.create" => {
@@ -449,6 +600,7 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
             if create.kind.trim().is_empty() {
                 return Err(LinkError::invalid_params("jobs.create: kind is empty"));
             }
+            check_optional_key(create.supervisor.as_deref())?;
             LinkRequest::CreateJob(create)
         }
         "jobs.list" => {
@@ -492,7 +644,7 @@ pub fn fatal(error: &LinkError) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn fixtures() -> Value {
@@ -518,6 +670,7 @@ mod tests {
         assert_eq!(strings(&fixtures["methods"]), METHODS.to_vec());
         assert_eq!(strings(&fixtures["events"]), EVENTS.to_vec());
         assert_eq!(strings(&fixtures["errorCodes"]), ERROR_CODES.to_vec());
+        assert_eq!(strings(&fixtures["features"]), FEATURES.to_vec());
         assert_eq!(
             strings(&fixtures["supervisorProviders"]),
             crate::agents::manager::SUPERVISOR_PROVIDERS.to_vec()
@@ -589,6 +742,16 @@ mod tests {
             request,
             LinkRequest::Send(SendParams { submit: true, .. })
         ));
+        let (_, request) = parse_message(
+            r#"{"v":1,"id":1,"method":"agents.kill","params":{"supervisor":"mail-triage"}}"#,
+        )
+        .expect("parses");
+        assert_eq!(
+            request,
+            LinkRequest::Kill(AgentParams {
+                target: Target::Supervisor("mail-triage".into())
+            })
+        );
         let rejected = parse_message(
             r#"{"v":1,"id":1,"method":"documents.propose","params":{"project":"/p","type":"t","id":"docs/a.json","document":{},"baseHash":42}}"#,
         )

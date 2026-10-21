@@ -124,6 +124,7 @@ impl Dispatcher {
                     watch.nudged = true; // Reserve before IO: a failed write is never retried.
                     match self.send_input(SendInputParams {
                         agent_id: agent.id.clone(),
+                        supervisor: None,
                         text: STALL_NUDGE.into(),
                         enter: true,
                     }) {

@@ -21,6 +21,7 @@ pub mod policy;
 pub mod proposals;
 pub mod protocol;
 mod subscription;
+pub mod subtree;
 
 #[cfg(test)]
 mod test_support;
@@ -128,6 +129,16 @@ pub struct Link {
     vanished: Mutex<std::collections::HashMap<String, u64>>,
 }
 
+/// An agent as the link shows it: the control socket's summary plus the
+/// topmost supervisor of its chain, so a client need not rebuild the tree.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkAgent {
+    #[serde(flatten)]
+    pub summary: AgentSummary,
+    pub root_supervisor_id: Option<String>,
+}
+
 /// Whether an agent belongs to the supervisor tree: a supervisor, or an agent
 /// a supervisor started. Only a supervisor's spawn sets `spawnedByAgentId`, so
 /// that field alone is the second half; it also keeps a child in the tree
@@ -181,25 +192,79 @@ impl Link {
     }
 
     /// The supervisor tree as the IDE lists it now, job agents included.
-    pub fn tree(&self) -> Vec<AgentSummary> {
+    pub fn tree(&self) -> Vec<LinkAgent> {
         let job_agents: BTreeSet<String> = self.jobs.agent_ids().into_iter().collect();
-        self.dispatcher
+        let summaries: Vec<AgentSummary> = self
+            .dispatcher
             .summaries()
             .into_iter()
             .filter(|agent| in_tree(agent) || job_agents.contains(&agent.info.id))
+            .collect();
+        let infos: Vec<crate::agents::AgentInfo> =
+            summaries.iter().map(|agent| agent.info.clone()).collect();
+        summaries
+            .into_iter()
+            .map(|summary| LinkAgent {
+                root_supervisor_id: subtree::root_supervisor_id(&infos, &summary.info.id),
+                summary,
+            })
             .collect()
     }
 
     /// Refuses an id outside the tree exactly like one that does not exist,
     /// so the client learns nothing about agents it may not touch.
     fn ensure_in_tree(&self, agent_id: &str) -> Result<(), LinkError> {
-        if self.tree().iter().any(|agent| agent.info.id == agent_id) {
+        if self
+            .tree()
+            .iter()
+            .any(|agent| agent.summary.info.id == agent_id)
+        {
             return Ok(());
         }
         Err(LinkError::new(
             "unknown_agent",
             format!("no agent with id {agent_id} in the supervisor tree"),
         ))
+    }
+
+    /// The live supervisor a key names now, or `unknown_supervisor`.
+    pub(crate) fn supervisor_for_key(
+        &self,
+        key: &str,
+    ) -> Result<crate::agents::AgentInfo, LinkError> {
+        self.dispatcher.supervisor_by_key(key).ok_or_else(|| {
+            LinkError::from(crate::control_socket::protocol::unknown_supervisor(key))
+        })
+    }
+
+    /// The agent id a request names: an id in the tree, or the live
+    /// supervisor carrying a key, looked up at this moment.
+    fn resolve(&self, target: Target) -> Result<String, LinkError> {
+        match target {
+            Target::Agent(agent_id) => {
+                self.ensure_in_tree(&agent_id)?;
+                Ok(agent_id)
+            }
+            Target::Supervisor(key) => Ok(self.supervisor_for_key(&key)?.id),
+        }
+    }
+
+    /// Live supervisors, then finished ones whose result is still kept, each
+    /// with its whole subtree counted, finished children included.
+    fn list_supervisors(&self) -> Result<Value, LinkError> {
+        let mut agents: Vec<crate::agents::AgentInfo> = self
+            .tree()
+            .into_iter()
+            .map(|agent| agent.summary.info)
+            .collect();
+        let live: BTreeSet<String> = agents.iter().map(|agent| agent.id.clone()).collect();
+        agents.extend(
+            self.dispatcher
+                .finished_agents()
+                .into_iter()
+                .filter(|agent| !live.contains(&agent.id)),
+        );
+        to_value(json!({ "supervisors": subtree::supervisor_list(&agents) }))
     }
 
     fn control(&self, request: Request) -> Result<Value, LinkError> {
@@ -226,30 +291,31 @@ impl Link {
                 "server": "AuricIDE",
                 "methods": METHODS,
                 "events": EVENTS,
+                "features": FEATURES,
             })),
             LinkRequest::SpawnSupervisor(params) => self.spawn_supervisor(params),
-            LinkRequest::ListAgents => Ok(json!({ "agents": self.tree() })),
+            LinkRequest::ListSupervisors => self.list_supervisors(),
+            LinkRequest::ListAgents => to_value(json!({ "agents": self.tree() })),
             LinkRequest::Read(params) => {
-                self.ensure_in_tree(&params.agent_id)?;
+                let agent_id = self.resolve(params.target)?;
                 self.control(Request::ReadOutput(ReadOutputParams {
-                    agent_id: params.agent_id,
+                    agent_id,
                     tail_bytes: Some(params.tail_bytes.unwrap_or(DEFAULT_TAIL_BYTES)),
                     since_offset: params.since_offset,
                 }))
             }
             LinkRequest::Send(params) => {
-                self.ensure_in_tree(&params.agent_id)?;
+                let agent_id = self.resolve(params.target)?;
                 self.control(Request::SendInput(SendInputParams {
-                    agent_id: params.agent_id,
+                    agent_id,
+                    supervisor: None,
                     text: params.text,
                     enter: params.submit,
                 }))
             }
             LinkRequest::Kill(params) => {
-                self.ensure_in_tree(&params.agent_id)?;
-                self.control(Request::Kill(AgentIdParams {
-                    agent_id: params.agent_id,
-                }))
+                let agent_id = self.resolve(params.target)?;
+                self.control(Request::Kill(AgentIdParams { agent_id }))
             }
             LinkRequest::Subscribe(_) | LinkRequest::Unsubscribe => Err(LinkError::new(
                 "internal",
@@ -315,14 +381,53 @@ impl Link {
         }
     }
 
-    /// A new supervisor, built by the frontend exactly like one from the
-    /// Quick Access tile. The frontend's own codes (`supervisor_unavailable`)
-    /// are link codes, so its answer is read raw rather than through the
-    /// control socket's mapping.
+    /// A supervisor for the client: with `key` and `if: "existing"` the live
+    /// one carrying that key when there is one, else a new one, built by the
+    /// frontend exactly like one from the Quick Access tile. The frontend's
+    /// own codes (`supervisor_unavailable`) are link codes, so its answer is
+    /// read raw rather than through the control socket's mapping.
     fn spawn_supervisor(&self, params: SpawnSupervisorParams) -> Result<Value, LinkError> {
+        let key = params.key.clone();
+        let reuse = params.if_live == Some(SpawnIf::Existing);
+        let existing = |key: &str| {
+            self.dispatcher
+                .supervisor_by_key(key)
+                .map(|holder| json!({ "agentId": holder.id, "key": key, "existing": true }))
+        };
+        if let Some(key) = key.as_deref() {
+            match (existing(key), reuse) {
+                // The task is not sent: it was meant for a new supervisor.
+                (Some(answer), true) => return Ok(answer),
+                (Some(_), false) => {
+                    let holder = self.supervisor_for_key(key)?;
+                    return Err(LinkError::new(
+                        "supervisor_key_in_use",
+                        crate::supervisor::several::key_in_use_message(key, &holder.id),
+                    ));
+                }
+                (None, _) => {}
+            }
+        }
+        let request = FrontendSupervisorSpawn {
+            task: params.task,
+            provider: params.provider,
+            model: params.model,
+            supervisor_key: key.clone(),
+        };
+        match self.start_supervisor(request) {
+            Ok(agent_id) => Ok(json!({ "agentId": agent_id, "key": key, "existing": false })),
+            // Another client took the key between the look and the start.
+            Err(error) if reuse && error.code == "supervisor_key_in_use" => {
+                key.as_deref().and_then(existing).ok_or(error)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn start_supervisor(&self, request: FrontendSupervisorSpawn) -> Result<String, LinkError> {
         let reply = self
             .dispatcher
-            .via_frontend_raw(SPAWN_SUPERVISOR_METHOD, to_value(&params)?)
+            .via_frontend_raw(SPAWN_SUPERVISOR_METHOD, to_value(&request)?)
             .map_err(LinkError::from)?;
         if !reply.ok {
             let Some(error) = reply.error else {
@@ -341,10 +446,13 @@ impl Link {
             .ok_or_else(|| {
                 LinkError::new("internal", "the IDE answered the spawn without an agentId")
             })?;
-        Ok(json!({ "agentId": agent_id }))
+        Ok(agent_id.to_string())
     }
 
     fn propose(&self, policy: &LinkPolicy, params: &ProposeParams) -> Result<Value, LinkError> {
+        if let Some(key) = params.supervisor.as_deref() {
+            self.supervisor_for_key(key)?;
+        }
         let proposal = documents::propose(
             policy,
             &ProposeRequest {
@@ -356,7 +464,10 @@ impl Link {
                 message: params.message.as_deref(),
             },
         )?;
-        self.host.notify(proposal_notification(&proposal));
+        self.host.notify(proposal_notification(
+            &proposal,
+            params.supervisor.as_deref(),
+        ));
         to_value(proposal)
     }
 
@@ -365,7 +476,7 @@ impl Link {
         if let Some(ids) = &params.agent_ids {
             if let Some(missing) = ids
                 .iter()
-                .find(|id| !tree.iter().any(|agent| &agent.info.id == *id))
+                .find(|id| !tree.iter().any(|agent| &agent.summary.info.id == *id))
             {
                 return Reply::of(Err(LinkError::new(
                     "unknown_agent",
@@ -373,10 +484,11 @@ impl Link {
                 )));
             }
         }
-        let subscription = Subscription::start(&params, &tree, self.jobs.cursor());
-        let agents: Vec<&AgentSummary> = tree
+        let subscription =
+            Subscription::start(&params, &tree, &self.jobs.requesters(), self.jobs.cursor());
+        let agents: Vec<&LinkAgent> = tree
             .iter()
-            .filter(|agent| subscription.covers(&agent.info.id))
+            .filter(|agent| subscription.covers(&agent.summary.info.id))
             .collect();
         Reply {
             result: to_value(json!({ "agents": agents })),
@@ -449,12 +561,16 @@ fn short(commit: &str) -> &str {
     &commit[..commit.len().min(12)]
 }
 
-fn proposal_notification(proposal: &documents::Proposal) -> NotificationInput {
+fn proposal_notification(proposal: &documents::Proposal, key: Option<&str>) -> NotificationInput {
     let verb = if proposal.created { "new" } else { "change to" };
+    let heading = key.map_or_else(
+        || "Proposal".to_string(),
+        |key| format!("Proposal for {key}"),
+    );
     notification(
         &proposal.project,
         format!(
-            "Proposal: {verb} {} {}",
+            "{heading}: {verb} {} {}",
             proposal.document_type, proposal.id
         ),
         format!(
@@ -711,7 +827,9 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>, limits: Limits, over_
             last_poll = Instant::now();
             if let Some(active) = subscription.as_mut() {
                 let tree = link.tree();
-                let mut events = active.poll(&tree, |id, since| link.output_since(id, since));
+                let requesters = link.jobs().requesters();
+                let mut events =
+                    active.poll(&tree, &requesters, |id, since| link.output_since(id, since));
                 events.extend(active.poll_jobs(link.jobs()));
                 for (name, data) in events {
                     seq += 1;

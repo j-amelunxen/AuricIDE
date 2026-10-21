@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './agentControl.fixtures.json';
+import linkFixtures from './supervisorLink.fixtures.json';
 import {
+  isSupervisorKey,
   AGENT_ROLES,
   buildControlRequest,
   CLIENT_ERROR_CODES,
@@ -20,6 +22,15 @@ describe('agent control contract', () => {
     expect([...CONTROL_ERROR_CODES].sort()).toEqual([...fixtures.errorCodes].sort());
     for (const code of fixtures.clientOnlyErrorCodes) {
       expect(CLIENT_ERROR_CODES).toContain(code);
+    }
+  });
+
+  it('accepts exactly the supervisor keys the link fixtures call valid', () => {
+    for (const key of linkFixtures.supervisorKeys.valid)
+      expect(isSupervisorKey(key), key).toBe(true);
+    // An agent id as a key would make one name point at two supervisors.
+    for (const key of linkFixtures.supervisorKeys.invalid) {
+      expect(isSupervisorKey(key), key).toBe(false);
     }
   });
 

@@ -350,13 +350,16 @@ impl Dispatcher {
         match request {
             Request::ListAgents(_) => self.list_agents(|_| true),
             Request::ReadOutput(params) => self.read_output(params),
-            Request::SendInput(params) => self.send_input(params),
+            Request::SendInput(params) => self.send_input(self.input_target(params)?),
             Request::Kill(params) => self.kill(params),
-            Request::Spawn(params) => self.spawn(FrontendSpawnParams {
-                params,
-                spawned_by_agent_id: None,
-                run_source: None,
-            }),
+            Request::Spawn(params) => {
+                self.ensure_key_free(&params)?;
+                self.spawn(FrontendSpawnParams {
+                    params,
+                    spawned_by_agent_id: None,
+                    run_source: None,
+                })
+            }
             Request::ListProjects(params) => self.list_projects(params.project.as_deref()),
             Request::AwaitResult(params) => self.await_result(params),
             Request::RemoveWorktree(params) => self.remove_worktree(params),
@@ -410,6 +413,11 @@ impl Dispatcher {
             .collect()
     }
 
+    /// Finished agents whose result and listing are still kept, newest first.
+    pub(crate) fn finished_agents(&self) -> Vec<AgentInfo> {
+        self.run_results.finished_agents()
+    }
+
     /// The result booked for a finished agent, while it is still kept. Its
     /// `exitCode` is `None` when the agent was killed.
     pub(crate) fn run_result(&self, agent_id: &str) -> Option<RunResult> {
@@ -419,6 +427,42 @@ impl Dispatcher {
     /// The status a finished agent's output buffer was closed with.
     pub(crate) fn final_status(&self, agent_id: &str) -> Option<AgentStatus> {
         self.buffers.read(agent_id, 0, None)?.final_status
+    }
+
+    /// The live supervisor that carries `key`, as the IDE lists it now.
+    pub(crate) fn supervisor_by_key(&self, key: &str) -> Option<AgentInfo> {
+        crate::supervisor::several::live_supervisor_with_key(&self.backend.agents(), key).cloned()
+    }
+
+    /// `send_input` addressed by key: the key is resolved now, at the call,
+    /// so a resumed or restarted supervisor (a new agent id) is still reached.
+    pub(crate) fn input_target(
+        &self,
+        mut params: SendInputParams,
+    ) -> Result<SendInputParams, ControlError> {
+        if let Some(key) = params.supervisor.take() {
+            let supervisor = self
+                .supervisor_by_key(&key)
+                .ok_or_else(|| unknown_supervisor(&key))?;
+            params.agent_id = supervisor.id;
+        }
+        Ok(params)
+    }
+
+    /// A supervisor spawn under a key a live supervisor carries is refused
+    /// here, before the frontend builds anything. Rust's `admit_spawn` holds
+    /// the same rule for every other route.
+    fn ensure_key_free(&self, params: &SpawnParams) -> Result<(), ControlError> {
+        let Some(key) = params.supervisor_key.as_deref() else {
+            return Ok(());
+        };
+        match self.supervisor_by_key(key) {
+            Some(holder) => Err(ControlError::new(
+                ErrorCode::SupervisorKeyInUse,
+                crate::supervisor::several::key_in_use_message(key, &holder.id),
+            )),
+            None => Ok(()),
+        }
     }
 
     fn find_agent(&self, agent_id: &str) -> Option<AgentInfo> {

@@ -227,3 +227,34 @@ runs unattended, and the scope, which still ends at the supervisor's own
 children. A supervisor that ignores its instructions can now approve whatever
 its children ask within that mode; that is the price of not routing every
 question through the human, taken on purpose.
+
+## Amendment 2026-10-21: several supervisors at once
+
+The IDE allowed one supervisor: a second start became a message to the
+running one, and resuming a run was blocked while any supervisor ran. That
+rule lived only in the frontend; the scope itself was already cut per
+supervisor (the PID walk returns the caller's own id, `dispatch_supervised`
+filters on `spawnedByAgentId`).
+
+- **Several may run.** Each keeps exactly the scope this ADR gives one: its
+  own children, nothing else. Limits stay per supervisor, so two supervisors
+  can each fill a project's `maxRunning`; a combined limit was considered and
+  left out, because the policy names what one supervisor may do, not what the
+  machine may run.
+- **A run folder belongs to one live supervisor.** Two supervisors in one
+  folder would share files the human reads as one run's notes. `admit_spawn`
+  refuses the second (`run_dir_in_use`), on every route.
+- **Keys are addresses, not identities.** A client of the supervisor link or
+  of `--control` may give a supervisor a key and reach it by that key after a
+  resume or restart, when its agent id has changed. The key grants nothing:
+  identity still comes from the kernel, and a supervisor caller addressing
+  another supervisor by key is refused like any foreign id.
+- **A resumed supervisor adopts its run's children.** Before, resuming a run
+  left the earlier children pointing at a dead id: the resumed supervisor
+  could not read, await or stop them. Their `spawnedByAgentId` now moves to
+  the new id. This widens no scope: they were that run's children already.
+
+What this gives up: one supervisor as the single place where the human sees
+what was delegated. The IDE now has to show which child belongs to which
+supervisor (colour families in the agent tabs), and the human has to keep
+several conversations apart.

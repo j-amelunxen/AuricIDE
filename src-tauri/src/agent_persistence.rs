@@ -52,6 +52,10 @@ pub struct PersistedAgent {
     pub role: Option<crate::agents::AgentRole>,
     #[serde(default)]
     pub spawned_by_agent_id: Option<String>,
+    /// A supervisor's key (`AgentConfig::supervisor_key`). Missing on old
+    /// files: none.
+    #[serde(default)]
+    pub supervisor_key: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -141,6 +145,30 @@ impl AgentPersistence {
         self.interrupted.clone()
     }
 
+    /// Every agent the file holds: the interrupted ones, then this run's.
+    pub fn agents(&self) -> impl Iterator<Item = &PersistedAgent> {
+        self.interrupted.iter().chain(self.active.iter())
+    }
+
+    /// A resumed supervisor takes over the children its run's earlier
+    /// supervisors started, interrupted and running alike, so a child resumed
+    /// later reports to it. Saved when anything moved; returns how many did.
+    pub fn adopt_children(
+        &mut self,
+        adoption: &crate::supervisor::several::Adoption,
+    ) -> Result<usize, String> {
+        let mut moved = 0;
+        for agent in self.interrupted.iter_mut().chain(self.active.iter_mut()) {
+            if adoption.apply(&mut agent.spawned_by_agent_id) {
+                moved += 1;
+            }
+        }
+        if moved > 0 {
+            self.save()?;
+        }
+        Ok(moved)
+    }
+
     /// Removes and returns an interrupted agent (for resume).
     /// Drops left-behind agents whose run already has its verdict. Unlike
     /// `take_interrupted`, they leave the list at once, whether or not the
@@ -168,6 +196,19 @@ impl AgentPersistence {
         self.write(&remaining, &self.active)?;
         self.interrupted = remaining;
         Ok(Some(agent))
+    }
+
+    /// Puts back an agent `take_interrupted` handed out whose resume was
+    /// refused for now (its run folder or key is busy), so it is offered again.
+    pub fn restore_interrupted(&mut self, agent: PersistedAgent) -> Result<(), String> {
+        if self.interrupted.iter().any(|kept| kept.id == agent.id) {
+            return Ok(());
+        }
+        let mut restored = self.interrupted.clone();
+        restored.push(agent);
+        self.write(&restored, &self.active)?;
+        self.interrupted = restored;
+        Ok(())
     }
 
     pub fn discard_interrupted(&mut self, agent_id: &str) -> Result<bool, String> {
@@ -252,7 +293,56 @@ mod tests {
             review_of_ticket_id: None,
             role: None,
             spawned_by_agent_id: None,
+            supervisor_key: None,
         }
+    }
+
+    #[test]
+    fn a_resumed_supervisor_takes_over_persisted_children_and_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agents.json");
+        let mut supervisor = sample_agent("agent-1");
+        supervisor.role = Some(crate::agents::AgentRole::Supervisor);
+        let mut interrupted_child = sample_agent("agent-2");
+        interrupted_child.spawned_by_agent_id = Some("agent-1".into());
+        let mut other = sample_agent("agent-3");
+        other.spawned_by_agent_id = Some("agent-9".into());
+        std::fs::write(
+            &path,
+            serde_json::to_string(&serde_json::json!({
+                "agents": [supervisor, interrupted_child, other]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut persistence = AgentPersistence::load(Some(path.clone()));
+        let mut live_child = sample_agent("agent-4");
+        live_child.spawned_by_agent_id = Some("agent-1".into());
+        persistence.record_spawn(live_child).unwrap();
+        assert_eq!(
+            persistence
+                .agents()
+                .map(|agent| agent.id.as_str())
+                .collect::<Vec<_>>(),
+            ["agent-1", "agent-2", "agent-3", "agent-4"]
+        );
+
+        let adoption = crate::supervisor::several::Adoption {
+            from_ids: vec!["agent-1".into()],
+            to_id: "agent-20".into(),
+        };
+        assert_eq!(persistence.adopt_children(&adoption).unwrap(), 2);
+        let reloaded = AgentPersistence::load(Some(path));
+        let parent = |id: &str| {
+            reloaded
+                .interrupted()
+                .into_iter()
+                .find(|agent| agent.id == id)
+                .and_then(|agent| agent.spawned_by_agent_id)
+        };
+        assert_eq!(parent("agent-2").as_deref(), Some("agent-20"));
+        assert_eq!(parent("agent-4").as_deref(), Some("agent-20"));
+        assert_eq!(parent("agent-3").as_deref(), Some("agent-9"));
     }
 
     /// Blocks the staging file, so the next save fails.
@@ -459,6 +549,22 @@ mod tests {
         // Removal is persisted.
         let reloaded = AgentPersistence::load(Some(path));
         assert!(reloaded.interrupted().is_empty());
+    }
+
+    #[test]
+    fn a_resume_refused_for_now_is_offered_again() {
+        let path = temp_path("agents.json");
+        {
+            let mut p = AgentPersistence::load(Some(path.clone()));
+            p.record_spawn(sample_agent("agent-1")).unwrap();
+        }
+        let mut p = AgentPersistence::load(Some(path.clone()));
+        let taken = p.take_interrupted("agent-1").unwrap().unwrap();
+        p.restore_interrupted(taken.clone()).unwrap();
+        p.restore_interrupted(taken).unwrap();
+        assert_eq!(p.interrupted(), vec![sample_agent("agent-1")], "once");
+        let reloaded = AgentPersistence::load(Some(path));
+        assert_eq!(reloaded.interrupted(), vec![sample_agent("agent-1")]);
     }
 
     #[test]

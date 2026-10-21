@@ -140,7 +140,7 @@ export function SupervisorQuickAccessDialog({ onClose }: { onClose: () => void }
       fixedProvider={provider}
       discovered={[]}
       discoveryReady
-      note="The supervisor loads no skills from disk, so each skill here is a prompt. It becomes the first task of a new supervisor, or a message to the one already running."
+      note="The supervisor loads no skills from disk, so each skill here is a prompt. Each pick starts a new supervisor with the skill as its first task."
       onSave={(saved) =>
         saveSupervisorPresets({ skills: saved.skills, wheelSlots: saved.wheelSlots })
       }

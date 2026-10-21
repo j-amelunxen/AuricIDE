@@ -33,7 +33,7 @@ export function menuBarConfig(
   presets: SupervisorPresets,
   library: AuricSkillDefinition[],
   prefs: MenuBarPrefs,
-  running: boolean
+  running: number
 ): MenuBarConfig {
   const skills = menuSkillEntries(presets.skills, library).map((entry) => {
     const { label } = resolveAuricSkillReference(entry, library);

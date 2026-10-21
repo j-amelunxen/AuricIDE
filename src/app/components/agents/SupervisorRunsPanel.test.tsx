@@ -18,6 +18,12 @@ const RUN = {
   truncated: false,
 };
 
+const OTHER = {
+  ...RUN,
+  name: '2026-10-15_090000',
+  path: '/home/me/.auric/supervisors/2026-10-15_090000',
+};
+
 const supervisor: AgentInfo = {
   id: 'sup-1',
   name: 'Supervisor',
@@ -74,17 +80,77 @@ describe('SupervisorRunsPanel', () => {
     expect(spawnSupervisor).toHaveBeenCalledWith({ task: '', resumeRunDir: RUN.path });
   });
 
-  it('holds resume back while a supervisor runs, and says why', async () => {
-    useStore.setState({ agents: [supervisor] });
+  it('lets a run be resumed while a supervisor runs in another folder', async () => {
+    useStore.setState({
+      agents: [{ ...supervisor, repoPath: '/home/me/.auric/supervisors/2026-10-20_080000' }],
+    });
     render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
     const resume = await screen.findByRole('button', {
       name: 'Resume supervisor run Oct 16, 18:50',
     });
-    expect(resume).toBeDisabled();
-    expect(resume).toHaveAttribute(
-      'title',
-      'A supervisor is already running. Stop it to resume this run.'
-    );
+    expect(resume).toBeEnabled();
+  });
+
+  it('offers to show the supervisor a run is live in, rather than a resume that cannot start', async () => {
+    const onSelectAgent = vi.fn();
+    useStore.setState({
+      agents: [{ ...supervisor, supervisorKey: 'mail-triage', repoPath: `${RUN.path}/` }],
+    });
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={onSelectAgent} />);
+
+    expect(await screen.findByText('Running in mail-triage')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Resume supervisor run Oct 16, 18:50' })
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show mail-triage' }));
+    expect(onSelectAgent).toHaveBeenCalledWith('sup-1');
+  });
+
+  it('shows how long ago each file changed', async () => {
+    supervisorRunFiles.mockResolvedValue([
+      {
+        relativePath: 'notes.md',
+        path: `${RUN.path}/notes.md`,
+        size: 1,
+        modifiedAtMs: Date.now() - 5 * 60_000,
+      },
+    ]);
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Oct 16, 18:50/ }));
+    expect(await screen.findByRole('button', { name: /^notes\.md/ })).toHaveTextContent('5m');
+  });
+
+  it('keeps several runs open at once', async () => {
+    supervisorRunsList.mockResolvedValue([RUN, OTHER]);
+    supervisorRunFiles.mockImplementation(async (path: string) => [
+      {
+        relativePath: path === RUN.path ? 'a.md' : 'b.md',
+        path: `${path}/x.md`,
+        size: 1,
+        modifiedAtMs: 1,
+      },
+    ]);
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Oct 16, 18:50/ }));
+    await screen.findByRole('button', { name: /^a\.md/ });
+    fireEvent.click(screen.getByRole('button', { name: /^Oct 15, 09:00/ }));
+    await screen.findByRole('button', { name: /^b\.md/ });
+    expect(screen.getByRole('button', { name: /^a\.md/ })).toBeInTheDocument();
+  });
+
+  it('offers to try again when the runs cannot be read', async () => {
+    supervisorRunsList.mockRejectedValueOnce(new Error('permission denied'));
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Oct 16, 18:50')).toBeInTheDocument();
+  });
+
+  it('reads the runs again when the window comes back into focus', async () => {
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+    await screen.findByText('Oct 16, 18:50');
+    supervisorRunsList.mockResolvedValue([OTHER, RUN]);
+    fireEvent.focus(window);
+    expect(await screen.findByText('Oct 15, 09:00')).toBeInTheDocument();
   });
 
   it('says so when no supervisor has run yet', async () => {

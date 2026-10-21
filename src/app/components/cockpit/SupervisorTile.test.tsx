@@ -164,6 +164,7 @@ describe('Supervisor tile as a Quick Access tile', () => {
   beforeEach(() => {
     localStorage.clear();
     spawnAgent.mockClear();
+    supervisorRunsList.mockReset().mockResolvedValue([]);
     supervisorPolicyGet.mockReset();
     supervisorPolicyGet.mockResolvedValue({ policy: allowing('/work/project-a'), rejected: [] });
     useStore.setState({ starredProjects: [], agents: [], toasts: [], selectedAgentId: null });
@@ -203,7 +204,7 @@ describe('Supervisor tile as a Quick Access tile', () => {
     expect(config.model).toBe('haiku');
   });
 
-  it('sends a skill to the running supervisor as a message', async () => {
+  it('starts a new supervisor on a skill even while one runs', async () => {
     saveSupervisorPresets({ skills: [status], wheelSlots: [] });
     const sendAgentInput = vi.fn(async () => undefined);
     useStore.setState({ agents: [running], sendAgentInput });
@@ -212,15 +213,54 @@ describe('Supervisor tile as a Quick Access tile', () => {
 
     fireEvent.click(within(openMenu()).getByRole('menuitem', { name: 'Status round' }));
 
-    await waitFor(() => expect(onSelectAgent).toHaveBeenCalledWith('sup-running'));
-    expect(sendAgentInput).toHaveBeenCalledWith(
-      'sup-running',
-      'Ask every project for its build status\r'
-    );
+    await waitFor(() => expect(onSelectAgent).toHaveBeenCalledWith('sup-new'));
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
+    expect(spawnAgent.mock.calls[0][0].task).toMatch(/Ask every project for its build status$/);
+    expect(sendAgentInput).not.toHaveBeenCalled();
+  });
+
+  it('starts another supervisor from the menu and lists each running one to open', async () => {
+    const research: AgentInfo = {
+      ...running,
+      id: 'sup-research',
+      name: 'Supervisor 2',
+      supervisorKey: 'research',
+      startedAt: 2,
+    };
+    useStore.setState({ agents: [running, research] });
+    const onSelectAgent = vi.fn();
+    render(<QuickAccess currentPath={null} onSelectAgent={onSelectAgent} />);
+
+    let menu = openMenu();
+    expect(within(menu).queryByRole('menuitem', { name: 'Start Supervisor' })).toBeNull();
+    // Newest first, by its key where it has one.
+    const opens = within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent)
+      .filter((text) => text?.startsWith('Open '));
+    expect(opens).toEqual(['Open research', 'Open Supervisor']);
+
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Open Supervisor' }));
+    expect(onSelectAgent).toHaveBeenCalledWith('sup-running');
     expect(spawnAgent).not.toHaveBeenCalled();
-    expect(useStore.getState().toasts.at(-1)?.message).toBe(
-      'Sent "Status round" to the running supervisor'
-    );
+
+    menu = openMenu();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Start new Supervisor' }));
+    await waitFor(() => expect(onSelectAgent).toHaveBeenCalledWith('sup-new'));
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
+    expect(spawnAgent.mock.calls[0][0].role).toBe('supervisor');
+  });
+
+  it('opens the newest running supervisor on a plain click', async () => {
+    const research: AgentInfo = { ...running, id: 'sup-research', startedAt: 2 };
+    useStore.setState({ agents: [research, running] });
+    const onSelectAgent = vi.fn();
+    render(<QuickAccess currentPath={null} onSelectAgent={onSelectAgent} />);
+
+    fireEvent.click(screen.getByTestId('quick-access-supervisor'));
+
+    await waitFor(() => expect(onSelectAgent).toHaveBeenCalledWith('sup-research'));
+    expect(spawnAgent).not.toHaveBeenCalled();
   });
 
   it('offers the most recent runs to resume, in the folder Rust is asked for', async () => {
@@ -232,7 +272,7 @@ describe('Supervisor tile as a Quick Access tile', () => {
       fileCount: 2,
       truncated: false,
     });
-    supervisorRunsList.mockResolvedValueOnce(
+    supervisorRunsList.mockResolvedValue(
       [
         '2026-10-19_090000',
         '2026-10-18_090000',
@@ -256,15 +296,50 @@ describe('Supervisor tile as a Quick Access tile', () => {
     expect(config.task).toContain('## Picking up an earlier run');
   });
 
-  it('offers no resume while a supervisor runs', async () => {
-    supervisorRunsList.mockResolvedValueOnce([
+  it('offers resume while a supervisor runs, and opens the run that is already live', async () => {
+    supervisorRunsList.mockResolvedValue([
+      {
+        name: '2026-10-19_090000',
+        path: '/r/live',
+        modifiedAtMs: 1,
+        fileCount: 1,
+        truncated: false,
+      },
+      {
+        name: '2026-10-18_090000',
+        path: '/r/old',
+        modifiedAtMs: 1,
+        fileCount: 1,
+        truncated: false,
+      },
+    ]);
+    useStore.setState({
+      agents: [{ ...running, supervisorKey: 'mail-triage', repoPath: '/r/live' }],
+    });
+    const onSelectAgent = vi.fn();
+    render(<QuickAccess currentPath={null} onSelectAgent={onSelectAgent} />);
+    const menu = openMenu();
+
+    expect(await within(menu).findByText('Resume Supervisor')).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Oct 18, 09:00' })).toBeInTheDocument();
+    fireEvent.click(
+      within(menu).getByRole('menuitem', { name: 'Oct 19, 09:00 · open in mail-triage' })
+    );
+
+    expect(onSelectAgent).toHaveBeenCalledWith('sup-running');
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('has the runs ready before the menu opens, so nothing appears under the pointer', async () => {
+    supervisorRunsList.mockResolvedValue([
       { name: '2026-10-19_090000', path: '/r/x', modifiedAtMs: 1, fileCount: 1, truncated: false },
     ]);
-    useStore.setState({ agents: [running] });
     render(<QuickAccess currentPath={null} />);
-    const menu = openMenu();
     await waitFor(() => expect(supervisorRunsList).toHaveBeenCalled());
-    expect(within(menu).queryByText('Resume Supervisor')).toBeNull();
+    await act(async () => undefined);
+
+    const menu = openMenu();
+    expect(within(menu).getByRole('menuitem', { name: 'Oct 19, 09:00' })).toBeInTheDocument();
   });
 
   it('opens Settings → Supervisor from the menu', () => {

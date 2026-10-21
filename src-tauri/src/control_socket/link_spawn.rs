@@ -145,6 +145,7 @@ impl Dispatcher {
             role_passed: false,
             worktree: Some(true),
             model_reason: None,
+            supervisor_key: None,
         })
     }
 

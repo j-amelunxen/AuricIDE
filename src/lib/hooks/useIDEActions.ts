@@ -15,6 +15,7 @@ import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { type OutputBatch } from '@/lib/agents/outputBatcher';
 import { installLaneSummarySubscriber } from '@/lib/agents/laneSummarySubscriber';
 import { installControlBridge } from '@/lib/agents/controlBridge';
+import { installSupervisorAdoption } from '@/lib/agents/supervisorAdoption';
 import { subscribeReviewPersistence } from '@/lib/git/review/reviewPersistence';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useBatchedAgentEvents } from '@/lib/hooks/useAgentEvents';
@@ -123,6 +124,10 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   // --control`) run through the same store actions as the UI, and input typed
   // through it shows up in the feed. See docs/design-agent-control.md.
   useEffect(() => installControlBridge(() => useStore.getState()), []);
+
+  // A resumed supervisor takes over its run folder's children in Rust; the
+  // card list follows, so they stay in its tab family.
+  useEffect(() => installSupervisorAdoption(useStore), []);
 
   // Review comments and viewed marks outlive the app session, per project.
   // See docs/design-merge-panel.md, "The diff viewer is a review panel now".

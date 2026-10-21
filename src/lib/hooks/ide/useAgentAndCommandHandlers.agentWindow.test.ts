@@ -139,3 +139,22 @@ describe('selecting an agent while the terminals are detached', () => {
     expect(showAgentInWindow).not.toHaveBeenCalled();
   });
 });
+
+describe('resuming an interrupted agent that Rust refuses', () => {
+  it('says why in a toast and opens nothing', async () => {
+    const showToast = vi.fn(() => 0);
+    useStore.setState({ showToast });
+    const { state, handlers } = renderHandlers();
+    // Tauri rejects with the plain sentence, as for any refused spawn.
+    const reason =
+      'The run folder 2026-10-21_090000 is already in use by the running supervisor agent-3.';
+    state.resumeInterruptedAgent.mockRejectedValueOnce(reason);
+
+    await handlers.handleResumeInterrupted('a');
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(`Could not resume the agent: ${reason}`, 'error')
+    );
+    expect(state.setFullscreenAgent).not.toHaveBeenCalled();
+  });
+});

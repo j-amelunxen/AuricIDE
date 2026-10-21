@@ -31,6 +31,9 @@ pub enum ErrorCode {
     SupervisorDenied,
     OutsideSupervisorScope,
     UnknownProject,
+    SupervisorKeyInvalid,
+    SupervisorKeyInUse,
+    UnknownSupervisor,
     Internal,
 }
 
@@ -59,6 +62,14 @@ impl ControlError {
     }
 }
 
+/// `unknown_supervisor`: `key` names no live supervisor.
+pub fn unknown_supervisor(key: &str) -> ControlError {
+    ControlError::new(
+        ErrorCode::UnknownSupervisor,
+        format!("no running supervisor has the key '{key}'"),
+    )
+}
+
 fn default_true() -> bool {
     true
 }
@@ -81,7 +92,13 @@ pub struct ReadOutputParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendInputParams {
+    /// Exactly one of `agent_id` and `supervisor` is given; the dispatcher
+    /// turns a `supervisor` key into the id of the live supervisor carrying
+    /// it before anything else looks at the request.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor: Option<String>,
     pub text: String,
     #[serde(default = "default_true")]
     pub enter: bool,
@@ -125,6 +142,10 @@ pub struct SpawnParams {
     /// `REASON_REQUIRED_FROM_RANK` on is refused without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_reason: Option<String>,
+    /// With `role: supervisor` only: the address of the new supervisor
+    /// (`supervisor::several`). Refused while a live supervisor carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_key: Option<String>,
 }
 
 /// `list_projects`: `project`, a path or a project name, keeps only the
@@ -256,12 +277,57 @@ pub fn parse_request(line: &str) -> Result<(Value, Request), Rejected> {
     };
     match normalise(request) {
         Ok(request) => Ok((id, request)),
-        Err(message) => Err(reject(id, ErrorCode::InvalidParams, message)),
+        Err(error) => Err(Rejected { id, error }),
     }
 }
 
+/// A key passed as `supervisor` or `supervisorKey` that cannot be one.
+fn check_key_format(key: &str) -> Result<(), ControlError> {
+    if crate::supervisor::several::is_valid_key(key) {
+        return Ok(());
+    }
+    Err(ControlError::new(
+        ErrorCode::SupervisorKeyInvalid,
+        crate::supervisor::several::key_invalid_message(key),
+    ))
+}
+
 /// Defaults and checks serde cannot express on its own.
-fn normalise(request: Request) -> Result<Request, String> {
+fn normalise(request: Request) -> Result<Request, ControlError> {
+    match request {
+        Request::SendInput(params) => {
+            match (params.agent_id.trim().is_empty(), &params.supervisor) {
+                (false, Some(_)) | (true, None) => {
+                    return Err(ControlError::new(
+                        ErrorCode::InvalidParams,
+                        "send_input takes exactly one of agentId and supervisor",
+                    ))
+                }
+                (true, Some(key)) => check_key_format(key)?,
+                (false, None) => {}
+            }
+            normalise_fields(Request::SendInput(params))
+        }
+        Request::Spawn(params) if params.supervisor_key.is_some() => {
+            if params.role != Some(AgentRole::Supervisor) {
+                return Err(ControlError::new(
+                    ErrorCode::InvalidParams,
+                    crate::supervisor::several::WORKER_KEY_MESSAGE,
+                ));
+            }
+            check_key_format(params.supervisor_key.as_deref().unwrap_or_default())?;
+            normalise_fields(Request::Spawn(params))
+        }
+        other => normalise_fields(other),
+    }
+}
+
+fn normalise_fields(request: Request) -> Result<Request, ControlError> {
+    normalise_params(request)
+        .map_err(|message| ControlError::new(ErrorCode::InvalidParams, message))
+}
+
+fn normalise_params(request: Request) -> Result<Request, String> {
     let blank = |value: &str| value.trim().is_empty();
     match request {
         Request::ReadOutput(mut params) => {
@@ -273,9 +339,6 @@ fn normalise(request: Request) -> Result<Request, String> {
             Ok(Request::ReadOutput(params))
         }
         Request::SendInput(params) => {
-            if blank(&params.agent_id) {
-                return Err("agentId must not be empty".into());
-            }
             if params.text.is_empty() && !params.enter {
                 return Err("empty text without enter would write nothing".into());
             }
@@ -619,6 +682,9 @@ pub(crate) mod tests {
             ErrorCode::SupervisorDenied,
             ErrorCode::OutsideSupervisorScope,
             ErrorCode::UnknownProject,
+            ErrorCode::SupervisorKeyInvalid,
+            ErrorCode::SupervisorKeyInUse,
+            ErrorCode::UnknownSupervisor,
             ErrorCode::Internal,
         ];
         let ours: Vec<Value> = codes
@@ -669,6 +735,7 @@ pub(crate) mod tests {
             headless: false,
             role: AgentRole::Worker,
             spawned_by_agent_id: None,
+            supervisor_key: None,
         }
     }
 
@@ -929,6 +996,16 @@ pub(crate) mod tests {
         child.current_task = Some("check the parser".into());
         child.headless = true;
         child.spawned_by_agent_id = Some("agent-sup".into());
+        let keyed_supervisor = AgentInfo {
+            id: "agent-3".into(),
+            name: "Mail triage".into(),
+            current_task: Some("supervise".into()),
+            project_path: None,
+            repo_path: Some("/home/user/.auric/supervisors/2026-10-21_090000".into()),
+            role: AgentRole::Supervisor,
+            supervisor_key: Some("mail-triage".into()),
+            ..sample_agent()
+        };
         let failed = RunResult {
             agent_id: "agent-6".into(),
             status: AgentStatus::Error,
@@ -1110,6 +1187,33 @@ pub(crate) mod tests {
             (
                 "remove_worktree keeps a worktree with work in it",
                 ok_response(&json!(25), sample_worktree_removal(false, true)),
+            ),
+            (
+                "list_agents shows a supervisor with its key",
+                ok_response(
+                    &json!(1),
+                    ListAgentsResult {
+                        agents: vec![AgentSummary {
+                            info: keyed_supervisor,
+                            output_bytes: 1024,
+                            stall: Default::default(),
+                        }],
+                    },
+                ),
+            ),
+            (
+                "send_input to a key no live supervisor has",
+                error_response(&json!(43), &unknown_supervisor("mail-triage")),
+            ),
+            (
+                "spawn under a key a live supervisor has",
+                error_response(
+                    &json!(40),
+                    &ControlError::new(
+                        ErrorCode::SupervisorKeyInUse,
+                        crate::supervisor::several::key_in_use_message("mail-triage", "agent-3"),
+                    ),
+                ),
             ),
         ];
         let cases = fixtures["additionalResponses"].as_array().unwrap();

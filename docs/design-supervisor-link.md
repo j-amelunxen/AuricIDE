@@ -174,25 +174,31 @@ type LinkError = { code: ErrorCode; message: string; reason?: string };
 
 ## Methods
 
-| method               | params                                                                                | result                            |
-| -------------------- | ------------------------------------------------------------------------------------- | --------------------------------- |
-| `session.hello`      | `{ client?: string }`                                                                 | `Hello`                           |
-| `supervisors.spawn`  | `{ task?: string, provider?: string, model?: string }`                                | `{ agentId }`                     |
-| `agents.list`        | —                                                                                     | `{ agents: LinkAgent[] }`         |
-| `agents.read`        | `{ agentId, sinceOffset?: number, tailBytes?: number }`                               | `OutputChunk`                     |
-| `agents.send`        | `{ agentId, text: string, submit?: boolean (default true) }`                          | `{ agentId, bytesWritten }`       |
-| `agents.kill`        | `{ agentId }`                                                                         | `{ agentId, killed: true }`       |
-| `events.subscribe`   | `{ agentIds?, output?, sinceOffsets?: Record<string, number>, jobs?: boolean }`       | `{ agents: LinkAgent[] }`         |
-| `events.unsubscribe` | —                                                                                     | `{ subscribed: false }`           |
-| `documents.projects` | —                                                                                     | `{ projects: DocumentProject[] }` |
-| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                 | `{ documents: DocumentEntry[] }`  |
-| `documents.get`      | `{ project, type, id, rev?: string }`                                                 | `Document`                        |
-| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                          | `Document`                        |
-| `documents.asset`    | `{ project, path, rev?: string }`                                                     | `Asset`                           |
-| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string }` | `Proposal`                        |
-| `jobs.create`        | `{ project, kind: string, payload: any }`                                             | `JobStarted`                      |
-| `jobs.list`          | `{ project?: string, status?: JobStatus, limit?: number }`                            | `{ jobs: Job[] }`                 |
-| `jobs.cancel`        | `{ jobId }`                                                                           | `{ jobId, cancelled, status }`    |
+| method               | params                                                                                                     | result                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `session.hello`      | `{ client?: string }`                                                                                      | `Hello`                                      |
+| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }`             | `{ agentId, key: string \| null, existing }` |
+| `supervisors.list`   | —                                                                                                          | `{ supervisors: LinkSupervisor[] }`          |
+| `agents.list`        | —                                                                                                          | `{ agents: LinkAgent[] }`                    |
+| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                      | `OutputChunk`                                |
+| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean (default true) }`                                 | `{ agentId, bytesWritten }`                  |
+| `agents.kill`        | `{ agentId \| supervisor }`                                                                                | `{ agentId, killed: true }`                  |
+| `events.subscribe`   | `{ agentIds?, supervisors?: string[], output?, sinceOffsets?: Record<string, number>, jobs?: boolean }`    | `{ agents: LinkAgent[] }`                    |
+| `events.unsubscribe` | —                                                                                                          | `{ subscribed: false }`                      |
+| `documents.projects` | —                                                                                                          | `{ projects: DocumentProject[] }`            |
+| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                      | `{ documents: DocumentEntry[] }`             |
+| `documents.get`      | `{ project, type, id, rev?: string }`                                                                      | `Document`                                   |
+| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                               | `Document`                                   |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                                          | `Asset`                                      |
+| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }` | `Proposal`                                   |
+| `jobs.create`        | `{ project, kind: string, payload: any, supervisor?: string }`                                             | `JobStarted`                                 |
+| `jobs.list`          | `{ project?: string, status?: JobStatus, limit?: number }`                                                 | `{ jobs: Job[] }`                            |
+| `jobs.cancel`        | `{ jobId }`                                                                                                | `{ jobId, cancelled, status }`               |
+
+`agentId | supervisor`: exactly one of the two, else `invalid_params`. A
+`supervisor` is a key (see "Supervisor keys"), resolved to the live supervisor
+carrying it when the request runs; none is `unknown_supervisor`. A malformed
+key anywhere is `supervisor_key_invalid`.
 
 ### `session.hello`
 
@@ -208,13 +214,16 @@ Optional, but the way to learn what this build offers:
     "protocol": 1,
     "server": "AuricIDE",
     "methods": ["session.hello", "supervisors.spawn", "agents.list", "…"],
-    "events": ["agent.added", "agent.updated", "agent.removed", "agent.output", "job.started", "…"]
+    "events": ["agent.added", "agent.updated", "agent.removed", "agent.output", "job.started", "…"],
+    "features": ["supervisorKeys"]
   }
 }
 ```
 
 A later version adds methods; it never changes what an existing one means
-without raising `v`.
+without raising `v`. `features` names additions within protocol 1 a client may
+check for (fixture `features`): `supervisorKeys` is everything in "Supervisor
+keys" below.
 
 ### The supervisor tree
 
@@ -230,6 +239,8 @@ type LinkAgent = {
   status: 'running' | 'idle' | 'queued' | 'error';
   role: 'worker' | 'supervisor';
   spawnedByAgentId: string | null; // the supervisor that started it
+  supervisorKey: string | null; // a supervisor's key, else null
+  rootSupervisorId: string | null; // topmost supervisor of the spawnedByAgentId chain; its own id for a supervisor
   currentTask: string | null;
   startedAt: number;
   lastActivityAt: number | null; // ms since the epoch
@@ -258,24 +269,82 @@ for an agent that is still in the tree but not running (for example `idle` or
 `error`). A client that gets `unknown_agent` after it killed an agent itself
 should read it as "gone", and it also has the `agent.removed` event.
 
+### Supervisor keys
+
+Several supervisors run at once, each in its own run folder and with its own
+children (`docs/design-agent-control.md`, "Several supervisors"). An agent id
+is a counter that changes when a supervisor is resumed or the app restarts, so
+a client addresses its supervisor by a **key** it picks:
+
+- Format `^[a-z0-9][a-z0-9-]{0,47}$`, and not shaped like an agent id
+  (`^agent-\d+$`, `reservedPattern`), so a `supervisors` entry in
+  `events.subscribe` never names two supervisors (fixture `supervisorKeys`). Unique among
+  **live** supervisors; a finished one frees its key.
+- Kept on the agent (`AgentInfo.supervisorKey`), in the restart file, and in
+  the run folder as `supervisor.json` (`{ "key": … }`), so a supervisor resumed
+  from the tile or the runs panel answers to the same key.
+- A resumed supervisor adopts the children of the supervisors that worked in
+  its run folder before it: their `spawnedByAgentId` names the new id
+  (fixture `supervisors.resumeAdoptsChildren` in `agentControl.fixtures.json`).
+- **A key is an address, not a permission.** There is no ownership per
+  connection: every client of the link already may steer the whole tree, and a
+  lock per connection would only get in the way of a client that reconnects or
+  of a person debugging another client's supervisor.
+
+Rust checks the key twice: in the link before anything starts, and in
+`admit_spawn` for every route a supervisor spawn can take (and again when the
+started process is entered into the agent list, so two launches in the same
+moment cannot both win).
+
 ### `supervisors.spawn`
 
-Starts a **new** supervisor, built exactly like one from the Supervisor tile in
-Quick Access: the launch prompt from the supervisor policy, the human's
-standing instructions from Settings → Supervisor, its own run folder, its
-approved skills and tools. `task` becomes its first task. `provider` and
-`model` default to the policy's supervisor settings; a provider the policy does
-not list is refused. The IDE never opens its provider picker for a link spawn.
+Starts a supervisor, built exactly like one from the Supervisor tile in Quick
+Access: the launch prompt from the supervisor policy, the human's standing
+instructions from Settings → Supervisor, its own run folder, its approved
+skills and tools. `task` becomes its first task. `provider` and `model` default
+to the policy's supervisor settings; a provider the policy does not list is
+refused. The IDE never opens its provider picker for a link spawn.
 
-Unlike the tile, a running supervisor is not reused: the link asked for a new
-one. To talk to a running one, use `agents.send`.
+- No `key`: always a **new** supervisor; `if` without `key` is
+  `invalid_params`.
+- `key` with `if: "new"` (the default): `supervisor_key_in_use` while a live
+  supervisor carries it, else a new supervisor under that key.
+- `key` with `if: "existing"`: the live supervisor carrying it is the answer
+  (`existing: true`) and **nothing is sent to it**, `task` included; without
+  one, a new supervisor under that key. A client that lost the race for the
+  key to another client gets the winner: Rust refuses its launch with the
+  `supervisor_key_in_use` sentence, the bridge maps it to that code
+  (`spawnRefusals`), and the link then answers the supervisor that won.
+
+The answer is `{ agentId, key, existing }`. The frontend gets the request as
+the control request `spawn_supervisor` with `{ task, provider, model,
+supervisorKey }`; `if` is decided before it.
 
 Errors: `supervisor_unavailable` when the policy shows the supervisor no
 project yet (the human has to allow one in Settings → Supervisor first),
 `invalid_params` for a provider the policy does not list,
 `provider_unsupported` for a provider the policy lists but the supervisor
 cannot run on (v1: `claude` and `codex`),
-`frontend_unavailable` when the IDE window did not answer within 30 s.
+`frontend_unavailable` when the IDE window did not answer within 30 s,
+`supervisor_key_invalid`, `supervisor_key_in_use`.
+
+### `supervisors.list`
+
+The live supervisors (from the agent list) and then the finished ones whose
+run result is still kept, each with its subtree counted:
+
+```ts
+type LinkSupervisor = {
+  agentId: string;
+  key: string | null;
+  name: string;
+  status: LinkAgent['status'];
+  run: string | null; // the run folder's name
+  children: { running: number; total: number }; // the whole subtree, grandchildren included; job agents are no children
+};
+```
+
+The fixture `subtree.list` is the expected answer for the `subtree` agents.
 
 ### `agents.read`
 
@@ -321,14 +390,24 @@ the link as the one who stopped it.
 `events.subscribe` replaces the connection's subscription and returns the tree
 as it is now, so the client starts from a consistent picture.
 
-- `agentIds` omitted: the whole tree, including agents that join it later. Given:
-  only those (ids outside the tree are refused with `unknown_agent`).
+- `agentIds` omitted (and no `supervisors`): the whole tree, including agents
+  that join it later. Given: only those (ids outside the tree are refused with
+  `unknown_agent`).
+- `supervisors`: keys or agent ids, each a subtree filter (`subtree.rs`,
+  fixture `subtree`). An entry covers the supervisor it names (by id or key),
+  every agent whose `spawnedByAgentId` chain leads to it, and the jobs whose
+  `requestedBy` names it (by id or key) together with those jobs' agents. It is
+  computed again on every poll, so a child started later, or a supervisor that
+  starts later under the key, joins. An entry nothing matches is no error.
+  With `agentIds`, the union of both.
 - `output` (default `true`): push console text for the subscribed agents.
 - `sinceOffsets`: per agent, the offset to continue from after a reconnect.
   Without it, output starts at the agent's current `outputBytes` (nothing old
   is replayed; use `agents.read` for history).
-- `jobs` (default `true`): push `job.*` events for every job (see "Jobs").
-  Nothing old is replayed; `jobs.list` gives the state after a reconnect.
+- `jobs` (default `true`): push `job.*` events for every job (see "Jobs"),
+  with `supervisors` only for the jobs they asked for (`job.progress` is
+  matched through the register, it carries no `requestedBy`). Nothing old is
+  replayed; `jobs.list` gives the state after a reconnect.
 
 | event           | data                   | when                                                      |
 | --------------- | ---------------------- | --------------------------------------------------------- |
@@ -668,7 +747,10 @@ working tree, the index or the checked-out branch.
 - Branch name: `auric/proposal/<file name without suffix>-<8 hex>`.
 - Commit message: `<type>: propose <id>`, then `message` as the body when
   given. Author and committer are the repository's configured git user.
-- The IDE drops one notification into the project's inbox.
+- The IDE drops one notification into the project's inbox. With `supervisor`
+  (a key) its title reads "Proposal for <key>: …"; the key must name a live
+  supervisor (`unknown_supervisor`). It names, nothing more: the branch and
+  the review are the same.
 
 ```ts
 type Proposal = {
@@ -697,7 +779,7 @@ human reviews and merges like any other branch.
 ### `jobs.create`
 
 ```ts
-type CreateJob = { project: string; kind: string; payload: unknown }; // payload ≤ 16 KiB as JSON, required (null allowed)
+type CreateJob = { project: string; kind: string; payload: unknown; supervisor?: string }; // payload ≤ 16 KiB as JSON, required (null allowed)
 type JobStarted = {
   jobId: string; // "job-<12 hex>"
   agentId: string;
@@ -788,6 +870,7 @@ type Job = {
   otherFiles: string[]; // changed paths outside what it may write — check before merging
   error: { code: JobErrorCode; message: string } | null;
   cancelRequested: boolean;
+  requestedBy: { key: string; agentId: string } | null; // jobs.create { supervisor }: the key and the id it named then
 };
 type JobErrorCode =
   | 'agent_failed' // the agent exited with an error, or was killed from outside
@@ -815,6 +898,16 @@ holds commits — the agent did not finish, and the commits stay on the branch
 for review. The manager drops a process from the list a moment before it
 books the exit; a tick in between waits, for at most 10 s
 (`VANISHED_GRACE_MS`), and then books an ordinary exit.
+
+**A job for a supervisor.** `jobs.create { supervisor: key }` resolves the key
+first (`unknown_supervisor`, before anything else is checked) and records
+`requestedBy`. When the job ends, besides the inbox notification, one notice is
+typed into that supervisor's console the way a finished child is reported
+(`control_socket/pingback.rs`, `ping_supervisor_text`): to whoever carries the
+key then, else to the agent id it named at creation. A supervisor that is gone,
+headless, or whose human is halfway through typing gets no notice; the inbox
+has it. The job's agent still has no `spawnedByAgentId` and counts against the
+link's job budget, not against that supervisor's child limit.
 
 `job.*` events go to every subscribed connection, whoever created the job.
 A headless agent prints nothing until it ends, so `job.progress` (from the
@@ -887,6 +980,9 @@ run (`runSource: "supervisor"`).
 | `quota_exceeded`         | the counter is full (`daily_limit`, `project_daily_limit`) or 0 (`disabled`)       |
 | `unknown_job`            | no such job                                                                        |
 | `busy`                   | a limit was reached; `reason` `too_many_connections` / `too_many_pending_requests` |
+| `supervisor_key_invalid` | a key does not match `^[a-z0-9][a-z0-9-]{0,47}$`, or looks like `agent-<n>`        |
+| `supervisor_key_in_use`  | `supervisors.spawn` with `if: "new"` while a live supervisor carries the key       |
+| `unknown_supervisor`     | no live supervisor carries the key                                                 |
 | `internal`               | anything else; the message says what                                               |
 
 ## Examples
@@ -1002,6 +1098,9 @@ A refusal:
 - No schema validation of documents in the IDE (`schema` is passed on).
 - No per-client counter: a client's name (`session.hello.client`) is
   self-declared and would be no key for a limit.
+- No ownership of supervisor keys per connection (see "Supervisor keys").
+- Limits stay per supervisor: two supervisors may each start `maxRunning`
+  children in the same project.
 - No `code.graph` or other read access to a project's code. Each further read
   is a further narrow method, never a generic file read.
 - One subscription per connection.

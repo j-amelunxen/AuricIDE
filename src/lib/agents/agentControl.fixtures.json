@@ -20,6 +20,9 @@
     "supervisor_denied",
     "outside_supervisor_scope",
     "unknown_project",
+    "supervisor_key_invalid",
+    "supervisor_key_in_use",
+    "unknown_supervisor",
     "internal"
   ],
   "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
@@ -61,6 +64,21 @@
       "code": "invalid_params",
       "pattern": "is not installed in AuricIDE",
       "sample": "Provider 'nope' is not installed in AuricIDE. Import its config under Settings → Providers, or pick an installed one."
+    },
+    {
+      "code": "supervisor_key_invalid",
+      "pattern": "is not a valid supervisor key",
+      "sample": "'Mail Triage' is not a valid supervisor key: use 1 to 48 lowercase letters, digits and dashes, starting with a letter or a digit, and not shaped like an agent id (agent-<number>)."
+    },
+    {
+      "code": "supervisor_key_in_use",
+      "pattern": "is already the key of a running supervisor",
+      "sample": "'mail-triage' is already the key of a running supervisor (agent-3)."
+    },
+    {
+      "code": "invalid_params",
+      "pattern": "Only a supervisor takes a supervisor key",
+      "sample": "Only a supervisor takes a supervisor key."
     }
   ],
   "requests": [
@@ -506,6 +524,79 @@
         "id": 34,
         "code": "unknown_method"
       }
+    },
+    {
+      "name": "spawn a supervisor under a key",
+      "raw": "{\"id\":40,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"supervise\",\"role\":\"supervisor\",\"supervisorKey\":\"mail-triage\"}}",
+      "expected": {
+        "id": 40,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "supervise",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null,
+          "role": "supervisor",
+          "worktree": null,
+          "supervisorKey": "mail-triage"
+        }
+      }
+    },
+    {
+      "name": "a supervisor key on a worker spawn",
+      "raw": "{\"id\":41,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"x\",\"supervisorKey\":\"mail-triage\"}}",
+      "expectedError": {
+        "id": 41,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "a malformed supervisor key",
+      "raw": "{\"id\":42,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"x\",\"role\":\"supervisor\",\"supervisorKey\":\"Mail\"}}",
+      "expectedError": {
+        "id": 42,
+        "code": "supervisor_key_invalid"
+      }
+    },
+    {
+      "name": "send_input to a supervisor by key",
+      "raw": "{\"id\":43,\"method\":\"send_input\",\"params\":{\"supervisor\":\"mail-triage\",\"text\":\"status?\"}}",
+      "expected": {
+        "id": 43,
+        "method": "send_input",
+        "params": {
+          "supervisor": "mail-triage",
+          "text": "status?",
+          "enter": true
+        }
+      }
+    },
+    {
+      "name": "send_input with both agentId and supervisor",
+      "raw": "{\"id\":44,\"method\":\"send_input\",\"params\":{\"agentId\":\"agent-2\",\"supervisor\":\"mail-triage\",\"text\":\"x\"}}",
+      "expectedError": {
+        "id": 44,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "send_input with neither agentId nor supervisor",
+      "raw": "{\"id\":45,\"method\":\"send_input\",\"params\":{\"text\":\"x\"}}",
+      "expectedError": {
+        "id": 45,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "send_input to a malformed key",
+      "raw": "{\"id\":46,\"method\":\"send_input\",\"params\":{\"supervisor\":\"mail triage\",\"text\":\"x\"}}",
+      "expectedError": {
+        "id": 46,
+        "code": "supervisor_key_invalid"
+      }
     }
   ],
   "responses": {
@@ -530,6 +621,7 @@
             "headless": false,
             "outputBytes": 5120,
             "role": "worker",
+            "supervisorKey": null,
             "spawnedByAgentId": null,
             "idleForMs": null,
             "stalledSinceMs": null
@@ -1141,6 +1233,7 @@
               "headless": true,
               "outputBytes": 2048,
               "role": "worker",
+              "supervisorKey": null,
               "spawnedByAgentId": "agent-sup",
               "idleForMs": null,
               "stalledSinceMs": null
@@ -1302,6 +1395,63 @@
         "error": {
           "code": "unknown_agent",
           "message": "no agent with id agent-5 is running or recently finished"
+        }
+      }
+    },
+    {
+      "name": "list_agents shows a supervisor with its key",
+      "method": "list_agents",
+      "raw": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "agents": [
+            {
+              "id": "agent-3",
+              "name": "Mail triage",
+              "model": "sonnet",
+              "provider": "claude",
+              "status": "running",
+              "currentTask": "supervise",
+              "startedAt": 1790000000000,
+              "lastActivityAt": 1790000005000,
+              "projectPath": null,
+              "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000",
+              "spawnedByTicketId": null,
+              "spawnedByGoalId": null,
+              "headless": false,
+              "outputBytes": 1024,
+              "role": "supervisor",
+              "supervisorKey": "mail-triage",
+              "spawnedByAgentId": null,
+              "idleForMs": null,
+              "stalledSinceMs": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "send_input to a key no live supervisor has",
+      "method": "send_input",
+      "raw": {
+        "id": 43,
+        "ok": false,
+        "error": {
+          "code": "unknown_supervisor",
+          "message": "no running supervisor has the key 'mail-triage'"
+        }
+      }
+    },
+    {
+      "name": "spawn under a key a live supervisor has",
+      "method": "spawn",
+      "raw": {
+        "id": 40,
+        "ok": false,
+        "error": {
+          "code": "supervisor_key_in_use",
+          "message": "'mail-triage' is already the key of a running supervisor (agent-3)."
         }
       }
     }
@@ -1688,5 +1838,327 @@
         "expected": "ok"
       }
     ]
+  },
+  "supervisors": {
+    "_comment": [
+      "Several supervisors at once (docs/design-agent-control.md, \"Several supervisors\"). Rust admit_spawn",
+      "checks the key and the run folder of every supervisor spawn; the frontend checks the run folder",
+      "before it calls Rust. live is the manager's agent list (running agents only), keys are the",
+      "supervisorKeys of supervisorLink.fixtures.json."
+    ],
+    "supervisorFileName": "supervisor.json",
+    "keyUniqueness": {
+      "live": [
+        {
+          "id": "agent-3",
+          "role": "supervisor",
+          "status": "running",
+          "supervisorKey": "mail-triage",
+          "spawnedByAgentId": null,
+          "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+        },
+        {
+          "id": "agent-4",
+          "role": "supervisor",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": null,
+          "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+        },
+        {
+          "id": "agent-5",
+          "role": "worker",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": "agent-3",
+          "repoPath": "/work/alpha"
+        }
+      ],
+      "cases": [
+        {
+          "name": "a free key",
+          "key": "docs",
+          "expected": "ok"
+        },
+        {
+          "name": "no key",
+          "key": null,
+          "expected": "ok"
+        },
+        {
+          "name": "a live supervisor has it",
+          "key": "mail-triage",
+          "expected": "supervisor_key_in_use"
+        },
+        {
+          "name": "a malformed key",
+          "key": "Mail",
+          "expected": "supervisor_key_invalid"
+        }
+      ]
+    },
+    "runDirInUse": {
+      "code": "run_dir_in_use",
+      "pattern": "is already in use by the running supervisor",
+      "sample": "The run folder 2026-10-21_090000 is already in use by the running supervisor agent-3. Open that supervisor instead of resuming the run again.",
+      "live": [
+        {
+          "id": "agent-3",
+          "role": "supervisor",
+          "status": "running",
+          "supervisorKey": "mail-triage",
+          "spawnedByAgentId": null,
+          "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+        },
+        {
+          "id": "agent-5",
+          "role": "worker",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": "agent-3",
+          "repoPath": "/work/alpha"
+        }
+      ],
+      "cases": [
+        {
+          "name": "a run a live supervisor works in",
+          "resumeRunDir": "/home/user/.auric/supervisors/2026-10-21_090000",
+          "expected": "run_dir_in_use"
+        },
+        {
+          "name": "another run",
+          "resumeRunDir": "/home/user/.auric/supervisors/2026-10-20_170000",
+          "expected": "ok"
+        },
+        {
+          "name": "a worker in the same folder does not hold the run",
+          "resumeRunDir": "/work/alpha",
+          "expected": "ok"
+        }
+      ]
+    },
+    "supervisorFile": [
+      {
+        "name": "a new supervisor with a key writes it",
+        "key": "mail-triage",
+        "file": null,
+        "resume": false,
+        "expectedKey": "mail-triage",
+        "written": {
+          "key": "mail-triage"
+        }
+      },
+      {
+        "name": "a new supervisor without a key writes null",
+        "key": null,
+        "file": null,
+        "resume": false,
+        "expectedKey": null,
+        "written": {
+          "key": null
+        }
+      },
+      {
+        "name": "a resume without a key takes the run's key",
+        "key": null,
+        "file": {
+          "key": "mail-triage"
+        },
+        "resume": true,
+        "expectedKey": "mail-triage",
+        "written": {
+          "key": "mail-triage"
+        }
+      },
+      {
+        "name": "a resume with its own key keeps its own",
+        "key": "docs",
+        "file": {
+          "key": "mail-triage"
+        },
+        "resume": true,
+        "expectedKey": "docs",
+        "written": {
+          "key": "docs"
+        }
+      },
+      {
+        "name": "a broken file is no key",
+        "key": null,
+        "file": "not json",
+        "resume": true,
+        "expectedKey": null,
+        "written": {
+          "key": null
+        }
+      }
+    ],
+    "resumeAdoptsChildren": {
+      "$comment": "A supervisor started with resumeRunDir adopts the children of every earlier supervisor whose run folder (cwd / repoPath) it is: spawnedByAgentId old -> new on live agents, on persisted agents and on kept run results. Other supervisors' children stay.",
+      "runDir": "/home/user/.auric/supervisors/2026-10-21_090000",
+      "newSupervisorId": "agent-20",
+      "live": [
+        {
+          "id": "agent-5",
+          "role": "worker",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": "agent-3",
+          "repoPath": "/work/alpha"
+        },
+        {
+          "id": "agent-6",
+          "role": "worker",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": "agent-9",
+          "repoPath": "/work/alpha"
+        },
+        {
+          "id": "agent-7",
+          "role": "worker",
+          "status": "running",
+          "supervisorKey": null,
+          "spawnedByAgentId": null,
+          "repoPath": "/work/alpha"
+        }
+      ],
+      "persisted": [
+        {
+          "id": "agent-3",
+          "role": "supervisor",
+          "cwd": "/home/user/.auric/supervisors/2026-10-21_090000",
+          "spawnedByAgentId": null
+        },
+        {
+          "id": "agent-8",
+          "role": "worker",
+          "cwd": "/work/alpha",
+          "spawnedByAgentId": "agent-3"
+        },
+        {
+          "id": "agent-9",
+          "role": "supervisor",
+          "cwd": "/home/user/.auric/supervisors/2026-10-20_170000",
+          "spawnedByAgentId": null
+        }
+      ],
+      "finished": [
+        {
+          "id": "agent-1",
+          "role": "supervisor",
+          "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000",
+          "spawnedByAgentId": null
+        },
+        {
+          "id": "agent-2",
+          "role": "worker",
+          "repoPath": "/work/alpha",
+          "spawnedByAgentId": "agent-1"
+        },
+        {
+          "id": "agent-4",
+          "role": "worker",
+          "repoPath": "/work/alpha",
+          "spawnedByAgentId": "agent-9"
+        }
+      ],
+      "expected": {
+        "adoptedFrom": ["agent-1", "agent-3"],
+        "live": {
+          "agent-5": "agent-20",
+          "agent-6": "agent-9",
+          "agent-7": null
+        },
+        "persisted": {
+          "agent-3": null,
+          "agent-8": "agent-20",
+          "agent-9": null
+        },
+        "finished": {
+          "agent-1": null,
+          "agent-2": "agent-20",
+          "agent-4": "agent-9"
+        }
+      },
+      "event": "supervisor-children-adopted"
+    },
+    "adoptedEvent": {
+      "name": "supervisor-children-adopted",
+      "payload": {
+        "fromIds": ["agent-1", "agent-3"],
+        "toId": "agent-20"
+      }
+    },
+    "menuBar": {
+      "_comment": "menu_bar_sync config from the frontend and the menu-bar-launch payloads Rust emits back to the main window. A skill always starts a new supervisor (frontend rule); newSupervisor is left out when false.",
+      "launchEvent": "menu-bar-launch",
+      "config": {
+        "tray": true,
+        "shortcuts": false,
+        "running": 2,
+        "skills": [
+          {
+            "id": "auric:triage",
+            "label": "Triage",
+            "shortcut": null
+          }
+        ]
+      },
+      "items": [
+        {
+          "running": 0,
+          "entries": [
+            {
+              "id": "start",
+              "label": "Start Supervisor",
+              "payload": {
+                "newSupervisor": true
+              }
+            }
+          ]
+        },
+        {
+          "running": 1,
+          "entries": [
+            {
+              "id": "start",
+              "label": "Start Supervisor",
+              "payload": {
+                "newSupervisor": true
+              }
+            },
+            {
+              "id": "open",
+              "label": "Open Supervisor",
+              "payload": {}
+            }
+          ]
+        },
+        {
+          "running": 3,
+          "entries": [
+            {
+              "id": "start",
+              "label": "Start Supervisor",
+              "payload": {
+                "newSupervisor": true
+              }
+            },
+            {
+              "id": "open",
+              "label": "Open Supervisor (3)",
+              "payload": {}
+            }
+          ]
+        }
+      ],
+      "skill": {
+        "itemId": "skill:auric:triage",
+        "payload": {
+          "skillId": "auric:triage"
+        }
+      }
+    }
   }
 }

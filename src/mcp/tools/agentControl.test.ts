@@ -69,6 +69,39 @@ describe('agent control tools', () => {
     expect(call).toHaveBeenCalledWith('spawn', { ...base, role: 'supervisor' });
   });
 
+  it('spawn_agent passes a supervisor key on to the socket', async () => {
+    const call = vi.fn(async () => fixtures.responses.spawn.result) as unknown as ControlCaller;
+    const spawn = capture(call).get('spawn_agent') as CapturedTool & { parameters: z.ZodType };
+    const args = {
+      projectPath: '/tmp/example-project',
+      prompt: 'supervise',
+      role: 'supervisor',
+      supervisorKey: 'mail-triage',
+    };
+    expect(spawn.parameters.safeParse(args).success).toBe(true);
+    await spawn.execute(args);
+    expect(call).toHaveBeenCalledWith('spawn', args);
+  });
+
+  it('send_agent_input reaches a supervisor by key, and takes exactly one target', async () => {
+    const call = vi.fn(
+      async () => fixtures.responses.send_input.result
+    ) as unknown as ControlCaller;
+    const send = capture(call).get('send_agent_input') as CapturedTool & { parameters: z.ZodType };
+    expect(send.parameters.safeParse({ supervisor: 'mail-triage', text: 'status?' }).success).toBe(
+      true
+    );
+    expect(send.parameters.safeParse({ agentId: 'agent-2', text: 'x' }).success).toBe(true);
+    expect(
+      send.parameters.safeParse({ agentId: 'agent-2', supervisor: 'mail-triage', text: 'x' })
+        .success
+    ).toBe(false);
+    expect(send.parameters.safeParse({ text: 'x' }).success).toBe(false);
+
+    await send.execute({ supervisor: 'mail-triage', text: 'status?' });
+    expect(call).toHaveBeenCalledWith('send_input', { supervisor: 'mail-triage', text: 'status?' });
+  });
+
   it('turn a socket error into a tool error "<code>: <message>"', async () => {
     const tools = capture(async () => {
       throw new ControlError('headless_no_stdin', 'agent-2 runs headless and does not read input');

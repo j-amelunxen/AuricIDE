@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { findRunningSupervisor } from '@/lib/agents/supervisorLaunch';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { runningSupervisors, supervisorUsingRunDir } from '@/lib/agents/supervisorLaunch';
 import { openSupervisor, resumeSupervisor } from '@/lib/agents/openSupervisor';
 import { RECENT_RUNS_IN_MENU, supervisorRunLabel } from '@/lib/agents/supervisorRuns';
 import { launchEntries } from '@/lib/quickAccess/launchSkills';
@@ -11,6 +11,7 @@ import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { AgentInfo } from '@/lib/tauri/agents';
 import { supervisorRunsList, type SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -22,6 +23,9 @@ export const SUPERVISOR_WHEEL_ID = 'supervisor';
 
 /** Past this many, the right-click menu stops being a shortcut; the rest are in the dialog. */
 const MAX_MENU_SKILLS = 8;
+
+/** How a supervisor is named to the user: the key it is addressed by, else its card name. */
+const supervisorLabel = (agent: AgentInfo) => agent.supervisorKey || agent.name;
 
 export interface SupervisorTileProps {
   /** Opens Settings at a section; the tile only ever asks for `supervisor`. */
@@ -37,15 +41,16 @@ interface SupervisorTileWheelProps {
 }
 
 /**
- * The dock's one fixed tile. One supervisor at a time: while one runs, the
- * tile brings it forward instead of starting another. With nothing allowed in
- * Settings → Supervisor it goes there, since a supervisor that may touch no
- * project could only tell the user the same thing more slowly.
+ * The dock's one fixed tile. Several supervisors may run side by side: a
+ * plain click brings the newest running one forward (or starts one), and the
+ * right-click menu starts another or opens any that runs. With nothing
+ * allowed in Settings → Supervisor it goes there, since a supervisor that may
+ * touch no project could only tell the user the same thing more slowly.
  *
  * Otherwise it behaves like a project tile: hover or hold opens its skill
  * wheel, right-click lists its skills, and "Quick Access Settings" edits
- * them. A skill starts a supervisor with its prompt as the first task, or
- * goes to the running one as a message.
+ * them. A skill always starts a new supervisor with its prompt as the first
+ * task.
  */
 export function SupervisorTile({
   onOpenSettings,
@@ -53,7 +58,10 @@ export function SupervisorTile({
   wheelSuppressed = false,
   onWheelActivity,
 }: SupervisorTileProps & SupervisorTileWheelProps) {
-  const runningId = useStore((s) => findRunningSupervisor(s.agents)?.id ?? null);
+  const agents = useStore((s) => s.agents);
+  // Derived here, not in the selector: a fresh array from a zustand v5 selector loops React.
+  const live = useMemo(() => runningSupervisors(agents), [agents]);
+  const running = live.length > 0;
   const spawnSupervisor = useStore((s) => s.spawnSupervisor);
   const selectAgent = useStore((s) => s.selectAgent);
   const showToast = useStore((s) => s.showToast);
@@ -66,14 +74,19 @@ export function SupervisorTile({
 
   const show = (agentId: string) => (onSelectAgent ?? selectAgent)(agentId);
 
-  const open = async (skill?: QuickAccessSkill) => {
+  const open = async (skill?: QuickAccessSkill, forceNew = false) => {
     if (starting) return;
     setStarting(true);
     try {
-      await openSupervisor({ spawnSupervisor, showToast }, skill, {
-        onNothingVisible: () => onOpenSettings?.('supervisor'),
-        onShow: show,
-      });
+      await openSupervisor(
+        { spawnSupervisor, showToast },
+        skill,
+        {
+          onNothingVisible: () => onOpenSettings?.('supervisor'),
+          onShow: show,
+        },
+        { forceNew }
+      );
     } finally {
       setStarting(false);
     }
@@ -92,13 +105,21 @@ export function SupervisorTile({
     }
   };
 
-  const openMenu = (x: number, y: number) => {
-    setMenu({ x, y });
-    // Read on every opening: runs end while the app is open, and nothing
-    // watches the folder. Until it answers the menu simply has no entries.
+  const readRecentRuns = useCallback(() => {
     supervisorRunsList()
       .then((runs) => setRecentRuns(runs.slice(0, RECENT_RUNS_IN_MENU)))
-      .catch(() => setRecentRuns([]));
+      .catch(() => undefined);
+  }, []);
+
+  // Read ahead, so the menu opens with its runs in place: entries that
+  // arrive after it opened would move the item under the pointer.
+  useEffect(readRecentRuns, [readRecentRuns]);
+
+  const openMenu = (x: number, y: number) => {
+    setMenu({ x, y });
+    // Read again on every opening: runs end while the app is open, and
+    // nothing watches the folder. The last list stays until this answers.
+    readRecentRuns();
   };
 
   const {
@@ -150,19 +171,33 @@ export function SupervisorTile({
         ] as ContextMenuOption[])
       : []),
     {
-      label: runningId ? 'Open Supervisor' : 'Start Supervisor',
+      label: running ? 'Start new Supervisor' : 'Start Supervisor',
       icon: 'bolt',
-      action: () => void open(),
+      action: () => void open(undefined, true),
     },
-    // One supervisor at a time: while one runs there is nothing to resume into.
-    ...(!runningId && recentRuns.length > 0
+    ...live.map((agent) => ({
+      label: `Open ${supervisorLabel(agent)}`,
+      icon: 'open_in_new',
+      action: () => show(agent.id),
+    })),
+    ...(recentRuns.length > 0
       ? ([
           { type: 'header', label: 'Resume Supervisor' },
-          ...recentRuns.map((run) => ({
-            label: supervisorRunLabel(run.name),
-            icon: 'history',
-            action: () => void resume(run),
-          })),
+          ...recentRuns.map((run) => {
+            // A run folder holds one live supervisor at a time: that run opens it instead.
+            const liveHere = supervisorUsingRunDir(live, run.path);
+            return liveHere
+              ? {
+                  label: `${supervisorRunLabel(run.name)} · open in ${supervisorLabel(liveHere)}`,
+                  icon: 'open_in_new',
+                  action: () => show(liveHere.id),
+                }
+              : {
+                  label: supervisorRunLabel(run.name),
+                  icon: 'history',
+                  action: () => void resume(run),
+                };
+          }),
           { type: 'separator' },
         ] as ContextMenuOption[])
       : []),
@@ -179,7 +214,7 @@ export function SupervisorTile({
     },
   ];
 
-  const label = runningId ? 'Open the running supervisor' : 'Start a supervisor agent';
+  const label = running ? 'Open the running supervisor' : 'Start a supervisor agent';
 
   return (
     <div
@@ -192,7 +227,7 @@ export function SupervisorTile({
           ref={tileRef}
           type="button"
           data-testid="quick-access-supervisor"
-          data-running={runningId !== null}
+          data-running={running}
           onClick={() => {
             if (consumedClick) return;
             void open();
@@ -213,7 +248,7 @@ export function SupervisorTile({
             aria-hidden="true"
             className={`text-[20px] ${starting ? 'animate-spin motion-reduce:animate-none' : ''}`}
           />
-          {runningId && (
+          {running && (
             <span
               aria-hidden="true"
               className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_0_2px_var(--background)]"

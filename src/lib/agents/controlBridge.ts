@@ -22,13 +22,22 @@ import type { LinkedSupervisorLaunch, LinkedSupervisorSpawn } from '@/lib/store/
 /** The control request the supervisor link sends for `supervisors.spawn`. */
 export const SPAWN_SUPERVISOR_METHOD = 'spawn_supervisor';
 
+/**
+ * `supervisors.spawn` as Rust forwards it. Rust settles `if` itself (a live
+ * key with `if: "existing"` never reaches the frontend) and renames `key` to
+ * `supervisorKey`, which it checks again when the spawn lands.
+ */
 const linkedSupervisorParams = z
   .object({
     task: z.string().nullish(),
     provider: z.string().min(1).nullish(),
     model: z.string().min(1).nullish(),
+    supervisorKey: z.string().min(1).nullish(),
   })
-  .strict();
+  .strict()
+  .transform(({ supervisorKey, ...launch }) =>
+    supervisorKey ? { ...launch, key: supervisorKey } : launch
+  );
 
 /**
  * The frontend end of the agent-control socket (`docs/design-agent-control.md`).
@@ -146,36 +155,37 @@ function parseSpawnRequest(raw: unknown): SpawnRequest {
   return { ...params, ...provenance.data };
 }
 
-const SUPERVISOR_PROVIDER = 'claude';
-
 /**
- * A supervisor, a supervisor's child, or a supervisor link job's agent
- * (`runSource: "supervisor"` without a supervisor id, which only Rust sets):
- * what Rust decided is what runs.
+ * A supervisor's child or a supervisor link job's agent (`runSource:
+ * "supervisor"` without a supervisor id, which only Rust sets): what Rust
+ * decided is what runs.
  */
 function isVerbatimSpawn(request: SpawnRequest): boolean {
-  return (
-    Boolean(request.spawnedByAgentId) ||
-    request.role === 'supervisor' ||
-    request.runSource === 'supervisor'
-  );
+  return Boolean(request.spawnedByAgentId) || request.runSource === 'supervisor';
 }
 
 /**
- * The launch config for a supervisor spawn, without the launch-default
- * fill-in `spawnConfigFor` does. For a child, Rust has already checked
- * provider, model and permission mode against the supervisor policy; filling a
- * gap from whatever was last launched in that folder would run something the
- * policy never saw. A `null` permission mode stays the provider's own default.
+ * A new supervisor asked for by an outside client (`role: "supervisor"`,
+ * started by nobody). It goes the link's way, `spawnLinkedSupervisor`: launch
+ * prompt, standing instructions and the supervisor policy's providers, with
+ * the client's prompt as its first task. The verbatim path would hand Rust
+ * the bare prompt, a supervisor that knows none of its projects or rules.
+ */
+function isNewSupervisor(request: SpawnRequest): boolean {
+  return request.role === 'supervisor' && !request.spawnedByAgentId;
+}
+
+/**
+ * The launch config for a child's spawn, without the launch-default fill-in
+ * `spawnConfigFor` does. Rust has already checked provider, model and
+ * permission mode against the supervisor policy; filling a gap from whatever
+ * was last launched in that folder would run something the policy never saw.
+ * A `null` permission mode stays the provider's own default.
  */
 // code-gate: complexity-cyclomatic - one `??` per launch field, each with the same "nothing filled in for a child" rule
-function verbatimSpawnConfig(request: SpawnRequest, providers: ProviderInfo[]): AgentConfig {
-  const child = Boolean(request.spawnedByAgentId) || request.role !== 'supervisor';
-  // A supervisor itself runs on Claude in v1 (ADR 0004), at that provider's
-  // own default model unless the caller named one. A child gets nothing.
-  const providerId = request.provider ?? (child ? null : SUPERVISOR_PROVIDER);
-  const provider = providers.find((entry) => entry.id === providerId);
-  const model = request.model ?? (child ? null : provider?.defaultModel);
+function verbatimSpawnConfig(request: SpawnRequest): AgentConfig {
+  const providerId = request.provider;
+  const model = request.model;
   if (!providerId || !model) {
     throw new ControlError(
       'invalid_params',
@@ -223,7 +233,55 @@ function spawnFailureCode(message: string): ControlErrorCode {
   return SPAWN_REFUSALS.find(({ pattern }) => message.includes(pattern))?.code ?? 'internal';
 }
 
+/** A failed spawn as the socket answers it; Tauri rejects with a plain string, not an Error. */
+function spawnRefusal(error: unknown): ControlError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new ControlError(spawnFailureCode(message), message);
+}
+
+async function supervisorFromControl(params: SpawnRequest, host: ControlHost) {
+  if (!host.spawnLinkedSupervisor) {
+    throw new ControlError('internal', 'this window cannot start supervisors');
+  }
+  let outcome: LinkedSupervisorSpawn;
+  try {
+    outcome = await host.spawnLinkedSupervisor({
+      task: params.prompt,
+      provider: params.provider,
+      model: params.model,
+      key: params.supervisorKey ?? null,
+      name: params.name,
+    });
+  } catch (error) {
+    throw spawnRefusal(error);
+  }
+  if (outcome.kind !== 'spawned') {
+    throw new ControlError('invalid_params', supervisorRefusal(outcome));
+  }
+  host.showToast?.(`${outcome.agent.name} started by an MCP client`, 'success');
+  return { agentId: outcome.agent.id };
+}
+
+function supervisorRefusal(outcome: Exclude<LinkedSupervisorSpawn, { kind: 'spawned' }>): string {
+  switch (outcome.kind) {
+    case 'nothing-visible':
+      return 'the supervisor policy allows no project yet; allow one in Settings → Supervisor';
+    case 'provider-not-allowed':
+      return (
+        `provider '${outcome.provider}' is not one the supervisor policy lists ` +
+        `(${outcome.allowed.join(', ') || 'none'})`
+      );
+    case 'provider-unsupported':
+      return (
+        `the supervisor cannot run on '${outcome.provider}' in this version ` +
+        `(supported: ${outcome.supported.join(', ')})`
+      );
+  }
+}
+
 async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
+  // Rust gives a supervisor a run folder of its own; its projectPath is never used.
+  if (isNewSupervisor(params)) return supervisorFromControl(params, host);
   if (!(await isDir(params.projectPath))) {
     throw new ControlError(
       'invalid_params',
@@ -231,17 +289,14 @@ async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
     );
   }
   const config = inWorktree(
-    isVerbatimSpawn(params)
-      ? verbatimSpawnConfig(params, host.providers)
-      : spawnConfigFor(params, host.providers),
+    isVerbatimSpawn(params) ? verbatimSpawnConfig(params) : spawnConfigFor(params, host.providers),
     params.worktree
   );
   let spawned: AgentInfo;
   try {
     spawned = await host.spawnNewAgent(config);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ControlError(spawnFailureCode(message), message);
+    throw spawnRefusal(error);
   }
   // Not selected: nobody clicked, and the user may be looking at something else.
   host.showToast?.(`${spawned.name} started by ${starterName(params, host)}`, 'success');
@@ -271,7 +326,14 @@ async function spawnSupervisorFromLink(raw: unknown, host: ControlHost) {
   if (!host.spawnLinkedSupervisor) {
     throw new ControlError('internal', 'this window cannot start supervisors');
   }
-  const outcome = await host.spawnLinkedSupervisor(parsed.data);
+  let outcome: LinkedSupervisorSpawn;
+  try {
+    outcome = await host.spawnLinkedSupervisor(parsed.data);
+  } catch (error) {
+    // A key taken between Rust's check and the spawn must reach the link as
+    // supervisor_key_in_use: that code is what lets Rust answer with the winner.
+    throw spawnRefusal(error);
+  }
   if (outcome.kind === 'nothing-visible') {
     throw new LinkSpawnRefusal(
       'supervisor_unavailable',

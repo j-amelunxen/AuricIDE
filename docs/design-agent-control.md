@@ -60,20 +60,21 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
 
 All field names are camelCase on the wire.
 
-| method            | params                                                                                                                                                  | result                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `list_agents`     | —                                                                                                                                                       | `{ agents: AgentSummary[] }`             |
-| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                     | `OutputChunk`                            |
-| `send_input`      | `{ agentId, text: string, enter?: boolean (default true) }`                                                                                             | `{ agentId, bytesWritten: number }`      |
-| `kill`            | `{ agentId }`                                                                                                                                           | `{ agentId, killed: true }`              |
-| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean, modelReason?: string }` | `{ agentId }`                            |
-| `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                   | `{ projects: ProjectEntry[], catalog? }` |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                                                     | `AwaitResult`                            |
-| `remove_worktree` | `{ agentId }`                                                                                                                                           | `WorktreeRemoval`                        |
-| `dismiss`         | `{ agentId }`                                                                                                                                           | `{ agentId, dismissed: true }`           |
+| method            | params                                                                                                                                                 | result                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `list_agents`     | —                                                                                                                                                      | `{ agents: AgentSummary[] }`             |
+| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                    | `OutputChunk`                            |
+| `send_input`      | `{ agentId \| supervisor, text: string, enter?: boolean (default true) }`                                                                              | `{ agentId, bytesWritten: number }`      |
+| `kill`            | `{ agentId }`                                                                                                                                          | `{ agentId, killed: true }`              |
+| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", supervisorKey?, worktree?, modelReason? }` | `{ agentId }`                            |
+| `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                  | `{ projects: ProjectEntry[], catalog? }` |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                                                    | `AwaitResult`                            |
+| `remove_worktree` | `{ agentId }`                                                                                                                                          | `WorktreeRemoval`                        |
+| `dismiss`         | `{ agentId }`                                                                                                                                          | `{ agentId, dismissed: true }`           |
 
 `role` and `await_result` belong to the supervisor scope and are described
-there. `role: "worker"` is the same as leaving it out. `worktree` and
+there; `supervisorKey` and `send_input { supervisor }` under "Several
+supervisors". `role: "worker"` is the same as leaving it out. `worktree` and
 `remove_worktree` are described under "Worktrees" below.
 
 `AgentSummary` = the Rust `AgentInfo` as it already serialises
@@ -268,9 +269,9 @@ but only if it resolves, symlinks followed, to a direct child of
 `~/.auric/supervisors/`: never the root, never a subfolder of a run, never
 anything outside. Everything else about the launch stays as above. The launch
 prompt adds "Picking up an earlier run": read the folder newest first, report
-where the run stopped, wait for the go-ahead. The earlier run's children stay
-out of scope, because scope is by agent id, and the new supervisor has a new
-one. A supervisor restored after an app restart resumes its own folder the same
+where the run stopped, wait for the go-ahead. The earlier run's children are adopted: their `spawnedByAgentId` moves to
+the new supervisor's id (see "Several supervisors"), so they are in its scope
+again. A supervisor restored after an app restart resumes its own folder the same
 way. Listing is `supervisor_runs_list` / `supervisor_run_files` (Tauri only,
 not on any socket).
 
@@ -308,9 +309,52 @@ command text, not a file identity. Settings warns about tools that run any code
 they are given (`unrestrictedTools` in the fixtures: shells, interpreters,
 `env`, `xargs`, `sudo`), but does not block them; that is the user's call.
 
-Supervisors are started by the Supervisor tile in Quick Access, or by an
-external caller with `spawn { role: "supervisor" }`. A supervisor cannot
-start another supervisor.
+Supervisors are started by the Supervisor tile in Quick Access, the menu
+bar, the supervisor link, or by an external caller with
+`spawn { role: "supervisor" }`. A supervisor cannot start another supervisor.
+
+### Several supervisors
+
+Any number of supervisors may run at once. Nothing in the scope above changes:
+the PID walk names the one asking, and its scope is its own children, so two
+supervisors never see each other's children (`unknown_agent` across).
+Limits stay per supervisor: `maxRunning` counts one supervisor's children,
+so two supervisors may each fill it in the same project. The machine-checkable
+half is `supervisors` in `agentControl.fixtures.json`
+(`supervisor::several`).
+
+- **A key is an address.** `spawn { role: "supervisor", supervisorKey }`
+  (also the link's `supervisors.spawn { key }` and the frontend's
+  `AgentConfig.supervisorKey`) names a supervisor. Format
+  `^[a-z0-9][a-z0-9-]{0,47}$`, not shaped like an agent id (`agent-<n>`)
+  (`supervisor_key_invalid`), unique among live
+  supervisors (`supervisor_key_in_use`); a worker spawn carrying one is
+  `invalid_params`. `list_agents` shows `supervisorKey` on every entry, and
+  `send_input { supervisor: key }` instead of `agentId` reaches the live
+  supervisor carrying it, resolved at the call (`unknown_supervisor` when none
+  does). A supervisor caller using a key still ends at `ensure_child`.
+- **One run folder, one live supervisor.** Resuming a run folder a live
+  supervisor works in (its `repoPath`) is refused in `admit_spawn` with a
+  sentence the frontend recognises (fixture `supervisors.runDirInUse`), for
+  every route: the tile, the runs panel, a restored agent
+  (`resume_interrupted_agent`, which then keeps its offer). The frontend checks
+  the same before it calls Rust; Rust is the backstop.
+- **The key survives a resume.** `admit_spawn` writes `<run>/supervisor.json`
+  (`{ "key": … }`) on every launch, and a resume without a key of its own takes
+  the run's. The key and the run folder are checked again when the started
+  process is entered into the manager, so two launches in the same moment
+  cannot both win.
+- **Children follow a resumed supervisor.** It adopts the children of every
+  earlier supervisor of its run folder (from the restart file, the kept run
+  results, and for a restored agent the id it had): `spawnedByAgentId` old →
+  new on the live agents, in the restart file and in the run results, then the
+  Tauri event `supervisor-children-adopted` `{ fromIds, toId }` for the
+  frontend's list. Without this a resumed supervisor saw none of its earlier
+  children.
+- **Shared files are written under a lock.** The run's skill plugin folder is
+  rebuilt from today's approvals on every launch (a resume found the old links
+  and failed), and the trust entries in `~/.claude.json` are written under one
+  process-wide lock, so two supervisors starting together keep both.
 
 ### Methods for a supervisor caller
 
@@ -601,7 +645,8 @@ stays in the Git panel's worktree list for a person.
 `invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
 `agent_not_running`, `headless_no_stdin`, `provider_denied`,
 `frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
-`outside_supervisor_scope`, `unknown_project`, `internal`.
+`outside_supervisor_scope`, `unknown_project`, `supervisor_key_invalid`,
+`supervisor_key_in_use`, `unknown_supervisor`, `internal`.
 
 - `supervisor_denied`: the supervisor policy refuses this spawn. The error
   body carries `reason`, a stable key from `supervisorPolicy.fixtures.json`.
@@ -609,6 +654,8 @@ stays in the Git panel's worktree list for a person.
   includes (a `permissionMode` of its own).
 - `unknown_project`: `list_projects { project }` matched nothing the caller
   may see. For a supervisor that includes a project its policy does not allow.
+- `supervisor_key_invalid`, `supervisor_key_in_use`, `unknown_supervisor`: see
+  "Several supervisors".
 
 The client adds three of its own: `app_not_running` when the socket does not
 exist or refuses the connection, `timeout` when no answer arrives in time, and

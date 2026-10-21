@@ -5,12 +5,12 @@ import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
 import { uniqueAgentName } from '@/lib/agents/naming';
-import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 import {
-  findRunningSupervisor,
+  newestRunningSupervisor,
   readProjectProviderPolicies,
   readSupervisorInstructions,
   supervisorSpawnConfig,
+  supervisorUsingRunDir,
 } from '@/lib/agents/supervisorLaunch';
 import {
   SUPPORTED_SUPERVISOR_PROVIDERS,
@@ -185,19 +185,25 @@ export async function handleSpawnNewAgent(
  * The supervisor's start: its prompt lists what the policy lets it use, with
  * the descriptions people gave their Quick Access tiles. The spawn itself is
  * the ordinary one, so the card, logs and history behave like any agent's.
+ *
+ * Several supervisors may run side by side. A task, a resumed run or
+ * `forceNew` always starts a new one; only a plain open with none of those
+ * brings the newest running supervisor forward instead.
  */
 export async function handleSpawnSupervisor(
   get: () => AgentSlice,
   skill?: SupervisorSkillLaunch
 ): Promise<SupervisorLaunch> {
   const task = skill?.task.trim() ?? '';
-  const running = findRunningSupervisor(get().agents);
-  if (running && task && !skill?.resumeRunDir) {
-    // Typed by the human through the tile, so the same wire as the composer.
-    await get().sendAgentInput(running.id, `${task}${TERMINAL_ENTER}`);
-    return { kind: 'sent', agent: running };
+  const agents = get().agents;
+  if (skill?.resumeRunDir) {
+    // One live supervisor per run folder; Rust's `run_dir_in_use` is the backstop.
+    const inUse = supervisorUsingRunDir(agents, skill.resumeRunDir);
+    if (inUse) return { kind: 'run_in_use', agent: inUse };
+  } else if (!task && !skill?.forceNew) {
+    const running = newestRunningSupervisor(agents);
+    if (running) return { kind: 'running', agent: running };
   }
-  if (running) return { kind: 'running', agent: running };
 
   const { policy } = await supervisorPolicyGet();
   const host = get() as AgentSlice & {
@@ -304,7 +310,9 @@ export async function handleSpawnLinkedSupervisor(
     model: launch.model ?? undefined,
   });
   if (!config) return { kind: 'nothing-visible' };
-  return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
+  const named = launch.name ? { ...config, name: launch.name } : config;
+  const keyed = launch.key ? { ...named, supervisorKey: launch.key } : named;
+  return { kind: 'spawned', agent: await get().spawnNewAgent(keyed) };
 }
 
 export async function handleRetryFailedAgent(

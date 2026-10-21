@@ -64,6 +64,27 @@ describe('supervisor relation on cards and rows', () => {
     expect(useStore.getState().selectedAgentId).toBe('sup');
   });
 
+  it('shows the key a supervisor is addressed by, on its card, a compact row and its child', () => {
+    const keyed = { ...SUPERVISOR, supervisorKey: 'mail-triage' };
+    useStore.setState({ agents: [keyed, CHILD_A, CHILD_B] });
+    const { unmount } = render(<AgentCard agent={keyed} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-supervisor-key')).toHaveTextContent('· mail-triage');
+    unmount();
+    render(
+      <CompactAgentRow
+        agent={keyed}
+        activateLabel="Open logs of"
+        onActivate={vi.fn()}
+        dismissLabel="Dismiss"
+        dismissIcon="close"
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agent-supervisor-key')).toHaveTextContent('· mail-triage');
+    render(<AgentCard agent={CHILD_A} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-supervisor-link')).toHaveTextContent('via mail-triage');
+  });
+
   it('adds nothing to an ordinary agent', () => {
     render(<AgentCard agent={agent('plain')} onKill={vi.fn()} />);
     expect(screen.queryByTestId('agent-supervisor-chip')).toBeNull();

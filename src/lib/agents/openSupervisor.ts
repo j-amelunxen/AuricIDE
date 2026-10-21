@@ -10,21 +10,30 @@ interface OpenSupervisorHooks {
   onShow: (agentId: string) => void;
 }
 
+interface OpenSupervisorOptions {
+  /** Start a new supervisor even without a skill, rather than open the running one. */
+  forceNew?: boolean;
+}
+
 /**
- * The one way a skill becomes a supervisor run: a new supervisor with the
- * skill as its first task, or a message to the one already running. The tile,
- * its wheel, its menu and the menu bar all go through here, so the same skill
- * cannot start differently depending on where it was clicked.
+ * The one way a skill becomes a supervisor run: always a new supervisor with
+ * the skill as its first task. Without a skill the newest running supervisor
+ * comes forward, unless `forceNew` asks for another. The tile, its wheel, its
+ * menu and the menu bar all go through here, so the same skill cannot start
+ * differently depending on where it was clicked.
  */
 export async function openSupervisor(
   store: Pick<StoreState, 'spawnSupervisor' | 'showToast'>,
   skill: QuickAccessSkill | undefined,
-  hooks: OpenSupervisorHooks
+  hooks: OpenSupervisorHooks,
+  options: OpenSupervisorOptions = {}
 ): Promise<void> {
   const resolved = skill ? resolveAuricSkillReference(skill) : undefined;
   const launch: SupervisorSkillLaunch | undefined = resolved
     ? { task: resolved.prompt, model: resolved.model }
-    : undefined;
+    : options.forceNew
+      ? { task: '', forceNew: true }
+      : undefined;
   try {
     const result = await store.spawnSupervisor(launch);
     if (result.kind === 'nothing-visible') {
@@ -35,9 +44,6 @@ export async function openSupervisor(
     if (result.kind === 'cancelled') {
       return;
     }
-    if (result.kind === 'sent') {
-      store.showToast(`Sent "${resolved?.label ?? 'skill'}" to the running supervisor`, 'success');
-    }
     hooks.onShow(result.agent.id);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -47,8 +53,8 @@ export async function openSupervisor(
 
 /**
  * A new supervisor in an earlier run's folder (the tile's "Resume" entries
- * and the runs browser). One supervisor at a time: while one runs, it is
- * brought forward and nothing starts.
+ * and the runs browser), whatever else runs. Only a run folder that a live
+ * supervisor already works in is refused: that one is brought forward.
  */
 export async function resumeSupervisor(
   store: Pick<StoreState, 'spawnSupervisor' | 'showToast'>,
@@ -63,8 +69,8 @@ export async function resumeSupervisor(
       return;
     }
     if (result.kind === 'cancelled') return;
-    if (result.kind === 'running') {
-      store.showToast('A supervisor is already running. Stop it to resume an earlier run.', 'info');
+    if (result.kind === 'run_in_use') {
+      store.showToast(`This run is already open in "${result.agent.name}".`, 'info');
     }
     hooks.onShow(result.agent.id);
   } catch (error) {

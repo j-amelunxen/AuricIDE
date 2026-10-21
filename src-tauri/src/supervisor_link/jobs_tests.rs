@@ -29,6 +29,7 @@ pub(crate) fn record(job_id: &str, project: &str, created_at: u64) -> JobRecord 
         other_files: Vec::new(),
         error: None,
         cancel_requested: false,
+        requested_by: None,
         cancel_reason: None,
     }
 }

@@ -61,6 +61,19 @@ pub struct AgentConfig {
     /// `~/.auric/supervisors/` (`supervisor::runs::resolve_run_dir`).
     #[serde(default)]
     pub resume_run_dir: Option<String>,
+    /// A supervisor only: the address a client gave it
+    /// (`supervisor::several`). Unique among live supervisors; `admit_spawn`
+    /// checks it, and a resume without one takes the run folder's.
+    #[serde(default)]
+    pub supervisor_key: Option<String>,
+    /// Set by Rust after admission, never by a caller: the run folder a
+    /// supervisor resumed. Its earlier supervisors' children follow it.
+    #[serde(skip)]
+    pub resumed_run_dir: Option<String>,
+    /// Set by `resumed_config` for a supervisor restored after a restart: the
+    /// id it had before, which no store may remember any more.
+    #[serde(skip)]
+    pub replaces_agent_id: Option<String>,
 }
 
 impl AgentConfig {
@@ -109,6 +122,8 @@ pub struct AgentInfo {
     pub role: AgentRole,
     /// The supervisor that started this agent, else `None`.
     pub spawned_by_agent_id: Option<String>,
+    /// A supervisor's address (`AgentConfig::supervisor_key`), else `None`.
+    pub supervisor_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

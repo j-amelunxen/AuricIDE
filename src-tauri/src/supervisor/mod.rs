@@ -10,6 +10,7 @@
 pub mod attachments;
 pub mod policy;
 pub mod runs;
+pub mod several;
 
 use crate::agents::{AgentConfig, AgentInfo, AgentRole, AgentStatus};
 use crate::provider_policy::ProviderPolicy;
@@ -478,7 +479,15 @@ pub fn supervisor_runs_root(home: &Path) -> PathBuf {
 /// whether to display the interactive "Do you trust this workspace?" dialog.
 /// Pre-seeding it avoids prompting the user every time a fresh supervisor run
 /// folder is created.
+///
+/// The read-modify-write runs under one process-wide lock: two supervisors
+/// starting at once would otherwise each write back what they read, and the
+/// later write would drop the earlier one's folder.
 pub fn pre_trust_claude_workspace(home: &Path, paths: &[&Path]) -> Result<(), String> {
+    static CLAUDE_CONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _held = CLAUDE_CONFIG
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let config_path = home.join(".claude.json");
     let mut root: Value = if config_path.is_file() {
         let text = std::fs::read_to_string(&config_path)
@@ -578,6 +587,11 @@ pub struct SkillPlugin {
 /// `skills/` links to each approved skill folder, and nothing else. A listed
 /// skill whose folder is gone is left out rather than failing the launch; two
 /// skills with one folder name keep the first by path.
+///
+/// A resumed run has a folder from its earlier launch. It holds only links
+/// and the manifest, so it is cleared and built from today's approvals:
+/// linking over an old link fails, and a skill approved back then must not
+/// stay reachable. `remove_dir_all` removes links, never what they point at.
 pub fn build_skill_plugin(
     app_data: &Path,
     run_name: &str,
@@ -585,6 +599,11 @@ pub fn build_skill_plugin(
 ) -> Result<SkillPlugin, String> {
     let root = app_data.join(SKILL_PLUGINS_DIR_NAME);
     prune_skill_plugins(&root);
+    let dir = root.join(run_name);
+    if std::fs::symlink_metadata(&dir).is_ok() {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|error| format!("Could not clear the supervisor's earlier skills: {error}"))?;
+    }
     let mut plugin = SkillPlugin::default();
     let mut links = Vec::new();
     for (path, rules) in skills {
@@ -611,7 +630,6 @@ pub fn build_skill_plugin(
     if links.is_empty() {
         return Ok(plugin);
     }
-    let dir = root.join(run_name);
     let fail =
         |error: std::io::Error| format!("Could not prepare the supervisor's skills: {error}");
     std::fs::create_dir_all(dir.join(".claude-plugin")).map_err(fail)?;
@@ -1021,6 +1039,73 @@ mod tests {
         let link = dir.join("skills").join("review");
         assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from(&review));
         assert!(!dir.join("skills").join("gone").exists());
+    }
+
+    #[test]
+    fn a_resumed_run_builds_its_plugin_again_with_todays_approvals() {
+        let app_data = tempfile::tempdir().unwrap();
+        let sources = tempfile::tempdir().unwrap();
+        let review = skill_folder(sources.path(), "review");
+        let notes = skill_folder(sources.path(), "notes");
+        let both = BTreeMap::from([
+            (review.clone(), policy::SkillRules::default()),
+            (notes, policy::SkillRules::default()),
+        ]);
+        build_skill_plugin(app_data.path(), "run-1", &both).unwrap();
+
+        let only_review = BTreeMap::from([(review.clone(), policy::SkillRules::default())]);
+        let plugin = build_skill_plugin(app_data.path(), "run-1", &only_review)
+            .expect("the same run folder is built a second time");
+        let dir = plugin.dir.unwrap();
+        assert_eq!(
+            std::fs::read_link(dir.join("skills").join("review")).unwrap(),
+            PathBuf::from(&review)
+        );
+        assert!(
+            std::fs::symlink_metadata(dir.join("skills").join("notes")).is_err(),
+            "a skill no longer approved is gone from the rebuilt plugin"
+        );
+        assert!(
+            Path::new(&review).join("SKILL.md").is_file(),
+            "the source stays"
+        );
+
+        let none = build_skill_plugin(app_data.path(), "run-1", &BTreeMap::new()).unwrap();
+        assert_eq!(none.dir, None);
+        assert!(
+            std::fs::symlink_metadata(dir.join("skills").join("review")).is_err(),
+            "no approved skill leaves no link of an earlier build behind"
+        );
+    }
+
+    #[test]
+    fn concurrent_trust_writes_keep_every_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let folders: Vec<PathBuf> = (0..16)
+            .map(|n| {
+                let dir = home.path().join(format!("run-{n}"));
+                std::fs::create_dir_all(&dir).unwrap();
+                dir
+            })
+            .collect();
+        std::thread::scope(|scope| {
+            for dir in &folders {
+                let home = home.path();
+                scope.spawn(move || pre_trust_claude_workspace(home, &[dir.as_path()]).unwrap());
+            }
+        });
+        let content: Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
+        )
+        .unwrap();
+        for dir in &folders {
+            let key = dir.canonicalize().unwrap().to_string_lossy().into_owned();
+            assert_eq!(
+                content["projects"][&key]["hasTrustDialogAccepted"],
+                Value::Bool(true),
+                "{key} lost its trust entry"
+            );
+        }
     }
 
     #[test]

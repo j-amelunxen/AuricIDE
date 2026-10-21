@@ -149,7 +149,7 @@ fn a_job_runs_headless_in_its_worktree_on_the_smallest_ranked_model() {
         .link
         .tree()
         .iter()
-        .any(|agent| agent.info.id == "agent-7"));
+        .any(|agent| agent.summary.info.id == "agent-7"));
 }
 
 #[test]
@@ -595,4 +595,105 @@ fn a_project_limit_of_zero_switches_jobs_off_there_only() {
         refused.message
     );
     assert!(s.h.backend.requests.lock().unwrap().is_empty(), "no spawn");
+}
+
+fn create_for(s: &Setup, key: &str) -> Result<Value, LinkError> {
+    let line = json!({
+        "v": 1, "id": 1, "method": "jobs.create",
+        "params": { "project": s.p.path(), "kind": "diagram.draw", "payload": null,
+                    "supervisor": key }
+    });
+    ask(&s.h.link, &line.to_string())
+}
+
+#[test]
+fn a_job_for_a_supervisor_records_it_and_pings_whoever_carries_the_key_at_the_end() {
+    let s = setup(JobLimits::default());
+    s.h.backend.agents.lock().unwrap()[0].supervisor_key = Some("mail-triage".into());
+    assert_eq!(
+        create_for(&s, "docs").unwrap_err().code,
+        "unknown_supervisor"
+    );
+    assert!(
+        s.h.backend.requests.lock().unwrap().is_empty(),
+        "nothing started"
+    );
+
+    let started = create_for(&s, "mail-triage").unwrap();
+    let job_id = started["jobId"].as_str().unwrap().to_string();
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert_eq!(
+        job.requested_by,
+        Some(jobs::RequestedBy {
+            key: "mail-triage".into(),
+            agent_id: "agent-1".into()
+        })
+    );
+
+    // The supervisor was resumed meanwhile: a new id under the same key.
+    {
+        let mut agents = s.h.backend.agents.lock().unwrap();
+        agents[0].id = "agent-11".into();
+    }
+    std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let written = s.h.backend.written.lock().unwrap().clone();
+    assert_eq!(written.len(), 1, "{written:?}");
+    assert_eq!(written[0].0, "agent-11");
+    assert!(written[0].1.contains(&job_id), "{}", written[0].1);
+    assert!(written[0].1.contains("finished"), "{}", written[0].1);
+    assert!(
+        !written[0].1.contains("  "),
+        "one space between words: {}",
+        written[0].1
+    );
+    assert_eq!(
+        s.h.host.notified.lock().unwrap().len(),
+        1,
+        "the inbox still hears of it"
+    );
+}
+
+#[test]
+fn a_job_nobody_asked_for_pings_no_supervisor() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+    assert_eq!(s.h.link.jobs().list(None, None, 1)[0].requested_by, None);
+}
+
+#[test]
+fn a_supervisor_subscription_hears_its_own_jobs_progress_and_end_only() {
+    let s = setup(JobLimits::default());
+    s.h.backend.agents.lock().unwrap()[0].supervisor_key = Some("mail-triage".into());
+    let subscribe = |filter: &str| {
+        let reply = s.h.link.handle(
+            parse_message(&format!(
+                r#"{{"v":1,"id":1,"method":"events.subscribe","params":{{"supervisors":["{filter}"]}}}}"#
+            ))
+            .unwrap()
+            .1,
+        );
+        let Some(Install::Set(subscription)) = reply.install else {
+            panic!("subscribe installs a subscription");
+        };
+        *subscription
+    };
+    let mut mine = subscribe("mail-triage");
+    let mut other = subscribe("night-shift");
+    create_for(&s, "mail-triage").unwrap();
+    std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
+    s.h.link.tick_jobs(jobs::now_ms());
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let names: Vec<&str> = mine
+        .poll_jobs(s.h.link.jobs())
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, vec!["job.started", "job.progress", "job.finished"]);
+    assert!(other.poll_jobs(s.h.link.jobs()).is_empty());
 }

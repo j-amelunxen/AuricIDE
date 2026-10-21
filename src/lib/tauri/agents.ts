@@ -47,6 +47,12 @@ export interface AgentInfo {
   role?: AgentRole;
   /** The supervisor that started this agent; `null`/absent for everyone else. */
   spawnedByAgentId?: string | null;
+  /**
+   * A supervisor only: the address a client chose for it
+   * (`^[a-z0-9][a-z0-9-]{0,47}$`), unique among live supervisors and kept
+   * across a resume of its run. `null`/absent when none was given.
+   */
+  supervisorKey?: string | null;
 }
 
 /** What an agent is to the control socket (`agentControl.fixtures.json`, `roles`). */
@@ -76,6 +82,12 @@ export interface AgentConfig {
    * to work in again. Rust refuses anything that is not one run folder.
    */
   resumeRunDir?: string;
+  /**
+   * A supervisor only: the address to reach it by (`AgentInfo.supervisorKey`).
+   * Rust refuses a malformed key, a key a live supervisor already holds, and
+   * any key on a worker.
+   */
+  supervisorKey?: string;
   permissionMode?: PermissionMode;
   dangerouslyIgnorePermissions?: boolean;
   autoAcceptEdits?: boolean;

@@ -43,6 +43,9 @@ export const CONTROL_ERROR_CODES = [
   'supervisor_denied',
   'outside_supervisor_scope',
   'unknown_project',
+  'supervisor_key_invalid',
+  'supervisor_key_in_use',
+  'unknown_supervisor',
   'internal',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];
@@ -132,6 +135,31 @@ const optionalText = z.string().nullish();
 
 const noParams = z.object({}).transform(() => ({}));
 
+/**
+ * The address a client gives a supervisor (`supervisorLink.fixtures.json`,
+ * `supervisorKeys`). Checked after the shape, so a malformed key answers
+ * `supervisor_key_invalid` rather than `invalid_params`.
+ */
+export const SUPERVISOR_KEY_PATTERN = new RegExp(linkFixtures.supervisorKeys.pattern);
+
+/**
+ * Keys shaped like an agent id (`agent-3`) are refused: an `events.subscribe`
+ * entry takes keys and agent ids alike, and one name must not point at two
+ * supervisors.
+ */
+const RESERVED_SUPERVISOR_KEY = new RegExp(linkFixtures.supervisorKeys.reservedPattern);
+
+export function isSupervisorKey(value: string): boolean {
+  return SUPERVISOR_KEY_PATTERN.test(value) && !RESERVED_SUPERVISOR_KEY.test(value);
+}
+
+/** The key a request names, when it names one: `spawn.supervisorKey` or `send_input.supervisor`. */
+function namedSupervisorKey(params: object): string | null {
+  const named = params as { supervisorKey?: unknown; supervisor?: unknown };
+  const key = named.supervisorKey ?? named.supervisor;
+  return typeof key === 'string' ? key : null;
+}
+
 /** The changes `link_policy_propose` knows (`supervisorLink.fixtures.json`, `proposals.ops`). */
 export const LINK_POLICY_OPS = linkFixtures.proposals.ops as [string, ...string[]];
 
@@ -158,9 +186,23 @@ const PARAMS = {
       ),
       sinceOffset: p.sinceOffset ?? null,
     })),
+  /** To one agent by id, or to the live supervisor holding a key: exactly one of the two. */
   send_input: z
-    .object({ agentId, text: z.string(), enter: z.boolean().nullish() })
-    .transform((p) => ({ agentId: p.agentId, text: p.text, enter: p.enter ?? true }))
+    .object({
+      agentId: agentId.nullish(),
+      supervisor: z.string().nullish(),
+      text: z.string(),
+      enter: z.boolean().nullish(),
+    })
+    .refine((p) => (p.agentId ? 1 : 0) + (typeof p.supervisor === 'string' ? 1 : 0) === 1, {
+      message: 'name exactly one of agentId or supervisor',
+      path: ['agentId'],
+    })
+    .transform((p) => ({
+      ...(p.agentId ? { agentId: p.agentId } : { supervisor: p.supervisor as string }),
+      text: p.text,
+      enter: p.enter ?? true,
+    }))
     .refine((p) => p.text !== '' || p.enter, {
       message: 'empty text with enter: false writes nothing',
       path: ['text'],
@@ -178,6 +220,11 @@ const PARAMS = {
       role: z.enum(AGENT_ROLES).nullish(),
       worktree: z.boolean().nullish(),
       modelReason: optionalText,
+      supervisorKey: optionalText,
+    })
+    .refine((p) => !p.supervisorKey || p.role === 'supervisor', {
+      message: 'only a supervisor takes a supervisor key',
+      path: ['supervisorKey'],
     })
     .transform((p) => ({
       projectPath: p.projectPath,
@@ -190,8 +237,9 @@ const PARAMS = {
       // A worker is what every spawn starts anyway; only a supervisor is news.
       role: p.role === 'supervisor' ? ('supervisor' as const) : null,
       worktree: p.worktree ?? null,
-      // Left out when unset, as Rust serialises it.
+      // Left out when unset, as Rust serialises them.
       ...(p.modelReason ? { modelReason: p.modelReason } : {}),
+      ...(p.supervisorKey ? { supervisorKey: p.supervisorKey } : {}),
     })),
   await_result: z
     .object({
@@ -282,7 +330,9 @@ export function normalizeControlRequest(value: unknown): ParsedControlRequest {
     const params = parseControlParams(envelope.method, envelope.params);
     return { ok: true, request: { id, method: envelope.method, params } };
   } catch (error) {
-    return { ok: false, id, code: 'invalid_params', message: (error as ControlError).message };
+    // parseControlParams only throws socket codes: invalid_params or supervisor_key_invalid.
+    const { code, message } = error as ControlError & { code: ControlErrorCode };
+    return { ok: false, id, code, message };
   }
 }
 
@@ -319,6 +369,15 @@ export function parseControlParams<M extends ControlMethod>(
       `${method}: ${parsed.error.issues.map(describeIssue).join('; ')}`
     );
   }
+  const key = namedSupervisorKey(parsed.data);
+  if (key !== null && !isSupervisorKey(key)) {
+    throw new ControlError(
+      'supervisor_key_invalid',
+      `${method}: '${key}' is not a valid supervisor key: use 1 to 48 lowercase letters, ` +
+        'digits and dashes, starting with a letter or a digit, and not shaped like an agent ' +
+        'id (agent-<number>)'
+    );
+  }
   return parsed.data as ControlParams<M>;
 }
 
@@ -346,6 +405,8 @@ const agentSummary = z.object({
   idleForMs: offset.nullable().optional(),
   stalledSinceMs: offset.nullable().optional(),
   role: z.enum(AGENT_ROLES),
+  /** Only a supervisor carries one; an IDE from before keys existed sends nothing. */
+  supervisorKey: z.string().nullable().optional(),
   spawnedByAgentId: z.string().nullable(),
 });
 

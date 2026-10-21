@@ -210,7 +210,10 @@ fn a_supervisor_spawn_is_handed_to_the_frontend_and_its_codes_pass_through() {
         r#"{"v":1,"id":1,"method":"supervisors.spawn","params":{"task":"plan it"}}"#,
     )
     .unwrap();
-    assert_eq!(spawned, json!({ "agentId": "agent-9" }));
+    assert_eq!(
+        spawned,
+        json!({ "agentId": "agent-9", "key": null, "existing": false })
+    );
     let request = h.backend.requests.lock().unwrap()[0].clone();
     assert_eq!(request.method, SPAWN_SUPERVISOR_METHOD);
     assert_eq!(request.params, json!({ "task": "plan it" }));
@@ -295,7 +298,7 @@ fn the_subscribe_answer_is_the_baseline_and_events_are_the_changes_after_it() {
     let mut subscription = *subscription;
     let read = |id: &str, since: u64| h.link.output_since(id, since);
 
-    assert!(subscription.poll(&h.link.tree(), read).is_empty());
+    assert!(subscription.poll(&h.link.tree(), &[], read).is_empty());
 
     h.buffers.append("agent-1", "new line\n");
     h.backend
@@ -305,7 +308,7 @@ fn the_subscribe_answer_is_the_baseline_and_events_are_the_changes_after_it() {
         .push(agent("agent-4", AgentRole::Worker, Some("agent-1")));
     h.buffers.append("agent-4", "child starts\n");
     h.backend.agents.lock().unwrap()[1].status = AgentStatus::Idle;
-    let events = subscription.poll(&h.link.tree(), read);
+    let events = subscription.poll(&h.link.tree(), &[], read);
     let names: Vec<&str> = events.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         names,
@@ -327,7 +330,7 @@ fn the_subscribe_answer_is_the_baseline_and_events_are_the_changes_after_it() {
         .lock()
         .unwrap()
         .retain(|agent| agent.id != "agent-2");
-    let events = subscription.poll(&h.link.tree(), read);
+    let events = subscription.poll(&h.link.tree(), &[], read);
     assert_eq!(events.len(), 1);
     assert_eq!(
         events[0],
@@ -352,7 +355,9 @@ fn a_narrow_subscription_without_output_sees_only_its_agents_list_changes() {
     h.buffers.append("agent-2", "noise\n");
     h.backend.agents.lock().unwrap()[0].status = AgentStatus::Idle;
     assert!(subscription
-        .poll(&h.link.tree(), |id, since| h.link.output_since(id, since))
+        .poll(&h.link.tree(), &[], |id, since| h
+            .link
+            .output_since(id, since))
         .is_empty());
 }
 
@@ -371,7 +376,9 @@ fn since_offsets_continue_where_a_client_left_off() {
         panic!("subscribe installs a subscription");
     };
     let mut subscription = *subscription;
-    let events = subscription.poll(&h.link.tree(), |id, since| h.link.output_since(id, since));
+    let events = subscription.poll(&h.link.tree(), &[], |id, since| {
+        h.link.output_since(id, since)
+    });
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].1["text"], "456789");
 }
@@ -679,5 +686,297 @@ fn the_link_has_no_method_that_proposes_or_decides_a_policy_change() {
         let line = json!({ "v": 1, "id": 1, "method": method, "params": {} }).to_string();
         let error = ask(&h.link, &line).unwrap_err();
         assert_eq!(error.code, "unknown_method", "{method}");
+    }
+}
+
+// ── Several supervisors ─────────────────────────────────────────────────────
+
+fn fixture_agents(value: &Value) -> Vec<AgentInfo> {
+    value
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .map(crate::supervisor::several::tests::agent_from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn answers_spawns_with(h: &Harness, agent_id: &str) {
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: true,
+        result: Some(json!({ "agentId": agent_id })),
+        error: None,
+    });
+}
+
+#[test]
+fn every_keyed_spawn_case_in_the_contract_holds() {
+    let fixture = protocol::tests::fixtures()["supervisorKeys"]["spawn"].clone();
+    for case in fixture["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let live: Vec<AgentInfo> = fixture["live"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                crate::supervisor::several::tests::agent_from(&json!({
+                    "id": entry["agentId"], "role": "supervisor", "status": entry["status"],
+                    "supervisorKey": entry["key"]
+                }))
+            })
+            .collect();
+        let h = harness(live);
+        for entry in fixture["finished"].as_array().unwrap() {
+            let finished = crate::supervisor::several::tests::agent_from(&json!({
+                "id": entry["agentId"], "role": "supervisor", "status": entry["status"],
+                "supervisorKey": entry["key"]
+            }));
+            h.run_results.record_finished(
+                crate::agents::run_results::RunResult::from_finish(
+                    &finished.id,
+                    AgentStatus::Idle,
+                    Some(0),
+                    None,
+                    || None,
+                    1,
+                ),
+                finished,
+            );
+        }
+        answers_spawns_with(&h, "agent-new");
+        let line =
+            json!({ "v": 1, "id": 1, "method": "supervisors.spawn", "params": case["params"] });
+        let outcome = ask(&h.link, &line.to_string());
+        let expected = &case["expected"];
+        if let Some(code) = expected["error"].as_str() {
+            assert_eq!(outcome.unwrap_err().code, code, "{name}");
+            assert!(
+                h.backend.requests.lock().unwrap().is_empty(),
+                "{name}: no spawn"
+            );
+            continue;
+        }
+        let answer = outcome.unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        let requests = h.backend.requests.lock().unwrap().clone();
+        assert_eq!(answer["existing"], expected["existing"], "{name}");
+        assert_eq!(answer["key"], expected["key"], "{name}");
+        if expected["started"] == json!(true) {
+            assert_eq!(answer["agentId"], "agent-new", "{name}");
+            assert_eq!(requests.len(), 1, "{name}");
+            assert_eq!(
+                requests[0]
+                    .params
+                    .get("supervisorKey")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                expected["key"],
+                "{name}: the key reaches the frontend"
+            );
+            assert!(requests[0].params.get("if").is_none(), "{name}");
+        } else {
+            assert_eq!(answer["agentId"], expected["agentId"], "{name}");
+            assert!(requests.is_empty(), "{name}: nothing started, no task sent");
+        }
+    }
+}
+
+#[test]
+fn a_key_taken_while_the_spawn_ran_answers_the_winner_for_if_existing() {
+    let h = harness(Vec::new());
+    let backend = h.backend.clone();
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: false,
+        result: None,
+        error: Some(FrontendError {
+            code: "supervisor_key_in_use".into(),
+            message: "'mail-triage' is already the key of a running supervisor (agent-3).".into(),
+        }),
+    });
+    // The other client's supervisor is live by the time the refusal arrives.
+    backend
+        .agents
+        .lock()
+        .unwrap()
+        .push(crate::supervisor::several::tests::agent_from(
+            &json!({ "id": "agent-3", "role": "supervisor", "supervisorKey": "other" }),
+        ));
+    let refused = ask(
+        &h.link,
+        r#"{"v":1,"id":1,"method":"supervisors.spawn","params":{"key":"mail-triage","if":"existing"}}"#,
+    );
+    assert_eq!(refused.unwrap_err().code, "supervisor_key_in_use");
+    backend.agents.lock().unwrap()[0].supervisor_key = Some("mail-triage".into());
+    // Looked up first now, so nothing is started at all.
+    let found = ask(
+        &h.link,
+        r#"{"v":1,"id":2,"method":"supervisors.spawn","params":{"key":"mail-triage","if":"existing"}}"#,
+    )
+    .unwrap();
+    assert_eq!(found["agentId"], "agent-3");
+}
+
+#[test]
+fn supervisors_list_shows_live_and_kept_supervisors_with_their_subtrees() {
+    let fixture = protocol::tests::fixtures()["subtree"].clone();
+    let agents = fixture_agents(&fixture["agents"]);
+    let live: Vec<AgentInfo> = agents
+        .iter()
+        .filter(|agent| agent.status == AgentStatus::Running)
+        .cloned()
+        .collect();
+    let h = harness(live);
+    let finished = agents
+        .iter()
+        .filter(|agent| agent.status != AgentStatus::Running)
+        .cloned()
+        .chain(fixture_agents(&fixture["finished"]));
+    for agent in finished {
+        h.run_results.record_finished(
+            crate::agents::run_results::RunResult::from_finish(
+                &agent.id,
+                agent.status.clone(),
+                Some(0),
+                None,
+                || None,
+                1,
+            ),
+            agent,
+        );
+    }
+    let listed = ask(&h.link, r#"{"v":1,"id":1,"method":"supervisors.list"}"#).unwrap();
+    assert_eq!(listed["supervisors"], fixture["list"]);
+}
+
+#[test]
+fn agents_are_reached_by_key_at_call_time_and_carry_their_root() {
+    let h = harness(vec![
+        crate::supervisor::several::tests::agent_from(&json!({
+            "id": "agent-1", "role": "supervisor", "supervisorKey": "mail-triage"
+        })),
+        agent("agent-2", AgentRole::Worker, Some("agent-1")),
+    ]);
+    let sent = ask(
+        &h.link,
+        r#"{"v":1,"id":1,"method":"agents.send","params":{"supervisor":"mail-triage","text":"hi"}}"#,
+    )
+    .unwrap();
+    assert_eq!(sent["agentId"], "agent-1");
+
+    // Resumed: a new id under the same key.
+    {
+        let mut agents = h.backend.agents.lock().unwrap();
+        agents[0].id = "agent-7".into();
+        agents[1].spawned_by_agent_id = Some("agent-7".into());
+    }
+    let read = ask(
+        &h.link,
+        r#"{"v":1,"id":2,"method":"agents.read","params":{"supervisor":"mail-triage"}}"#,
+    )
+    .unwrap();
+    assert_eq!(read["agentId"], "agent-7");
+    let unknown = ask(
+        &h.link,
+        r#"{"v":1,"id":3,"method":"agents.kill","params":{"supervisor":"docs"}}"#,
+    )
+    .unwrap_err();
+    assert_eq!(unknown.code, "unknown_supervisor");
+
+    let listed = ask(&h.link, r#"{"v":1,"id":4,"method":"agents.list"}"#).unwrap();
+    let agents = listed["agents"].as_array().unwrap();
+    assert_eq!(agents[0]["supervisorKey"], "mail-triage");
+    assert_eq!(agents[0]["rootSupervisorId"], "agent-7");
+    assert_eq!(agents[1]["rootSupervisorId"], "agent-7");
+    assert_eq!(agents[1]["supervisorKey"], Value::Null);
+}
+
+#[test]
+fn a_supervisor_subscription_follows_its_subtree_and_ignores_others() {
+    let h = harness(vec![
+        crate::supervisor::several::tests::agent_from(&json!({
+            "id": "agent-1", "role": "supervisor", "supervisorKey": "mail-triage"
+        })),
+        agent("agent-2", AgentRole::Worker, Some("agent-1")),
+        agent("agent-4", AgentRole::Supervisor, None),
+        agent("agent-5", AgentRole::Worker, Some("agent-4")),
+    ]);
+    let reply = h.link.handle(
+        parse_message(
+            r#"{"v":1,"id":1,"method":"events.subscribe","params":{"supervisors":["mail-triage","night-shift"],"output":false}}"#,
+        )
+        .unwrap()
+        .1,
+    );
+    assert_eq!(
+        ids(reply.result.as_ref().unwrap()),
+        vec!["agent-1", "agent-2"]
+    );
+    let Some(Install::Set(subscription)) = reply.install else {
+        panic!("subscribe installs a subscription");
+    };
+    let mut subscription = *subscription;
+    let read = |id: &str, since: u64| h.link.output_since(id, since);
+    {
+        let mut agents = h.backend.agents.lock().unwrap();
+        agents.push(agent("agent-6", AgentRole::Worker, Some("agent-1")));
+        agents.push(agent("agent-8", AgentRole::Worker, Some("agent-4")));
+        agents.push(crate::supervisor::several::tests::agent_from(&json!({
+            "id": "agent-9", "role": "supervisor", "supervisorKey": "night-shift"
+        })));
+    }
+    let events = subscription.poll(&h.link.tree(), &[], read);
+    let added: Vec<&str> = events
+        .iter()
+        .filter(|(name, _)| *name == "agent.added")
+        .map(|(_, data)| data["agent"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(added, vec!["agent-6", "agent-9"]);
+}
+
+#[test]
+fn a_proposal_for_a_supervisor_names_it_and_an_unknown_key_is_refused() {
+    let h = harness(Vec::new());
+    let refused = ask(
+        &h.link,
+        r#"{"v":1,"id":1,"method":"documents.propose","params":{"project":"/p","type":"t","id":"docs/a.json","document":{},"baseHash":null,"supervisor":"docs"}}"#,
+    )
+    .unwrap_err();
+    assert_eq!(refused.code, "unknown_supervisor");
+    let proposal = documents::Proposal {
+        project: "/p".into(),
+        document_type: "diagram".into(),
+        id: "docs/a.diagram.json".into(),
+        branch: "auric/proposal/a".into(),
+        commit: "0123456789abcdef".into(),
+        base: "fedcba9876543210".into(),
+        created: true,
+        hash: "h".into(),
+    };
+    assert_eq!(
+        proposal_notification(&proposal, Some("mail-triage")).title,
+        "Proposal for mail-triage: new diagram docs/a.diagram.json"
+    );
+    assert_eq!(
+        proposal_notification(&proposal, None).title,
+        "Proposal: new diagram docs/a.diagram.json"
+    );
+}
+
+#[test]
+fn the_frontend_gets_exactly_the_contracts_spawn_supervisor_params() {
+    let fixture = protocol::tests::fixtures()["frontendSpawnSupervisor"].clone();
+    assert_eq!(fixture["method"], SPAWN_SUPERVISOR_METHOD);
+    for case in fixture["cases"].as_array().unwrap() {
+        let h = harness(Vec::new());
+        *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+            ok: true,
+            result: Some(fixture["answer"].clone()),
+            error: None,
+        });
+        let line =
+            json!({ "v": 1, "id": 1, "method": "supervisors.spawn", "params": case["link"] });
+        ask(&h.link, &line.to_string()).unwrap();
+        let sent = h.backend.requests.lock().unwrap()[0].params.clone();
+        assert_eq!(sent, case["frontend"], "{}", case["name"]);
     }
 }

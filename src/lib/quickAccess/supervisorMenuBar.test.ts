@@ -25,12 +25,12 @@ describe('menuBarConfig', () => {
       },
       library,
       { tray: true, shortcuts: true },
-      false
+      0
     );
     expect(config).toEqual({
       tray: true,
       shortcuts: true,
-      running: false,
+      running: 0,
       skills: [
         { id: 'p1', label: 'Ping', shortcut: 'Control+Alt+KeyP' },
         { id: 'auric:vtt', label: 'video to tasklist' },
@@ -46,8 +46,9 @@ describe('menuBarConfig', () => {
       },
       library,
       { tray: true, shortcuts: false },
-      true
+      2
     );
+    expect(config.running).toBe(2);
     expect(config.skills).toEqual([{ id: 'auric:vtt', label: 'video to tasklist' }]);
   });
 });

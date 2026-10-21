@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { findRunningSupervisor } from '@/lib/agents/supervisorLaunch';
+import { runningSupervisors } from '@/lib/agents/supervisorLaunch';
 import { openSupervisor } from '@/lib/agents/openSupervisor';
 import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
@@ -34,7 +34,8 @@ const WATCHED_KEYS = new Set<string>([
  */
 export function useSupervisorMenuBar(onOpenSettings: (category: 'supervisor') => void): void {
   const presets = useSupervisorPresets();
-  const running = useStore((s) => findRunningSupervisor(s.agents) !== undefined);
+  // A count, not the list: a number is a stable selector result.
+  const running = useStore((s) => runningSupervisors(s.agents).length);
   const [prefsRevision, setPrefsRevision] = useState(0);
   const reportedFailures = useRef('');
   const openSettingsRef = useRef(onOpenSettings);
@@ -72,7 +73,7 @@ export function useSupervisorMenuBar(onOpenSettings: (category: 'supervisor') =>
       try {
         const { listen } = await import('@tauri-apps/api/event');
         const stop = await listen<MenuBarLaunchRequest>(MENU_BAR_LAUNCH_EVENT, (event) => {
-          void launch(event.payload?.skillId, openSettingsRef.current);
+          void launch(event.payload ?? {}, openSettingsRef.current);
         });
         if (disposed) stop();
         else unlisten = stop;
@@ -89,7 +90,7 @@ export function useSupervisorMenuBar(onOpenSettings: (category: 'supervisor') =>
 
 /** Read at the moment of the pick, so an edit made since the last sync still counts. */
 async function launch(
-  skillId: string | undefined,
+  { skillId, newSupervisor }: MenuBarLaunchRequest,
   onOpenSettings: (category: 'supervisor') => void
 ): Promise<void> {
   const store = useStore.getState();
@@ -102,10 +103,15 @@ async function launch(
     store.showToast('That supervisor skill no longer exists', 'error');
     return;
   }
-  await openSupervisor(store, skill, {
-    onNothingVisible: () => onOpenSettings('supervisor'),
-    onShow: (agentId) => useStore.getState().selectAgent(agentId),
-  });
+  await openSupervisor(
+    store,
+    skill,
+    {
+      onNothingVisible: () => onOpenSettings('supervisor'),
+      onShow: (agentId) => useStore.getState().selectAgent(agentId),
+    },
+    { forceNew: newSupervisor === true }
+  );
 }
 
 /** One toast per distinct set of refusals, not one per sync. */

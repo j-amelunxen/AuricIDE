@@ -2475,3 +2475,115 @@ fn watchdog_exit_and_removal_cancel_deferred_notices() {
             .any(|(id, _)| id == "agent-sup"));
     }
 }
+
+// ── Several supervisors: keys ───────────────────────────────────────────────
+
+fn keyed_supervisor(id: &str, key: &str) -> AgentInfo {
+    AgentInfo {
+        id: id.into(),
+        role: AgentRole::Supervisor,
+        supervisor_key: Some(key.into()),
+        project_path: None,
+        ..sample_agent()
+    }
+}
+
+#[test]
+fn send_input_by_key_reaches_the_live_supervisor_that_carries_it() {
+    let h = harness(vec![
+        keyed_supervisor("agent-3", "mail-triage"),
+        keyed_supervisor("agent-4", "docs"),
+    ]);
+    let response = call(
+        &h,
+        json!({ "id": 43, "method": "send_input", "params": {
+            "supervisor": "docs", "text": "status?"
+        } }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["result"]["agentId"], "agent-4");
+    assert_eq!(h.backend.written.lock().unwrap()[0].0, "agent-4");
+
+    let unknown = call(
+        &h,
+        json!({ "id": 43, "method": "send_input", "params": {
+            "supervisor": "nobody", "text": "x"
+        } }),
+    );
+    assert_eq!(error_code(&unknown), "unknown_supervisor");
+
+    let mut finished = keyed_supervisor("agent-5", "night-shift");
+    finished.status = AgentStatus::Idle;
+    h.backend.agents.lock().unwrap().push(finished);
+    let gone = call(
+        &h,
+        json!({ "id": 43, "method": "send_input", "params": {
+            "supervisor": "night-shift", "text": "x"
+        } }),
+    );
+    assert_eq!(
+        error_code(&gone),
+        "unknown_supervisor",
+        "a finished one has no key"
+    );
+}
+
+#[test]
+fn a_supervisor_caller_addressing_another_supervisor_by_key_sees_nothing() {
+    let s = supervised_scope();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .push(keyed_supervisor("agent-other", "docs"));
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 5, "method": "send_input", "params": {
+            "supervisor": "docs", "text": "x"
+        } }),
+    );
+    assert_eq!(error_code(&response), "unknown_agent");
+}
+
+#[test]
+fn a_supervisor_spawn_under_a_live_key_is_refused_before_the_frontend() {
+    let s = supervised_scope();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .push(keyed_supervisor("agent-3", "mail-triage"));
+    let spawn = |key: &str| {
+        call(
+            &s.h,
+            json!({ "id": 40, "method": "spawn", "params": {
+                "projectPath": s.path, "prompt": "supervise", "role": "supervisor",
+                "supervisorKey": key
+            } }),
+        )
+    };
+    let taken = spawn("mail-triage");
+    assert_eq!(error_code(&taken), "supervisor_key_in_use");
+    assert!(s.h.backend.requests.lock().unwrap().is_empty());
+
+    let free = spawn("docs");
+    assert_eq!(free["ok"], true, "{free}");
+    let params = &s.h.backend.requests.lock().unwrap()[0].params;
+    assert_eq!(
+        params["supervisorKey"], "docs",
+        "the key reaches the frontend"
+    );
+}
+
+#[test]
+fn list_agents_names_each_supervisors_key() {
+    let h = harness(vec![
+        keyed_supervisor("agent-3", "mail-triage"),
+        agent("agent-1", false),
+    ]);
+    let response = call(&h, json!({ "id": 1, "method": "list_agents" }));
+    let agents = response["result"]["agents"].as_array().unwrap();
+    assert_eq!(agents[0]["supervisorKey"], "mail-triage");
+    assert_eq!(agents[1]["supervisorKey"], Value::Null);
+}

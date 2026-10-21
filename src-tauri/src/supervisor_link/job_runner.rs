@@ -106,6 +106,7 @@ fn started_record(
         other_files: Vec::new(),
         error: None,
         cancel_requested: false,
+        requested_by: None,
         cancel_reason: None,
     }
 }
@@ -151,6 +152,13 @@ impl Link {
         policy: &LinkPolicy,
         params: CreateJobParams,
     ) -> Result<Value, LinkError> {
+        let requested_by = match params.supervisor.as_deref() {
+            Some(key) => Some(jobs::RequestedBy {
+                key: key.to_string(),
+                agent_id: self.supervisor_for_key(key)?.id,
+            }),
+            None => None,
+        };
         let CheckedKind {
             project,
             kind,
@@ -185,6 +193,7 @@ impl Link {
             spawned,
             now,
         );
+        job.requested_by = requested_by;
         if job.worktree.is_none() {
             // Without its own worktree the agent would write into the
             // human's checkout. It is stopped, and the job counts: it started.
@@ -462,8 +471,43 @@ impl Link {
         });
         if let Some(job) = ended {
             self.host.notify(job_notification(&job));
+            self.ping_requester(&job);
         }
     }
+
+    /// Tells the supervisor that asked for the job that it ended, in its
+    /// console like a finished child. Whoever carries the key now is told
+    /// first, so a resumed supervisor hears of it; else the agent that asked,
+    /// if it still runs. Nobody listening: the inbox notification stands.
+    fn ping_requester(&self, job: &JobRecord) {
+        let Some(by) = &job.requested_by else {
+            return;
+        };
+        let target = self
+            .dispatcher
+            .supervisor_by_key(&by.key)
+            .map_or_else(|| by.agent_id.clone(), |supervisor| supervisor.id);
+        self.dispatcher
+            .ping_supervisor_text(&target, &job_notice(job));
+    }
+}
+
+/// The notice the requesting supervisor gets when its job ends.
+fn job_notice(job: &JobRecord) -> String {
+    let branch = job.branch.as_deref().unwrap_or("(none)");
+    let outcome = match &job.error {
+        None => format!(
+            "finished: {} document(s) and {} other file(s) on branch {branch}",
+            job.documents.len(),
+            job.files.len()
+        ),
+        Some(error) => format!("failed: {}", error.message),
+    };
+    format!(
+        "[AuricIDE] Job {} {} you asked for {outcome}. The human reviews and merges the \
+         branch. This notice comes from the IDE, not from the human.",
+        job.kind, job.job_id
+    )
 }
 
 fn job_notification(job: &JobRecord) -> super::NotificationInput {

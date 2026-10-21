@@ -15,7 +15,7 @@ const CHIP =
   'inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted';
 
 interface SupervisorRelationProps {
-  agent: Pick<AgentInfo, 'id' | 'role' | 'spawnedByAgentId'>;
+  agent: Pick<AgentInfo, 'id' | 'role' | 'spawnedByAgentId' | 'supervisorKey'>;
   /** Selects the supervisor; defaults to the store's selection. */
   onSelect?: (agentId: string) => void;
   /** One line in a compact row instead of the card's own line. */
@@ -41,7 +41,9 @@ export function SupervisorRelation({ agent, onSelect, compact = false }: Supervi
       (s) => {
         if (!parentId) return null;
         const parent = s.agents.find((a) => a.id === parentId);
-        return parent ? agentDisplayName(parent.name, parent.currentTask) : null;
+        if (!parent) return null;
+        // The key is how the supervisor is addressed from outside; it names it here too.
+        return parent.supervisorKey || agentDisplayName(parent.name, parent.currentTask);
       },
       [parentId]
     )
@@ -57,6 +59,11 @@ export function SupervisorRelation({ agent, onSelect, compact = false }: Supervi
         <span className={CHIP}>
           <AuricIcon name="account_tree" aria-hidden="true" className="text-[11px]" />
           Supervisor
+          {agent.supervisorKey && (
+            <span data-testid="agent-supervisor-key" className="truncate font-mono">
+              · {agent.supervisorKey}
+            </span>
+          )}
         </span>
         <span className="truncate text-[10px] tabular-nums text-foreground-muted">{summary}</span>
       </span>

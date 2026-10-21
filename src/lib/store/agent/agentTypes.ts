@@ -71,10 +71,12 @@ export interface SupervisorSkillLaunch {
   model?: string;
   provider?: string;
   /**
-   * Work in this earlier run's folder instead of a new one. Never goes to a
-   * running supervisor: one at a time, and it already has a folder.
+   * Work in this earlier run's folder instead of a new one. Always a new
+   * supervisor, refused while a live one already works in that folder.
    */
   resumeRunDir?: string;
+  /** Start a new supervisor even without a task, rather than open the running one. */
+  forceNew?: boolean;
 }
 
 /** `supervisors.spawn` over the supervisor link (`docs/design-supervisor-link.md`). */
@@ -82,6 +84,10 @@ export interface LinkedSupervisorLaunch {
   task?: string | null;
   provider?: string | null;
   model?: string | null;
+  /** The address the client chose (`AgentConfig.supervisorKey`); Rust checks it. */
+  key?: string | null;
+  /** A card name instead of "Supervisor" (control socket `spawn.name`). */
+  name?: string | null;
 }
 
 export type LinkedSupervisorSpawn =
@@ -91,10 +97,11 @@ export type LinkedSupervisorSpawn =
   | { kind: 'provider-unsupported'; provider: string; supported: readonly string[] };
 
 export type SupervisorLaunch =
+  /** A plain open while supervisors run: the newest one, brought forward. */
   | { kind: 'running'; agent: AgentInfo }
-  /** A skill's prompt went to the running supervisor as a message. */
-  | { kind: 'sent'; agent: AgentInfo }
   | { kind: 'spawned'; agent: AgentInfo }
+  /** The run folder to resume is where this live supervisor already works. */
+  | { kind: 'run_in_use'; agent: AgentInfo }
   | { kind: 'cancelled' }
   | { kind: 'nothing-visible' };
 

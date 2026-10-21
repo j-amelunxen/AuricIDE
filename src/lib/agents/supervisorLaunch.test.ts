@@ -6,13 +6,16 @@ import {
 } from '@/lib/config/supervisorPolicy';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import controlFixtures from './agentControl.fixtures.json';
 
 vi.mock('@/lib/tauri/providerPolicy', () => ({ projectProviderPolicyGet: vi.fn() }));
 
 import { projectProviderPolicyGet } from '@/lib/tauri/providerPolicy';
 import {
-  findRunningSupervisor,
+  newestRunningSupervisor,
   readProjectProviderPolicies,
+  runningSupervisors,
+  supervisorUsingRunDir,
   supervisorSpawnConfig,
 } from './supervisorLaunch';
 
@@ -50,18 +53,69 @@ const agent = (id: string, extra: Partial<AgentInfo>): AgentInfo => ({
   ...extra,
 });
 
-describe('findRunningSupervisor', () => {
-  it('finds a supervisor that still runs and ignores stopped ones and workers', () => {
-    expect(
-      findRunningSupervisor([
-        agent('w', {}),
-        agent('old', { role: 'supervisor', status: 'idle' }),
-        agent('s', { role: 'supervisor', status: 'running' }),
-      ])?.id
-    ).toBe('s');
-    expect(findRunningSupervisor([agent('old', { role: 'supervisor', status: 'error' })])).toBe(
-      undefined
+describe('runningSupervisors', () => {
+  it('lists every supervisor that still runs, newest first, and skips stopped ones and workers', () => {
+    const agents = [
+      agent('w', { startedAt: 9 }),
+      agent('old', { role: 'supervisor', status: 'idle', startedAt: 8 }),
+      agent('first', { role: 'supervisor', status: 'running', startedAt: 1 }),
+      agent('second', { role: 'supervisor', status: 'queued', startedAt: 5 }),
+    ];
+    expect(runningSupervisors(agents).map((a) => a.id)).toEqual(['second', 'first']);
+    expect(newestRunningSupervisor(agents)?.id).toBe('second');
+  });
+
+  it('breaks a tie on the start time by list order, later entry first', () => {
+    const agents = [
+      agent('a', { role: 'supervisor', startedAt: 3 }),
+      agent('b', { role: 'supervisor', startedAt: 3 }),
+    ];
+    expect(runningSupervisors(agents).map((a) => a.id)).toEqual(['b', 'a']);
+  });
+
+  it('finds none when only stopped supervisors are listed', () => {
+    const agents = [agent('old', { role: 'supervisor', status: 'error' })];
+    expect(runningSupervisors(agents)).toEqual([]);
+    expect(newestRunningSupervisor(agents)).toBeUndefined();
+  });
+});
+
+describe('supervisorUsingRunDir', () => {
+  const folder = '/home/me/.auric/supervisors/2026-10-16_185017';
+
+  it('names the live supervisor working in that run folder', () => {
+    const agents = [
+      agent('other', {
+        role: 'supervisor',
+        repoPath: '/home/me/.auric/supervisors/2026-10-17_090000',
+      }),
+      agent('live', { role: 'supervisor', repoPath: `${folder}/` }),
+    ];
+    expect(supervisorUsingRunDir(agents, folder)?.id).toBe('live');
+  });
+
+  it('agrees with the run_dir_in_use fixture cases Rust is tested against', () => {
+    const { live, cases } = controlFixtures.supervisors.runDirInUse;
+    const agents = live.map((entry) =>
+      agent(entry.id, {
+        role: entry.role as AgentInfo['role'],
+        repoPath: entry.repoPath,
+        spawnedByAgentId: entry.spawnedByAgentId,
+      })
     );
+    for (const { name, resumeRunDir, expected } of cases) {
+      expect(supervisorUsingRunDir(agents, resumeRunDir) ? 'run_dir_in_use' : 'ok', name).toBe(
+        expected
+      );
+    }
+  });
+
+  it('ignores a stopped supervisor and a worker in that folder', () => {
+    const agents = [
+      agent('done', { role: 'supervisor', status: 'idle', repoPath: folder }),
+      agent('worker', { repoPath: folder }),
+    ];
+    expect(supervisorUsingRunDir(agents, folder)).toBeUndefined();
   });
 });
 

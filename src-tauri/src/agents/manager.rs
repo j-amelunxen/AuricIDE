@@ -466,20 +466,10 @@ pub fn admit_spawn(
         })
     };
     if config.role() == AgentRole::Supervisor {
-        if config.spawned_by_agent_id.is_some() {
-            return Err("A supervisor cannot start another supervisor.".to_string());
-        }
-        let home = home.ok_or_else(|| {
-            "The home directory is unavailable; the supervisor has nowhere to work".to_string()
-        })?;
-        let cwd = match config.resume_run_dir.take() {
-            Some(requested) => crate::supervisor::reuse_supervisor_run_dir(home, &requested)?,
-            None => {
-                let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
-                crate::supervisor::new_supervisor_run_dir(home, &started)?
-            }
-        };
-        return Ok(supervisor_config(config, &cwd));
+        return admit_supervisor(config, home, agents);
+    }
+    if config.supervisor_key.is_some() {
+        return Err(crate::supervisor::several::WORKER_KEY_MESSAGE.to_string());
     }
     let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {
         return Ok(config);
@@ -509,6 +499,57 @@ pub fn admit_spawn(
     // Booked as the supervisor's, whatever the frontend said.
     config.run_source = Some(crate::control_socket::protocol::RUN_SOURCE_SUPERVISOR.to_string());
     Ok(config)
+}
+
+/// A supervisor spawn: its run folder (new, or an earlier one no live
+/// supervisor works in) and its key (its own, else on a resume the run's;
+/// well formed and free among the live supervisors), written back to the run
+/// folder so the next resume finds it.
+fn admit_supervisor(
+    mut config: AgentConfig,
+    home: Option<&std::path::Path>,
+    agents: &[AgentInfo],
+) -> Result<AgentConfig, String> {
+    use crate::supervisor::several;
+    if config.spawned_by_agent_id.is_some() {
+        return Err("A supervisor cannot start another supervisor.".to_string());
+    }
+    let home = home.ok_or_else(|| {
+        "The home directory is unavailable; the supervisor has nowhere to work".to_string()
+    })?;
+    let resuming = config.resume_run_dir.is_some();
+    let cwd = match config.resume_run_dir.take() {
+        Some(requested) => {
+            let dir = crate::supervisor::reuse_supervisor_run_dir(home, &requested)?;
+            if let Some(holder) = several::run_dir_holder(agents, &dir) {
+                return Err(several::run_dir_in_use_message(&dir, &holder.id));
+            }
+            dir
+        }
+        None => {
+            let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
+            crate::supervisor::new_supervisor_run_dir(home, &started)?
+        }
+    };
+    let own_key = config.supervisor_key.take();
+    let from_run = own_key.is_none();
+    let key = several::launch_key(own_key, &cwd, resuming);
+    if let Some(key) = key.as_deref() {
+        match several::live_supervisor_with_key(agents, key) {
+            Some(holder) if from_run => {
+                return Err(several::run_key_in_use_message(&cwd, key, &holder.id));
+            }
+            _ => several::check_key(agents, key)?,
+        }
+    }
+    // The key is an address, not something the run depends on: a folder that
+    // cannot take the file still runs, it only forgets the key on a resume.
+    if let Err(error) = several::write_run_key(&cwd, key.as_deref()) {
+        eprintln!("Supervisor: {error}");
+    }
+    config.supervisor_key = key;
+    config.resumed_run_dir = resuming.then(|| cwd.to_string_lossy().into_owned());
+    Ok(supervisor_config(config, &cwd))
 }
 
 /// Runs the agent under `write_sandbox` when its provider config asks for it
@@ -746,6 +787,12 @@ pub async fn spawn_agent_impl(
     .await;
 
     let mut manager = state.lock().await;
+    if is_supervisor {
+        let live: Vec<AgentInfo> = manager.agents.values().map(|p| p.info.clone()).collect();
+        refuse_late_supervisor(&live, &config, || {
+            let _ = child.kill();
+        })?;
+    }
     let id = manager.next_id();
 
     let usage = usage.map(|capture| capture.with_agent_id(&id));
@@ -760,9 +807,12 @@ pub async fn spawn_agent_impl(
     );
 
     let launch_request_uid = config.launch_request_uid.clone();
+    let adoption_run_dir = config.resumed_run_dir.clone();
+    let replaces = config.replaces_agent_id.clone();
     let info = AgentInfo {
         role: config.role(),
         spawned_by_agent_id: config.spawned_by_agent_id.clone(),
+        supervisor_key: config.supervisor_key.clone(),
         id: id.clone(),
         name: config.name,
         model: config.model,
@@ -974,9 +1024,105 @@ pub async fn spawn_agent_impl(
         on_exit(id_clone);
     });
 
+    if let Some(run_dir) = adoption_run_dir.as_deref() {
+        adopt_children(app, &mut manager, run_dir, replaces.as_deref(), &id);
+    }
     manager.agents.insert(id, process);
 
     Ok((info, writer, pair.master))
+}
+
+/// A supervisor that resumed a run takes over the children of the
+/// supervisors that worked there before it: on the running agents, in the
+/// restart file and in the kept results, and the frontend is told so its
+/// list follows (`supervisor::several::CHILDREN_ADOPTED_EVENT`). Without
+/// this a resumed supervisor would see none of its earlier children.
+fn adopt_children(
+    app: &AppHandle,
+    manager: &mut super::types::AgentManager,
+    run_dir: &str,
+    replaces: Option<&str>,
+    new_id: &str,
+) {
+    let persistence = app.try_state::<crate::agent_persistence::AgentPersistenceState>();
+    let results = app.try_state::<super::run_results::RunResultsState>();
+    adopt_into(
+        manager.agents.values_mut().map(|process| &mut process.info),
+        persistence.as_deref(),
+        results.as_deref().map(|results| results.as_ref()),
+        (run_dir, replaces, new_id),
+        |adoption| {
+            let _ = app.emit(crate::supervisor::several::CHILDREN_ADOPTED_EVENT, adoption);
+        },
+    );
+}
+
+/// The checks of `admit_spawn` again, over the manager's list at the moment
+/// the started supervisor is entered into it. The loser of a race is stopped
+/// (`kill`) before the refusal is returned, so it never runs unlisted.
+pub(super) fn refuse_late_supervisor(
+    live: &[AgentInfo],
+    config: &AgentConfig,
+    kill: impl FnOnce(),
+) -> Result<(), String> {
+    let checked = crate::supervisor::several::recheck(
+        live,
+        config.supervisor_key.as_deref(),
+        config.resumed_run_dir.as_deref(),
+    );
+    if checked.is_err() {
+        kill();
+    }
+    checked
+}
+
+/// `adopt_children` without the app: the live agents, the restart file and
+/// the kept results, then `emit` once with what moved. `target` is the run
+/// folder, the id the supervisor replaces by name, and its new id.
+pub(super) fn adopt_into<'a>(
+    live: impl IntoIterator<Item = &'a mut AgentInfo>,
+    persistence: Option<&crate::agent_persistence::AgentPersistenceState>,
+    results: Option<&super::run_results::RunResults>,
+    (run_dir, replaces, new_id): (&str, Option<&str>, &str),
+    emit: impl FnOnce(&crate::supervisor::several::Adoption),
+) -> Option<crate::supervisor::several::Adoption> {
+    use crate::supervisor::several::{adoption_for, Earlier};
+    let persisted: Vec<crate::agent_persistence::PersistedAgent> = persistence
+        .and_then(|state| state.lock().ok().map(|p| p.agents().cloned().collect()))
+        .unwrap_or_default();
+    let finished = results
+        .map(|results| results.finished_agents())
+        .unwrap_or_default();
+    let earlier = persisted
+        .iter()
+        .map(|agent| Earlier {
+            id: &agent.id,
+            role: agent.role,
+            cwd: agent.cwd.as_deref(),
+        })
+        .chain(finished.iter().map(|agent| Earlier {
+            id: &agent.id,
+            role: Some(agent.role),
+            cwd: agent.repo_path.as_deref(),
+        }));
+    let adoption = adoption_for(std::path::Path::new(run_dir), new_id, replaces, earlier)?;
+    for info in live {
+        adoption.apply(&mut info.spawned_by_agent_id);
+    }
+    if let Some(state) = persistence {
+        let saved = state
+            .lock()
+            .map_err(|_| "Agent persistence is unavailable".to_string())
+            .and_then(|mut p| p.adopt_children(&adoption));
+        if let Err(error) = saved {
+            eprintln!("Agent persistence: {error}");
+        }
+    }
+    if let Some(results) = results {
+        results.adopt_children(&adoption);
+    }
+    emit(&adoption);
+    Some(adoption)
 }
 
 /// The usage capture for a spawn, or `None` (with a log line when something

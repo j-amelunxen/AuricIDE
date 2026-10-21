@@ -14,14 +14,19 @@ export interface MenuBarSkill {
 export interface MenuBarConfig {
   tray: boolean;
   shortcuts: boolean;
-  /** Decides whether the menu offers "Start Supervisor" or "Open Supervisor". */
-  running: boolean;
+  /** How many supervisors run; above zero the menu also offers "Open Supervisor (N)". */
+  running: number;
   skills: MenuBarSkill[];
 }
 
-/** `skillId` is absent for "Start/Open Supervisor". */
+/**
+ * A skill pick carries `skillId` and always starts a new supervisor.
+ * "Start Supervisor" carries `newSupervisor: true`; "Open Supervisor (N)"
+ * carries neither and brings the newest running one forward.
+ */
 export interface MenuBarLaunchRequest {
   skillId?: string;
+  newSupervisor?: boolean;
 }
 
 export interface ShortcutFailure {

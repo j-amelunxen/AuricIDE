@@ -250,6 +250,7 @@ mod tests {
             headless: false,
             role: super::super::types::AgentRole::Worker,
             spawned_by_agent_id: None,
+            supervisor_key: None,
         }
     }
 

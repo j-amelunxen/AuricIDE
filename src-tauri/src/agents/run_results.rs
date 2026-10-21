@@ -215,6 +215,35 @@ impl RunResults {
             .collect()
     }
 
+    /// Every finished agent whose result is kept with its listing, newest
+    /// first, each with the status it ended in.
+    pub fn finished_agents(&self) -> Vec<AgentInfo> {
+        self.lock()
+            .iter()
+            .rev()
+            .filter_map(|entry| {
+                let mut agent = entry.agent.clone()?;
+                agent.status = entry.result.status.clone();
+                Some(agent)
+            })
+            .collect()
+    }
+
+    /// A resumed supervisor takes over the kept results of the children its
+    /// run's earlier supervisors started. Returns how many moved.
+    pub fn adopt_children(&self, adoption: &crate::supervisor::several::Adoption) -> usize {
+        let mut moved = 0;
+        for entry in self.lock().iter_mut() {
+            if adoption.apply(&mut entry.parent) {
+                moved += 1;
+            }
+            if let Some(agent) = entry.agent.as_mut() {
+                adoption.apply(&mut agent.spawned_by_agent_id);
+            }
+        }
+        moved
+    }
+
     /// Lets go of one agent's result. `false` when none was kept.
     pub fn forget(&self, agent_id: &str) -> bool {
         let mut entries = self.lock();
@@ -434,6 +463,42 @@ mod tests {
         assert!(results.forget("c1"));
         assert!(!results.forget("c1"));
         assert_eq!(results.finished_children_of("sup").len(), 1);
+    }
+
+    #[test]
+    fn a_resumed_supervisor_takes_over_the_kept_results_of_its_run() {
+        let results = RunResults::default();
+        let mut old = child("sup-old", None);
+        old.role = crate::agents::AgentRole::Supervisor;
+        results.record_finished(result("sup-old"), old);
+        results.record_finished(result("c1"), child("c1", Some("sup-old")));
+        results.record_finished(result("c2"), child("c2", Some("sup-other")));
+        results.record(result("c3"), Some("sup-old".into()));
+        let adoption = crate::supervisor::several::Adoption {
+            from_ids: vec!["sup-old".into()],
+            to_id: "sup-new".into(),
+        };
+        assert_eq!(results.adopt_children(&adoption), 2);
+        assert_eq!(results.parent_of("c1").as_deref(), Some("sup-new"));
+        assert_eq!(results.parent_of("c3").as_deref(), Some("sup-new"));
+        assert_eq!(results.parent_of("c2").as_deref(), Some("sup-other"));
+        assert_eq!(
+            results.finished_children_of("sup-new")[0]
+                .spawned_by_agent_id
+                .as_deref(),
+            Some("sup-new"),
+            "the kept listing follows too"
+        );
+        let finished: Vec<String> = results
+            .finished_agents()
+            .into_iter()
+            .map(|agent| agent.id)
+            .collect();
+        assert_eq!(
+            finished,
+            vec!["c2", "c1", "sup-old"],
+            "newest first, listed ones only"
+        );
     }
 
     #[test]
