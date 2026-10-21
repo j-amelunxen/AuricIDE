@@ -37,6 +37,7 @@ import {
   type SupervisorSkillCandidate,
 } from './SupervisorSkills';
 import { SupervisorTools, invalidToolEntries } from './SupervisorTools';
+import { SupervisorConnectors } from './SupervisorConnectors';
 import { SupervisorProjectRow } from './SupervisorProjectRow';
 
 interface Loaded {
@@ -211,33 +212,36 @@ export function SupervisorContent({ section }: { section: SupervisorSection }) {
 
       {page(
         'projects',
-        <SettingsSection title="Projects" icon="star">
-          {starredProjects.length === 0 ? (
-            <p className="text-xs text-foreground-muted">
-              Star a project in Quick Access to offer it to the supervisor.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {starredProjects.map((project) => (
-                <SupervisorProjectRow
-                  key={project.path}
-                  project={project}
-                  entry={draft.projects[normalizeProjectPath(project.path)]}
-                  providers={loaded.providers}
-                  projectPolicy={loaded.projectPolicies[project.path]}
-                  description={descriptions.value(project.path)}
-                  onDescriptionChange={(text) => descriptions.edit(project.path, text)}
-                  onAllowedChange={(allowed) =>
-                    setDraft(setProjectAllowed(draft, project.path, allowed))
-                  }
-                  onChange={(entry) =>
-                    setDraft(updateSupervisorProject(draft, project.path, () => entry))
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </SettingsSection>
+        <>
+          <SettingsSection title="Projects" icon="star">
+            {starredProjects.length === 0 ? (
+              <p className="text-xs text-foreground-muted">
+                Star a project in Quick Access to offer it to the supervisor.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {starredProjects.map((project) => (
+                  <SupervisorProjectRow
+                    key={project.path}
+                    project={project}
+                    entry={draft.projects[normalizeProjectPath(project.path)]}
+                    providers={loaded.providers}
+                    projectPolicy={loaded.projectPolicies[project.path]}
+                    description={descriptions.value(project.path)}
+                    onDescriptionChange={(text) => descriptions.edit(project.path, text)}
+                    onAllowedChange={(allowed) =>
+                      setDraft(setProjectAllowed(draft, project.path, allowed))
+                    }
+                    onChange={(entry) =>
+                      setDraft(updateSupervisorProject(draft, project.path, () => entry))
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </SettingsSection>
+          <SupervisorConnectors policy={draft} onChange={setDraft} />
+        </>
       )}
 
       {page(

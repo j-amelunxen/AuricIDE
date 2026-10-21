@@ -118,6 +118,7 @@ pub fn ensure_agent_mcp_config(
     app: &tauri::AppHandle,
     project_root: &Path,
     env: &BTreeMap<String, String>,
+    connectors: &[crate::connectors::ResolvedConnector],
 ) -> Result<AgentMcpConfigs, String> {
     let runtime = runtime_entrypoint(app)?;
     let app_data = app
@@ -133,16 +134,27 @@ pub fn ensure_agent_mcp_config(
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
             .map_err(|error| format!("Could not secure agent MCP config directory: {error}"))?;
     }
-    write_agent_mcp_configs(&directory, &runtime, project_root, env)
+    write_agent_mcp_configs_with_connectors(&directory, &runtime, project_root, env, connectors)
 }
 
-/// The standard (`mcpServers`) and the Crush (`mcp`) config for one agent,
-/// both handing the server the same `env`.
+#[cfg(test)]
 pub(crate) fn write_agent_mcp_configs(
     directory: &Path,
     runtime: &Path,
     project_root: &Path,
     env: &BTreeMap<String, String>,
+) -> Result<AgentMcpConfigs, String> {
+    write_agent_mcp_configs_with_connectors(directory, runtime, project_root, env, &[])
+}
+
+/// The standard (`mcpServers`) and the Crush (`mcp`) config for one agent,
+/// both handing the server the same `env`.
+pub(crate) fn write_agent_mcp_configs_with_connectors(
+    directory: &Path,
+    runtime: &Path,
+    project_root: &Path,
+    env: &BTreeMap<String, String>,
+    connectors: &[crate::connectors::ResolvedConnector],
 ) -> Result<AgentMcpConfigs, String> {
     let mut hasher = DefaultHasher::new();
     project_root.hash(&mut hasher);
@@ -163,22 +175,39 @@ pub(crate) fn write_agent_mcp_configs(
         "args": [runtime, "--project-root", project_root],
         "env": env,
     });
+    let mut servers = serde_json::Map::new();
+    servers.insert("auric-pm".into(), server);
+    for connector in connectors {
+        servers.insert(
+            connector.server_name(),
+            serde_json::json!({
+                "command": connector.command,
+                "args": connector.args,
+                "env": connector.env,
+                "timeout": connector.startup_timeout_s,
+            }),
+        );
+    }
     let content = serde_json::to_vec_pretty(&serde_json::json!({
-        "mcpServers": { "auric-pm": server }
+        "mcpServers": servers
     }))
     .map_err(|error| format!("Could not serialize agent MCP config: {error}"))?;
     write_new_private_file(&standard_path, &content)?;
-    let crush_content = serde_json::to_vec_pretty(&serde_json::json!({
-        "$schema": "https://charm.land/crush.json",
-        "mcp": {
-            "auric-pm": {
-                "type": "stdio",
-                "command": "node",
-                "args": [runtime, "--project-root", project_root],
-                "env": env,
-                "timeout": 30
-            }
+    let mut crush_servers = servers.clone();
+    for server in crush_servers.values_mut() {
+        server["type"] = serde_json::json!("stdio");
+        if server.get("timeout").is_none() {
+            server["timeout"] = serde_json::json!(30);
         }
+    }
+    for connector in connectors {
+        crush_servers[&connector.server_name()]["enabled_tools"] =
+            serde_json::json!(connector.allowed_tools);
+        crush_servers[&connector.server_name()]["disabled_tools"] =
+            serde_json::json!(connector.denied_tools);
+    }
+    let crush_content = serde_json::to_vec_pretty(&serde_json::json!({
+        "$schema": "https://charm.land/crush.json", "mcp": crush_servers
     }))
     .map_err(|error| format!("Could not serialize Crush MCP config: {error}"))?;
     write_new_private_file(&crush_path, &crush_content)?;

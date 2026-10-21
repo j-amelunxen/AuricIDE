@@ -73,6 +73,125 @@
   ],
   "parse": [
     {
+      "name": "connector registration and project scopes survive parsing",
+      "raw": "{\"version\": 1, \"connectors\": {\"registry\": {\"test-catalog\": {\"path\": \"/fixture/auric-connector.yaml\", \"digest\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"manifest\": {\"schema\": \"auric-connector/v0\", \"id\": \"test-catalog\", \"version\": \"1.0.0\", \"transport\": \"stdio-mcp\", \"launch\": {\"command\": \"./server\", \"args\": [], \"env\": {}}, \"scopes\": [\"read\"], \"tools\": [{\"name\": \"list\", \"scopes\": [\"read\"]}], \"briefing\": \"Read the fixture catalog.\", \"auth\": \"none\"}}}, \"bindings\": {\"/a\": {\"test-catalog\": [\"read\"]}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {},
+          "connectors": {
+            "registry": {
+              "test-catalog": {
+                "path": "/fixture/auric-connector.yaml",
+                "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "manifest": {
+                  "schema": "auric-connector/v0",
+                  "id": "test-catalog",
+                  "version": "1.0.0",
+                  "transport": "stdio-mcp",
+                  "launch": {
+                    "command": "./server",
+                    "args": [],
+                    "env": {}
+                  },
+                  "scopes": ["read"],
+                  "tools": [
+                    {
+                      "name": "list",
+                      "scopes": ["read"]
+                    }
+                  ],
+                  "briefing": "Read the fixture catalog.",
+                  "auth": "none"
+                }
+              }
+            },
+            "bindings": {
+              "/a": {
+                "test-catalog": ["read"]
+              }
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "empty connector registry migrates to no grants",
+      "raw": "{\"version\": 1, \"connectors\": {}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "malformed connector registry fails closed",
+      "raw": "{\"version\": 1, \"connectors\": {\"registry\": []}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown connector scope fails closed",
+      "raw": "{\"version\": 1, \"connectors\": {\"registry\": {\"test-catalog\": {\"path\": \"/fixture/auric-connector.yaml\", \"digest\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"manifest\": {\"schema\": \"auric-connector/v0\", \"id\": \"test-catalog\", \"version\": \"1.0.0\", \"transport\": \"stdio-mcp\", \"launch\": {\"command\": \"./server\", \"args\": [], \"env\": {}}, \"scopes\": [\"read\"], \"tools\": [{\"name\": \"list\", \"scopes\": [\"read\"]}], \"briefing\": \"Read the fixture catalog.\", \"auth\": \"none\"}}}, \"bindings\": {\"/a\": {\"test-catalog\": [\"write\"]}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
       "name": "missing file allows nothing",
       "raw": null,
       "expected": {

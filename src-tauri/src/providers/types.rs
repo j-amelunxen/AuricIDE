@@ -223,6 +223,7 @@ pub struct ProviderProjectBinding {
     /// Config-file providers carry it in the file; Codex, configured on the
     /// command line, gets it as an inline table.
     pub mcp_env: BTreeMap<String, String>,
+    pub connectors: Vec<crate::connectors::ResolvedConnector>,
 }
 
 impl ProviderProjectBinding {
@@ -234,6 +235,7 @@ impl ProviderProjectBinding {
             crush_config_path: None,
             runtime_entrypoint: None,
             mcp_env: BTreeMap::new(),
+            connectors: Vec::new(),
         }
     }
 
@@ -332,10 +334,67 @@ pub fn codex_project_binding_injection(
             toml_inline_table(&binding.mcp_env)?
         )));
     }
+    for connector in &binding.connectors {
+        let prefix = format!("mcp_servers.{}", connector.server_name());
+        let settings = [
+            (
+                "command",
+                serde_json::to_string(&connector.command).map_err(|e| e.to_string())?,
+            ),
+            (
+                "args",
+                serde_json::to_string(&connector.args).map_err(|e| e.to_string())?,
+            ),
+            ("env", toml_inline_table(&connector.env)?),
+            (
+                "enabled_tools",
+                serde_json::to_string(&connector.allowed_tools).map_err(|e| e.to_string())?,
+            ),
+            (
+                "startup_timeout_sec",
+                connector.startup_timeout_s.to_string(),
+            ),
+            ("enabled", "true".into()),
+        ];
+        for (key, value) in settings {
+            arguments.push("-c".into());
+            arguments.push(shell_quote_argument(&format!("{prefix}.{key}={value}")));
+        }
+    }
     Ok(SpawnInjection {
         arguments,
         env_vars: Vec::new(),
     })
+}
+
+/// Claude exposes an inventory denylist, unlike Codex/Crush's per-server allowlist.
+/// Undeclared tools remain outside this filter; this is not a call broker.
+pub fn connector_tool_filter_injection(
+    provider_id: &str,
+    connectors: &[crate::connectors::ResolvedConnector],
+) -> SpawnInjection {
+    if provider_id != "claude" {
+        return SpawnInjection::default();
+    }
+    let denied: Vec<String> = connectors
+        .iter()
+        .flat_map(|connector| {
+            connector
+                .denied_tools
+                .iter()
+                .map(|tool| format!("mcp__{}__{tool}", connector.server_name()))
+        })
+        .collect();
+    if denied.is_empty() {
+        return SpawnInjection::default();
+    }
+    SpawnInjection {
+        arguments: vec![
+            "--disallowedTools".into(),
+            shell_quote_argument(&denied.join(",")),
+        ],
+        env_vars: vec![],
+    }
 }
 
 /// The provider's launch material for one isolated Auric MCP project, which
