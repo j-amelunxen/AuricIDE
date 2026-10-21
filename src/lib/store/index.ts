@@ -35,6 +35,7 @@ import { createOverlaySlice, type OverlaySlice } from '@/lib/overlays/overlaySli
 import { createLaneSummariesSlice, type LaneSummariesSlice } from './laneSummariesSlice';
 import { createMergeSlice, type MergeSlice } from './mergeSlice';
 import { createReviewSlice, type ReviewSlice } from './reviewSlice';
+import { createGitGraphSlice, type GitGraphSlice } from './gitGraphSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -71,7 +72,8 @@ export type StoreState = FileTreeSlice &
   LaneSummariesSlice &
   AgentUsageSlice &
   MergeSlice &
-  ReviewSlice;
+  ReviewSlice &
+  GitGraphSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -110,6 +112,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createAgentUsageSlice(...a),
   ...createMergeSlice(...a),
   ...createReviewSlice(...a),
+  ...createGitGraphSlice(...a),
 }));
 
 // Dev-only: expose the store for debugging and browser-mode testing.

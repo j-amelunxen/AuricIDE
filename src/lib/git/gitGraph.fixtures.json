@@ -1,0 +1,546 @@
+[
+  {
+    "name": "linear",
+    "note": "one line, never leaves lane 0",
+    "headOid": "a",
+    "commits": [
+      {
+        "oid": "a",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": ["c"]
+      },
+      {
+        "oid": "c",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "c",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      }
+    ]
+  },
+  {
+    "name": "fork",
+    "note": "two tips share a parent; the second tip opens lane 1 and joins at b",
+    "headOid": "a",
+    "commits": [
+      {
+        "oid": "a",
+        "parents": ["b"]
+      },
+      {
+        "oid": "f",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "f",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      }
+    ]
+  },
+  {
+    "name": "merge",
+    "note": "head is a merge; the second parent opens lane 1",
+    "headOid": "m",
+    "commits": [
+      {
+        "oid": "m",
+        "parents": ["a", "f"]
+      },
+      {
+        "oid": "a",
+        "parents": ["b"]
+      },
+      {
+        "oid": "f",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "m",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "f",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      }
+    ]
+  },
+  {
+    "name": "octopus",
+    "note": "three parents fan out into lanes 0..2 and join again",
+    "headOid": "m",
+    "commits": [
+      {
+        "oid": "m",
+        "parents": ["a", "x", "y"]
+      },
+      {
+        "oid": "a",
+        "parents": ["r"]
+      },
+      {
+        "oid": "x",
+        "parents": ["r"]
+      },
+      {
+        "oid": "y",
+        "parents": ["r"]
+      },
+      {
+        "oid": "r",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "m",
+        "lane": 0,
+        "color": 0,
+        "width": 3
+      },
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 3
+      },
+      {
+        "oid": "x",
+        "lane": 1,
+        "color": 1,
+        "width": 3
+      },
+      {
+        "oid": "y",
+        "lane": 2,
+        "color": 2,
+        "width": 3
+      },
+      {
+        "oid": "r",
+        "lane": 0,
+        "color": 0,
+        "width": 3
+      }
+    ]
+  },
+  {
+    "name": "criss-cross",
+    "note": "two merges take each other's parents; the duplicate wait on a is merged at a",
+    "headOid": "m1",
+    "commits": [
+      {
+        "oid": "m2",
+        "parents": ["b", "a"]
+      },
+      {
+        "oid": "m1",
+        "parents": ["a", "b"]
+      },
+      {
+        "oid": "a",
+        "parents": ["r"]
+      },
+      {
+        "oid": "b",
+        "parents": ["r"]
+      },
+      {
+        "oid": "r",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "m2",
+        "lane": 1,
+        "color": 1,
+        "width": 3
+      },
+      {
+        "oid": "m1",
+        "lane": 0,
+        "color": 0,
+        "width": 3
+      },
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 3
+      },
+      {
+        "oid": "b",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "r",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      }
+    ]
+  },
+  {
+    "name": "two-roots",
+    "note": "unrelated history reusing the freed lane 0 gets its own colour, never HEAD's colour 0",
+    "headOid": "a",
+    "commits": [
+      {
+        "oid": "a",
+        "parents": ["b"]
+      },
+      {
+        "oid": "c",
+        "parents": ["d"]
+      },
+      {
+        "oid": "b",
+        "parents": []
+      },
+      {
+        "oid": "e",
+        "parents": ["f"]
+      },
+      {
+        "oid": "d",
+        "parents": []
+      },
+      {
+        "oid": "f",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "c",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "e",
+        "lane": 0,
+        "color": 2,
+        "width": 2
+      },
+      {
+        "oid": "d",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "f",
+        "lane": 0,
+        "color": 2,
+        "width": 1
+      }
+    ]
+  },
+  {
+    "name": "tip-in-the-middle",
+    "note": "side tip x hangs off m, which is also reached from h",
+    "headOid": "h",
+    "commits": [
+      {
+        "oid": "h",
+        "parents": ["m"]
+      },
+      {
+        "oid": "x",
+        "parents": ["m"]
+      },
+      {
+        "oid": "m",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": ["r"]
+      },
+      {
+        "oid": "r",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "h",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "x",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "m",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      },
+      {
+        "oid": "r",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      }
+    ]
+  },
+  {
+    "name": "head-not-newest",
+    "note": "a newer foreign tip n sits above HEAD h2; HEAD's line still owns lane 0",
+    "headOid": "h2",
+    "commits": [
+      {
+        "oid": "n",
+        "parents": ["b"]
+      },
+      {
+        "oid": "h2",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": ["r"]
+      },
+      {
+        "oid": "r",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "n",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "h2",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "r",
+        "lane": 0,
+        "color": 0,
+        "width": 1
+      }
+    ]
+  },
+  {
+    "name": "lane-across-pages",
+    "note": "side line f-g runs in lane 1 for several rows, so any page split cuts it",
+    "headOid": "m",
+    "commits": [
+      {
+        "oid": "m",
+        "parents": ["a", "f"]
+      },
+      {
+        "oid": "a",
+        "parents": ["b"]
+      },
+      {
+        "oid": "f",
+        "parents": ["g"]
+      },
+      {
+        "oid": "b",
+        "parents": ["r"]
+      },
+      {
+        "oid": "g",
+        "parents": ["r"]
+      },
+      {
+        "oid": "r",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "m",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "a",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "f",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      },
+      {
+        "oid": "g",
+        "lane": 1,
+        "color": 1,
+        "width": 2
+      },
+      {
+        "oid": "r",
+        "lane": 0,
+        "color": 0,
+        "width": 2
+      }
+    ]
+  },
+  {
+    "name": "head-second-parent",
+    "note": "HEAD is the second parent of a merge drawn above it: the curve lands in HEAD's reserved lane and the line continues down to HEAD",
+    "headOid": "M",
+    "commits": [
+      {
+        "oid": "F",
+        "parents": ["f1", "M"]
+      },
+      {
+        "oid": "f1",
+        "parents": ["b"]
+      },
+      {
+        "oid": "M",
+        "parents": ["b"]
+      },
+      {
+        "oid": "b",
+        "parents": []
+      }
+    ],
+    "rows": [
+      {
+        "oid": "F",
+        "lane": 1,
+        "color": 1,
+        "width": 2,
+        "edges": ["bottom:1>0@0", "bottom:1>1@1"]
+      },
+      {
+        "oid": "f1",
+        "lane": 1,
+        "color": 1,
+        "width": 2,
+        "edges": ["top:0>0@0", "top:1>1@1", "bottom:0>0@0", "bottom:1>1@1"]
+      },
+      {
+        "oid": "M",
+        "lane": 0,
+        "color": 0,
+        "width": 2,
+        "edges": ["top:0>0@0", "top:1>1@1", "bottom:0>0@0", "bottom:1>1@1"]
+      },
+      {
+        "oid": "b",
+        "lane": 0,
+        "color": 0,
+        "width": 2,
+        "edges": ["top:0>0@0", "top:1>0@1"]
+      }
+    ]
+  }
+]
