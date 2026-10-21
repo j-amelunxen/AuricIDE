@@ -33,7 +33,17 @@ Workspaces frequently contain multiple Git worktrees, nested repositories, or su
 - `git_unstage(repo_path: String, paths: Vec<String>) -> Result<(), String>`: Removes files from the staging index.
 - `git_commit(repo_path: String, message: String, amend: bool) -> Result<String, String>`: Creates a commit in `repo_path`.
 - `git_blame(repo_path: String, file_path: String) -> Result<Vec<BlameHunk>, String>`: Computes blame hunks for a file.
-- `git_history(repo_path: String, max_count: usize) -> Result<Vec<CommitSummary>, String>`: Retrieves recent commit history.
+- `git_log_since(repo_path, since_iso?, path_prefix?, limit, max_scan) -> Result<Vec<CommitInfo>, String>`: Walks HEAD newest first, with the paths each commit touched. Used by per-file History and the evidence engine.
+
+Git graph browser (contract: `docs/design-git-graph.md`; code: `git/graph.rs`, `git/refs_ops.rs`). Write commands refuse with `<code>: <sentence>` and never run during a merge, rebase, cherry-pick or revert.
+
+- `git_graph_log(repo_path, skip, limit) -> GraphPage`: All branches, remotes and tags as one topologically sorted walk, paged (`limit` clamped to 1..=500).
+- `git_refs(repo_path) -> GitRefs`: Branches, remotes, tags and HEAD with ahead/behind, plus the running operation.
+- `git_commit_detail(repo_path, oid, parent_index?) -> CommitDetail`: Full message and changed files against one parent.
+- `git_diff_commit(repo_path, oid, file_path, parent_index?) -> String`: Patch of one file in a commit, against the chosen parent.
+- `git_checkout(repo_path, target)`: Local branch, remote branch (new tracking branch) or commit/tag (detached); refuses with `would_overwrite` instead of discarding work.
+- `git_branch_create(repo_path, name, at_oid, checkout)`, `git_branch_rename(repo_path, old_name, new_name)`, `git_branch_delete(repo_path, name, force)`, `git_tag_create(repo_path, name, oid, message?)`, `git_tag_delete(repo_path, name)`: Local refs only; nothing is pushed.
+- `git_cherry_pick(repo_path, oid)`, `git_revert(repo_path, oid) -> PickResult`: Run the real `git`; a conflict is a result (`clean: false`) that `git_operation_step` can continue, skip or abort.
 
 ### Ignored Repositories Contract
 

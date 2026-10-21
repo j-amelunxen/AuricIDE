@@ -1,16 +1,23 @@
 use super::blame::git_blame_impl;
 use super::diff::{
-    git_diff_commit_impl, git_diff_file_ref_impl, git_diff_impl, git_diff_ref_files_impl,
+    git_diff_commit_parent_impl, git_diff_file_ref_impl, git_diff_impl, git_diff_ref_files_impl,
 };
 use super::discard::git_discard_impl;
 use super::discovery::git_discover_repos_impl;
+use super::graph::{git_commit_detail_impl, git_graph_log_impl, git_refs_impl};
 use super::log::{git_list_branches_impl, git_log_since_impl};
 use super::merge::{
     git_apply_patch_impl, git_conflict_file_impl, git_conflict_origins_impl, git_merge_abort_impl,
     git_merge_base_impl, git_merge_branch_impl, git_merge_conclude_impl, git_merge_preview_impl,
     git_merge_state_impl, git_resolve_conflict_impl, git_resolve_conflict_side_impl,
 };
-use super::operation_step::{git_operation_step_impl, OPERATION_STEP_TIMEOUT};
+use super::operation_step::{
+    git_operation_step_impl, without_repo_location_vars, OPERATION_STEP_TIMEOUT,
+};
+use super::refs_ops::{
+    git_branch_create_impl, git_branch_delete_impl, git_branch_rename_impl, git_checkout_impl,
+    git_pick_impl, git_tag_create_impl, git_tag_delete_impl, PickKind,
+};
 use super::staging::{git_commit_impl, git_push_impl, git_stage_impl, git_unstage_impl};
 use super::status::{git_branch_info_impl, git_projects_dirty_impl, git_status_impl};
 use super::types::*;
@@ -18,7 +25,7 @@ use super::worktrees::{
     git_default_branch_impl, git_worktree_add_impl, git_worktree_list_impl,
     git_worktree_merge_into_default_impl, git_worktree_remove_impl,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[tauri::command(async)]
 pub fn git_status(repo_path: String) -> Result<Vec<GitFileStatus>, String> {
@@ -104,8 +111,9 @@ pub fn git_diff_commit(
     repo_path: String,
     oid: String,
     file_path: String,
+    parent_index: Option<usize>,
 ) -> Result<String, String> {
-    git_diff_commit_impl(&repo_path, &oid, &file_path)
+    git_diff_commit_parent_impl(&repo_path, &oid, &file_path, parent_index.unwrap_or(0))
 }
 
 #[tauri::command(async)]
@@ -220,18 +228,25 @@ pub fn git_merge_preview(repo_path: String, branch: String) -> Result<GitMergePr
     git_merge_preview_impl(&repo_path, &branch)
 }
 
-/// Runs the real git, resolved through the login shell's PATH: an app
-/// launched from `/Applications` has no Homebrew git on its own PATH.
+/// The real git, resolved through the login shell's PATH: an app launched
+/// from `/Applications` has no Homebrew git on its own PATH.
+async fn real_git() -> Result<(PathBuf, Vec<(String, String)>), String> {
+    let git = crate::video_import::preflight::resolve_executable("git")
+        .await
+        .ok_or_else(|| {
+            "git_failed: git was not found on this machine; install it to continue".to_string()
+        })?;
+    let env = crate::agents::cached_login_shell_env().await;
+    Ok((git, without_repo_location_vars(env)))
+}
+
 #[tauri::command]
 pub async fn git_operation_step(
     repo_path: String,
     action: String,
 ) -> Result<GitOperationStepResult, String> {
-    let git = crate::video_import::preflight::resolve_executable("git")
-        .await
-        .ok_or_else(|| "git was not found on this machine; install it to continue".to_string())?;
-    let env = crate::agents::cached_login_shell_env().await;
-    git_operation_step_impl(&repo_path, &action, &git, env, OPERATION_STEP_TIMEOUT).await
+    let (git, env) = real_git().await?;
+    git_operation_step_impl(&repo_path, &action, &git, &env, OPERATION_STEP_TIMEOUT).await
 }
 
 #[tauri::command(async)]
@@ -247,4 +262,79 @@ pub fn git_apply_patch(
 #[tauri::command(async)]
 pub fn git_merge_base(repo_path: String, a: String, b: String) -> Result<String, String> {
     git_merge_base_impl(&repo_path, &a, &b)
+}
+
+#[tauri::command(async)]
+pub fn git_graph_log(repo_path: String, skip: usize, limit: usize) -> Result<GraphPage, String> {
+    git_graph_log_impl(&repo_path, skip, limit)
+}
+
+#[tauri::command(async)]
+pub fn git_refs(repo_path: String) -> Result<GitRefs, String> {
+    git_refs_impl(&repo_path)
+}
+
+#[tauri::command(async)]
+pub fn git_commit_detail(
+    repo_path: String,
+    oid: String,
+    parent_index: Option<usize>,
+) -> Result<CommitDetail, String> {
+    git_commit_detail_impl(&repo_path, &oid, parent_index.unwrap_or(0))
+}
+
+#[tauri::command(async)]
+pub fn git_checkout(repo_path: String, target: String) -> Result<(), String> {
+    git_checkout_impl(&repo_path, &target)
+}
+
+#[tauri::command(async)]
+pub fn git_branch_create(
+    repo_path: String,
+    name: String,
+    at_oid: String,
+    checkout: bool,
+) -> Result<(), String> {
+    git_branch_create_impl(&repo_path, &name, &at_oid, checkout)
+}
+
+#[tauri::command(async)]
+pub fn git_branch_rename(
+    repo_path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    git_branch_rename_impl(&repo_path, &old_name, &new_name)
+}
+
+#[tauri::command(async)]
+pub fn git_branch_delete(repo_path: String, name: String, force: bool) -> Result<(), String> {
+    git_branch_delete_impl(&repo_path, &name, force)
+}
+
+#[tauri::command(async)]
+pub fn git_tag_create(
+    repo_path: String,
+    name: String,
+    oid: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    git_tag_create_impl(&repo_path, &name, &oid, message.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn git_tag_delete(repo_path: String, name: String) -> Result<(), String> {
+    git_tag_delete_impl(&repo_path, &name)
+}
+
+#[tauri::command]
+pub async fn git_cherry_pick(repo_path: String, oid: String) -> Result<PickResult, String> {
+    let (git, env) = real_git().await?;
+    git_pick_impl(&repo_path, &oid, PickKind::CherryPick, &git, &env).await
+}
+
+#[tauri::command]
+pub async fn git_revert(repo_path: String, oid: String) -> Result<PickResult, String> {
+    let (git, env) = real_git().await?;
+    git_pick_impl(&repo_path, &oid, PickKind::Revert, &git, &env).await
 }

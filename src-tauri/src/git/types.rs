@@ -294,3 +294,75 @@ pub struct ApplyPatchGuard {
     pub side: String,
     pub diff: String,
 }
+
+/// One commit in the graph walk. Parents are what the frontend lays lanes
+/// from; Rust never assigns lanes. Contract: `docs/design-git-graph.md`.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphCommit {
+    pub oid: String,
+    pub parents: Vec<String>,
+    pub summary: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub author_time: i64,
+    pub committer_time: i64,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphPage {
+    pub commits: Vec<GraphCommit>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRef {
+    /// Full name: `refs/heads/main`, `refs/remotes/origin/main`, `refs/tags/v1`, `HEAD`.
+    pub name: String,
+    pub shorthand: String,
+    /// `local` | `remote` | `tag` | `head`
+    pub kind: String,
+    /// Commit oid; an annotated tag is peeled to its commit.
+    pub target: String,
+    pub upstream: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRefs {
+    pub refs: Vec<GitRef>,
+    pub head_detached: bool,
+    pub head_oid: Option<String>,
+    /// `merge::operation_name`: none|merge|rebase|cherry-pick|revert|other
+    pub operation: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDetail {
+    pub oid: String,
+    pub parents: Vec<String>,
+    pub message: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub author_time: i64,
+    pub committer_name: String,
+    pub committer_email: String,
+    pub committer_time: i64,
+    /// Against `parents[parent_index]`, or the empty tree for a root.
+    pub files: Vec<GitNameStatus>,
+}
+
+/// A cherry-pick or revert that ran. Stopping on conflicts is a result, not an error.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PickResult {
+    pub clean: bool,
+    pub conflicts: Vec<String>,
+    pub new_oid: Option<String>,
+}

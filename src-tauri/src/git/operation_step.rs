@@ -114,9 +114,37 @@ fn check_step(repo_path: &str, action: &str) -> Result<&'static str, String> {
     Ok(operation)
 }
 
+/// The names among `vars` that configure git itself.
+pub(crate) fn inherited_git_vars(vars: impl Iterator<Item = String>) -> Vec<String> {
+    vars.filter(|key| key.starts_with("GIT_")).collect()
+}
+
+/// Variables that say where the repository is. The repo is the cwd, so one
+/// exported in a shell profile would send git somewhere else.
+const REPO_LOCATION_VARS: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+];
+
+/// `env` without the repo-location variables; identity variables stay, the
+/// git CLI would honour them as well.
+pub(crate) fn without_repo_location_vars(env: &[(String, String)]) -> Vec<(String, String)> {
+    env.iter()
+        .filter(|(key, _)| !REPO_LOCATION_VARS.contains(&key.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// `git <operation> <flag>` in the repo, with no editor and no prompt.
 /// Returns whether it exited 0 and its stdout and stderr together.
-async fn run_git(
+pub(crate) async fn run_git(
     git: &Path,
     repo_path: &str,
     args: &[&str],
@@ -125,14 +153,15 @@ async fn run_git(
 ) -> Result<(bool, String), String> {
     let mut command = Command::new(git);
     command.args(args).current_dir(repo_path);
+    // The repo is the cwd; any inherited GIT_DIR, GIT_OBJECT_DIRECTORY and the
+    // like would point git elsewhere. What the caller passes is deliberate.
+    for key in inherited_git_vars(std::env::vars().map(|(key, _)| key)) {
+        command.env_remove(key);
+    }
     for (key, value) in env {
         command.env(key, value);
     }
     command
-        // The repo is the cwd; an inherited GIT_DIR would point git elsewhere.
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
         .env("GIT_EDITOR", "true")
         .env("GIT_SEQUENCE_EDITOR", "true")
         .env("GIT_TERMINAL_PROMPT", "0")

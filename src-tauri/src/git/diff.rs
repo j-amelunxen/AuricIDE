@@ -165,7 +165,19 @@ pub fn git_diff_impl(
     }
 }
 
+/// The first-parent diff; the command itself goes through `git_diff_commit_parent_impl`.
+#[cfg(test)]
 pub fn git_diff_commit_impl(repo_path: &str, oid: &str, file_path: &str) -> Result<String, String> {
+    git_diff_commit_parent_impl(repo_path, oid, file_path, 0)
+}
+
+/// Like `git_diff_commit_impl`, against the `parent_index`-th parent of a merge.
+pub fn git_diff_commit_parent_impl(
+    repo_path: &str,
+    oid: &str,
+    file_path: &str,
+    parent_index: usize,
+) -> Result<String, String> {
     let repo = match Repository::open(repo_path) {
         Ok(r) => r,
         Err(_) => return Ok(String::new()),
@@ -178,7 +190,7 @@ pub fn git_diff_commit_impl(repo_path: &str, oid: &str, file_path: &str) -> Resu
     let tree = commit
         .tree()
         .map_err(|e| format!("Failed to read commit tree: {e}"))?;
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let parent_tree = commit.parent(parent_index).ok().and_then(|p| p.tree().ok());
 
     let mut opts = git2::DiffOptions::new();
     opts.pathspec(file_path);
@@ -214,7 +226,7 @@ fn diff_ref_to_workdir<'a>(
         .map_err(|e| format!("Failed to diff against '{ref_name}': {e}"))
 }
 
-fn name_status_from_delta(delta: git2::DiffDelta<'_>) -> Option<GitNameStatus> {
+pub(crate) fn name_status_from_delta(delta: git2::DiffDelta<'_>) -> Option<GitNameStatus> {
     let status = match delta.status() {
         git2::Delta::Added | git2::Delta::Untracked => "added",
         git2::Delta::Deleted => "deleted",
