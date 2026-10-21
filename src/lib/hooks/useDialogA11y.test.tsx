@@ -101,3 +101,51 @@ describe('useDialogA11y', () => {
     expect(screen.getByRole('dialog').getAttribute('tabindex')).toBe('-1');
   });
 });
+
+describe('useDialogA11y returnFocusTo', () => {
+  function Returning({
+    target,
+    autoFocus,
+  }: {
+    target: () => HTMLElement | null;
+    autoFocus?: boolean;
+  }) {
+    const ref = useDialogA11y<HTMLDivElement>({ returnFocusTo: target });
+    return (
+      <div ref={ref} role="dialog" aria-label="Returning">
+        <button autoFocus={autoFocus}>Inside</button>
+      </div>
+    );
+  }
+
+  it('hands focus to the named element on close, not to whatever had it before', () => {
+    const elsewhere = document.createElement('button');
+    const wanted = document.createElement('button');
+    document.body.append(elsewhere, wanted);
+    elsewhere.focus();
+    const { unmount } = render(<Returning target={() => wanted} />);
+    unmount();
+    expect(wanted).toHaveFocus();
+    elsewhere.remove();
+    wanted.remove();
+  });
+
+  it('still works when the dialog autofocuses its own button on mount', () => {
+    const wanted = document.createElement('button');
+    document.body.append(wanted);
+    const { unmount } = render(<Returning target={() => wanted} autoFocus />);
+    unmount();
+    expect(wanted).toHaveFocus();
+    wanted.remove();
+  });
+
+  it('falls back to the previously focused element when the target is gone', () => {
+    const before = document.createElement('button');
+    document.body.append(before);
+    before.focus();
+    const { unmount } = render(<Returning target={() => null} />);
+    unmount();
+    expect(before).toHaveFocus();
+    before.remove();
+  });
+});

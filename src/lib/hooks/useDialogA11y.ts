@@ -15,8 +15,20 @@ const FOCUSABLE_SELECTOR = [
  * focused element on unmount. The consumer attaches the returned ref to the
  * dialog panel and sets role="dialog" aria-modal="true" plus a label.
  */
-export function useDialogA11y<T extends HTMLElement = HTMLDivElement>() {
+export function useDialogA11y<T extends HTMLElement = HTMLDivElement>(options?: {
+  /**
+   * Where focus goes on close, when "the element focused before" is the wrong
+   * answer: a dialog opened from a menu mounts in the commit that removes the
+   * menu, and one that autofocuses a button has already moved focus by the time
+   * this effect records it. Falls back to the previously focused element.
+   */
+  returnFocusTo?: () => HTMLElement | null;
+}) {
   const dialogRef = useRef<T>(null);
+  const returnFocusToRef = useRef(options?.returnFocusTo);
+  useEffect(() => {
+    returnFocusToRef.current = options?.returnFocusTo;
+  });
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -59,7 +71,8 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>() {
     dialog.addEventListener('keydown', handleKeyDown);
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown);
-      previouslyFocused?.focus();
+      const target = returnFocusToRef.current?.();
+      (target?.isConnected ? target : previouslyFocused)?.focus();
     };
   }, []);
 

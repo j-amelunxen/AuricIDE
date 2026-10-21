@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ToastHost } from './ToastHost';
@@ -31,6 +31,20 @@ describe('ToastHost', () => {
     act(() => useStore.getState().showToast('bye', 'info'));
 
     await user.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+    expect(screen.queryByTestId('toast-info')).not.toBeInTheDocument();
+  });
+
+  it('offers an action button that runs and dismisses the toast', async () => {
+    const user = userEvent.setup();
+    const run = vi.fn();
+    render(<ToastHost />);
+    act(() => {
+      useStore
+        .getState()
+        .showToast('Stopped on 2 conflicts', 'info', { label: 'Open Merge Panel', run });
+    });
+    await user.click(screen.getByRole('button', { name: 'Open Merge Panel' }));
+    expect(run).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('toast-info')).not.toBeInTheDocument();
   });
 });

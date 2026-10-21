@@ -121,4 +121,101 @@ describe('ContextMenu', () => {
     const leadingWrapper = item.querySelector('[data-testid="custom-mark"]')!.parentElement;
     expect(leadingWrapper).toHaveAttribute('aria-hidden', 'true');
   });
+  it('keeps an item that cannot run visible, states why, and does not run it', async () => {
+    const user = userEvent.setup();
+    const action = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[{ label: 'Delete…', action, disabledReason: 'You are on this branch' }]}
+        onClose={onClose}
+      />
+    );
+    const item = screen.getByRole('menuitem', { name: 'Delete…' });
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(item).toHaveAccessibleDescription('You are on this branch');
+    expect(screen.getByText('You are on this branch')).toBeVisible();
+    await user.click(item);
+    expect(action).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('takes its accessible name from the caller', () => {
+    render(
+      <ContextMenu x={0} y={0} options={options} onClose={vi.fn()} ariaLabel="Commit actions" />
+    );
+    expect(screen.getByRole('menu', { name: 'Commit actions' })).toBeInTheDocument();
+  });
+
+  it('draws compact rows only when asked', () => {
+    const { rerender } = render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
+    expect(screen.getByRole('menuitem', { name: 'Red' }).className).toContain('min-h-11');
+    rerender(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} compact />);
+    expect(screen.getByRole('menuitem', { name: 'Red' }).className).toContain('min-h-7');
+  });
+
+  it('makes a checked item a menuitemradio with its state', () => {
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[
+          { label: 'All', checked: true },
+          { label: 'Current', checked: false },
+        ]}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('menuitemradio', { name: 'All' })).toBeChecked();
+    expect(screen.getByRole('menuitemradio', { name: 'Current' })).not.toBeChecked();
+  });
+
+  it('walks the items with the arrow keys, Home and End', async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[{ label: 'One' }, { label: 'Two' }, { label: 'Three' }]}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('menuitem', { name: 'One' })).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'Two' })).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(screen.getByRole('menuitem', { name: 'Three' })).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'One' })).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByRole('menuitem', { name: 'Three' })).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('menuitem', { name: 'One' })).toHaveFocus();
+  });
+
+  it('gives focus back to what opened it when it closes', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount } = render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
+    expect(opener).not.toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('does not steal focus from something the user clicked elsewhere', () => {
+    const opener = document.createElement('button');
+    const other = document.createElement('button');
+    document.body.append(opener, other);
+    opener.focus();
+    const { unmount } = render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
+    other.focus();
+    unmount();
+    expect(other).toHaveFocus();
+    opener.remove();
+    other.remove();
+  });
 });

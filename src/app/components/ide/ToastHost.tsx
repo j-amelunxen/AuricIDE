@@ -35,6 +35,17 @@ function ToastItem({ toast }: { toast: Toast }) {
     >
       <AuricIcon name={VARIANT_ICON[toast.variant]} aria-hidden="true" className="text-[16px]" />
       <span className="max-w-xs">{toast.message}</span>
+      {toast.action && (
+        <button
+          onClick={() => {
+            toast.action?.run();
+            dismissToast(toast.id);
+          }}
+          className="rounded px-1.5 py-0.5 font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-current"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         onClick={() => dismissToast(toast.id)}
         aria-label="Dismiss notification"
