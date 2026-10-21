@@ -1437,6 +1437,7 @@ fn a_full_supervisor_project_list_stays_small() {
                 rank: Some((n % 4) + 1),
                 use_for: Some("Reading, browsing and normal coding work.".into()),
                 relative_cost: Some(f64::from(n as u32)),
+                ..Default::default()
             })
             .collect();
         offered.insert(provider.clone(), models);

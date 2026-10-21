@@ -175,7 +175,7 @@ fn cross_registry() -> ProviderRegistryState {
         );
         std::fs::write(dir.join(format!("{id}.json")), json).unwrap();
     }
-    let loaded = crate::providers::ProviderRegistry::load_configs_from(&[dir.clone()]);
+    let loaded = crate::providers::ProviderRegistry::load_configs_from(&[dir.clone()], None);
     let _ = std::fs::remove_dir_all(&dir);
     let registry = new_provider_registry(None);
     registry.providers.write().unwrap().extend(loaded);

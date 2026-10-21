@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 // ── Serializable types for the frontend ──────────────────────────────
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelOption {
     pub value: String,
@@ -34,6 +34,38 @@ pub struct ModelOption {
         skip_serializing_if = "Option::is_none"
     )]
     pub relative_cost: Option<f64>,
+    /// Whether the provider CLI still accepts this id. Defaults to true so
+    /// older configs and tests keep working; live discovery sets false for
+    /// static entries the CLI no longer lists (`model_catalog`).
+    #[serde(default = "default_available", skip_serializing_if = "is_true")]
+    pub available: bool,
+}
+
+impl Default for ModelOption {
+    fn default() -> Self {
+        Self {
+            value: String::new(),
+            label: String::new(),
+            rank: None,
+            use_for: None,
+            relative_cost: None,
+            available: true,
+        }
+    }
+}
+
+fn default_available() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+impl ModelOption {
+    pub fn is_available(&self) -> bool {
+        self.available
+    }
 }
 
 /// A `rank` that is not an integer is no rank, not a provider config that
@@ -517,6 +549,36 @@ pub enum SessionIdFrom {
     Output,
 }
 
+/// How to refresh `info.models` from the provider CLI at runtime.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelsDiscoveryConfig {
+    /// Executable to run. Empty when `format` reads a file (Codex cache).
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub format: ModelsDiscoveryFormat,
+    /// How long a successful discovery may be reused. Defaults to one hour.
+    #[serde(default = "default_models_cache_seconds")]
+    pub cache_seconds: u64,
+}
+
+fn default_models_cache_seconds() -> u64 {
+    3600
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelsDiscoveryFormat {
+    /// `id\\tlabel` per line (`agy models`).
+    TsvIdLabel,
+    /// Bullet list under "Available models:" (`grok models`).
+    GrokBullet,
+    /// `~/.codex/models_cache.json`, `visibility: "list"` only.
+    CodexCache,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
@@ -539,6 +601,10 @@ pub struct ProviderConfig {
     /// How this provider's runs are measured; see [`UsageConfig`].
     #[serde(default)]
     pub usage: Option<UsageConfig>,
+    /// Optional live model list. When absent, known provider ids still get a
+    /// built-in discovery (`model_catalog::builtin_discovery`).
+    #[serde(default)]
+    pub models_discovery: Option<ModelsDiscoveryConfig>,
     pub info: ProviderConfigInfo,
     pub version_check: VersionCheck,
     pub prompt_template: String,

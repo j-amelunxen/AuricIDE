@@ -19,6 +19,8 @@ pub struct ProviderRegistry {
     pub(crate) default_id: RwLock<String>,
     /// Where imported configs are persisted (app_data_dir/dynamic-providers).
     pub(crate) import_dir: Option<PathBuf>,
+    /// Where live CLI model lists are cached (app_data_dir/model-catalog).
+    pub(crate) catalog_cache_dir: Option<PathBuf>,
 }
 
 impl ProviderRegistry {
@@ -34,10 +36,11 @@ impl ProviderRegistry {
             PathBuf::from("../dynamic-providers"),
         ];
 
+        let app_data_dir = app.and_then(|a| a.path().app_data_dir().ok());
+        if let Some(app_data_dir) = app_data_dir.as_ref() {
+            search_paths.push(app_data_dir.join("dynamic-providers"));
+        }
         if let Some(app) = app {
-            if let Ok(app_data_dir) = app.path().app_data_dir() {
-                search_paths.push(app_data_dir.join("dynamic-providers"));
-            }
             if let Ok(resource_dir) = app.path().resource_dir() {
                 search_paths.push(resource_dir.join("dynamic-providers"));
             }
@@ -49,7 +52,11 @@ impl ProviderRegistry {
             }
         }
 
-        providers.extend(Self::load_configs_from(&search_paths));
+        let catalog_cache_dir = app_data_dir.as_ref().map(|dir| dir.join("model-catalog"));
+        providers.extend(Self::load_configs_from(
+            &search_paths,
+            catalog_cache_dir.clone(),
+        ));
 
         // Determine default ID. First dynamic provider we find? Or claude?
         // Usually, pick the first dynamic one, or fallback to crush.
@@ -66,17 +73,13 @@ impl ProviderRegistry {
             "crush".to_string()
         };
 
-        let import_dir = app.and_then(|a| {
-            a.path()
-                .app_data_dir()
-                .ok()
-                .map(|d| d.join("dynamic-providers"))
-        });
+        let import_dir = app_data_dir.map(|d| d.join("dynamic-providers"));
 
         Self {
             providers: RwLock::new(providers),
             default_id: RwLock::new(default_id),
             import_dir,
+            catalog_cache_dir,
         }
     }
 
@@ -86,7 +89,10 @@ impl ProviderRegistry {
     /// A file that fails to parse is reported on stderr and skipped, so one bad
     /// config never costs the user the rest of them. A config claiming the
     /// built-in id is skipped too — see `RESERVED_PROVIDER_ID`.
-    pub fn load_configs_from(dirs: &[PathBuf]) -> HashMap<String, Arc<dyn AgentProvider>> {
+    pub fn load_configs_from(
+        dirs: &[PathBuf],
+        catalog_cache_dir: Option<PathBuf>,
+    ) -> HashMap<String, Arc<dyn AgentProvider>> {
         let mut loaded: HashMap<String, Arc<dyn AgentProvider>> = HashMap::new();
 
         for dir in dirs {
@@ -114,7 +120,13 @@ impl ProviderRegistry {
                             );
                             continue;
                         }
-                        loaded.insert(id, Arc::new(DynamicProvider::new(config)));
+                        loaded.insert(
+                            id,
+                            Arc::new(
+                                DynamicProvider::new(config)
+                                    .with_catalog_cache_dir(catalog_cache_dir.clone()),
+                            ),
+                        );
                     }
                     Err(e) => {
                         eprintln!("Failed to parse provider config {:?}: {}", path, e)
@@ -179,7 +191,9 @@ impl ProviderRegistry {
                 .map_err(|e| format!("Could not save provider: {}", e))?;
         }
 
-        let provider = Arc::new(DynamicProvider::new(config));
+        let provider = Arc::new(
+            DynamicProvider::new(config).with_catalog_cache_dir(self.catalog_cache_dir.clone()),
+        );
         let info = provider.info();
         self.providers.write().unwrap().insert(id.clone(), provider);
         // A freshly-imported claude becomes the default (matches startup logic).
