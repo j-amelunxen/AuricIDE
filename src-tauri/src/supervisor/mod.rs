@@ -199,6 +199,9 @@ pub fn current_policy(app_data: &Path) -> SupervisorPolicy {
 }
 
 /// What every installed provider offers now, in its own order.
+///
+/// Includes unavailable (stale) entries so Settings can mark them; spawn
+/// checks go through [`model_names`], which keeps only available ids.
 pub fn offered_models(registry: &ProviderRegistry) -> BTreeMap<String, Vec<ModelOption>> {
     registry
         .list_providers()
@@ -207,13 +210,18 @@ pub fn offered_models(registry: &ProviderRegistry) -> BTreeMap<String, Vec<Model
         .collect()
 }
 
+/// Model ids a spawn may name: available entries only.
 pub fn model_names(offered: &BTreeMap<String, Vec<ModelOption>>) -> BTreeMap<String, Vec<String>> {
     offered
         .iter()
         .map(|(id, models)| {
             (
                 id.clone(),
-                models.iter().map(|model| model.value.clone()).collect(),
+                models
+                    .iter()
+                    .filter(|model| model.is_available())
+                    .map(|model| model.value.clone())
+                    .collect(),
             )
         })
         .collect()

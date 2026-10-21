@@ -70,4 +70,13 @@ describe('provider IPC wrappers', () => {
       );
     });
   });
+
+  describe('isModelAvailable', () => {
+    it('treats missing available as offered', async () => {
+      const { isModelAvailable } = await import('./providers');
+      expect(isModelAvailable({ value: 'sonnet', label: 'Sonnet' })).toBe(true);
+      expect(isModelAvailable({ value: 'sonnet', label: 'Sonnet', available: true })).toBe(true);
+      expect(isModelAvailable({ value: 'old', label: 'Old', available: false })).toBe(false);
+    });
+  });
 });

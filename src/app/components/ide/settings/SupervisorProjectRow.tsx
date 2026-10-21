@@ -10,7 +10,11 @@ import {
   toggleSupervisorProvider,
 } from '@/lib/config/supervisorPolicyEdit';
 import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
-import type { ModelOption, ProviderInfo } from '@/lib/tauri/providers';
+import {
+  isModelAvailable,
+  type ModelOption,
+  type ProviderInfo,
+} from '@/lib/tauri/providers';
 import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { DESCRIPTION_MAX_CHARS } from '@/lib/quickAccess/description';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
@@ -243,8 +247,11 @@ function ProviderBlock({
   onChange,
 }: ProviderBlockProps) {
   const checked = !denied && (entry.providers?.includes(provider.id) ?? true);
-  const offered = provider.models.map((m) => m.value);
+  const offered = provider.models.filter(isModelAvailable).map((m) => m.value);
   const chosen = entry.models[provider.id];
+  const orphanIds = (chosen ?? []).filter(
+    (id) => !provider.models.some((model) => model.value === id)
+  );
 
   return (
     <div className="rounded-lg px-2 py-1.5 hover:bg-white/[0.03]">
@@ -271,20 +278,29 @@ function ProviderBlock({
             className="flex flex-wrap gap-1.5"
           >
             {byModelRank(provider.models).map((model) => {
-              const on = chosen?.includes(model.value) ?? true;
+              const available = isModelAvailable(model);
+              const on = available && (chosen?.includes(model.value) ?? true);
               return (
                 <label
                   key={model.value}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/60 ${
-                    on
-                      ? 'border-primary/40 bg-primary/10 text-foreground'
-                      : 'border-white/10 bg-white/5 text-foreground-muted hover:text-foreground'
+                  title={
+                    available
+                      ? undefined
+                      : 'No longer offered by this CLI — left in settings unchanged'
+                  }
+                  className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/60 ${
+                    !available
+                      ? 'cursor-not-allowed border-amber-500/30 bg-amber-500/5 text-foreground-muted line-through'
+                      : on
+                        ? 'cursor-pointer border-primary/40 bg-primary/10 text-foreground'
+                        : 'cursor-pointer border-white/10 bg-white/5 text-foreground-muted hover:text-foreground'
                   }`}
                 >
                   <input
                     type="checkbox"
                     data-testid={`supervisor-model-${testKey}-${model.value}`}
                     checked={on}
+                    disabled={!available}
                     onChange={(e) =>
                       onChange(
                         toggleSupervisorModel(
@@ -299,12 +315,28 @@ function ProviderBlock({
                     className="sr-only"
                   />
                   <span>{model.label}</span>
-                  <span className="text-[9px] text-foreground-muted">
-                    {modelSizeLabel(model.rank)}
-                  </span>
+                  {!available && (
+                    <span className="text-[9px] text-amber-400 no-underline">unavailable</span>
+                  )}
+                  {available && (
+                    <span className="text-[9px] text-foreground-muted">
+                      {modelSizeLabel(model.rank)}
+                    </span>
+                  )}
                 </label>
               );
             })}
+            {orphanIds.map((id) => (
+              <span
+                key={`orphan-${id}`}
+                data-testid={`supervisor-model-orphan-${testKey}-${id}`}
+                title="In your policy, but missing from the provider catalog"
+                className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-[11px] text-foreground-muted line-through"
+              >
+                {id}{' '}
+                <span className="text-[9px] text-amber-400 no-underline">unavailable</span>
+              </span>
+            ))}
           </div>
           {chosen?.length === 0 && (
             <p className="text-[10px] text-foreground-muted">

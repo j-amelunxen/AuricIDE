@@ -1,5 +1,6 @@
 pub mod crush;
 pub mod dynamic;
+pub mod model_catalog;
 pub mod registry;
 pub mod types;
 

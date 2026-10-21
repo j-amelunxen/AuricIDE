@@ -147,6 +147,35 @@ From rank 3 on, a supervisor's spawn has to name a `modelReason`
 (`docs/design-agent-control.md`, "Supervisor scope"), so ranking a model 3 or
 4 also makes it an exception that needs a stated reason.
 
+### Live model discovery (`modelsDiscovery`)
+
+Optional. When set — or when the provider id is one AuricIDE already knows
+(`antigravity`, `grok`, `codex`) — the IDE asks the CLI for its current model
+list, caches it under `<app_data_dir>/model-catalog/`, and merges it with the
+static `info.models` metadata:
+
+- Discovered ids are offered (`available: true`); matching static entries keep
+  their `rank` / `useFor` / `relativeCost` and label.
+- Static ids the CLI no longer lists stay in the picker with `available: false`
+  so Settings can mark them. User policy is never rewritten.
+- A spawn that names an unavailable or unknown id is refused with a clear
+  message that lists the current models.
+
+```json
+"modelsDiscovery": {
+  "command": "agy",
+  "args": ["models"],
+  "format": "tsv-id-label",
+  "cacheSeconds": 3600
+}
+```
+
+Formats: `tsv-id-label` (`id\\tlabel` per line), `grok-bullet` (the
+`Available models:` list from `grok models`), `codex-cache` (reads
+`~/.codex/models_cache.json`, `visibility: "list"` only; `command` may be
+empty). When discovery fails, a fresh cache is reused; with no cache the
+static list is used as before.
+
 `unattended` on a permission mode is optional and marks a mode in which the CLI
 acts without asking. Agents started by the supervisor never run in such a mode:
 the policy cannot be saved with one, and a spawn whose mode (the policy's, or
