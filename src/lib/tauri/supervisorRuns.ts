@@ -16,6 +16,8 @@ export interface SupervisorRun {
    * Absent or null for an ordinary run.
    */
   manager?: Pick<SupervisorManager, 'key' | 'name' | 'archivedAt'> | null;
+  /** The key in the run's `supervisor.json`; a promotion keeps it while it is free. */
+  storedKey?: string | null;
 }
 
 export interface SupervisorRunFile {

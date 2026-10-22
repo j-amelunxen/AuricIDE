@@ -99,6 +99,20 @@ describe('PromoteManagerSheet', () => {
     expect(screen.getByText('Address: inbox')).toBeInTheDocument();
   });
 
+  it('keeps the key a stopped run recorded in its supervisor file, as Rust does', () => {
+    open({ run: { ...RUN, storedKey: 'release-desk' } });
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Release Desk');
+    expect(screen.getByText('Address: release-desk')).toBeInTheDocument();
+  });
+
+  it('drops a recorded key that a live supervisor elsewhere holds, as Rust does', () => {
+    open({ run: { ...RUN, storedKey: 'release-desk' }, takenKeys: ['release-desk'] });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Inbox' },
+    });
+    expect(screen.getByText('Address: inbox')).toBeInTheDocument();
+  });
+
   it('shows the address Rust folds for letters Unicode normalisation would drop', () => {
     open();
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {

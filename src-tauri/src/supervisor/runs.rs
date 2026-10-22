@@ -33,6 +33,10 @@ pub struct SupervisorRun {
     /// The Project Manager this folder belongs to, filled in from the registry
     /// by `managers::attach_managers`.
     pub manager: Option<RunManager>,
+    /// The key in the run's `supervisor.json`, which a promotion keeps when it
+    /// is free; the promote sheet shows it so the address it names is the one
+    /// Rust assigns.
+    pub stored_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -123,6 +127,7 @@ pub fn list_runs(root: &Path) -> Vec<SupervisorRun> {
                 file_count: files.len(),
                 truncated,
                 manager: None,
+                stored_key: super::several::read_run_key(&path),
             })
         })
         .collect();
@@ -209,6 +214,22 @@ mod tests {
         assert_eq!(names, ["2026-10-01_090000", "2026-10-02_090000"]);
         assert_eq!(runs[1].file_count, 2);
         assert!(!runs[1].truncated);
+    }
+
+    #[test]
+    fn a_run_reports_the_key_its_supervisor_file_carries() {
+        let root = tempfile::tempdir().unwrap();
+        let keyed = root.path().join("2026-10-01_090000");
+        std::fs::create_dir_all(&keyed).unwrap();
+        super::super::several::write_run_key(&keyed, Some("release-desk")).unwrap();
+        std::fs::create_dir_all(root.path().join("2026-10-02_090000")).unwrap();
+
+        let keys: Vec<_> = list_runs(root.path())
+            .into_iter()
+            .map(|run| (run.name, run.stored_key))
+            .collect();
+        assert!(keys.contains(&("2026-10-01_090000".into(), Some("release-desk".into()))));
+        assert!(keys.contains(&("2026-10-02_090000".into(), None)));
     }
 
     #[test]
