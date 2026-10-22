@@ -45,7 +45,15 @@
     "cases": [
       { "liveKey": "mail-triage", "fileKey": "old-desk", "name": "Inbox", "key": "mail-triage" },
       { "liveKey": null, "fileKey": "old-desk", "name": "Inbox", "key": "old-desk" },
-      { "liveKey": null, "fileKey": null, "name": "Inbox", "key": "inbox" }
+      { "liveKey": null, "fileKey": null, "name": "Inbox", "key": "inbox" },
+      {
+        "$comment": "otherLiveKeys: keys of live supervisors working elsewhere. The remembered key is theirs now, so it is not taken.",
+        "liveKey": null,
+        "fileKey": "old-desk",
+        "otherLiveKeys": ["old-desk"],
+        "name": "Inbox",
+        "key": "inbox"
+      }
     ]
   },
   "launchKey": {

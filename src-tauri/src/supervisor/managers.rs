@@ -10,7 +10,7 @@
 //! tests below run it.
 
 use super::runs::{resolve_run_dir, RunManager, SupervisorRun};
-use super::several::{is_valid_key, read_run_key, run_dir_holder};
+use super::several::{is_live_supervisor, is_valid_key, read_run_key, run_dir_holder};
 use super::{app_data_dir, write_json_atomic};
 use crate::agents::{AgentInfo, AgentManagerState};
 use serde::{Deserialize, Serialize};
@@ -299,15 +299,25 @@ fn scaffold_run_folder(run: &Path, name: &str) -> Result<(), String> {
 }
 
 /// The run's existing address wins (the live supervisor's key, then the one in
-/// its `supervisor.json`) unless a registry entry already holds it; else one
-/// derived from the name.
+/// its `supervisor.json`) unless a registry entry or a live supervisor working
+/// elsewhere already holds it; else one derived from the name.
 fn promotion_key(registry: &Registry, live: &[AgentInfo], run: &Path, name: &str) -> String {
     let registry_keys: Vec<String> = registry.managers.iter().map(|m| m.key.clone()).collect();
-    let live_keys = live.iter().filter_map(|agent| agent.supervisor_key.clone());
-    let own_key = run_dir_holder(live, run)
+    let live_keys: Vec<String> = live
+        .iter()
+        .filter_map(|agent| agent.supervisor_key.clone())
+        .collect();
+    let holder = run_dir_holder(live, run);
+    let keys_elsewhere = live.iter().filter(|agent| {
+        is_live_supervisor(agent) && holder.map_or(true, |holder| holder.id != agent.id)
+    });
+    let elsewhere: Vec<&String> = keys_elsewhere
+        .filter_map(|agent| agent.supervisor_key.as_ref())
+        .collect();
+    let own_key = holder
         .and_then(|holder| holder.supervisor_key.clone())
         .or_else(|| read_run_key(run))
-        .filter(|key| !registry_keys.contains(key));
+        .filter(|key| !registry_keys.contains(key) && !elsewhere.contains(&key));
     own_key.unwrap_or_else(|| {
         let taken: Vec<String> = registry_keys.into_iter().chain(live_keys).collect();
         key_from_name(name, &taken)
@@ -730,10 +740,16 @@ mod tests {
             if let Some(file_key) = case["fileKey"].as_str() {
                 super::super::several::write_run_key(&run, Some(file_key)).unwrap();
             }
+            let elsewhere = sandbox.run("2026-10-20_080000");
+            let others = case.get("otherLiveKeys").map(strings).unwrap_or_default();
             let live: Vec<AgentInfo> = case["liveKey"]
                 .as_str()
                 .map(|key| live_supervisor(Some(key), &run))
                 .into_iter()
+                .chain(others.iter().enumerate().map(|(n, key)| AgentInfo {
+                    id: format!("agent-{}", 10 + n),
+                    ..live_supervisor(Some(key), &elsewhere)
+                }))
                 .collect();
             let record = promote(
                 &sandbox.registry,
