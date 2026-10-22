@@ -42,7 +42,10 @@ const OKF_OFF_REASON: Partial<Record<OkfState, string>> = {
   missing: 'okf is not installed.',
   outdated: 'okf is too old.',
   unrecognised: 'okf answered in a way we do not recognise.',
+  failed: 'okf could not run.',
 };
+/** A tool that was never there is news about the machine, not a fault; the rest is a problem. */
+const OKF_PROBLEM_STATES: OkfState[] = ['outdated', 'unrecognised', 'failed'];
 /** Only these have a command that helps. */
 const OKF_FIXABLE: OkfState[] = ['missing', 'outdated'];
 
@@ -90,19 +93,49 @@ function Row({
   );
 }
 
-/** A status line exists only because it asks for something. */
-function StatusLine({ children, actions }: { children: ReactNode; actions?: ReactNode }) {
+/**
+ * A status line exists only because it asks for something. A real problem is
+ * amber with a warning; information is a calm muted line with its action beside it.
+ */
+function StatusLine({
+  tone,
+  children,
+  actions,
+}: {
+  tone: 'info' | 'problem';
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  const problem = tone === 'problem';
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200">
-      <div className="flex items-start gap-1.5">
-        <AuricIcon name="warning" aria-hidden="true" className="mt-px shrink-0 text-[13px]" />
-        <span className="min-w-0 flex-1">{children}</span>
-      </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-x-0.5 pl-[0.6rem]">{actions}</div>
-      )}
+    <div
+      className={`flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] ${
+        problem
+          ? 'rounded-md bg-amber-500/10 px-2 py-1.5 text-amber-200'
+          : 'px-0.5 text-foreground-muted'
+      }`}
+    >
+      <span className="flex min-w-0 items-start gap-1">
+        <AuricIcon
+          name={problem ? 'warning' : 'info'}
+          aria-hidden="true"
+          className="mt-px shrink-0 text-[13px]"
+        />
+        <span className="min-w-0">{children}</span>
+      </span>
+      {actions}
     </div>
   );
+}
+
+/** What the memory line says about how the bundle was checked, from the summary alone. */
+function memoryCheckLabel(summary: ManagerMemorySummary): string {
+  if (summary.findings.length > 0) {
+    const count = summary.findings.length;
+    return `${count} ${count === 1 ? 'problem' : 'problems'}`;
+  }
+  if (!summary.checkedAt) return 'not checked yet';
+  return summary.okf === 'ok' ? 'checked with okf' : 'layout checked';
 }
 
 type Loaded<T> =
@@ -193,6 +226,7 @@ export function ManagerInspector({
     <div className="flex flex-col gap-1 py-1.5 pl-6 pr-2">
       {promotedWhileRunning && (
         <StatusLine
+          tone="info"
           actions={
             <button type="button" onClick={onRestart} className={TEXT_BUTTON}>
               Restart Now
@@ -204,6 +238,7 @@ export function ManagerInspector({
       )}
       {changedWhileRunning && !promotedWhileRunning && (
         <StatusLine
+          tone="info"
           actions={
             <button type="button" onClick={onRestart} className={TEXT_BUTTON}>
               Restart
@@ -216,6 +251,7 @@ export function ManagerInspector({
       {problems.length > 0 && (
         <>
           <StatusLine
+            tone="problem"
             actions={
               <button
                 type="button"
@@ -240,8 +276,9 @@ export function ManagerInspector({
           )}
         </>
       )}
-      {okfOff && (
+      {okfOff && summary && (
         <StatusLine
+          tone={OKF_PROBLEM_STATES.includes(summary.okf) ? 'problem' : 'info'}
           actions={
             <>
               {summary && OKF_FIXABLE.includes(summary.okf) && (
@@ -322,8 +359,7 @@ export function ManagerInspector({
           ) : summary ? (
             <>
               <span className="block">
-                {total} {total === 1 ? 'concept' : 'concepts'} ·{' '}
-                {summary.checkedAt ? 'checked' : 'not checked yet'}
+                {total} {total === 1 ? 'concept' : 'concepts'} · {memoryCheckLabel(summary)}
               </span>
               {total > 0 && (
                 <span className="block text-[11px] text-foreground-muted">

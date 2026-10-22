@@ -136,7 +136,7 @@ describe('ManagerInspector', () => {
 
   it('counts the concepts and lists them by type', async () => {
     show();
-    expect(await screen.findByText('48 concepts · checked')).toBeInTheDocument();
+    expect(await screen.findByText('48 concepts · checked with okf')).toBeInTheDocument();
     expect(screen.getByText('Decisions 12 · Facts 20 · Lessons 16')).toBeInTheDocument();
   });
 
@@ -146,11 +146,53 @@ describe('ManagerInspector', () => {
     expect(await screen.findByText('48 concepts · not checked yet')).toBeInTheDocument();
   });
 
+  it('says only the layout was checked when okf was not there', async () => {
+    managerMemory.mockResolvedValue(memory({ okf: 'missing' }));
+    show();
+    expect(await screen.findByText('48 concepts · layout checked')).toBeInTheDocument();
+  });
+
+  it('says the number of problems in the memory line when there are findings', async () => {
+    managerMemory.mockResolvedValue(
+      memory({
+        okf: 'findings',
+        findings: [{ source: 'okf', code: 'x', path: null, message: 'One.' }],
+      })
+    );
+    show();
+    expect(await screen.findByText('48 concepts · 1 problem')).toBeInTheDocument();
+  });
+
+  it('keeps amber for real problems and a calm line for information', async () => {
+    managerMemory.mockResolvedValue(memory({ okf: 'missing' }));
+    const { unmount } = render(
+      <ManagerInspector
+        manager={MANAGER}
+        run={RUN}
+        liveSupervisor={undefined}
+        folderOpen={false}
+        reloadToken={0}
+        onOpen={vi.fn()}
+        onEditInstructions={vi.fn()}
+        onRestart={vi.fn()}
+        onToggleFolder={vi.fn()}
+      />
+    );
+    const calm = await screen.findByText('Memory check off: okf is not installed.');
+    expect(calm.closest('div')).not.toHaveClass('text-amber-200');
+    unmount();
+
+    managerMemory.mockResolvedValue(memory({ okf: 'outdated' }));
+    show();
+    const problem = await screen.findByText('Memory check off: okf is too old.');
+    expect(problem.closest('div')).toHaveClass('text-amber-200');
+  });
+
   it('stays quiet when nothing asks for anything', async () => {
     const text = '# Title\n\n- Write every ticket in Spanish.\n';
     const lastLaunch = { at: '2026-10-22T10:16:02Z', instructionsSha256: await sha256Hex(text) };
     show({ manager: { ...MANAGER, lastLaunch }, liveSupervisor: LIVE });
-    await screen.findByText('48 concepts · checked');
+    await screen.findByText('48 concepts · checked with okf');
     await screen.findByText('Write every ticket in Spanish.');
     expect(screen.queryByRole('button', { name: /Restart/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Memory check/)).not.toBeInTheDocument();
@@ -257,7 +299,7 @@ describe('ManagerInspector', () => {
     expect(onOpen).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Folder/ }));
     expect(onToggleFolder).toHaveBeenCalled();
-    await screen.findByText('48 concepts · checked');
+    await screen.findByText('48 concepts · checked with okf');
   });
 
   it('reads the memory again when the rail asks for it', async () => {
@@ -274,7 +316,7 @@ describe('ManagerInspector', () => {
         onToggleFolder={vi.fn()}
       />
     );
-    await screen.findByText('48 concepts · checked');
+    await screen.findByText('48 concepts · checked with okf');
     managerMemory.mockResolvedValue(memory({ concepts: { Fact: 1 } }));
     rerender(
       <ManagerInspector
@@ -289,6 +331,6 @@ describe('ManagerInspector', () => {
         onToggleFolder={vi.fn()}
       />
     );
-    expect(await screen.findByText('1 concept · checked')).toBeInTheDocument();
+    expect(await screen.findByText('1 concept · checked with okf')).toBeInTheDocument();
   });
 });
