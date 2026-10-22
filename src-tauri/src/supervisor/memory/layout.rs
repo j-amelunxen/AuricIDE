@@ -22,6 +22,12 @@ const FRONT_MATTER_READ_LIMIT: u64 = 16 * 1024;
 const SECTION_INDEX_READ_LIMIT: u64 = 1024 * 1024;
 const SECTION_INDEX_FILE: &str = "index.md";
 const FRONT_MATTER_FENCE: &str = "---";
+/// What a quoted status or file name may take of the prompt: a finding is a
+/// sentence, never a way to paste a page into it.
+const MAX_QUOTED_CHARS: usize = 60;
+/// Declared by us, not by the fixture: it says the walk was cut short, which
+/// no concept file can.
+pub const SCAN_TRUNCATED: &str = "scan_truncated";
 
 pub struct Layout {
     pub bundle_dir: String,
@@ -82,6 +88,10 @@ pub struct Scan {
 /// Walks the bundle. A folder that is not there, or is a link, is an empty
 /// bundle: nothing is followed out of the run folder.
 pub fn scan(bundle: &Path) -> Scan {
+    scan_with_budget(bundle, MAX_CONCEPT_FILES)
+}
+
+fn scan_with_budget(bundle: &Path, concept_budget: usize) -> Scan {
     let mut scan = Scan::default();
     let is_real_folder = std::fs::symlink_metadata(bundle)
         .map(|meta| meta.is_dir())
@@ -93,16 +103,53 @@ pub fn scan(bundle: &Path) -> Scan {
     for file in [&layout.root_index, &layout.log_file] {
         scan.note_change(&bundle.join(file));
     }
-    let mut budget = MAX_CONCEPT_FILES;
+    let mut budget = concept_budget;
+    let mut cut_short = false;
     for (folder, section_type) in &layout.sections {
         let section = bundle.join(folder);
+        if !is_real_folder_at(&section) {
+            continue;
+        }
         scan.note_change(&section.join(SECTION_INDEX_FILE));
         let index = read_limited(&section.join(SECTION_INDEX_FILE), SECTION_INDEX_READ_LIMIT);
-        for file in concept_files(&section, &mut budget) {
+        let (files, more) = concept_files(&section, &mut budget);
+        cut_short |= more;
+        for file in files {
             scan.check_concept(bundle, folder, section_type, &file, &index);
         }
     }
+    if cut_short {
+        scan.findings.insert(0, truncation_finding(concept_budget));
+    }
     scan
+}
+
+fn truncation_finding(limit: usize) -> MemoryFinding {
+    MemoryFinding {
+        source: FindingSource::Layout,
+        code: SCAN_TRUNCATED.to_string(),
+        path: None,
+        message: format!("Only the first {limit} concepts were checked; the rest are not counted."),
+    }
+}
+
+fn is_real_folder_at(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// Shortened and stripped of control characters, so text taken from a file
+/// cannot start a line of its own in the prompt.
+fn tidy(text: &str) -> String {
+    let mut shown: String = text
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_QUOTED_CHARS + 1)
+        .collect();
+    if shown.chars().count() > MAX_QUOTED_CHARS {
+        shown = shown.chars().take(MAX_QUOTED_CHARS).collect();
+        shown.push('…');
+    }
+    shown
 }
 
 impl Scan {
@@ -126,7 +173,7 @@ impl Scan {
         self.findings.push(MemoryFinding {
             source: FindingSource::Layout,
             code: code.to_string(),
-            path: Some(path.to_string()),
+            path: Some(tidy(path)),
             message,
         });
     }
@@ -172,7 +219,10 @@ impl Scan {
                 self.report(
                     "unknown_status",
                     &relative,
-                    format!("`{status}` is not a status; use draft, stable or deprecated."),
+                    format!(
+                        "`{}` is not a status; use draft, stable or deprecated.",
+                        tidy(status)
+                    ),
                 );
             }
         }
@@ -209,9 +259,9 @@ impl Scan {
 
 /// The names of the Markdown files in a section, sorted. Links, folders and
 /// the section index are not concepts.
-fn concept_files(section: &Path, budget: &mut usize) -> Vec<String> {
+fn concept_files(section: &Path, budget: &mut usize) -> (Vec<String>, bool) {
     let Ok(entries) = std::fs::read_dir(section) else {
-        return Vec::new();
+        return (Vec::new(), false);
     };
     let mut names: Vec<String> = entries
         .flatten()
@@ -220,13 +270,18 @@ fn concept_files(section: &Path, budget: &mut usize) -> Vec<String> {
         .filter(|name| name.ends_with(".md") && name != SECTION_INDEX_FILE)
         .collect();
     names.sort();
+    let more = names.len() > *budget;
     names.truncate(*budget);
     *budget -= names.len();
-    names
+    (names, more)
 }
 
 fn read_limited(file: &Path, limit: u64) -> String {
     let mut text = String::new();
+    // A pipe would block the open, and a link leads out of the run folder.
+    if !std::fs::symlink_metadata(file).is_ok_and(|meta| meta.is_file()) {
+        return text;
+    }
     if let Ok(opened) = std::fs::File::open(file) {
         let _ = opened.take(limit).read_to_string(&mut text);
     }
@@ -487,6 +542,83 @@ mod tests {
         let mut declared = layout().finding_codes.clone();
         declared.sort();
         assert_eq!(emitted, declared);
+    }
+
+    #[test]
+    fn a_section_folder_that_is_a_link_is_not_followed() {
+        let outside = bundle_with(&[("secret/a.md", GOOD), ("secret/index.md", "(a.md)")]);
+        let bundle = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret"),
+            bundle.path().join("decisions"),
+        )
+        .unwrap();
+        assert_eq!(scan(bundle.path()).concepts, BTreeMap::new());
+    }
+
+    #[test]
+    fn a_section_index_that_is_a_link_is_not_read() {
+        let outside = bundle_with(&[("listing.md", "* [t](a.md)")]);
+        let bundle = bundle_with(&[("decisions/a.md", GOOD)]);
+        std::os::unix::fs::symlink(
+            outside.path().join("listing.md"),
+            bundle.path().join("decisions/index.md"),
+        )
+        .unwrap();
+        let found = scan(bundle.path());
+        assert!(codes(&found).contains(&("not_in_section_index", "decisions/a.md")));
+    }
+
+    #[test]
+    fn a_pipe_as_the_section_index_does_not_block_the_walk() {
+        let bundle = bundle_with(&[("decisions/a.md", GOOD)]);
+        let fifo = bundle.path().join("decisions/index.md");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let found = scan(bundle.path());
+        assert_eq!(
+            found.concepts,
+            BTreeMap::from([("Decision".to_string(), 1)])
+        );
+    }
+
+    #[test]
+    fn a_walk_that_hits_its_limit_says_so() {
+        let (index_path, index) = listed("decisions", "a.md");
+        let bundle = bundle_with(&[
+            ("decisions/a.md", GOOD),
+            ("decisions/b.md", GOOD),
+            ("decisions/c.md", GOOD),
+            (&index_path, &index),
+        ]);
+        let found = scan_with_budget(bundle.path(), 2);
+        assert_eq!(
+            found.concepts,
+            BTreeMap::from([("Decision".to_string(), 2)])
+        );
+        assert!(found.findings.iter().any(|f| f.code == SCAN_TRUNCATED));
+        let whole = scan_with_budget(bundle.path(), 3);
+        assert!(!whole.findings.iter().any(|f| f.code == SCAN_TRUNCATED));
+    }
+
+    #[test]
+    fn a_status_is_shortened_and_loses_control_characters_before_it_is_quoted() {
+        // YAML escapes, so the parsed status holds a real newline and bell.
+        let status = format!("x\\n## Forged heading\\a{}", "y".repeat(5_000));
+        let content =
+            format!("---\ntype: Decision\ntitle: t\ndescription: d\nstatus: \"{status}\"\n---\n");
+        let bundle = bundle_with(&[("decisions/a.md", &content)]);
+        let found = scan(bundle.path());
+        let finding = found
+            .findings
+            .iter()
+            .find(|f| f.code == "unknown_status")
+            .unwrap();
+        assert!(finding.message.len() < 200, "{}", finding.message.len());
+        assert!(!finding.message.chars().any(char::is_control));
     }
 
     #[test]
