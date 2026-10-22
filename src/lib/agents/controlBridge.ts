@@ -7,6 +7,7 @@ import { invoke } from '@/lib/tauri/invoke';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { subscribeToTauriEvent } from '@/lib/tauri/subscribe';
 import {
+  CONTROL_ERROR_CODES,
   CONTROL_EVENTS,
   ControlError,
   parseControlParams,
@@ -16,6 +17,7 @@ import {
   type ControlParams,
 } from './agentControl.contract';
 import { isFinishedAgent } from './fleet';
+import { managerRefusalCode } from './supervisorManagers';
 import { deriveAgentName } from './naming';
 import type { LinkedSupervisorLaunch, LinkedSupervisorSpawn } from '@/lib/store/agent/agentTypes';
 
@@ -229,8 +231,18 @@ function inWorktree(config: AgentConfig, worktree: boolean | null): AgentConfig 
   };
 }
 
+/** A Project Manager refusal keeps its own code when the socket knows it, else it is `internal`. */
+function managerFailureCode(message: string): ControlErrorCode | undefined {
+  const code = managerRefusalCode(message);
+  return CONTROL_ERROR_CODES.find((known) => known === code);
+}
+
 function spawnFailureCode(message: string): ControlErrorCode {
-  return SPAWN_REFUSALS.find(({ pattern }) => message.includes(pattern))?.code ?? 'internal';
+  return (
+    SPAWN_REFUSALS.find(({ pattern }) => message.includes(pattern))?.code ??
+    managerFailureCode(message) ??
+    'internal'
+  );
 }
 
 /** A failed spawn as the socket answers it; Tauri rejects with a plain string, not an Error. */

@@ -933,6 +933,11 @@ back frees no slot, setting it forward by a day does.
 | `supervisor_key_invalid` | a key is not 1–48 of `a-z`, `0-9`, `-`, starting with a letter or digit, or looks like `agent-<n>` |
 | `supervisor_key_in_use`  | `supervisors.spawn` with `if: "new"` and a live supervisor already carries that key                |
 | `unknown_supervisor`     | no live supervisor carries that key                                                                |
+| `manager_archived` | a Project Manager's key or run folder was named while the manager is archived |
+| `manager_key_mismatch` | a Project Manager's run folder was resumed under another key |
+| `manager_key_foreign_folder` | a Project Manager's key was started in a run folder that is not its own |
+| `instructions_too_large` | a Project Manager's INSTRUCTIONS.md is over the size limit |
+| `registry_unreadable` | the Project Manager registry could not be read, so nothing was started |
 | `internal`               | anything else; the message says what                                                               |
 
 ## A minimal client

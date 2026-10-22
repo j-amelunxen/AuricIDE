@@ -503,6 +503,54 @@ describe('control-request spawn for a supervisor', () => {
     });
   });
 
+  const MANAGER_REFUSALS: [string, string][] = [
+    ['manager_archived', "The Project Manager 'Release Desk' is archived. Restore it before opening it."],
+    [
+      'manager_key_mismatch',
+      "The run folder 2026-10-21_090000 belongs to the Project Manager 'Release Desk' and runs only under its key 'release-desk'.",
+    ],
+    [
+      'manager_key_foreign_folder',
+      "The key 'release-desk' belongs to the Project Manager 'Release Desk' and runs only its own run folder.",
+    ],
+    [
+      'instructions_too_large',
+      "INSTRUCTIONS.md of 'Release Desk' is 20000 bytes; the limit is 16384.",
+    ],
+    [
+      'registry_unreadable',
+      'supervisor-managers.json could not be read: unexpected end of file. It was left as it is.',
+    ],
+  ];
+
+  for (const [code, sentence] of MANAGER_REFUSALS) {
+    it(`keeps the code ${code} when a Project Manager launch is refused`, async () => {
+      const h = host({
+        spawnLinkedSupervisor: vi.fn(async () => {
+          throw new Error(sentence);
+        }),
+      });
+      await handleControlRequest(
+        {
+          reqId: 'm1',
+          method: 'spawn',
+          params: {
+            projectPath: '/tmp/example-project',
+            prompt: 'x',
+            role: 'supervisor',
+            supervisorKey: 'release-desk',
+          },
+          expiresAt: fresh(),
+        },
+        h
+      );
+      expect(answered()[0].args).toMatchObject({
+        ok: false,
+        error: { code, message: sentence },
+      });
+    });
+  }
+
   it('refuses provenance of the wrong shape as invalid_params', async () => {
     const h = host();
     await handleControlRequest(

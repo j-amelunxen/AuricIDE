@@ -23,6 +23,11 @@
     "supervisor_key_invalid",
     "supervisor_key_in_use",
     "unknown_supervisor",
+    "manager_archived",
+    "manager_key_mismatch",
+    "manager_key_foreign_folder",
+    "instructions_too_large",
+    "registry_unreadable",
     "internal"
   ],
   "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
