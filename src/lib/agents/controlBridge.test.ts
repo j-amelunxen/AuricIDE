@@ -504,7 +504,10 @@ describe('control-request spawn for a supervisor', () => {
   });
 
   const MANAGER_REFUSALS: [string, string][] = [
-    ['manager_archived', "The Project Manager 'Release Desk' is archived. Restore it before opening it."],
+    [
+      'manager_archived',
+      "The Project Manager 'Release Desk' is archived. Restore it before opening it.",
+    ],
     [
       'manager_key_mismatch',
       "The run folder 2026-10-21_090000 belongs to the Project Manager 'Release Desk' and runs only under its key 'release-desk'.",

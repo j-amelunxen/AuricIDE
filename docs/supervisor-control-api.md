@@ -906,39 +906,39 @@ back frees no slot, setting it forward by a day does.
 
 ## Error codes
 
-| code                     | meaning                                                                                            |
-| ------------------------ | -------------------------------------------------------------------------------------------------- |
-| `invalid_request`        | not JSON, not a text frame, no `method`, an `id` that is neither string nor number                 |
-| `unsupported_version`    | `v` is not `1`                                                                                     |
-| `unknown_method`         | no such method in this build                                                                       |
-| `invalid_params`         | params missing, of the wrong type, unknown or out of range (also a bad `rev`)                      |
-| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                                    |
-| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                                      |
-| `agent_not_running`      | the agent is in the tree but not running                                                           |
-| `headless_no_stdin`      | a headless agent cannot be typed into                                                              |
-| `supervisor_unavailable` | no project is open to supervisors yet (Settings → Supervisor)                                      |
-| `provider_denied`        | the project's provider policy refused the spawn                                                    |
-| `provider_unsupported`   | a supervisor cannot run on that provider                                                           |
-| `frontend_unavailable`   | the IDE window did not answer within 30 s                                                          |
-| `document_not_visible`   | the project is not shared with the link                                                            |
-| `document_not_found`     | no such document (at that revision)                                                                |
-| `document_invalid`       | not a JSON object, or too large                                                                    |
-| `document_conflict`      | `baseHash` does not match `HEAD`                                                                   |
-| `not_a_git_repo`         | the project is not the root of a git repository, or has no commit                                  |
-| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule                               |
-| `job_kind_not_allowed`   | the project does not list that job kind                                                            |
-| `quota_exceeded`         | the job counter is full (`reason` `daily_limit`, `project_daily_limit`) or 0 (`disabled`)          |
-| `unknown_job`            | no such job                                                                                        |
-| `busy`                   | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests`             |
-| `supervisor_key_invalid` | a key is not 1–48 of `a-z`, `0-9`, `-`, starting with a letter or digit, or looks like `agent-<n>` |
-| `supervisor_key_in_use`  | `supervisors.spawn` with `if: "new"` and a live supervisor already carries that key                |
-| `unknown_supervisor`     | no live supervisor carries that key                                                                |
-| `manager_archived` | a Project Manager's key or run folder was named while the manager is archived |
-| `manager_key_mismatch` | a Project Manager's run folder was resumed under another key |
-| `manager_key_foreign_folder` | a Project Manager's key was started in a run folder that is not its own |
-| `instructions_too_large` | a Project Manager's INSTRUCTIONS.md is over the size limit |
-| `registry_unreadable` | the Project Manager registry could not be read, so nothing was started |
-| `internal`               | anything else; the message says what                                                               |
+| code                         | meaning                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `invalid_request`            | not JSON, not a text frame, no `method`, an `id` that is neither string nor number                 |
+| `unsupported_version`        | `v` is not `1`                                                                                     |
+| `unknown_method`             | no such method in this build                                                                       |
+| `invalid_params`             | params missing, of the wrong type, unknown or out of range (also a bad `rev`)                      |
+| `forbidden_agent_caller`     | the connecting process runs inside an IDE agent                                                    |
+| `unknown_agent`              | no such agent, not in the supervisor tree, or already removed                                      |
+| `agent_not_running`          | the agent is in the tree but not running                                                           |
+| `headless_no_stdin`          | a headless agent cannot be typed into                                                              |
+| `supervisor_unavailable`     | no project is open to supervisors yet (Settings → Supervisor)                                      |
+| `provider_denied`            | the project's provider policy refused the spawn                                                    |
+| `provider_unsupported`       | a supervisor cannot run on that provider                                                           |
+| `frontend_unavailable`       | the IDE window did not answer within 30 s                                                          |
+| `document_not_visible`       | the project is not shared with the link                                                            |
+| `document_not_found`         | no such document (at that revision)                                                                |
+| `document_invalid`           | not a JSON object, or too large                                                                    |
+| `document_conflict`          | `baseHash` does not match `HEAD`                                                                   |
+| `not_a_git_repo`             | the project is not the root of a git repository, or has no commit                                  |
+| `supervisor_denied`          | the supervisor policy refused a job's agent; `reason` names the rule                               |
+| `job_kind_not_allowed`       | the project does not list that job kind                                                            |
+| `quota_exceeded`             | the job counter is full (`reason` `daily_limit`, `project_daily_limit`) or 0 (`disabled`)          |
+| `unknown_job`                | no such job                                                                                        |
+| `busy`                       | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests`             |
+| `supervisor_key_invalid`     | a key is not 1–48 of `a-z`, `0-9`, `-`, starting with a letter or digit, or looks like `agent-<n>` |
+| `supervisor_key_in_use`      | `supervisors.spawn` with `if: "new"` and a live supervisor already carries that key                |
+| `unknown_supervisor`         | no live supervisor carries that key                                                                |
+| `manager_archived`           | a Project Manager's key or run folder was named while the manager is archived                      |
+| `manager_key_mismatch`       | a Project Manager's run folder was resumed under another key                                       |
+| `manager_key_foreign_folder` | a Project Manager's key was started in a run folder that is not its own                            |
+| `instructions_too_large`     | a Project Manager's INSTRUCTIONS.md is over the size limit                                         |
+| `registry_unreadable`        | the Project Manager registry could not be read, so nothing was started                             |
+| `internal`                   | anything else; the message says what                                                               |
 
 ## A minimal client
 
