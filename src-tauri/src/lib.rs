@@ -18,6 +18,7 @@ mod git;
 mod ignored_repos;
 mod inbox;
 mod llm;
+mod machine;
 mod mcp;
 mod memory_report;
 #[cfg(target_os = "macos")]
@@ -523,6 +524,7 @@ pub fn run() {
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,
             video_import::video_import_preflight,
+            machine::machine_dependencies,
             video_import::video_import_install_local,
             video_import::video_import_save_process,
             video_import::video_import_clear

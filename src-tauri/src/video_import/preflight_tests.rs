@@ -1,7 +1,7 @@
 use super::*;
 
-fn check(id: &str, ok: bool) -> PreflightCheck {
-    PreflightCheck {
+fn check(id: &str, ok: bool) -> Check {
+    Check {
         id: id.to_string(),
         label: id.to_string(),
         ok,
@@ -88,31 +88,37 @@ async fn inspects_this_machine() {
     }
 }
 
+// The wire shape and wording the Video Import settings render. These pin the
+// answer so moving the mechanism into `machine/` cannot change a byte of it.
 #[test]
-fn path_lookup_walks_entries_in_order() {
-    let exists = |path: &Path| path == Path::new("/opt/homebrew/bin/ffmpeg");
+fn a_found_media_tool_serialises_exactly_as_before() {
+    let check = media_tool_check("ffmpeg", Some(PathBuf::from("/opt/homebrew/bin/ffmpeg")));
     assert_eq!(
-        resolve_in_path("ffmpeg", "/usr/bin:/opt/homebrew/bin", &exists),
-        Some(PathBuf::from("/opt/homebrew/bin/ffmpeg"))
+        serde_json::to_string(&check).unwrap(),
+        r#"{"id":"ffmpeg","label":"ffmpeg","ok":true,"found":"/opt/homebrew/bin/ffmpeg","requirement":"on PATH","detail":"Found.","fix":null}"#
     );
 }
 
 #[test]
-fn path_lookup_reports_absence_rather_than_a_bare_name() {
-    let exists = |_: &Path| false;
-    assert_eq!(resolve_in_path("ffmpeg", "/usr/bin:/bin", &exists), None);
-    assert_eq!(resolve_in_path("ffmpeg", "", &exists), None);
+fn a_missing_media_tool_serialises_exactly_as_before() {
+    let check = media_tool_check("ffprobe", None);
+    assert_eq!(
+        serde_json::to_string(&check).unwrap(),
+        r#"{"id":"ffprobe","label":"ffprobe","ok":false,"found":null,"requirement":"on PATH","detail":"Not found. Video import needs it to read the video and extract its audio.","fix":"brew install ffmpeg"}"#
+    );
 }
 
 #[test]
-fn an_explicit_path_is_checked_not_searched() {
-    let exists = |path: &Path| path == Path::new("/custom/parakeet");
+fn the_report_keeps_its_camel_case_fields() {
+    let report = Preflight {
+        ready: false,
+        can_install: true,
+        checks: vec![check("uv", true)],
+        runtime_dir: "/runtime".to_string(),
+        executable: None,
+    };
     assert_eq!(
-        resolve_in_path("/custom/parakeet", "/usr/bin", &exists),
-        Some(PathBuf::from("/custom/parakeet"))
-    );
-    assert_eq!(
-        resolve_in_path("/missing/parakeet", "/usr/bin", &exists),
-        None
+        serde_json::to_string(&report).unwrap(),
+        r#"{"ready":false,"canInstall":true,"checks":[{"id":"uv","label":"uv","ok":true,"found":null,"requirement":"","detail":"","fix":null}],"runtimeDir":"/runtime","executable":null}"#
     );
 }

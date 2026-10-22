@@ -1,6 +1,53 @@
+use std::future::Future;
+use std::sync::RwLock;
 use tokio::sync::OnceCell;
 
-static SHELL_ENV_CACHE: OnceCell<Vec<(String, String)>> = OnceCell::const_new();
+type Env = &'static [(String, String)];
+
+/// The harvested environment, harvested once per process and re-harvestable
+/// on request. The `OnceCell` keeps first use single-flight (an interactive
+/// `zsh -ilc` is slow); the lock lets "Check Again" swap in a fresh harvest.
+struct LoginEnvCache {
+    cell: OnceCell<RwLock<Env>>,
+}
+
+impl LoginEnvCache {
+    const fn new() -> Self {
+        Self {
+            cell: OnceCell::const_new(),
+        }
+    }
+
+    async fn slot(&self, resolve: impl Future<Output = Vec<(String, String)>>) -> &RwLock<Env> {
+        self.cell
+            .get_or_init(|| async { RwLock::new(leak(resolve.await)) })
+            .await
+    }
+
+    async fn get(&self, resolve: impl Future<Output = Vec<(String, String)>>) -> Env {
+        let slot = self.slot(resolve).await;
+        *slot.read().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    async fn refresh(&self, resolve: impl Future<Output = Vec<(String, String)>>) {
+        // Harvest first: the slot must keep serving the old environment while
+        // the slow shell runs.
+        let fresh = leak(resolve.await);
+        let slot = self.cell.get_or_init(|| async { RwLock::new(fresh) }).await;
+        *slot
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = fresh;
+    }
+}
+
+/// Callers hold the environment as `&'static` for as long as they spawn, so a
+/// replaced harvest cannot be freed under them. Only an explicit "Check Again"
+/// replaces it, a few KB each time.
+fn leak(env: Vec<(String, String)>) -> Env {
+    Box::leak(env.into_boxed_slice())
+}
+
+static SHELL_ENV_CACHE: LoginEnvCache = LoginEnvCache::new();
 
 /// Pre-resolves the cached login-shell environment so the first real agent
 /// spawn doesn't have to pay for it. Safe to call multiple times.
@@ -9,10 +56,14 @@ pub async fn warm_shell_env_cache() {
 }
 
 pub async fn cached_login_shell_env() -> &'static [(String, String)] {
-    SHELL_ENV_CACHE
-        .get_or_init(resolve_login_shell_env)
-        .await
-        .as_slice()
+    SHELL_ENV_CACHE.get(resolve_login_shell_env()).await
+}
+
+/// Harvests the login-shell environment again, for the case that the user
+/// changed their shell rc files while the app runs (an install that added a
+/// PATH line). Agents and probes started afterwards see the new environment.
+pub async fn refresh_login_shell_env() {
+    SHELL_ENV_CACHE.refresh(resolve_login_shell_env()).await;
 }
 
 /// Shell + flags used to harvest the user's shell environment. `.zshrc`
@@ -115,5 +166,56 @@ pub fn apply_inherited_path(env: &mut Vec<(String, String)>, inherited: Option<&
         entry.1 = merged;
     } else {
         env.push(("PATH".to_string(), merged));
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn path_env(path: &str) -> Vec<(String, String)> {
+        vec![("PATH".to_string(), path.to_string())]
+    }
+
+    #[tokio::test]
+    async fn harvests_once_however_often_it_is_asked() {
+        let cache = LoginEnvCache::new();
+        let harvests = AtomicUsize::new(0);
+        for _ in 0..3 {
+            let env = cache
+                .get(async {
+                    harvests.fetch_add(1, Ordering::SeqCst);
+                    path_env("/first")
+                })
+                .await;
+            assert_eq!(env, path_env("/first").as_slice());
+        }
+        assert_eq!(harvests.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refresh_replaces_what_later_reads_see() {
+        let cache = LoginEnvCache::new();
+        cache.get(async { path_env("/first") }).await;
+        cache.refresh(async { path_env("/second") }).await;
+        let env = cache.get(async { path_env("/never") }).await;
+        assert_eq!(env, path_env("/second").as_slice());
+    }
+
+    #[tokio::test]
+    async fn an_environment_handed_out_before_a_refresh_stays_readable() {
+        let cache = LoginEnvCache::new();
+        let before = cache.get(async { path_env("/first") }).await;
+        cache.refresh(async { path_env("/second") }).await;
+        assert_eq!(before, path_env("/first").as_slice());
+    }
+
+    #[tokio::test]
+    async fn refreshing_before_any_read_is_the_first_harvest() {
+        let cache = LoginEnvCache::new();
+        cache.refresh(async { path_env("/only") }).await;
+        let env = cache.get(async { path_env("/never") }).await;
+        assert_eq!(env, path_env("/only").as_slice());
     }
 }

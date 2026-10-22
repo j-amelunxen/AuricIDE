@@ -10,10 +10,14 @@
 //! cannot run local transcription says so in a sentence. It never gets there
 //! by way of a traceback.
 
+use crate::machine::{
+    dependency, format_version, meets_minimum, parse_version, run_probe, Check,
+    DEFAULT_PROBE_TIMEOUT,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use tokio::process::Command;
+
+pub(crate) use crate::machine::resolve_executable;
 
 /// The oldest `uv` whose behaviour this integration is written against:
 /// `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` honoured on `tool install`, and
@@ -29,60 +33,6 @@ pub const MIN_PYTHON: &str = ">=3.10";
 /// for.
 pub const RUNTIME_CHECK_ID: &str = "runtime";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PreflightCheck {
-    pub id: String,
-    pub label: String,
-    pub ok: bool,
-    /// What is actually on this machine, when we could determine it.
-    pub found: Option<String>,
-    pub requirement: String,
-    /// One sentence. Never tool output.
-    pub detail: String,
-    /// A single command the reader can copy, when one exists.
-    pub fix: Option<String>,
-}
-
-impl PreflightCheck {
-    fn ok(
-        id: &str,
-        label: &str,
-        requirement: &str,
-        found: impl Into<String>,
-        detail: &str,
-    ) -> Self {
-        Self {
-            id: id.to_string(),
-            label: label.to_string(),
-            ok: true,
-            found: Some(found.into()),
-            requirement: requirement.to_string(),
-            detail: detail.to_string(),
-            fix: None,
-        }
-    }
-
-    fn failed(
-        id: &str,
-        label: &str,
-        requirement: &str,
-        found: Option<String>,
-        detail: &str,
-        fix: Option<&str>,
-    ) -> Self {
-        Self {
-            id: id.to_string(),
-            label: label.to_string(),
-            ok: false,
-            found,
-            requirement: requirement.to_string(),
-            detail: detail.to_string(),
-            fix: fix.map(str::to_string),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preflight {
@@ -91,7 +41,7 @@ pub struct Preflight {
     /// Every dependency holds; only the runtime itself is still missing, so
     /// installing it is worth offering.
     pub can_install: bool,
-    pub checks: Vec<PreflightCheck>,
+    pub checks: Vec<Check>,
     /// Where an install would put the tool environment and its executable.
     pub runtime_dir: String,
     /// Absolute path to the runtime executable, once there is one. Resolved
@@ -101,7 +51,7 @@ pub struct Preflight {
 
 /// `ready` needs every check; `can_install` needs every check *except* the
 /// runtime itself — that is precisely the state the Install button serves.
-pub fn summarise(checks: &[PreflightCheck]) -> (bool, bool) {
+pub fn summarise(checks: &[Check]) -> (bool, bool) {
     let ready = checks.iter().all(|check| check.ok);
     let can_install = checks
         .iter()
@@ -109,96 +59,23 @@ pub fn summarise(checks: &[PreflightCheck]) -> (bool, bool) {
     (ready, can_install)
 }
 
-/// `uv --version` prints `uv 0.6.6 (c1a0bb85e 2025-03-12)`.
+/// `uv --version` prints `uv 0.6.6 (c1a0bb85e 2025-03-12)`; a pre-release such
+/// as `0.9.0-alpha.1` still carries a usable patch.
+const UV_VERSION_PATTERN: &str = r"^uv (\d+)\.(\d+)(?:\.(\d+))?";
+
 pub fn parse_uv_version(raw: &str) -> Option<(u64, u64, u64)> {
-    let token = raw.split_whitespace().nth(1)?;
-    let mut parts = token.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    // Pre-release suffixes such as `0.9.0-alpha.1` still carry a usable patch.
-    let patch = parts
-        .next()
-        .map(|part| {
-            part.chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-        })
-        .and_then(|digits| digits.parse().ok())
-        .unwrap_or(0);
-    Some((major, minor, patch))
-}
-
-pub fn meets_minimum(found: (u64, u64, u64), minimum: (u64, u64, u64)) -> bool {
-    found >= minimum
-}
-
-pub fn format_version(version: (u64, u64, u64)) -> String {
-    format!("{}.{}.{}", version.0, version.1, version.2)
-}
-
-/// Find an executable by walking a PATH value, without asking a shell. The
-/// existence test is injected so the decision can be tested without a disk.
-pub fn resolve_in_path(
-    name: &str,
-    path_var: &str,
-    is_executable: &dyn Fn(&Path) -> bool,
-) -> Option<PathBuf> {
-    // An explicit path is already an answer, right or wrong.
-    if name.contains(std::path::MAIN_SEPARATOR) {
-        let candidate = PathBuf::from(name);
-        return is_executable(&candidate).then_some(candidate);
-    }
-    path_var
-        .split(':')
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| Path::new(entry).join(name))
-        .find(|candidate| is_executable(candidate))
-}
-
-fn on_disk(path: &Path) -> bool {
-    path.is_file()
-}
-
-/// The PATH the user's shell would give us, which is rarely the PATH a bundled
-/// app inherits from launchd.
-async fn shell_path() -> String {
-    crate::agents::cached_login_shell_env()
-        .await
-        .iter()
-        .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default()
-}
-
-/// Absolute path to an executable, resolved through the login shell's PATH.
-/// Every command this feature spawns goes through here — a bare
-/// `Command::new("ffmpeg")` finds nothing when the app is launched from
-/// `/Applications`.
-pub async fn resolve_executable(name: &str) -> Option<PathBuf> {
-    resolve_in_path(name, &shell_path().await, &on_disk)
+    parse_version(raw, UV_VERSION_PATTERN)
 }
 
 async fn run(program: &Path, args: &[&str]) -> Option<(bool, String)> {
-    let mut command = Command::new(program);
-    command.args(args);
-    for (key, value) in crate::agents::cached_login_shell_env().await {
-        command.env(key, value);
-    }
-    command.stdin(Stdio::null());
-    let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
-        .await
-        .ok()?
-        .ok()?;
-    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    Some((output.status.success(), text))
+    let output = run_probe(program, args, DEFAULT_PROBE_TIMEOUT).await?;
+    Some((output.success(), output.combined()))
 }
 
-async fn check_platform() -> PreflightCheck {
+async fn check_platform() -> Check {
     let requirement = "macOS on Apple Silicon";
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        PreflightCheck::ok(
+        Check::ok(
             "platform",
             "Platform",
             requirement,
@@ -206,7 +83,7 @@ async fn check_platform() -> PreflightCheck {
             "Supported.",
         )
     } else {
-        PreflightCheck::failed(
+        Check::failed(
             "platform",
             "Platform",
             requirement,
@@ -217,11 +94,11 @@ async fn check_platform() -> PreflightCheck {
     }
 }
 
-async fn check_uv() -> (PreflightCheck, Option<PathBuf>) {
+async fn check_uv() -> (Check, Option<PathBuf>) {
     let requirement = format!("uv {} or newer", format_version(MIN_UV_VERSION));
     let Some(path) = resolve_executable("uv").await else {
         return (
-            PreflightCheck::failed(
+            Check::failed(
                 "uv",
                 "uv",
                 &requirement,
@@ -234,7 +111,7 @@ async fn check_uv() -> (PreflightCheck, Option<PathBuf>) {
     };
     let Some((success, output)) = run(&path, &["--version"]).await else {
         return (
-            PreflightCheck::failed(
+            Check::failed(
                 "uv",
                 "uv",
                 &requirement,
@@ -248,11 +125,11 @@ async fn check_uv() -> (PreflightCheck, Option<PathBuf>) {
     let version = success.then(|| parse_uv_version(&output)).flatten();
     match version {
         Some(found) if meets_minimum(found, MIN_UV_VERSION) => (
-            PreflightCheck::ok("uv", "uv", &requirement, format_version(found), "Supported."),
+            Check::ok("uv", "uv", &requirement, format_version(found), "Supported."),
             Some(path),
         ),
         Some(found) => (
-            PreflightCheck::failed(
+            Check::failed(
                 "uv",
                 "uv",
                 &requirement,
@@ -263,7 +140,7 @@ async fn check_uv() -> (PreflightCheck, Option<PathBuf>) {
             None,
         ),
         None => (
-            PreflightCheck::failed(
+            Check::failed(
                 "uv",
                 "uv",
                 &requirement,
@@ -276,10 +153,10 @@ async fn check_uv() -> (PreflightCheck, Option<PathBuf>) {
     }
 }
 
-async fn check_python(uv: Option<&PathBuf>) -> PreflightCheck {
+async fn check_python(uv: Option<&PathBuf>) -> Check {
     let requirement = format!("Python {MIN_PYTHON}");
     let Some(uv) = uv else {
-        return PreflightCheck::failed(
+        return Check::failed(
             "python",
             "Python",
             &requirement,
@@ -294,9 +171,9 @@ async fn check_python(uv: Option<&PathBuf>) -> PreflightCheck {
         Some((true, output)) => {
             let found = output.lines().next().unwrap_or_default().trim().to_string();
             if !found.is_empty() && Path::new(&found).is_file() {
-                PreflightCheck::ok("python", "Python", &requirement, found, "Supported.")
+                Check::ok("python", "Python", &requirement, found, "Supported.")
             } else {
-                PreflightCheck::failed(
+                Check::failed(
                     "python",
                     "Python",
                     &requirement,
@@ -306,7 +183,7 @@ async fn check_python(uv: Option<&PathBuf>) -> PreflightCheck {
                 )
             }
         }
-        _ => PreflightCheck::failed(
+        _ => Check::failed(
             "python",
             "Python",
             &requirement,
@@ -317,22 +194,26 @@ async fn check_python(uv: Option<&PathBuf>) -> PreflightCheck {
     }
 }
 
-async fn check_media_tool(name: &'static str) -> PreflightCheck {
-    match resolve_executable(name).await {
-        Some(path) => PreflightCheck::ok(
+async fn check_media_tool(name: &'static str) -> Check {
+    media_tool_check(name, resolve_executable(name).await)
+}
+
+fn media_tool_check(name: &'static str, found: Option<PathBuf>) -> Check {
+    match found {
+        Some(path) => Check::ok(
             name,
             name,
             "on PATH",
             path.to_string_lossy().to_string(),
             "Found.",
         ),
-        None => PreflightCheck::failed(
+        None => Check::failed(
             name,
             name,
             "on PATH",
             None,
             "Not found. Video import needs it to read the video and extract its audio.",
-            Some("brew install ffmpeg"),
+            dependency(name).map(|row| row.fix),
         ),
     }
 }
@@ -346,10 +227,10 @@ pub fn runtime_executable(runtime_dir: &Path) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-async fn check_runtime(runtime_dir: &Path) -> (PreflightCheck, Option<PathBuf>) {
+async fn check_runtime(runtime_dir: &Path) -> (Check, Option<PathBuf>) {
     match runtime_executable(runtime_dir) {
         Some(path) => (
-            PreflightCheck::ok(
+            Check::ok(
                 RUNTIME_CHECK_ID,
                 "Local Parakeet",
                 "installed",
@@ -359,7 +240,7 @@ async fn check_runtime(runtime_dir: &Path) -> (PreflightCheck, Option<PathBuf>) 
             Some(path),
         ),
         None => (
-            PreflightCheck::failed(
+            Check::failed(
                 RUNTIME_CHECK_ID,
                 "Local Parakeet",
                 "installed",
