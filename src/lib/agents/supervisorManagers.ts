@@ -157,6 +157,18 @@ export function splitSupervisorRuns(runs: SupervisorRun[]): SupervisorRunGroups 
   };
 }
 
+/** Longest finding message or path the prompt carries; a file's own text must not fill it. */
+const FINDING_TEXT_MAX_LENGTH = 200;
+
+/** One line, no control characters, cut to length: a finding quotes file content. */
+function promptSafe(text: string): string {
+  const oneLine = text.replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').trim();
+  const characters = [...oneLine];
+  return characters.length <= FINDING_TEXT_MAX_LENGTH
+    ? oneLine
+    : `${characters.slice(0, FINDING_TEXT_MAX_LENGTH - 1).join('')}…`;
+}
+
 /** The findings the next start prompt carries, capped at the contract's limit. */
 export function memoryFindingLines<F extends Pick<ManagerMemoryFinding, 'path' | 'message'>>(
   findings: F[]
@@ -166,7 +178,9 @@ export function memoryFindingLines<F extends Pick<ManagerMemoryFinding, 'path' |
 } {
   const shown = findings.slice(0, fixtures.memory.maxFindingsInPrompt);
   return {
-    lines: shown.map((f) => (f.path ? `- ${f.path}: ${f.message}` : `- ${f.message}`)),
+    lines: shown.map((f) =>
+      f.path ? `- ${promptSafe(f.path)}: ${promptSafe(f.message)}` : `- ${promptSafe(f.message)}`
+    ),
     omitted: findings.length - shown.length,
   };
 }
