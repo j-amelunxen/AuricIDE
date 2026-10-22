@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
@@ -1130,8 +1130,11 @@ describe('AgentsPanel – merge worktree after ending', () => {
     await answer(user, 'Merge & push main');
     // The subject is written from the change, never from the agent's name or
     // the prompt behind it. Without IPC here there is no change to read, so
-    // the panel commits under the plain fallback.
-    expect(mergeAgentWorktree).toHaveBeenCalledWith(worktreePath, 'Update working tree', true);
+    // the panel commits under the plain fallback. The merge follows an async
+    // read, so wait for it: an unawaited call lands in the next test under load.
+    await waitFor(() =>
+      expect(mergeAgentWorktree).toHaveBeenCalledWith(worktreePath, 'Update working tree', true)
+    );
   });
 
   it('keeps the worktree when merge is declined', async () => {
