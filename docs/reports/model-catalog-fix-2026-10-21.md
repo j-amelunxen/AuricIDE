@@ -16,12 +16,12 @@ picker kept offering them until the CLI refused.
 
 ## Real model lists (probed 2026-10-21, no paid runs)
 
-| CLI | Version / source | Models |
-| --- | --- | --- |
-| **agy** (`antigravity`) | 1.4.4 · `agy models` | `gemini-4-argon-{medium,high,low}`, `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium` |
-| **codex** | 0.163.0 · `~/.codex/models_cache.json` (`visibility: list`) | `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` |
-| **claude** | 2.1.306 · `/model` aliases | `sonnet`, `opus`, `haiku`, `fable`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]`, `opusplan`, `default` (aliases still valid; no machine list command) |
-| **grok** | 1.0.62 · `grok models` | `grok-4.7`, `grok-4.7-build-fast`, `grok-4.6`, `grok-4.5` (default) |
+| CLI                     | Version / source                                            | Models                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **agy** (`antigravity`) | 1.4.4 · `agy models`                                        | `gemini-4-argon-{medium,high,low}`, `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium` |
+| **codex**               | 0.163.0 · `~/.codex/models_cache.json` (`visibility: list`) | `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`                                                                     |
+| **claude**              | 2.1.306 · `/model` aliases                                  | `sonnet`, `opus`, `haiku`, `fable`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]`, `opusplan`, `default` (aliases still valid; no machine list command)                     |
+| **grok**                | 1.0.62 · `grok models`                                      | `grok-4.7`, `grok-4.7-build-fast`, `grok-4.6`, `grok-4.5` (default)                                                                                                         |
 
 ## Changes (file:line)
 
@@ -58,13 +58,13 @@ picker kept offering them until the CLI refused.
 
 ## Uncertain ranks (inferred for new ids without static metadata)
 
-| Provider | Id pattern | Inferred rank | Confidence |
-| --- | --- | --- | --- |
-| antigravity | `*argon*`, `*opus*` | 3 | medium — family size, effort not separated |
-| antigravity | `*sonnet*` | 2 | medium |
-| antigravity | `*flash*`, `*gpt-oss*` | 1 | medium |
-| codex | astra / sol / terra / luna | 4 / 3 / 2 / 1 | high — matches existing convention |
-| grok | 4.7 / 4.7-build-fast / 4.6 / 4.5 | 3 / 2 / 2 / 1 | medium |
+| Provider    | Id pattern                       | Inferred rank | Confidence                                 |
+| ----------- | -------------------------------- | ------------- | ------------------------------------------ |
+| antigravity | `*argon*`, `*opus*`              | 3             | medium — family size, effort not separated |
+| antigravity | `*sonnet*`                       | 2             | medium                                     |
+| antigravity | `*flash*`, `*gpt-oss*`           | 1             | medium                                     |
+| codex       | astra / sol / terra / luna       | 4 / 3 / 2 / 1 | high — matches existing convention         |
+| grok        | 4.7 / 4.7-build-fast / 4.6 / 4.5 | 3 / 2 / 2 / 1 | medium                                     |
 
 Static JSON entries carry explicit ranks where known; inference only fills gaps.
 
@@ -82,14 +82,14 @@ Static JSON entries carry explicit ranks where known; inference only fills gaps.
 
 ## Tests and build
 
-| Check | Result |
-| --- | --- |
-| `cargo test --lib providers::` | 78 passed |
-| `cargo test --lib` (full) | **1723 passed**, 11 ignored |
-| Vitest full suite | **11234 passed**; 1 unrelated flake in `QuickAccessSettingsDialog` emoji picker (timeout; re-run also flaked on emoji tests — not touched by this change) |
-| `cargo build` (dev) | ok |
-| `next build` | ok (ran in `/tmp` copy because worktree `node_modules` is a symlink Turbopack rejects) |
-| code-gate `--diff` | no findings |
+| Check                          | Result                                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cargo test --lib providers::` | 78 passed                                                                                                                                                 |
+| `cargo test --lib` (full)      | **1723 passed**, 11 ignored                                                                                                                               |
+| Vitest full suite              | **11234 passed**; 1 unrelated flake in `QuickAccessSettingsDialog` emoji picker (timeout; re-run also flaked on emoji tests — not touched by this change) |
+| `cargo build` (dev)            | ok                                                                                                                                                        |
+| `next build`                   | ok (ran in `/tmp` copy because worktree `node_modules` is a symlink Turbopack rejects)                                                                    |
+| code-gate `--diff`             | no findings                                                                                                                                               |
 
 ## Commit and merge
 

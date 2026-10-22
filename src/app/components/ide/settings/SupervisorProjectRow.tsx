@@ -10,11 +10,7 @@ import {
   toggleSupervisorProvider,
 } from '@/lib/config/supervisorPolicyEdit';
 import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
-import {
-  isModelAvailable,
-  type ModelOption,
-  type ProviderInfo,
-} from '@/lib/tauri/providers';
+import { isModelAvailable, type ModelOption, type ProviderInfo } from '@/lib/tauri/providers';
 import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { DESCRIPTION_MAX_CHARS } from '@/lib/quickAccess/description';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
@@ -333,8 +329,7 @@ function ProviderBlock({
                 title="In your policy, but missing from the provider catalog"
                 className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-[11px] text-foreground-muted line-through"
               >
-                {id}{' '}
-                <span className="text-[9px] text-amber-400 no-underline">unavailable</span>
+                {id} <span className="text-[9px] text-amber-400 no-underline">unavailable</span>
               </span>
             ))}
           </div>

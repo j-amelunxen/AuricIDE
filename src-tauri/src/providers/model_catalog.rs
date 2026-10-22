@@ -307,10 +307,7 @@ fn run_command(command: &str, args: &[String]) -> Result<String, String> {
         return Ok(stderr);
     }
     if !output.status.success() {
-        return Err(format!(
-            "`{command}` exited with status {}",
-            output.status
-        ));
+        return Err(format!("`{command}` exited with status {}", output.status));
     }
     Ok(String::new())
 }
@@ -489,10 +486,7 @@ gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n";
 Available models:\n  - grok-4.7\n  - grok-4.7-build-fast\n  * grok-4.5 (default)\n";
         let models = parse_grok_bullet(raw);
         assert_eq!(
-            models
-                .iter()
-                .map(|m| m.value.as_str())
-                .collect::<Vec<_>>(),
+            models.iter().map(|m| m.value.as_str()).collect::<Vec<_>>(),
             vec!["grok-4.7", "grok-4.7-build-fast", "grok-4.5"]
         );
     }
