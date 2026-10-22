@@ -617,6 +617,16 @@ fn admit_supervisor(
     let own_key = manager.map(|m| m.key.clone()).or(requested_key);
     let from_run = own_key.is_none();
     let key = several::launch_key(own_key, &cwd, resuming);
+    // A key the folder merely remembers must not turn a plain run into a
+    // manager: the key is the manager's address, and only its own folder answers.
+    if let (None, true, Some(key)) = (manager, from_run, key.as_deref()) {
+        if let Some(holder) = candidates.iter().find(|m| m.key == key) {
+            return Err(several::manager_key_reserved_message(
+                &holder.key,
+                &holder.name,
+            ));
+        }
+    }
     if let Some(key) = key.as_deref() {
         match several::live_supervisor_with_key(agents, key) {
             Some(holder) if from_run => {
@@ -631,7 +641,14 @@ fn admit_supervisor(
             &crate::supervisor::supervisor_runs_root(home),
             &manager.key,
         )?;
-        managers::record_launch(registry, &manager.key, instructions.as_deref())?;
+        // A restored session replays the prompt it started with, so what
+        // it was launched with is not these instructions.
+        if config.replaces_agent_id.is_none() {
+            config.launch_to_book = Some(super::types::LaunchToBook {
+                key: manager.key.clone(),
+                instructions,
+            });
+        }
         config.name = manager.name.clone();
     }
     // The key is an address, not something the run depends on: a folder that
@@ -941,6 +958,7 @@ pub async fn spawn_agent_impl(
     let launch_request_uid = config.launch_request_uid.clone();
     let adoption_run_dir = config.resumed_run_dir.clone();
     let replaces = config.replaces_agent_id.clone();
+    let launch_to_book = config.launch_to_book.clone();
     let info = AgentInfo {
         role: config.role(),
         spawned_by_agent_id: config.spawned_by_agent_id.clone(),
@@ -1160,8 +1178,27 @@ pub async fn spawn_agent_impl(
         adopt_children(app, &mut manager, run_dir, replaces.as_deref(), &id);
     }
     manager.agents.insert(id, process);
+    if let Some(booking) = launch_to_book {
+        book_manager_launch(app, &booking);
+    }
 
     Ok((info, writer, pair.master))
+}
+
+/// Books the launch of a Project Manager once its process really runs, so a
+/// spawn that failed on the way leaves `lastLaunch` as it was.
+fn book_manager_launch(app: &AppHandle, booking: &super::types::LaunchToBook) {
+    let Ok(app_data) = app.path().app_data_dir() else {
+        return;
+    };
+    let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
+    if let Err(error) = crate::supervisor::managers::record_launch(
+        &registry,
+        &booking.key,
+        booking.instructions.as_deref(),
+    ) {
+        eprintln!("Project Manager: {error}");
+    }
 }
 
 /// A supervisor that resumed a run takes over the children of the

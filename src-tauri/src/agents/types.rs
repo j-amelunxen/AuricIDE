@@ -74,6 +74,18 @@ pub struct AgentConfig {
     /// id it had before, which no store may remember any more.
     #[serde(skip)]
     pub replaces_agent_id: Option<String>,
+    /// Set by `admit_supervisor` for a fresh Project Manager launch: booked in
+    /// the registry once the process runs, not before.
+    #[serde(skip)]
+    pub launch_to_book: Option<LaunchToBook>,
+}
+
+/// What a Project Manager's launch records: the manager and the instructions
+/// text its prompt starts with (`None`: no file).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchToBook {
+    pub key: String,
+    pub instructions: Option<String>,
 }
 
 impl AgentConfig {

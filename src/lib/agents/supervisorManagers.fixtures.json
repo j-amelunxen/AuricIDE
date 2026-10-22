@@ -30,7 +30,14 @@
         "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "taken": [],
         "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
+      },
+      { "name": "Straße", "taken": [], "key": "strasse" },
+      { "name": "Łódź Desk", "taken": [], "key": "lodz-desk" },
+      { "name": "Æther", "taken": [], "key": "aether" },
+      { "name": "Œuvre", "taken": [], "key": "oeuvre" },
+      { "name": "Ørsted", "taken": [], "key": "orsted" },
+      { "name": "Đorđe", "taken": [], "key": "dorde" },
+      { "name": "ﬁnance ﬂow", "taken": [], "key": "finance-flow" }
     ]
   },
   "promotionKey": {
@@ -127,6 +134,21 @@
         "own": "release-desk",
         "live": [],
         "result": { "error": "manager_key_foreign_folder" }
+      },
+      {
+        "$comment": "fileKey: the key the resumed folder's supervisor.json remembers. A manager's key there does not make a plain resume a manager.",
+        "resume": "2026-09-01_090000",
+        "own": null,
+        "fileKey": "release-desk",
+        "live": [],
+        "result": { "error": "manager_key_foreign_folder" }
+      },
+      {
+        "resume": "2026-09-01_090000",
+        "own": null,
+        "fileKey": "docs",
+        "live": [],
+        "result": { "key": "docs" }
       }
     ]
   },

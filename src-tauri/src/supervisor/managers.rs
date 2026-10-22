@@ -141,6 +141,9 @@ const FOLDED_LETTERS: &[(&str, &str)] = &[
     ("ß", "ss"),
     ("Ææ", "ae"),
     ("Œœ", "oe"),
+    ("ﬀ", "ff"),
+    ("ﬁ", "fi"),
+    ("ﬂ", "fl"),
 ];
 
 fn push_folded(character: char, out: &mut String) {
