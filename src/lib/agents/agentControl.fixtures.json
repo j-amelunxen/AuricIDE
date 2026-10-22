@@ -2103,8 +2103,37 @@
             "label": "Triage",
             "shortcut": null
           }
+        ],
+        "managers": [
+          {
+            "key": "release-desk",
+            "label": "Release Desk",
+            "running": true,
+            "shortcut": "Control+Alt+KeyR"
+          },
+          {
+            "key": "inbox-triage",
+            "label": "Inbox Triage",
+            "running": false
+          }
         ]
       },
+      "managerItems": [
+        {
+          "id": "manager:release-desk",
+          "label": "● Release Desk",
+          "payload": {
+            "managerKey": "release-desk"
+          }
+        },
+        {
+          "id": "manager:inbox-triage",
+          "label": "Inbox Triage",
+          "payload": {
+            "managerKey": "inbox-triage"
+          }
+        }
+      ],
       "items": [
         {
           "running": 0,

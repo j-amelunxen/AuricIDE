@@ -87,6 +87,12 @@ pub struct DependencyReport {
     #[serde(flatten)]
     pub check: Check,
     pub features: Vec<String>,
+    /// The version we read, when we could. Structured so the page never parses `found`.
+    pub version: Option<String>,
+    /// Where the binary is, whenever it was found.
+    pub path: Option<String>,
+    /// Found only in one of the tool's extra folders, not through PATH.
+    pub outside_path: bool,
 }
 
 /// What the machine said about one row, gathered before judging it.
@@ -94,6 +100,25 @@ pub struct Observation {
     pub resolved: Option<Resolved>,
     /// `None` when the tool did not answer its version probe.
     pub probe: Option<VersionProbe>,
+}
+
+impl Observation {
+    /// (version, path, outside PATH) as the Settings page shows them.
+    fn location(&self) -> (Option<String>, Option<String>, bool) {
+        let version = match self.probe {
+            Some(VersionProbe::Version(found)) => Some(format_version(found)),
+            _ => None,
+        };
+        let path = self
+            .resolved
+            .as_ref()
+            .map(|found| found.path.to_string_lossy().to_string());
+        let outside = self
+            .resolved
+            .as_ref()
+            .is_some_and(|found| found.outside_path);
+        (version, path, outside)
+    }
 }
 
 impl Dependency {
@@ -224,8 +249,12 @@ impl Dependency {
             Some(required) => required.observe().await.resolved.is_none(),
             None => false,
         };
+        let (version, path, outside_path) = observation.location();
         DependencyReport {
             check: self.judge(&observation, requirement_missing),
+            version,
+            path,
+            outside_path,
             features: self
                 .features
                 .iter()

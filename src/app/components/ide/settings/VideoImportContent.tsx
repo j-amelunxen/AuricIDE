@@ -88,7 +88,12 @@ function CheckRow({ check }: { check: PreflightCheck }) {
   );
 }
 
-export function VideoImportContent() {
+interface VideoImportContentProps {
+  /** Takes the user to Settings → Machine, which lists every tool a feature needs. */
+  onOpenMachine?: () => void;
+}
+
+export function VideoImportContent({ onOpenMachine }: VideoImportContentProps = {}) {
   const rootPath = useStore((s) => s.rootPath);
   const [settings, setSettings] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
@@ -230,6 +235,15 @@ export function VideoImportContent() {
                   ? 'Everything local transcription needs is in place.'
                   : 'Local transcription is built on tools that come from this machine. They are checked here before anything runs.'}
               </p>
+              {onOpenMachine && (
+                <button
+                  type="button"
+                  onClick={onOpenMachine}
+                  className="mt-1 rounded text-[10px] font-medium text-primary transition-colors hover:text-primary-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+                >
+                  See all tools on this machine
+                </button>
+              )}
             </div>
             <button
               onClick={() => void runPreflight()}

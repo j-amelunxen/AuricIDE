@@ -14,6 +14,7 @@ import { ProviderPolicyContent } from './settings/ProviderPolicyContent';
 import { CommandsContent } from './settings/CommandsContent';
 import { EditorContent } from './settings/EditorContent';
 import { AppearanceContent } from './settings/AppearanceContent';
+import { MachineContent } from './settings/MachineContent';
 import { SystemContent } from './settings/SystemContent';
 import { MaintenanceContent } from './settings/MaintenanceContent';
 import { McpSettingsContent } from './McpSettingsContent';
@@ -44,6 +45,7 @@ export type SettingsCategory =
   | 'editor'
   | 'appearance'
   | 'system'
+  | 'machine'
   | 'mcp'
   | 'blueprints'
   | 'excalidraw'
@@ -134,6 +136,12 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
       { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
       { id: 'pushover', icon: 'notifications_active', label: 'Pushover' },
     ],
+  },
+  {
+    id: 'app-machine',
+    label: 'System',
+    scope: 'application',
+    items: [{ id: 'machine', icon: 'memory', label: 'Machine' }],
   },
   {
     id: 'project-agents',
@@ -238,6 +246,8 @@ function SettingsDialog({
         return <GitContent />;
       case 'system':
         return <SystemContent />;
+      case 'machine':
+        return <MachineContent />;
       case 'maintenance':
         return <MaintenanceContent />;
       case 'mcp':
@@ -247,7 +257,7 @@ function SettingsDialog({
       case 'excalidraw':
         return <ExcalidrawContent />;
       case 'video-import':
-        return <VideoImportContent />;
+        return <VideoImportContent onOpenMachine={() => openPage('machine')} />;
       case 'pushover':
         return <PushoverContent />;
     }

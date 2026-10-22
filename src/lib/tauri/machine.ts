@@ -12,6 +12,12 @@ export interface DependencyReport {
   fix: string | null;
   /** The features that need the tool. */
   features: string[];
+  /** The version Rust read, when it could. */
+  version: string | null;
+  /** Where the binary is, whenever it was found. */
+  path: string | null;
+  /** Found only in an extra folder, not through PATH. Fine, and worth saying. */
+  outsidePath: boolean;
 }
 
 /** `refresh` re-reads the login shell first: "Check Again" after the human installed something. */

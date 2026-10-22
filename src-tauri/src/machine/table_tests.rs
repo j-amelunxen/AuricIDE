@@ -230,11 +230,48 @@ fn the_report_adds_the_features_to_the_check_on_the_wire() {
     let report = DependencyReport {
         check: judged("ffmpeg", None, None),
         features: vec!["Video import".to_string()],
+        version: None,
+        path: None,
+        outside_path: false,
     };
     let json: Value = serde_json::to_value(&report).unwrap();
     assert_eq!(json["id"], "ffmpeg");
     assert_eq!(json["ok"], false);
     assert_eq!(json["features"][0], "Video import");
+    assert_eq!(json["outsidePath"], false);
+}
+
+#[test]
+fn the_location_is_structured_not_a_display_string() {
+    let observation = Observation {
+        resolved: at("/Users/dev/go/bin/okf", true),
+        probe: Some(VersionProbe::Version((0, 7, 0))),
+    };
+    assert_eq!(
+        observation.location(),
+        (
+            Some("0.7.0".to_string()),
+            Some("/Users/dev/go/bin/okf".to_string()),
+            true
+        )
+    );
+}
+
+#[test]
+fn an_unreadable_version_still_has_a_path_and_a_missing_tool_has_nothing() {
+    let unreadable = Observation {
+        resolved: at("/opt/homebrew/bin/ffmpeg", false),
+        probe: Some(VersionProbe::Unreadable),
+    };
+    assert_eq!(
+        unreadable.location(),
+        (None, Some("/opt/homebrew/bin/ffmpeg".to_string()), false)
+    );
+    let missing = Observation {
+        resolved: None,
+        probe: None,
+    };
+    assert_eq!(missing.location(), (None, None, false));
 }
 
 #[tokio::test]

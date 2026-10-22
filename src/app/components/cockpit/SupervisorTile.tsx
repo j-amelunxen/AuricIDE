@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { runningSupervisors, supervisorUsingRunDir } from '@/lib/agents/supervisorLaunch';
 import { openSupervisor, resumeSupervisor } from '@/lib/agents/openSupervisor';
 import { RECENT_RUNS_IN_MENU, supervisorRunLabel } from '@/lib/agents/supervisorRuns';
+import { useOpenManager } from '@/lib/hooks/useOpenManager';
+import { useProjectManagers } from '@/lib/hooks/useProjectManagers';
 import { launchEntries } from '@/lib/quickAccess/launchSkills';
 import { menuSkillEntries, pinSlottedLibrarySkills } from '@/lib/quickAccess/menuSkills';
 import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
@@ -68,7 +70,11 @@ export function SupervisorTile({
   const presets = useSupervisorPresets();
   const library = loadAuricSkills();
   const [starting, setStarting] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; stage: 'root' | 'managers' } | null>(
+    null
+  );
+  const { managers } = useProjectManagers();
+  const { open: openProjectManager } = useOpenManager({ onOpenSettings, onSelectAgent });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentRuns, setRecentRuns] = useState<SupervisorRun[]>([]);
 
@@ -116,7 +122,7 @@ export function SupervisorTile({
   useEffect(readRecentRuns, [readRecentRuns]);
 
   const openMenu = (x: number, y: number) => {
-    setMenu({ x, y });
+    setMenu({ x, y, stage: 'root' });
     // Read again on every opening: runs end while the app is open, and
     // nothing watches the folder. The last list stays until this answers.
     readRecentRuns();
@@ -146,6 +152,30 @@ export function SupervisorTile({
     suppressed: wheelSuppressed,
     onActivity: (active) => onWheelActivity?.(active),
   });
+
+  // Every non-archived manager is reachable from here, whether or not it has a tile.
+  const projectManagers = useMemo(
+    () =>
+      managers
+        .filter((manager) => manager.archivedAt === null)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [managers]
+  );
+  const managerOptions: ContextMenuOption[] = [
+    { type: 'header', label: 'Project Managers' },
+    ...projectManagers.map((manager) => ({
+      label: manager.name,
+      icon: 'account_tree',
+      action: () => void openProjectManager(manager.key),
+    })),
+    { type: 'separator' },
+    {
+      label: 'Back',
+      icon: 'arrow_back',
+      keepOpen: true,
+      action: () => setMenu((current) => current && { ...current, stage: 'root' }),
+    },
+  ];
 
   const menuSkills = menuSkillEntries(presets.skills, library);
   const shownSkills = menuSkills.slice(0, MAX_MENU_SKILLS);
@@ -198,6 +228,17 @@ export function SupervisorTile({
                   action: () => void resume(run),
                 };
           }),
+          { type: 'separator' },
+        ] as ContextMenuOption[])
+      : []),
+    ...(projectManagers.length > 0
+      ? ([
+          {
+            label: 'Project Managers',
+            icon: 'folder',
+            keepOpen: true,
+            action: () => setMenu((current) => current && { ...current, stage: 'managers' }),
+          },
           { type: 'separator' },
         ] as ContextMenuOption[])
       : []),
@@ -266,7 +307,7 @@ export function SupervisorTile({
           x={menu.x}
           y={menu.y}
           width={220}
-          options={menuOptions}
+          options={menu.stage === 'managers' ? managerOptions : menuOptions}
           onClose={() => setMenu(null)}
         />
       )}

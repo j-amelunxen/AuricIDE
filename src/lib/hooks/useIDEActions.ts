@@ -25,6 +25,7 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
+import { useShowSupervisorRuns } from '@/lib/hooks/useShowSupervisorRuns';
 import { useAgentUsageSync } from '@/lib/hooks/useAgentUsageSync';
 import { useMergeStateSync } from '@/lib/hooks/useMergeStateSync';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
@@ -53,6 +54,9 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // Quick Access's "Show in Runs" lives outside the shell's state
+  useShowSupervisorRuns(state.setActiveActivity);
 
   // Agent usage is per project: loaded when its database is ready, appended live
   useAgentUsageSync();

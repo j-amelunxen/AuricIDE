@@ -6,6 +6,8 @@
 //! draws the menu, registers the shortcuts, and hands every pick back to the
 //! main window as `menu-bar-launch` — the same launch path the tile uses, so a
 //! skill started from the menu bar runs exactly like one clicked in the app.
+//! Project Managers (`docs/design-project-manager.md`) ride along the same way:
+//! a section of the menu and shortcuts of their own, answered with their key.
 
 use std::str::FromStr;
 use std::sync::Mutex;
@@ -19,6 +21,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, S
 pub const LAUNCH_EVENT: &str = "menu-bar-launch";
 const TRAY_ID: &str = "auric-supervisor";
 const SKILL_PREFIX: &str = "skill:";
+const MANAGER_PREFIX: &str = "manager:";
+/// Menu items cannot carry a status dot of their own, so a running manager gets one in its label.
+const RUNNING_MARK: &str = "● ";
 const ITEM_START: &str = "start";
 const ITEM_OPEN: &str = "open";
 const ITEM_SHOW: &str = "show";
@@ -36,12 +41,26 @@ pub struct MenuBarSkill {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MenuBarManager {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub running: bool,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MenuBarConfig {
     pub tray: bool,
     pub shortcuts: bool,
     /// How many supervisors run. Above zero the menu also offers to open one.
     pub running: u32,
     pub skills: Vec<MenuBarSkill>,
+    /// The non-archived Project Managers set to show here.
+    #[serde(default)]
+    pub managers: Vec<MenuBarManager>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -49,6 +68,9 @@ pub struct MenuBarConfig {
 pub struct LaunchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill_id: Option<String>,
+    /// A Project Manager pick: the frontend opens that manager.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager_key: Option<String>,
     /// "Start Supervisor": always a new one, however many run. Neither this
     /// nor a skill: "Open Supervisor", the newest running one comes forward.
     /// A skill always starts a new supervisor too (the frontend's rule).
@@ -59,33 +81,103 @@ pub struct LaunchRequest {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutFailure {
-    pub skill_id: String,
+    /// Which pick the shortcut belongs to: a skill id or a manager key, never both.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager_key: Option<String>,
     pub shortcut: String,
     pub reason: String,
 }
 
-/// Which skill each registered shortcut starts. Read by the plugin's handler.
+/// What a shortcut or a menu item starts.
+#[derive(Debug, Clone, PartialEq)]
+enum Target {
+    Skill(String),
+    Manager(String),
+}
+
+impl LaunchRequest {
+    fn start_new() -> Self {
+        Self {
+            skill_id: None,
+            manager_key: None,
+            new_supervisor: true,
+        }
+    }
+
+    fn open_newest() -> Self {
+        Self {
+            skill_id: None,
+            manager_key: None,
+            new_supervisor: false,
+        }
+    }
+}
+
+impl Target {
+    fn launch(&self) -> LaunchRequest {
+        match self {
+            Target::Skill(id) => LaunchRequest {
+                skill_id: Some(id.clone()),
+                ..LaunchRequest::open_newest()
+            },
+            Target::Manager(key) => LaunchRequest {
+                manager_key: Some(key.clone()),
+                ..LaunchRequest::open_newest()
+            },
+        }
+    }
+
+    fn failure(&self, shortcut: &str, reason: String) -> ShortcutFailure {
+        let (skill_id, manager_key) = match self {
+            Target::Skill(id) => (Some(id.clone()), None),
+            Target::Manager(key) => (None, Some(key.clone())),
+        };
+        ShortcutFailure {
+            skill_id,
+            manager_key,
+            shortcut: shortcut.to_string(),
+            reason,
+        }
+    }
+}
+
+/// What each registered shortcut starts. Read by the plugin's handler.
 #[derive(Default)]
 pub struct MenuBarState {
-    bindings: Mutex<Vec<(Shortcut, String)>>,
+    bindings: Mutex<Vec<(Shortcut, Target)>>,
 }
 
 /// What a menu item id asks for. `None` means the item is not a launch ("show").
 fn launch_for_item(item_id: &str) -> Option<LaunchRequest> {
     match item_id {
-        ITEM_START => Some(LaunchRequest {
-            skill_id: None,
-            new_supervisor: true,
-        }),
-        ITEM_OPEN => Some(LaunchRequest {
-            skill_id: None,
-            new_supervisor: false,
-        }),
-        _ => item_id.strip_prefix(SKILL_PREFIX).map(|id| LaunchRequest {
-            skill_id: Some(id.to_string()),
-            new_supervisor: false,
-        }),
+        ITEM_START => Some(LaunchRequest::start_new()),
+        ITEM_OPEN => Some(LaunchRequest::open_newest()),
+        _ => item_id
+            .strip_prefix(SKILL_PREFIX)
+            .map(|id| Target::Skill(id.to_string()))
+            .or_else(|| {
+                item_id
+                    .strip_prefix(MANAGER_PREFIX)
+                    .map(|key| Target::Manager(key.to_string()))
+            })
+            .map(|target| target.launch()),
     }
+}
+
+/// The Project Managers section: one item per manager, a dot in front of a running one.
+fn manager_items(managers: &[MenuBarManager]) -> Vec<(String, String)> {
+    managers
+        .iter()
+        .map(|manager| {
+            let mark = if manager.running { RUNNING_MARK } else { "" };
+            (
+                format!("{MANAGER_PREFIX}{}", manager.key),
+                format!("{mark}{}", manager.label),
+            )
+        })
+        .collect()
 }
 
 /// The supervisor entries below the skills: starting one is always there,
@@ -100,31 +192,36 @@ fn supervisor_items(running: u32) -> Vec<(&'static str, String)> {
     items
 }
 
-/// Parses every shortcut once. A malformed one, or one a second skill already
+/// Everything that may carry a shortcut, skills first: on a clash the first one keeps it.
+fn shortcut_candidates(config: &MenuBarConfig) -> Vec<(Target, Option<&str>)> {
+    let skills = config
+        .skills
+        .iter()
+        .map(|skill| (Target::Skill(skill.id.clone()), skill.shortcut.as_deref()));
+    let managers = config.managers.iter().map(|manager| {
+        (
+            Target::Manager(manager.key.clone()),
+            manager.shortcut.as_deref(),
+        )
+    });
+    skills.chain(managers).collect()
+}
+
+/// Parses every shortcut once. A malformed one, or one a second pick already
 /// claimed, is reported instead of registered — first come, first bound.
-fn plan_shortcuts(skills: &[MenuBarSkill]) -> (Vec<(Shortcut, String)>, Vec<ShortcutFailure>) {
-    let mut bindings: Vec<(Shortcut, String)> = Vec::new();
+fn plan_shortcuts(config: &MenuBarConfig) -> (Vec<(Shortcut, Target)>, Vec<ShortcutFailure>) {
+    let mut bindings: Vec<(Shortcut, Target)> = Vec::new();
     let mut failures = Vec::new();
-    for skill in skills {
-        let Some(text) = skill
-            .shortcut
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        else {
+    for (target, shortcut) in shortcut_candidates(config) {
+        let Some(text) = shortcut.map(str::trim).filter(|s| !s.is_empty()) else {
             continue;
         };
-        let fail = |reason: String| ShortcutFailure {
-            skill_id: skill.id.clone(),
-            shortcut: text.to_string(),
-            reason,
-        };
         match Shortcut::from_str(text) {
-            Ok(shortcut) if bindings.iter().any(|(bound, _)| *bound == shortcut) => {
-                failures.push(fail("another supervisor skill already uses it".into()));
+            Ok(parsed) if bindings.iter().any(|(bound, _)| *bound == parsed) => {
+                failures.push(target.failure(text, "another shortcut already uses it".into()));
             }
-            Ok(shortcut) => bindings.push((shortcut, skill.id.clone())),
-            Err(error) => failures.push(fail(error.to_string())),
+            Ok(parsed) => bindings.push((parsed, target)),
+            Err(error) => failures.push(target.failure(text, error.to_string())),
         }
     }
     (bindings, failures)
@@ -144,27 +241,26 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// The plugin's handler: a pressed shortcut starts the skill bound to it.
+/// The plugin's handler: a pressed shortcut starts what is bound to it.
 pub fn on_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state != ShortcutState::Pressed {
         return;
     }
     let state = app.state::<MenuBarState>();
-    let skill_id = state.bindings.lock().ok().and_then(|bindings| {
+    let target = state.bindings.lock().ok().and_then(|bindings| {
         bindings
             .iter()
             .find(|(s, _)| s == shortcut)
-            .map(|(_, id)| id.clone())
+            .map(|(_, target)| target.clone())
     });
-    if let Some(skill_id) = skill_id {
-        emit_launch(
-            app,
-            LaunchRequest {
-                skill_id: Some(skill_id),
-                new_supervisor: false,
-            },
-        );
+    if let Some(target) = target {
+        emit_launch(app, target.launch());
     }
+}
+
+/// The accelerator a menu item shows: only while the shortcuts are switched on.
+fn shown_accelerator(config: &MenuBarConfig, shortcut: Option<&str>) -> Option<String> {
+    shortcut.filter(|_| config.shortcuts).map(str::to_string)
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>, config: &MenuBarConfig) -> tauri::Result<Menu<R>> {
@@ -180,17 +276,32 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, config: &MenuBarConfig) -> tauri::
         for skill in config.skills.iter().take(MAX_MENU_SKILLS) {
             // The accelerator is shown, not bound: binding is the plugin's job,
             // and a menu accelerator would only fire while the menu is open.
-            let accelerator = if config.shortcuts {
-                skill.shortcut.as_deref()
-            } else {
-                None
-            };
             let item = MenuItem::with_id(
                 app,
                 format!("{SKILL_PREFIX}{}", skill.id),
                 &skill.label,
                 true,
-                accelerator,
+                shown_accelerator(config, skill.shortcut.as_deref()),
+            )?;
+            menu.append(&item)?;
+        }
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+    if !config.managers.is_empty() {
+        menu.append(&MenuItem::with_id(
+            app,
+            "managers-header",
+            "Project Managers",
+            false,
+            None::<&str>,
+        )?)?;
+        for (manager, (id, label)) in config.managers.iter().zip(manager_items(&config.managers)) {
+            let item = MenuItem::with_id(
+                app,
+                id,
+                label,
+                true,
+                shown_accelerator(config, manager.shortcut.as_deref()),
             )?;
             menu.append(&item)?;
         }
@@ -248,17 +359,13 @@ fn sync_shortcuts<R: Runtime>(app: &AppHandle<R>, config: &MenuBarConfig) -> Vec
         }
         return Vec::new();
     }
-    let (planned, mut failures) = plan_shortcuts(&config.skills);
+    let (planned, mut failures) = plan_shortcuts(config);
     let mut bound = Vec::with_capacity(planned.len());
-    for (shortcut, skill_id) in planned {
+    for (shortcut, target) in planned {
         match manager.register(shortcut) {
-            Ok(()) => bound.push((shortcut, skill_id)),
+            Ok(()) => bound.push((shortcut, target)),
             // Usually another app holds it; macOS does not say which.
-            Err(error) => failures.push(ShortcutFailure {
-                skill_id,
-                shortcut: shortcut.into_string(),
-                reason: error.to_string(),
-            }),
+            Err(error) => failures.push(target.failure(&shortcut.into_string(), error.to_string())),
         }
     }
     if let Ok(mut bindings) = state.bindings.lock() {
@@ -290,31 +397,40 @@ mod tests {
         }
     }
 
+    fn manager(key: &str, running: bool, shortcut: Option<&str>) -> MenuBarManager {
+        MenuBarManager {
+            key: key.into(),
+            label: key.into(),
+            running,
+            shortcut: shortcut.map(Into::into),
+        }
+    }
+
+    fn config(skills: Vec<MenuBarSkill>, managers: Vec<MenuBarManager>) -> MenuBarConfig {
+        MenuBarConfig {
+            tray: true,
+            shortcuts: true,
+            running: 0,
+            skills,
+            managers,
+        }
+    }
+
     #[test]
     fn menu_items_map_to_launches() {
-        assert_eq!(
-            launch_for_item("start"),
-            Some(LaunchRequest {
-                skill_id: None,
-                new_supervisor: true
-            })
-        );
-        assert_eq!(
-            launch_for_item("open"),
-            Some(LaunchRequest {
-                skill_id: None,
-                new_supervisor: false
-            })
-        );
+        assert_eq!(launch_for_item("start"), Some(LaunchRequest::start_new()));
+        assert_eq!(launch_for_item("open"), Some(LaunchRequest::open_newest()));
         assert_eq!(
             launch_for_item("skill:auric:vtt"),
-            Some(LaunchRequest {
-                skill_id: Some("auric:vtt".into()),
-                new_supervisor: false
-            })
+            Some(Target::Skill("auric:vtt".into()).launch())
+        );
+        assert_eq!(
+            launch_for_item("manager:release-desk"),
+            Some(Target::Manager("release-desk".into()).launch())
         );
         assert_eq!(launch_for_item("show"), None);
         assert_eq!(launch_for_item("header"), None);
+        assert_eq!(launch_for_item("managers-header"), None);
     }
 
     #[test]
@@ -326,8 +442,7 @@ mod tests {
             "F5",
             "Alt+Super+Space",
         ] {
-            let skills = [skill("a", Some(text))];
-            let (bound, failures) = plan_shortcuts(&skills);
+            let (bound, failures) = plan_shortcuts(&config(vec![skill("a", Some(text))], vec![]));
             assert!(failures.is_empty(), "{text}: {failures:?}");
             assert_eq!(bound.len(), 1);
         }
@@ -335,31 +450,118 @@ mod tests {
 
     #[test]
     fn a_second_claim_and_a_malformed_shortcut_are_reported_not_bound() {
-        let skills = [
+        let skills = vec![
             skill("a", Some("Control+Alt+KeyV")),
             skill("b", Some("Control+Alt+KeyV")),
             skill("c", Some("Control+Nonsense")),
             skill("d", None),
             skill("e", Some("  ")),
         ];
-        let (bound, failures) = plan_shortcuts(&skills);
+        let (bound, failures) = plan_shortcuts(&config(skills, vec![]));
         assert_eq!(
-            bound.iter().map(|(_, id)| id.as_str()).collect::<Vec<_>>(),
-            ["a"]
+            bound
+                .iter()
+                .map(|(_, target)| target.clone())
+                .collect::<Vec<_>>(),
+            [Target::Skill("a".into())]
         );
         assert_eq!(
             failures
                 .iter()
-                .map(|f| f.skill_id.as_str())
+                .map(|f| f.skill_id.as_deref().unwrap())
                 .collect::<Vec<_>>(),
             ["b", "c"]
         );
     }
 
     #[test]
+    fn a_manager_shortcut_binds_to_its_key_and_loses_a_clash_with_a_skill() {
+        let skills = vec![skill("a", Some("Control+Alt+KeyV"))];
+        let managers = vec![
+            manager("release-desk", false, Some("Control+Alt+KeyR")),
+            manager("inbox-triage", false, Some("Control+Alt+KeyV")),
+            manager("broken", false, Some("Control+Nonsense")),
+            manager("quiet", false, None),
+        ];
+        let (bound, failures) = plan_shortcuts(&config(skills, managers));
+        assert_eq!(
+            bound
+                .iter()
+                .map(|(_, target)| target.clone())
+                .collect::<Vec<_>>(),
+            [
+                Target::Skill("a".into()),
+                Target::Manager("release-desk".into())
+            ]
+        );
+        assert_eq!(
+            failures
+                .iter()
+                .map(|f| (f.skill_id.clone(), f.manager_key.clone().unwrap()))
+                .collect::<Vec<_>>(),
+            [
+                (None, "inbox-triage".to_string()),
+                (None, "broken".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failure_names_a_skill_or_a_manager_never_both() {
+        let skill =
+            serde_json::to_value(Target::Skill("s".into()).failure("F5", "taken".into())).unwrap();
+        assert_eq!(
+            skill,
+            serde_json::json!({ "skillId": "s", "shortcut": "F5", "reason": "taken" })
+        );
+        let manager =
+            serde_json::to_value(Target::Manager("m".into()).failure("F5", "taken".into()))
+                .unwrap();
+        assert_eq!(
+            manager,
+            serde_json::json!({ "managerKey": "m", "shortcut": "F5", "reason": "taken" })
+        );
+    }
+
+    #[test]
+    fn a_running_manager_carries_a_dot_in_its_label() {
+        let items = manager_items(&[
+            manager("release-desk", true, None),
+            manager("inbox-triage", false, None),
+        ]);
+        assert_eq!(
+            items,
+            vec![
+                (
+                    "manager:release-desk".to_string(),
+                    "● release-desk".to_string()
+                ),
+                (
+                    "manager:inbox-triage".to_string(),
+                    "inbox-triage".to_string()
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn the_menu_shows_a_shortcut_only_while_shortcuts_are_on() {
+        let mut on = config(vec![], vec![]);
+        assert_eq!(
+            shown_accelerator(&on, Some("Control+Alt+KeyR")),
+            Some("Control+Alt+KeyR".to_string())
+        );
+        assert_eq!(shown_accelerator(&on, None), None);
+        on.shortcuts = false;
+        assert_eq!(shown_accelerator(&on, Some("Control+Alt+KeyR")), None);
+    }
+
+    #[test]
     fn launch_request_serializes_like_the_frontend_expects() {
         let json = serde_json::to_value(launch_for_item("skill:p1").unwrap()).unwrap();
         assert_eq!(json, serde_json::json!({ "skillId": "p1" }));
+        let json = serde_json::to_value(launch_for_item("manager:m1").unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({ "managerKey": "m1" }));
         let json = serde_json::to_value(launch_for_item("start").unwrap()).unwrap();
         assert_eq!(json, serde_json::json!({ "newSupervisor": true }));
         let json = serde_json::to_value(launch_for_item("open").unwrap()).unwrap();
@@ -391,6 +593,25 @@ mod tests {
             serde_json::to_value(launch_for_item(skill["itemId"].as_str().unwrap()).unwrap())
                 .unwrap();
         assert_eq!(payload, skill["payload"]);
+        let entries = bar["managerItems"].as_array().unwrap();
+        let items = manager_items(&config.managers);
+        assert_eq!(items.len(), entries.len());
+        for ((id, label), entry) in items.iter().zip(entries) {
+            assert_eq!(entry["id"], *id);
+            assert_eq!(entry["label"], label.as_str());
+            let payload = serde_json::to_value(launch_for_item(id).unwrap()).unwrap();
+            assert_eq!(payload, entry["payload"], "{id}");
+        }
+    }
+
+    #[test]
+    fn a_config_from_before_managers_still_reads() {
+        let config: MenuBarConfig = serde_json::from_value(serde_json::json!({
+            "tray": true, "shortcuts": false, "running": 2, "skills": []
+        }))
+        .unwrap();
+        assert_eq!(config.running, 2);
+        assert!(config.managers.is_empty());
     }
 
     #[test]
@@ -413,10 +634,5 @@ mod tests {
                 ("open", "Open Supervisor (3)".to_string())
             ]
         );
-        let config: MenuBarConfig = serde_json::from_value(serde_json::json!({
-            "tray": true, "shortcuts": false, "running": 2, "skills": []
-        }))
-        .unwrap();
-        assert_eq!(config.running, 2);
     }
 }

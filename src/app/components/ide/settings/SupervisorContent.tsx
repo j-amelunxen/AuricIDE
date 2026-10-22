@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { SupervisorLinkSettings } from './SupervisorLinkSettings';
+import { SupervisorManagersSettings } from './SupervisorManagersSettings';
 import { SupervisorMenuBarSettings } from './SupervisorMenuBarSettings';
 import { SupervisorHeader } from './SupervisorHeader';
 import { SupervisorInstructionsEditor } from './SupervisorInstructionsEditor';
@@ -59,6 +60,7 @@ export const SUPERVISOR_SECTIONS = [
   { id: 'skills', label: 'Skills' },
   { id: 'tools', label: 'Tools' },
   { id: 'instructions', label: 'Instructions' },
+  { id: 'managers', label: 'Project Managers' },
   { id: 'menu-bar', label: 'Menu bar' },
   { id: 'link', label: 'Supervisor link' },
 ] as const;
@@ -66,7 +68,11 @@ export const SUPERVISOR_SECTIONS = [
 export type SupervisorSection = (typeof SUPERVISOR_SECTIONS)[number]['id'];
 
 /** These apply each change at once and are not part of what the save bar writes. */
-const SELF_SAVING_SECTIONS: ReadonlySet<SupervisorSection> = new Set(['menu-bar', 'link']);
+const SELF_SAVING_SECTIONS: ReadonlySet<SupervisorSection> = new Set([
+  'managers',
+  'menu-bar',
+  'link',
+]);
 
 /** User-level skills only: a project's skills belong to that project's agents. */
 async function readSkillCandidates(projectPath: string | undefined) {
@@ -267,6 +273,8 @@ export function SupervisorContent({ section }: { section: SupervisorSection }) {
           onChange={setInstructions}
         />
       )}
+
+      {page('managers', <SupervisorManagersSettings />)}
 
       {page('menu-bar', <SupervisorMenuBarSettings />)}
 

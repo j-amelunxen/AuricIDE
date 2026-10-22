@@ -11,12 +11,22 @@ export interface MenuBarSkill {
   shortcut?: string;
 }
 
+export interface MenuBarManager {
+  key: string;
+  label: string;
+  /** A supervisor is working in its folder: the menu puts a dot before the name. */
+  running: boolean;
+  shortcut?: string;
+}
+
 export interface MenuBarConfig {
   tray: boolean;
   shortcuts: boolean;
   /** How many supervisors run; above zero the menu also offers "Open Supervisor (N)". */
   running: number;
   skills: MenuBarSkill[];
+  /** The Project Managers set to show in the menu bar, non-archived, in the order listed. */
+  managers: MenuBarManager[];
 }
 
 /**
@@ -26,11 +36,15 @@ export interface MenuBarConfig {
  */
 export interface MenuBarLaunchRequest {
   skillId?: string;
+  /** A Project Manager pick: opens that manager, a running one is focused. */
+  managerKey?: string;
   newSupervisor?: boolean;
 }
 
+/** Names the skill or the manager the refused shortcut belongs to, never both. */
 export interface ShortcutFailure {
-  skillId: string;
+  skillId?: string;
+  managerKey?: string;
   shortcut: string;
   reason: string;
 }

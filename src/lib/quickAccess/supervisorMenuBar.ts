@@ -1,7 +1,13 @@
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { resolveAuricSkillReference, type AuricSkillDefinition } from '@/lib/settings/auricSkills';
-import type { MenuBarConfig } from '@/lib/tauri/menuBar';
+import type { MenuBarConfig, MenuBarManager } from '@/lib/tauri/menuBar';
+import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import { menuSkillEntries } from './menuSkills';
+import {
+  managersForMenuBar,
+  presentationOf,
+  type ManagerPresentations,
+} from './managerPresentation';
 import type { SupervisorPresets } from './supervisorPresets';
 
 export interface MenuBarPrefs {
@@ -24,16 +30,37 @@ export function writeMenuBarPrefs(prefs: MenuBarPrefs): void {
   writeAppPref(APP_CONFIG_KEYS.supervisorGlobalShortcuts, String(prefs.shortcuts));
 }
 
+/** The Project Managers section: those set to show here, by name, with whether each is running. */
+export function menuBarManagers(
+  managers: SupervisorManager[],
+  presentations: ManagerPresentations,
+  runningKeys: ReadonlySet<string>
+): MenuBarManager[] {
+  return [...managersForMenuBar(managers, presentations)]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((manager) => {
+      const { shortcut } = presentationOf(presentations, manager.key);
+      return {
+        key: manager.key,
+        label: manager.name,
+        running: runningKeys.has(manager.key),
+        ...(shortcut ? { shortcut } : {}),
+      };
+    });
+}
+
 /**
  * What the menu bar shows: the same skills as the tile's right-click menu,
- * pinned ones first with their shortcut, then the Settings → Skills library.
- * Rust builds the menu and registers the shortcuts from exactly this.
+ * pinned ones first with their shortcut, then the Settings → Skills library,
+ * then the Project Managers. Rust builds the menu and registers the shortcuts
+ * from exactly this.
  */
 export function menuBarConfig(
   presets: SupervisorPresets,
   library: AuricSkillDefinition[],
   prefs: MenuBarPrefs,
-  running: number
+  running: number,
+  managers: MenuBarManager[] = []
 ): MenuBarConfig {
   const skills = menuSkillEntries(presets.skills, library).map((entry) => {
     const { label } = resolveAuricSkillReference(entry, library);
@@ -41,7 +68,7 @@ export function menuBarConfig(
       ? { id: entry.id, label, shortcut: entry.shortcut }
       : { id: entry.id, label };
   });
-  return { tray: prefs.tray, shortcuts: prefs.shortcuts, running, skills };
+  return { tray: prefs.tray, shortcuts: prefs.shortcuts, running, skills, managers };
 }
 
 interface KeyLike {

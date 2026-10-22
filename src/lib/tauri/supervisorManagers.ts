@@ -64,25 +64,38 @@ export async function supervisorManagersList(): Promise<SupervisorManager[]> {
   return managers;
 }
 
+/**
+ * Fired on `window` after every change to the registry, so a surface that lists
+ * managers (Quick Access, the menu bar, Settings) reads it again without
+ * waiting for the next focus.
+ */
+export const MANAGERS_CHANGED_EVENT = 'auric:managers-changed';
+
+async function changeRegistry<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const result = await invoke<T>(command, args);
+  window.dispatchEvent(new Event(MANAGERS_CHANGED_EVENT));
+  return result;
+}
+
 export async function managerPromote(runDir: string, name: string): Promise<SupervisorManager> {
-  return await invoke<SupervisorManager>('manager_promote', { runDir, name });
+  return await changeRegistry<SupervisorManager>('manager_promote', { runDir, name });
 }
 
 export async function managerRename(key: string, name: string): Promise<SupervisorManager> {
-  return await invoke<SupervisorManager>('manager_rename', { key, name });
+  return await changeRegistry<SupervisorManager>('manager_rename', { key, name });
 }
 
 export async function managerArchive(key: string): Promise<SupervisorManager> {
-  return await invoke<SupervisorManager>('manager_archive', { key });
+  return await changeRegistry<SupervisorManager>('manager_archive', { key });
 }
 
 export async function managerRestore(key: string): Promise<SupervisorManager> {
-  return await invoke<SupervisorManager>('manager_restore', { key });
+  return await changeRegistry<SupervisorManager>('manager_restore', { key });
 }
 
 /** Only for archived managers; the folder stays and becomes an ordinary run. */
 export async function managerRemove(key: string): Promise<void> {
-  await invoke<void>('manager_remove', { key });
+  await changeRegistry<void>('manager_remove', { key });
 }
 
 /** The text of `INSTRUCTIONS.md`, null when the file is missing. Rust caps it at 16 KiB. */

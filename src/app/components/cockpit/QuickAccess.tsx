@@ -27,6 +27,7 @@ import { ProjectBadgeField } from './ProjectBadgeField';
 import { ProjectDescriptionDialog } from './ProjectDescriptionDialog';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { SUPERVISOR_WHEEL_ID, SupervisorTile, type SupervisorTileProps } from './SupervisorTile';
+import { ManagerTiles } from './ManagerTiles';
 import { ProjectTile, type ProjectTileProps } from './ProjectTile';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -468,6 +469,7 @@ export function QuickAccess({
           wheelSuppressed={wheelPath !== null && wheelPath !== SUPERVISOR_WHEEL_ID}
           onWheelActivity={wheelActivity(SUPERVISOR_WHEEL_ID)}
         />
+        <ManagerTiles onOpenSettings={onOpenSettings} onSelectAgent={onSelectAgent} />
         {dock.length === 0 && dragging ? (
           <p className="self-center px-4 text-[11px] text-foreground-muted/70">
             Drop projects here to keep them in place.

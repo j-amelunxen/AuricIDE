@@ -32,8 +32,16 @@ vi.mock('@/lib/tauri/agents', async (importOriginal) => ({
 }));
 vi.mock('@/lib/tauri/supervisorPolicy', () => ({ supervisorPolicyGet }));
 vi.mock('@/lib/tauri/supervisorRuns', () => ({ supervisorRunsList }));
+const { managerRegistry } = vi.hoisted(() => ({
+  managerRegistry: vi.fn(async (): Promise<{ managers: unknown[]; error: string | null }> => ({
+    managers: [],
+    error: null,
+  })),
+}));
 vi.mock('@/lib/tauri/supervisorManagers', () => ({
   supervisorManagersList: vi.fn(async () => []),
+  managerRegistry,
+  MANAGERS_CHANGED_EVENT: 'auric:managers-changed',
 }));
 vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),

@@ -163,4 +163,23 @@ describe('VideoImportContent preflight', () => {
       expect(listen).toHaveBeenCalledWith('video-import-setup-progress', expect.any(Function))
     );
   });
+
+  it('links to Settings → Machine, which lists every tool a feature needs', async () => {
+    const onOpenMachine = vi.fn();
+    getVideoImportPreflight.mockResolvedValue(preflight());
+    render(<VideoImportContent onOpenMachine={onOpenMachine} />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /See all tools on this machine/ })
+    );
+    expect(onOpenMachine).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no link where there is nowhere to go', async () => {
+    getVideoImportPreflight.mockResolvedValue(preflight());
+    render(<VideoImportContent />);
+
+    await screen.findByText(/Everything local transcription needs/);
+    expect(screen.queryByRole('button', { name: /See all tools/ })).toBeNull();
+  });
 });

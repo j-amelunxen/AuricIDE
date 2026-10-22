@@ -7,7 +7,7 @@ interface ShortcutRecorderProps {
   value: string | undefined;
   onChange: (accelerator: string | undefined) => void;
   ariaLabel: string;
-  /** Another skill in the list claims the same keys; only one can have them. */
+  /** Another shortcut in the menu bar claims the same keys; only one can have them. */
   duplicate?: boolean;
 }
 
@@ -56,7 +56,7 @@ export function ShortcutRecorder({ value, onChange, ariaLabel, duplicate }: Shor
       </div>
       {duplicate && (
         <p className="text-[10px] text-amber-400/80">
-          Another skill uses this shortcut too; only the first one gets it.
+          Another shortcut uses these keys too; only the first one gets them.
         </p>
       )}
     </div>

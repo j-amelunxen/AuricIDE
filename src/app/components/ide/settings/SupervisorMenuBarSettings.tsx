@@ -27,14 +27,14 @@ export function SupervisorMenuBarSettings() {
     <SettingsSection title="Menu bar" icon="keyboard_command_key">
       <SettingsToggle
         label="Show the supervisor in the menu bar"
-        description="An icon at the top of the screen lists the supervisor's Quick Access skills. A click starts a new supervisor with that skill as its first task."
+        description="An icon at the top of the screen lists the supervisor's Quick Access skills and your Project Managers. A skill starts a new supervisor with that skill as its first task; a Project Manager opens."
         checked={prefs.tray}
         onChange={(tray) => change({ tray })}
         testId="supervisor-menu-bar-toggle"
       />
       <SettingsToggle
         label="Global shortcuts for supervisor skills"
-        description="The shortcuts set on the supervisor tile's skills (Quick Access Settings → Launch options) work while another app is in front. Applies immediately."
+        description="The shortcuts set on the supervisor tile's skills (Quick Access Settings → Launch options) and on Project Managers work while another app is in front. Applies immediately."
         checked={prefs.shortcuts}
         onChange={(shortcuts) => change({ shortcuts })}
         testId="supervisor-global-shortcuts-toggle"

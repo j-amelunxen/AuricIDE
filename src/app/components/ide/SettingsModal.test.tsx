@@ -19,6 +19,8 @@ const mockImportDatabase = vi.fn();
 vi.mock('@/lib/tauri/db', () => ({
   exportDatabase: (...args: unknown[]) => mockExportDatabase(...args),
   importDatabase: (...args: unknown[]) => mockImportDatabase(...args),
+  dbGet: vi.fn(async () => null),
+  dbSet: vi.fn(async () => undefined),
 }));
 
 import { SettingsModal } from './SettingsModal';
@@ -609,5 +611,31 @@ describe('SettingsModal – Database export/import', () => {
 
     expect(mockDialogAsk).toHaveBeenCalled();
     expect(mockClearPmData).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Machine ───────────────────────────────────────────────────────────────────
+
+vi.mock('@/lib/tauri/machine', () => ({ machineDependencies: vi.fn(async () => []) }));
+
+describe('SettingsModal – Machine', () => {
+  it('is an application setting, reachable from the nav', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    const application = screen.getByTestId('settings-scope-application');
+    await user.click(within(application).getByTestId('settings-nav-machine'));
+
+    expect(await screen.findByText(/installs nothing itself/)).toBeInTheDocument();
+  });
+
+  it('is where Video Import sends you to see every tool', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: '/Users/dev/project' });
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="video-import" />);
+
+    await user.click(await screen.findByRole('button', { name: /See all tools on this machine/ }));
+
+    expect(await screen.findByText(/installs nothing itself/)).toBeInTheDocument();
   });
 });

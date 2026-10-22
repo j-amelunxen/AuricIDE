@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import {
   acceleratorFromKeyEvent,
   duplicateShortcuts,
   formatAccelerator,
   menuBarConfig,
+  menuBarManagers,
 } from './supervisorMenuBar';
 
 const key = (code: string, mods: Partial<Record<'meta' | 'ctrl' | 'alt' | 'shift', boolean>>) => ({
@@ -35,6 +37,7 @@ describe('menuBarConfig', () => {
         { id: 'p1', label: 'Ping', shortcut: 'Control+Alt+KeyP' },
         { id: 'auric:vtt', label: 'video to tasklist' },
       ],
+      managers: [],
     });
   });
 
@@ -92,5 +95,40 @@ describe('duplicateShortcuts', () => {
         {},
       ])
     ).toEqual(new Set(['Control+Alt+KeyV']));
+  });
+});
+
+describe('menuBarManagers', () => {
+  const manager = (key: string, name: string, archivedAt: string | null = null) =>
+    ({ key, name, runDir: key, promotedAt: '', archivedAt, lastLaunch: null }) as SupervisorManager;
+  const managers = [
+    manager('inbox-triage', 'Inbox Triage'),
+    manager('release-desk', 'Release Desk'),
+    manager('old', 'Archived One', '2026-10-22T00:00:00Z'),
+    manager('hidden', 'Hidden'),
+  ];
+
+  it('lists non-archived managers set to show, by name, with running and shortcut', () => {
+    const list = menuBarManagers(
+      managers,
+      { 'release-desk': { shortcut: 'Control+Alt+KeyR' }, hidden: { menuBar: false } },
+      new Set(['release-desk'])
+    );
+    expect(list).toEqual([
+      { key: 'inbox-triage', label: 'Inbox Triage', running: false },
+      { key: 'release-desk', label: 'Release Desk', running: true, shortcut: 'Control+Alt+KeyR' },
+    ]);
+  });
+
+  it('is what menuBarConfig sends as the managers section', () => {
+    const list = menuBarManagers(managers, {}, new Set());
+    const config = menuBarConfig(
+      { skills: [], wheelSlots: [] },
+      [],
+      { tray: true, shortcuts: true },
+      0,
+      list
+    );
+    expect(config.managers).toBe(list);
   });
 });

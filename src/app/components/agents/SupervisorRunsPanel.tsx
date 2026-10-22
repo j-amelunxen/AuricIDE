@@ -381,6 +381,34 @@ const CONFIRMATIONS: Record<
   },
 };
 
+/**
+ * The confirmation for archiving, removing or restarting a manager. Quick
+ * Access and Settings use it too, so one consequence is worded once.
+ */
+export function ManagerConfirmDialog({
+  kind,
+  name,
+  onConfirm,
+  onCancel,
+}: {
+  kind: Confirmation['kind'];
+  name: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const wording = CONFIRMATIONS[kind];
+  return (
+    <ConfirmDialog
+      title={wording.title(name)}
+      message={wording.message}
+      confirmLabel={wording.confirmLabel}
+      variant={wording.variant}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
+  );
+}
+
 const detailOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 function SectionTitle({ children }: { children: string }) {
@@ -788,11 +816,9 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
         />
       )}
       {confirmation && (
-        <ConfirmDialog
-          title={CONFIRMATIONS[confirmation.kind].title(confirmation.manager.name)}
-          message={CONFIRMATIONS[confirmation.kind].message}
-          confirmLabel={CONFIRMATIONS[confirmation.kind].confirmLabel}
-          variant={CONFIRMATIONS[confirmation.kind].variant}
+        <ManagerConfirmDialog
+          kind={confirmation.kind}
+          name={confirmation.manager.name}
           onConfirm={() => void confirmed(confirmation)}
           onCancel={() => setConfirmation(null)}
         />

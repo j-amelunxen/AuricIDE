@@ -55,6 +55,7 @@ export const APP_CONFIG_KEYS = {
   supervisorInstructions: 'auric.supervisor.instructions',
   supervisorMenuBar: 'auric.supervisor.menu-bar',
   supervisorGlobalShortcuts: 'auric.supervisor.global-shortcuts',
+  supervisorManagers: 'auric.supervisor.managers',
   pmTicketSort: 'auric.pm.ticket-sort',
   pmTicketUsageColumns: 'auric.pm.ticket-usage-columns',
   goalTableColumns: 'auric.goals.table-columns',
