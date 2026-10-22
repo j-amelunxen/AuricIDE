@@ -12,7 +12,13 @@
       "zero\u200bwidth",
       "right-to-left\u202eoverride",
       "isolate\u2066x",
-      "bom\ufeffname","", "   ", "line\nbreak", "tab\there", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+      "bom\ufeffname",
+      "",
+      "   ",
+      "line\nbreak",
+      "tab\there",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
   },
   "keyFromName": {
     "$comment": "Fold to ASCII, lowercase, every run of other characters becomes one '-', trim dashes, cut to 48 (then trim a trailing dash again). Empty becomes 'manager'. A key that is taken (any registry entry, archived included, or a live supervisor) or reserved (supervisorLink.fixtures.json supervisorKeys.reservedPattern) gets -2, -3, ... appended, cut so the whole stays within 48.",
@@ -215,7 +221,11 @@
         "type_not_section",
         "dangling_superseded_by",
         "not_in_section_index"
-      ]
+      ],
+      "scanTruncated": {
+        "$comment": "Not a per-file code: the walk stopped at its file budget, so counts and findings are incomplete. Reported first, without a path.",
+        "code": "scan_truncated"
+      }
     },
     "maxFindingsInPrompt": 20,
     "validateTimeoutMs": 10000

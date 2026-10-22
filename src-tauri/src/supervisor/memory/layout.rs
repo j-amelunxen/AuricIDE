@@ -545,6 +545,18 @@ mod tests {
     }
 
     #[test]
+    fn the_truncation_code_is_the_one_the_fixture_declares() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../src/lib/agents/supervisorManagers.fixtures.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["memory"]["layoutFindings"]["scanTruncated"]["code"].as_str(),
+            Some(SCAN_TRUNCATED)
+        );
+    }
+
+    #[test]
     fn a_section_folder_that_is_a_link_is_not_followed() {
         let outside = bundle_with(&[("secret/a.md", GOOD), ("secret/index.md", "(a.md)")]);
         let bundle = tempfile::tempdir().unwrap();
