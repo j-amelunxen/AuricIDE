@@ -11,7 +11,7 @@
 //! also handed to every subscriber, which is how the supervisor hears of it
 //! (`control_socket/pingback.rs`).
 
-use super::types::{AgentInfo, AgentStatus};
+use super::types::{AgentInfo, AgentRole, AgentStatus};
 use crate::agent_usage::claude::CliResult;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -108,6 +108,7 @@ pub struct RunResults {
     changed: Condvar,
     capacity: usize,
     subscribers: Mutex<Vec<mpsc::Sender<FinishedChild>>>,
+    session_end_subscribers: Mutex<Vec<mpsc::Sender<AgentInfo>>>,
 }
 
 impl Default for RunResults {
@@ -129,6 +130,7 @@ impl RunResults {
             changed: Condvar::new(),
             capacity: capacity.max(1),
             subscribers: Mutex::new(Vec::new()),
+            session_end_subscribers: Mutex::new(Vec::new()),
         }
     }
 
@@ -152,6 +154,7 @@ impl RunResults {
     /// and, for a supervisor's child, tells every subscriber.
     pub fn record_finished(&self, result: RunResult, agent: AgentInfo) {
         let parent = agent.spawned_by_agent_id.clone();
+        let session_end = (agent.role == AgentRole::Supervisor).then(|| agent.clone());
         let child = parent.clone().map(|supervisor_id| FinishedChild {
             supervisor_id,
             agent: agent.clone(),
@@ -162,6 +165,12 @@ impl RunResults {
             parent,
             agent: Some(agent),
         });
+        if let (true, Some(ended)) = (inserted, session_end) {
+            self.session_end_subscribers
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .retain(|subscriber| subscriber.send(ended.clone()).is_ok());
+        }
         if let (true, Some(child)) = (inserted, child) {
             self.subscribers
                 .lock()
@@ -194,6 +203,17 @@ impl RunResults {
     pub fn subscribe(&self) -> mpsc::Receiver<FinishedChild> {
         let (sender, receiver) = mpsc::channel();
         self.subscribers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(sender);
+        receiver
+    }
+
+    /// Every supervisor session that ends from now on, with the agent as it
+    /// was listed. Where a Project Manager's memory is checked.
+    pub fn subscribe_session_ends(&self) -> mpsc::Receiver<AgentInfo> {
+        let (sender, receiver) = mpsc::channel();
+        self.session_end_subscribers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(sender);
@@ -517,6 +537,23 @@ mod tests {
         assert!(
             results.subscribers.lock().unwrap().is_empty(),
             "a gone subscriber is dropped"
+        );
+    }
+
+    #[test]
+    fn subscribers_hear_when_a_supervisor_session_ends_once() {
+        let results = RunResults::default();
+        let heard = results.subscribe_session_ends();
+        let mut supervisor = child("sup", None);
+        supervisor.role = crate::agents::AgentRole::Supervisor;
+        results.record_finished(result("sup"), supervisor.clone());
+        results.record_finished(result("sup"), supervisor);
+        results.record_finished(result("worker"), child("worker", Some("sup")));
+        let ended: Vec<String> = heard.try_iter().map(|agent| agent.id).collect();
+        assert_eq!(
+            ended,
+            vec!["sup".to_string()],
+            "a repeat and a worker are not news"
         );
     }
 }

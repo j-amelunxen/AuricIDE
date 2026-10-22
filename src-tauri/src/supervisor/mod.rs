@@ -9,6 +9,7 @@
 
 pub mod attachments;
 pub mod managers;
+pub mod memory;
 pub mod policy;
 pub mod runs;
 pub mod several;

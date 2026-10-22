@@ -295,6 +295,7 @@ pub fn run() {
             let dispatcher = control_socket::dispatcher(app.handle());
             control_socket::start(app.handle(), dispatcher.clone());
             control_socket::pingback::start(dispatcher.clone());
+            supervisor::memory::start(app.handle());
             supervisor_link::start(app.handle(), dispatcher);
             Ok(())
         })
@@ -339,6 +340,8 @@ pub fn run() {
             supervisor::managers::manager_restore,
             supervisor::managers::manager_remove,
             supervisor::managers::manager_instructions,
+            supervisor::memory::manager_memory,
+            supervisor::memory::manager_validate,
             provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
             agent_window::focus_agent_window,

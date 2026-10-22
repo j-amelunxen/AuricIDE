@@ -13,6 +13,7 @@ mod resolve;
 mod table;
 mod version;
 
+pub use cache::VersionProbe;
 pub use check::Check;
 pub use probe::{run_probe, DEFAULT_PROBE_TIMEOUT};
 pub use resolve::resolve_executable;
