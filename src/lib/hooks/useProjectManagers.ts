@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { forgetRemovedManagers } from '@/lib/quickAccess/managerPresentation';
 import {
   MANAGERS_CHANGED_EVENT,
   managerRegistry,
@@ -46,7 +47,12 @@ export function useProjectManagers(): ManagerRegistry {
       latestRead += 1;
       const mine = latestRead;
       managerRegistry().then(
-        (next) => settle(mine, () => next),
+        (next) => {
+          settle(mine, () => next);
+          if (alive && mine === latestRead && next.error === null) {
+            forgetRemovedManagers(next.managers.map((manager) => manager.key));
+          }
+        },
         (failure) => settle(mine, (previous) => afterFailedRead(previous, failure))
       );
     };

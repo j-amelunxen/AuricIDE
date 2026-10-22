@@ -70,6 +70,18 @@ export function updateManagerPresentation(key: string, patch: Partial<ManagerPre
   writeAppPref(APP_CONFIG_KEYS.supervisorManagers, JSON.stringify({ ...all, [key]: next }));
 }
 
+/**
+ * Drops the choices of keys the registry no longer holds. A removed manager's
+ * key can be promoted again, and the new manager must not inherit the old
+ * one's global shortcut. Archived managers are still in the registry.
+ */
+export function forgetRemovedManagers(registryKeys: readonly string[]): void {
+  const all = readManagerPresentations();
+  const kept = Object.entries(all).filter(([key]) => registryKeys.includes(key));
+  if (kept.length === Object.keys(all).length) return;
+  writeAppPref(APP_CONFIG_KEYS.supervisorManagers, JSON.stringify(Object.fromEntries(kept)));
+}
+
 const listed = (
   managers: SupervisorManager[],
   all: ManagerPresentations,
