@@ -8,6 +8,7 @@
 //! it atomically at mode 0600, and canonicalises project paths.
 
 pub mod attachments;
+pub mod managers;
 pub mod policy;
 pub mod runs;
 pub mod several;
@@ -390,6 +391,12 @@ pub fn validate_for_write(mut value: Value) -> Result<SupervisorPolicy, String> 
 /// sharing one temp file would truncate each other, and the rename would
 /// publish half of one.
 pub fn write_policy_atomic(path: &Path, policy: &SupervisorPolicy) -> Result<(), String> {
+    write_json_atomic(path, policy)
+}
+
+/// The write behind `write_policy_atomic`, for any Rust-owned JSON file next to
+/// the policy (the Project Manager registry).
+pub fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), String> {
     static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static WRITE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let _writing = WRITE_LOCK
@@ -397,9 +404,9 @@ pub fn write_policy_atomic(path: &Path, policy: &SupervisorPolicy) -> Result<(),
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path
         .parent()
-        .ok_or_else(|| "The supervisor policy has no parent directory".to_string())?;
+        .ok_or_else(|| "The file has no parent directory".to_string())?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let payload = serde_json::to_vec_pretty(policy).map_err(|error| error.to_string())?;
+    let payload = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     let sequence = WRITE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let temporary = path.with_extension(format!("json.{}-{sequence}.tmp", std::process::id()));
     let mut options = std::fs::OpenOptions::new();

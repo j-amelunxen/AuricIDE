@@ -30,6 +30,17 @@ pub struct SupervisorRun {
     pub file_count: usize,
     /// The walk stopped at `MAX_FILES_PER_RUN`; `file_count` is a floor.
     pub truncated: bool,
+    /// The Project Manager this folder belongs to, filled in from the registry
+    /// by `managers::attach_managers`.
+    pub manager: Option<RunManager>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunManager {
+    pub key: String,
+    pub name: String,
+    pub archived_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -111,6 +122,7 @@ pub fn list_runs(root: &Path) -> Vec<SupervisorRun> {
                 modified_at_ms: newest.or_else(|| modified_ms(&meta)),
                 file_count: files.len(),
                 truncated,
+                manager: None,
             })
         })
         .collect();
@@ -147,7 +159,7 @@ pub fn run_files(root: &Path, run: &str) -> Result<Vec<SupervisorRunFile>, Strin
     Ok(files)
 }
 
-fn runs_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(super) fn runs_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
     let home = app
         .path()
@@ -158,7 +170,9 @@ fn runs_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command(async)]
 pub fn supervisor_runs_list(app: tauri::AppHandle) -> Result<Vec<SupervisorRun>, String> {
-    Ok(list_runs(&runs_root(&app)?))
+    let mut runs = list_runs(&runs_root(&app)?);
+    super::managers::attach_managers_from_app(&app, &mut runs);
+    Ok(runs)
 }
 
 #[tauri::command(async)]

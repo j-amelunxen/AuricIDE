@@ -133,6 +133,7 @@
     "manager_key_mismatch": "^The run folder .+ belongs to the Project Manager '.+' and runs only under its key '.+'\\.$",
     "manager_archived": "^The Project Manager '.+' is archived\\. Restore it before opening it\\.$",
     "manager_not_found": "^No Project Manager has the key '.+'\\.$",
+    "manager_not_archived": "^The Project Manager '.+' must be archived before it is removed\\.$",
     "instructions_too_large": "^INSTRUCTIONS\\.md of '.+' is \\d+ bytes; the limit is 16384\\.$",
     "registry_unreadable": "^supervisor-managers\\.json could not be read: .+ It was left as it is\\.$"
   },
