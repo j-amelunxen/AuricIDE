@@ -1574,7 +1574,9 @@ fn a_manager_launch_is_booked_only_once_the_spawn_goes_ahead_and_never_on_a_rest
         no_launch,
         "admission alone books nothing: the spawn can still fail after it"
     );
-    let booking = admitted.launch_to_book.expect("a fresh launch is to be booked");
+    let booking = admitted
+        .launch_to_book
+        .expect("a fresh launch is to be booked");
     assert_eq!(booking.key, "release-desk");
 
     let mut restored = supervisor_test_config(serde_json::json!({
@@ -1648,6 +1650,27 @@ fn instructions_over_the_limit_refuse_the_launch_and_record_nothing() {
     assert_eq!(
         world.registry()["managers"][0]["lastLaunch"],
         serde_json::Value::Null
+    );
+}
+
+#[test]
+fn only_the_run_folder_of_a_manager_gets_the_deny_rules() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let denied =
+        |folder: &str| super::manager::manager_denied_tools_for_run(world.app_data.path(), folder);
+    assert_eq!(denied("2026-10-21_090000"), manager_denied_tools());
+    assert!(
+        denied("2026-09-01_090000").is_empty(),
+        "a plain run is unrestricted"
+    );
+    std::fs::remove_file(world.app_data.path().join("supervisor-managers.json")).unwrap();
+    assert!(
+        denied("2026-10-21_090000").is_empty(),
+        "no registry, no manager"
     );
 }
 

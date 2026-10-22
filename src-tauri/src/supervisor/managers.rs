@@ -109,12 +109,33 @@ fn not_archived(name: &str) -> String {
 
 // ---- names and keys ----
 
+/// Zero-width and bidirectional format characters: invisible or reordering, so
+/// two different names could read the same on screen.
+fn is_invisible_format(character: char) -> bool {
+    matches!(
+        character,
+        '\u{00AD}'
+            | '\u{061C}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
+}
+
 /// The trimmed name, or why it is not one: 1 to 40 characters, no line break,
-/// tab or other control character.
+/// tab or other control character, no invisible format character.
 pub fn validate_name(raw: &str) -> Result<String, String> {
     let name = raw.trim();
     let length = name.chars().count();
-    if length == 0 || length > MAX_NAME_LENGTH || name.chars().any(char::is_control) {
+    if length == 0
+        || length > MAX_NAME_LENGTH
+        || name
+            .chars()
+            .any(|c| c.is_control() || is_invisible_format(c))
+    {
         return Err(name_invalid());
     }
     Ok(name.to_string())
@@ -209,8 +230,17 @@ fn read_registry(path: &Path) -> Result<Registry, String> {
             "this build reads version {REGISTRY_VERSION} only."
         )));
     }
-    serde_json::from_value(value)
-        .map_err(|error| registry_unreadable(&format!("an entry is malformed ({error}).")))
+    let registry: Registry = serde_json::from_value(value)
+        .map_err(|error| registry_unreadable(&format!("an entry is malformed ({error}).")))?;
+    // Keys become folder names under `managers/`; a hand-edited one must not
+    // be able to leave it.
+    match registry.managers.iter().find(|m| !is_valid_key(&m.key)) {
+        Some(bad) => Err(registry_unreadable(&format!(
+            "an entry has the invalid key {:?}.",
+            bad.key
+        ))),
+        None => Ok(registry),
+    }
 }
 
 /// Read, change, write, as one step. Two promotions at once would otherwise
@@ -287,7 +317,24 @@ fn write_if_absent(path: &Path, content: &str) -> Result<(), String> {
     }
 }
 
+fn symlink_refused(path: &Path) -> String {
+    format!(
+        "{} is a symbolic link; a Project Manager's own files must be real files.",
+        path.display()
+    )
+}
+
+/// Fails when `path` is a symbolic link. Missing is fine.
+fn refuse_symlink(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(symlink_refused(path)),
+        _ => Ok(()),
+    }
+}
+
 fn scaffold_run_folder(run: &Path, name: &str) -> Result<(), String> {
+    refuse_symlink(&run.join(INSTRUCTIONS_FILE_NAME))?;
+    refuse_symlink(&run.join(MEMORY_BUNDLE_DIR))?;
     write_if_absent(
         &run.join(INSTRUCTIONS_FILE_NAME),
         &instructions_template(name),
@@ -437,6 +484,7 @@ pub fn read_instructions(
         &runs_root.join(&record.run_dir).to_string_lossy(),
     )?;
     let file = run.join(INSTRUCTIONS_FILE_NAME);
+    refuse_symlink(&file)?;
     let size = match std::fs::metadata(&file) {
         Ok(meta) => meta.len(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -673,6 +721,77 @@ mod tests {
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
         assert!(record_launch(&sandbox.registry, "nobody", None).is_err());
+    }
+
+    // ---- hostile registry and run folder ----
+
+    #[test]
+    fn a_key_that_could_leave_the_managers_folder_makes_the_registry_unreadable() {
+        for key in ["../x", "a/b", "UPPER", "agent-7", ""] {
+            let sandbox = Sandbox::new();
+            let record = serde_json::json!({
+                "key": key, "name": "Evil", "runDir": "2026-10-21_090000",
+                "promotedAt": "2026-10-21T09:00:00Z", "archivedAt": null, "lastLaunch": null
+            });
+            let text = serde_json::json!({ "version": 1, "managers": [record] }).to_string();
+            std::fs::write(&sandbox.registry, &text).unwrap();
+            let listed = list(&sandbox.registry);
+            assert!(listed.managers.is_empty(), "{key:?}");
+            let error = listed
+                .error
+                .unwrap_or_else(|| panic!("{key:?} was accepted"));
+            assert!(error.contains("could not be read"), "{key:?}: {error}");
+            assert_eq!(sandbox.registry_bytes(), text.as_bytes(), "left as it is");
+        }
+    }
+
+    #[test]
+    fn a_registry_that_cannot_be_opened_is_unreadable_not_empty() {
+        let sandbox = Sandbox::new();
+        std::fs::create_dir(&sandbox.registry).unwrap();
+        let listed = list(&sandbox.registry);
+        assert!(listed.managers.is_empty());
+        assert!(listed.error.unwrap().contains("could not be read"));
+        assert!(promote(&sandbox.registry, &sandbox.runs, "x", "Desk", &[]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_knowledge_folder_is_refused_and_nothing_is_written_through_it() {
+        let sandbox = Sandbox::new();
+        let outside = tempfile::tempdir().unwrap();
+        let run = sandbox.run("2026-10-21_090000");
+        std::os::unix::fs::symlink(outside.path(), run.join(MEMORY_BUNDLE_DIR)).unwrap();
+        let refused = promote(
+            &sandbox.registry,
+            &sandbox.runs,
+            "2026-10-21_090000",
+            "Desk",
+            &[],
+        )
+        .unwrap_err();
+        assert!(refused.contains("symbolic link"), "{refused}");
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+        assert!(list(&sandbox.registry).managers.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn instructions_behind_a_symlink_are_never_read() {
+        let sandbox = Sandbox::new();
+        let record = sandbox.promote("2026-10-21_090000", "Desk").unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "TOPSECRET").unwrap();
+        let file = sandbox
+            .run("2026-10-21_090000")
+            .join(INSTRUCTIONS_FILE_NAME);
+        std::fs::remove_file(&file).unwrap();
+        std::os::unix::fs::symlink(&secret, &file).unwrap();
+        let refused = read_instructions(&sandbox.registry, &sandbox.runs, &record.key);
+        let message = refused.expect_err("a symlink is not the human's file");
+        assert!(message.contains("symbolic link"), "{message}");
+        assert!(!message.contains("TOPSECRET"));
     }
 
     // ---- the fixture ----

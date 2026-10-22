@@ -412,7 +412,10 @@ pub const SUPERVISOR_FILE_TOOLS: [&str; 7] = [
 /// other. A registry that cannot be read says "none": a manager folder cannot
 /// have got this far, `admit_supervisor` refuses its resume first, and a new
 /// run folder is never one.
-fn manager_denied_tools_for_run(app_data: &std::path::Path, run_name: &str) -> Vec<String> {
+pub(super) fn manager_denied_tools_for_run(
+    app_data: &std::path::Path,
+    run_name: &str,
+) -> Vec<String> {
     let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
     let is_manager = crate::supervisor::managers::launch_candidates(&registry)
         .is_ok_and(|managers| managers.iter().any(|manager| manager.run_dir == run_name));
