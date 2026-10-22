@@ -63,8 +63,13 @@ pub fn expand_home(folder: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// A file that may be run: a plain `is_file` finds a download that never got
+/// its execute bit, and the later probe then fails instead of saying missing.
 pub fn on_disk(path: &Path) -> bool {
-    path.is_file()
+    use std::os::unix::fs::PermissionsExt;
+    const ANY_EXECUTE_BIT: u32 = 0o111;
+    path.metadata()
+        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & ANY_EXECUTE_BIT != 0)
 }
 
 /// The PATH the user's shell would give us, which is rarely the PATH a bundled
@@ -190,5 +195,17 @@ mod tests {
             PathBuf::from("/opt/tools")
         );
         assert_eq!(expand_home("~/go/bin", None), PathBuf::from("~/go/bin"));
+    }
+
+    #[test]
+    fn a_file_without_the_execute_bit_is_not_an_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("okf");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!on_disk(&tool));
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(on_disk(&tool));
     }
 }
