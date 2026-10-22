@@ -319,6 +319,7 @@ pub fn supervisor_claude_arguments(
     skills: &crate::supervisor::SkillPlugin,
     pm_servers: &[String],
     chrome: bool,
+    denied_tools: &[String],
 ) -> Vec<String> {
     let quoted = |value: &str| {
         format!(
@@ -365,9 +366,32 @@ pub fn supervisor_claude_arguments(
     );
     // Explicit either way: the user's Claude Code may enable Chrome by itself.
     arguments.push(if chrome { "--chrome" } else { "--no-chrome" }.to_string());
+    if !denied_tools.is_empty() {
+        arguments.push(DENIED_TOOLS_FLAG.to_string());
+        arguments.extend(denied_tools.iter().map(|rule| quoted(rule)));
+    }
     arguments.push("--permission-mode".to_string());
     arguments.push("dontAsk".to_string());
     arguments
+}
+
+/// Fixture `instructions.denyFlag`. Takes several values, so it is followed by
+/// another flag, never by the task.
+const DENIED_TOOLS_FLAG: &str = "--disallowedTools";
+
+/// A Project Manager may not change its own instructions: they are the
+/// human's, and the prompt alone is no proof (fixture `instructions.denyRules`,
+/// checked against the real CLI).
+pub fn manager_denied_tools() -> Vec<String> {
+    ["Edit", "Write"]
+        .iter()
+        .map(|tool| {
+            format!(
+                "{tool}(./{})",
+                crate::supervisor::managers::INSTRUCTIONS_FILE_NAME
+            )
+        })
+        .collect()
 }
 
 /// The MCP server name Claude Code gives its Chrome integration.
@@ -383,6 +407,21 @@ pub const SUPERVISOR_FILE_TOOLS: [&str; 7] = [
     "Skill",
     "ToolSearch",
 ];
+
+/// The deny rules of a run that belongs to a Project Manager, none for any
+/// other. A registry that cannot be read says "none": a manager folder cannot
+/// have got this far, `admit_supervisor` refuses its resume first, and a new
+/// run folder is never one.
+fn manager_denied_tools_for_run(app_data: &std::path::Path, run_name: &str) -> Vec<String> {
+    let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
+    let is_manager = crate::supervisor::managers::launch_candidates(&registry)
+        .is_ok_and(|managers| managers.iter().any(|manager| manager.run_dir == run_name));
+    if is_manager {
+        manager_denied_tools()
+    } else {
+        Vec::new()
+    }
+}
 
 /// Binds a supervisor to its own MCP server (`auric-mcp --supervisor`) and
 /// nothing else, and hands it the skills the policy approves.
@@ -402,6 +441,7 @@ fn bind_to_supervisor_mcp(
         .and_then(|name| name.to_str())
         .ok_or_else(|| "The supervisor has no run folder.".to_string())?;
     let policy = crate::supervisor::current_policy(&app_data);
+    let denied_tools = manager_denied_tools_for_run(&app_data, run_name);
     let mut skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
     crate::supervisor::apply_tool_grants(&mut skills, &policy.tools);
     let pm = crate::supervisor::supervisor_pm_servers(&policy);
@@ -431,6 +471,7 @@ fn bind_to_supervisor_mcp(
             &skills,
             &pm_names,
             policy.supervisor.chrome,
+            &denied_tools,
         )
     };
     Ok((
@@ -471,7 +512,7 @@ pub fn admit_spawn(
         })
     };
     if config.role() == AgentRole::Supervisor {
-        return admit_supervisor(config, home, agents);
+        return admit_supervisor(config, app_data, home, agents);
     }
     if config.supervisor_key.is_some() {
         return Err(crate::supervisor::several::WORKER_KEY_MESSAGE.to_string());
@@ -510,33 +551,70 @@ pub fn admit_spawn(
 /// supervisor works in) and its key (its own, else on a resume the run's;
 /// well formed and free among the live supervisors), written back to the run
 /// folder so the next resume finds it.
+///
+/// A run folder and a key that belong to a Project Manager are one thing
+/// (`several::manager_launch`, fixture `launchKey`): the launch runs as that
+/// manager, under its name, and books the instructions it starts with.
 fn admit_supervisor(
     mut config: AgentConfig,
+    app_data: Option<&std::path::Path>,
     home: Option<&std::path::Path>,
     agents: &[AgentInfo],
 ) -> Result<AgentConfig, String> {
-    use crate::supervisor::several;
+    use crate::supervisor::{managers, several};
     if config.spawned_by_agent_id.is_some() {
         return Err("A supervisor cannot start another supervisor.".to_string());
     }
     let home = home.ok_or_else(|| {
         "The home directory is unavailable; the supervisor has nowhere to work".to_string()
     })?;
-    let resuming = config.resume_run_dir.is_some();
-    let cwd = match config.resume_run_dir.take() {
-        Some(requested) => {
-            let dir = crate::supervisor::reuse_supervisor_run_dir(home, &requested)?;
-            if let Some(holder) = several::run_dir_holder(agents, &dir) {
-                return Err(several::run_dir_in_use_message(&dir, &holder.id));
-            }
-            dir
+    let requested_dir = config.resume_run_dir.take();
+    let requested_key = config.supervisor_key.take();
+    let registry = app_data.map(|dir| dir.join(managers::REGISTRY_FILE_NAME));
+    let candidates = if requested_dir.is_some() || requested_key.is_some() {
+        let registry = registry.as_deref().ok_or_else(|| {
+            "The app data directory is unavailable; a Project Manager cannot be looked up"
+                .to_string()
+        })?;
+        managers::launch_candidates(registry)?
+    } else {
+        Vec::new()
+    };
+    let resume_dir = requested_dir
+        .map(|requested| crate::supervisor::reuse_supervisor_run_dir(home, &requested))
+        .transpose()?;
+    let resume_folder = resume_dir
+        .as_deref()
+        .and_then(|dir| dir.file_name())
+        .map(|name| name.to_string_lossy().into_owned());
+    let manager = several::manager_launch(
+        &candidates,
+        resume_folder.as_deref(),
+        requested_key.as_deref(),
+    )?;
+    // A key that opens a manager's folder is checked before the folder: the
+    // client named the key, so "key in use" is the answer it can act on.
+    if let (Some(manager), None) = (manager, &resume_dir) {
+        several::check_key(agents, &manager.key)?;
+    }
+    let resuming = resume_dir.is_some() || manager.is_some();
+    let cwd = match (resume_dir, manager) {
+        (Some(dir), _) => dir,
+        (None, Some(manager)) => {
+            let folder = crate::supervisor::supervisor_runs_root(home).join(&manager.run_dir);
+            crate::supervisor::reuse_supervisor_run_dir(home, &folder.to_string_lossy())?
         }
-        None => {
+        (None, None) => {
             let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
             crate::supervisor::new_supervisor_run_dir(home, &started)?
         }
     };
-    let own_key = config.supervisor_key.take();
+    if resuming {
+        if let Some(holder) = several::run_dir_holder(agents, &cwd) {
+            return Err(several::run_dir_in_use_message(&cwd, &holder.id));
+        }
+    }
+    let own_key = manager.map(|m| m.key.clone()).or(requested_key);
     let from_run = own_key.is_none();
     let key = several::launch_key(own_key, &cwd, resuming);
     if let Some(key) = key.as_deref() {
@@ -546,6 +624,15 @@ fn admit_supervisor(
             }
             _ => several::check_key(agents, key)?,
         }
+    }
+    if let (Some(manager), Some(registry)) = (manager, registry.as_deref()) {
+        let instructions = managers::read_instructions(
+            registry,
+            &crate::supervisor::supervisor_runs_root(home),
+            &manager.key,
+        )?;
+        managers::record_launch(registry, &manager.key, instructions.as_deref())?;
+        config.name = manager.name.clone();
     }
     // The key is an address, not something the run depends on: a folder that
     // cannot take the file still runs, it only forgets the key on a resume.

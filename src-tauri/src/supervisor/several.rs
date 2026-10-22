@@ -8,6 +8,7 @@
 //! `src/lib/agents/supervisorLink.fixtures.json` and `supervisors` in
 //! `src/lib/agents/agentControl.fixtures.json`.
 
+use super::managers::ManagerRecord;
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -180,6 +181,87 @@ pub fn run_key_in_use_message(run_dir: &Path, key: &str, holder: &str) -> String
         "The run folder {name} remembers the key '{key}', but '{key}' is already the key of a \
          running supervisor ({holder}). Stop that supervisor to resume this run under its key."
     )
+}
+
+/// The sentence fixture `refusals.manager_key_mismatch` matches.
+pub fn manager_key_mismatch_message(dir: &str, name: &str, key: &str) -> String {
+    format!(
+        "The run folder {dir} belongs to the Project Manager '{name}' and runs only under its key '{key}'."
+    )
+}
+
+/// The sentence fixture `refusals.manager_archived` matches.
+pub fn manager_archived_message(name: &str) -> String {
+    format!("The Project Manager '{name}' is archived. Restore it before opening it.")
+}
+
+/// A manager's key on a run folder that is not its own: the key is the
+/// manager's address, so a stranger must not answer under it.
+pub fn manager_key_reserved_message(key: &str, name: &str) -> String {
+    format!(
+        "The key '{key}' belongs to the Project Manager '{name}' and runs only its own run folder."
+    )
+}
+
+/// The Project Manager a supervisor launch is for: the owner of the folder it
+/// resumes (`resume_folder`, a folder name), else the holder of the key it
+/// names, whose folder it then resumes. `None` is an ordinary supervisor.
+/// The table is fixture `launchKey`.
+pub fn manager_launch<'a>(
+    managers: &'a [ManagerRecord],
+    resume_folder: Option<&str>,
+    own_key: Option<&str>,
+) -> Result<Option<&'a ManagerRecord>, String> {
+    let owner = resume_folder.and_then(|folder| managers.iter().find(|m| m.run_dir == folder));
+    let holder = own_key.and_then(|key| managers.iter().find(|m| m.key == key));
+    let manager = match (owner, holder) {
+        (Some(owner), _) => owner,
+        (None, Some(holder)) if resume_folder.is_some() => {
+            return Err(manager_key_reserved_message(&holder.key, &holder.name))
+        }
+        (None, Some(holder)) => holder,
+        (None, None) => return Ok(None),
+    };
+    if manager.archived_at.is_some() {
+        return Err(manager_archived_message(&manager.name));
+    }
+    match own_key {
+        Some(key) if key != manager.key => Err(manager_key_mismatch_message(
+            &manager.run_dir,
+            &manager.name,
+            &manager.key,
+        )),
+        _ => Ok(Some(manager)),
+    }
+}
+
+/// Gives the live supervisor working in `run` the key its run just got as a
+/// manager, when it had none. It is addressable at once; its process, prompt
+/// and children do not change. Answers whether a key was set.
+pub fn key_live_supervisor<'a>(
+    agents: impl IntoIterator<Item = &'a mut AgentInfo>,
+    run: &Path,
+    key: &str,
+) -> bool {
+    let mut agents: Vec<&mut AgentInfo> = agents.into_iter().collect();
+    let free = !agents
+        .iter()
+        .any(|agent| is_live_supervisor(agent) && agent.supervisor_key.as_deref() == Some(key));
+    let holder = agents.iter_mut().find(|agent| {
+        is_live_supervisor(agent)
+            && agent.supervisor_key.is_none()
+            && agent
+                .repo_path
+                .as_deref()
+                .is_some_and(|cwd| same_folder(Path::new(cwd), run))
+    });
+    match holder {
+        Some(agent) if free => {
+            agent.supervisor_key = Some(key.to_string());
+            true
+        }
+        _ => false,
+    }
 }
 
 /// The key a supervisor launch ends up with: its own, else, on a resume, the
@@ -523,6 +605,51 @@ pub(crate) mod tests {
         let message = run_key_in_use_message(Path::new("/r/2026-10-21_090000"), "docs", "agent-3");
         assert!(message.contains("2026-10-21_090000") && message.contains("(agent-3)"));
         assert!(is_busy_refusal(&message));
+    }
+
+    fn supervisor_in(folder: &str, key: Option<&str>) -> AgentInfo {
+        AgentInfo {
+            role: AgentRole::Supervisor,
+            supervisor_key: key.map(str::to_string),
+            repo_path: Some(folder.to_string()),
+            ..crate::control_socket::protocol::tests::sample_agent()
+        }
+    }
+
+    #[test]
+    fn a_live_supervisor_without_a_key_gets_the_one_its_run_was_promoted_under() {
+        let mut agents = vec![supervisor_in("/r/a", None), supervisor_in("/r/b", None)];
+        assert!(key_live_supervisor(
+            agents.iter_mut(),
+            Path::new("/r/a"),
+            "desk"
+        ));
+        assert_eq!(agents[0].supervisor_key.as_deref(), Some("desk"));
+        assert_eq!(
+            agents[1].supervisor_key, None,
+            "only the one working in the run"
+        );
+    }
+
+    #[test]
+    fn a_live_supervisor_keeps_a_key_it_has_and_never_shares_one() {
+        let mut keyed = vec![supervisor_in("/r/a", Some("old"))];
+        assert!(!key_live_supervisor(
+            keyed.iter_mut(),
+            Path::new("/r/a"),
+            "desk"
+        ));
+        assert_eq!(keyed[0].supervisor_key.as_deref(), Some("old"));
+        let mut taken = vec![
+            supervisor_in("/r/a", None),
+            supervisor_in("/r/b", Some("desk")),
+        ];
+        assert!(!key_live_supervisor(
+            taken.iter_mut(),
+            Path::new("/r/a"),
+            "desk"
+        ));
+        assert_eq!(taken[0].supervisor_key, None);
     }
 
     #[test]

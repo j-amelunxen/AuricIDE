@@ -927,7 +927,8 @@ fn a_supervisor_without_skills_has_file_tools_and_only_the_timer_shell_grant() {
             "/data/agent-bindings/sup $1.mcp.json",
             &crate::supervisor::SkillPlugin::default(),
             &[],
-            false
+            false,
+            &[]
         ),
         vec![
             "--mcp-config",
@@ -961,8 +962,13 @@ fn an_approved_skill_brings_its_plugin_and_exactly_its_shell_commands() {
         bash: vec!["~/.claude/skills/video-to-tasklist/scripts/*".to_string()],
         dirs: vec!["/home/u/review workspace".to_string()],
     };
-    let args =
-        supervisor_claude_arguments("/c.json", &skills, &["auric-pm-alpha".to_string()], true);
+    let args = supervisor_claude_arguments(
+        "/c.json",
+        &skills,
+        &["auric-pm-alpha".to_string()],
+        true,
+        &[],
+    );
     let joined = args.join(" ");
     assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
     assert!(joined.contains("--add-dir \"/home/u/review workspace\" --allowedTools"));
@@ -985,7 +991,7 @@ fn an_approved_tool_alone_gives_bash_and_exactly_its_two_rules() {
         crate::supervisor::policy::ToolRules::default(),
     )]);
     crate::supervisor::apply_tool_grants(&mut plugin, &tools);
-    let args = supervisor_claude_arguments("/c.json", &plugin, &[], false);
+    let args = supervisor_claude_arguments("/c.json", &plugin, &[], false, &[]);
     let joined = args.join(" ");
     assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
     assert!(
@@ -1029,6 +1035,7 @@ fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
             &crate::supervisor::SkillPlugin::default(),
             &[],
             false,
+            &[],
         ),
         env_vars: Vec::new(),
     });
@@ -1335,6 +1342,289 @@ fn the_loser_of_a_launch_race_is_stopped_before_it_is_refused() {
     let mut killed = false;
     assert!(super::manager::refuse_late_supervisor(&[winner], &free, || killed = true).is_ok());
     assert!(!killed, "the winner of nothing is left alone");
+}
+
+/// A home with the runs folders of a `launchKey` fixture case and an app data
+/// dir holding its registry.
+struct ManagerWorld {
+    app_data: tempfile::TempDir,
+    home: tempfile::TempDir,
+}
+
+impl ManagerWorld {
+    fn with_managers(managers: &[serde_json::Value]) -> Self {
+        let world = Self {
+            app_data: tempfile::tempdir().unwrap(),
+            home: tempfile::tempdir().unwrap(),
+        };
+        let records: Vec<serde_json::Value> = managers
+            .iter()
+            .map(|manager| {
+                world.run(manager["runDir"].as_str().unwrap());
+                serde_json::json!({
+                    "key": manager["key"], "name": "Release Desk", "runDir": manager["runDir"],
+                    "promotedAt": "2026-10-01T00:00:00Z", "archivedAt": manager["archivedAt"],
+                    "lastLaunch": null
+                })
+            })
+            .collect();
+        std::fs::write(
+            world.app_data.path().join("supervisor-managers.json"),
+            serde_json::json!({ "version": 1, "managers": records }).to_string(),
+        )
+        .unwrap();
+        world
+    }
+
+    fn run(&self, folder: &str) -> std::path::PathBuf {
+        let dir = crate::supervisor::supervisor_runs_root(self.home.path()).join(folder);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn admit(
+        &self,
+        resume: Option<&str>,
+        key: Option<&str>,
+        live: &[AgentInfo],
+    ) -> Result<AgentConfig, String> {
+        let resume_run_dir = resume.map(|folder| self.run(folder).to_string_lossy().into_owned());
+        admit_spawn(
+            supervisor_test_config(serde_json::json!({
+                "role": "supervisor", "resumeRunDir": resume_run_dir, "supervisorKey": key
+            })),
+            Some(self.app_data.path()),
+            Some(self.home.path()),
+            live,
+            &offered_claude(),
+            &no_modes,
+        )
+    }
+
+    fn live_supervisor(&self, key: Option<&str>, folder: &str) -> AgentInfo {
+        AgentInfo {
+            id: "agent-3".into(),
+            role: AgentRole::Supervisor,
+            supervisor_key: key.map(str::to_string),
+            repo_path: Some(self.run(folder).to_string_lossy().into_owned()),
+            ..crate::control_socket::protocol::tests::sample_agent()
+        }
+    }
+
+    fn registry(&self) -> serde_json::Value {
+        let text =
+            std::fs::read_to_string(self.app_data.path().join("supervisor-managers.json")).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+}
+
+fn managers_fixture() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../src/lib/agents/supervisorManagers.fixtures.json"
+    ))
+    .unwrap()
+}
+
+#[test]
+fn every_launch_key_case_of_the_fixture_is_decided_as_it_says() {
+    let fixture = managers_fixture();
+    let table = &fixture["launchKey"];
+    for case in table["cases"].as_array().unwrap() {
+        let world = ManagerWorld::with_managers(table["managers"].as_array().unwrap());
+        let live: Vec<AgentInfo> = case["live"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|agent| {
+                let folder = agent["repoPath"]
+                    .as_str()
+                    .unwrap()
+                    .rsplit('/')
+                    .next()
+                    .unwrap();
+                world.live_supervisor(agent["supervisorKey"].as_str(), folder)
+            })
+            .collect();
+        let outcome = world.admit(case["resume"].as_str(), case["own"].as_str(), &live);
+        let expected = &case["result"];
+        match (expected.get("error"), outcome) {
+            (Some(code), Err(sentence)) => {
+                let code = code.as_str().unwrap();
+                match fixture["refusals"][code].as_str() {
+                    Some(pattern) => assert!(
+                        regex::Regex::new(pattern).unwrap().is_match(&sentence),
+                        "{case}: {sentence}"
+                    ),
+                    None => assert!(
+                        crate::supervisor::several::is_busy_refusal(&sentence),
+                        "{case}: {sentence}"
+                    ),
+                }
+            }
+            (None, Ok(admitted)) => {
+                assert_eq!(
+                    admitted.supervisor_key.as_deref(),
+                    expected["key"].as_str(),
+                    "{case}"
+                );
+                if let Some(folder) = expected["resumes"].as_str() {
+                    assert!(
+                        admitted.cwd.as_deref().unwrap().ends_with(folder),
+                        "{case}: {:?}",
+                        admitted.cwd
+                    );
+                }
+            }
+            (_, other) => panic!("{case}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_manager_runs_under_its_name_and_a_plain_supervisor_keeps_its_own() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let manager = world.admit(Some("2026-10-21_090000"), None, &[]).unwrap();
+    assert_eq!(manager.name, "Release Desk");
+    let plain = world.admit(None, None, &[]).unwrap();
+    assert_eq!(plain.name, "a");
+}
+
+#[test]
+fn resuming_a_folder_that_is_no_manager_behaves_as_before_even_with_managers_around() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let plain = world.admit(Some("2026-09-01_090000"), None, &[]).unwrap();
+    assert_eq!(plain.supervisor_key, None);
+    assert_eq!(plain.name, "a");
+    let keyed = world
+        .admit(Some("2026-09-01_090000"), Some("docs"), &[])
+        .unwrap();
+    assert_eq!(keyed.supervisor_key.as_deref(), Some("docs"));
+    assert_eq!(
+        world.registry()["managers"][0]["lastLaunch"],
+        serde_json::Value::Null,
+        "a plain resume touches no manager"
+    );
+}
+
+#[test]
+fn a_stranger_cannot_take_a_managers_key_by_resuming_another_folder() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let refused = world
+        .admit(Some("2026-09-01_090000"), Some("release-desk"), &[])
+        .unwrap_err();
+    assert!(
+        refused.contains("release-desk") && refused.contains("Release Desk"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn an_unreadable_registry_stops_a_resume_but_not_a_plain_new_supervisor() {
+    let world = ManagerWorld::with_managers(&[]);
+    std::fs::write(
+        world.app_data.path().join("supervisor-managers.json"),
+        "{ nope",
+    )
+    .unwrap();
+    let refused = world
+        .admit(Some("2026-09-01_090000"), None, &[])
+        .unwrap_err();
+    assert!(
+        refused.contains("supervisor-managers.json could not be read"),
+        "{refused}"
+    );
+    assert!(world.admit(None, None, &[]).is_ok());
+}
+
+#[test]
+fn opening_a_manager_records_the_instructions_it_was_launched_with() {
+    use sha2::{Digest, Sha256};
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    std::fs::write(
+        world.run("2026-10-21_090000").join("INSTRUCTIONS.md"),
+        "Write Spanish.",
+    )
+    .unwrap();
+    world.admit(Some("2026-10-21_090000"), None, &[]).unwrap();
+    let launch = &world.registry()["managers"][0]["lastLaunch"];
+    assert_eq!(
+        launch["instructionsSha256"],
+        format!("{:x}", Sha256::digest(b"Write Spanish."))
+    );
+    assert!(launch["at"].as_str().unwrap().ends_with('Z'));
+}
+
+#[test]
+fn instructions_over_the_limit_refuse_the_launch_and_record_nothing() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    std::fs::write(
+        world.run("2026-10-21_090000").join("INSTRUCTIONS.md"),
+        "x".repeat(16385),
+    )
+    .unwrap();
+    let refused = world
+        .admit(Some("2026-10-21_090000"), None, &[])
+        .unwrap_err();
+    let pattern = managers_fixture()["refusals"]["instructions_too_large"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        regex::Regex::new(&pattern).unwrap().is_match(&refused),
+        "{refused}"
+    );
+    assert_eq!(
+        world.registry()["managers"][0]["lastLaunch"],
+        serde_json::Value::Null
+    );
+}
+
+#[test]
+fn a_manager_launch_adds_the_deny_rules_before_the_last_flag_and_a_plain_one_adds_nothing() {
+    let instructions = &managers_fixture()["instructions"];
+    let denied: Vec<String> = instructions["denyRules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|rule| format!("\"{}\"", rule.as_str().unwrap()))
+        .collect();
+    let plugin = crate::supervisor::SkillPlugin::default();
+    let plain = supervisor_claude_arguments("/c.json", &plugin, &[], false, &[]);
+    assert!(!plain
+        .iter()
+        .any(|a| a == instructions["denyFlag"].as_str().unwrap()));
+    let manager =
+        supervisor_claude_arguments("/c.json", &plugin, &[], false, &manager_denied_tools());
+    let flag = manager
+        .iter()
+        .position(|a| a == instructions["denyFlag"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(&manager[flag + 1..flag + 1 + denied.len()], &denied[..]);
+    assert_eq!(
+        &manager[flag + 1 + denied.len()..],
+        ["--permission-mode", "dontAsk"],
+        "a value-taking flag must be followed by a flag, never by the task"
+    );
 }
 
 #[test]

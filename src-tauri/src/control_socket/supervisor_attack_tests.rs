@@ -967,6 +967,7 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
         &crate::supervisor::SkillPlugin::default(),
         &[],
         false,
+        &[],
     );
     let joined = args.join(" ");
     let restricted = args.iter().any(|a| a == "--restricted" || a == "--tools");
@@ -1033,8 +1034,13 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
 
     let mut plugin = crate::supervisor::SkillPlugin::default();
     crate::supervisor::apply_tool_grants(&mut plugin, &parsed.policy.tools);
-    let args =
-        crate::agents::supervisor_claude_arguments("/x/supervisor.mcp.json", &plugin, &[], false);
+    let args = crate::agents::supervisor_claude_arguments(
+        "/x/supervisor.mcp.json",
+        &plugin,
+        &[],
+        false,
+        &[],
+    );
     let joined = args.join(" ");
     let tools_flag = args
         .iter()

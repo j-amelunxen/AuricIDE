@@ -127,6 +127,8 @@ describe('managerRefusalCode', () => {
     manager_not_found: "No Project Manager has the key 'nobody'.",
     manager_not_archived:
       "The Project Manager 'Release Desk' must be archived before it is removed.",
+    manager_key_foreign_folder:
+      "The key 'release-desk' belongs to the Project Manager 'Release Desk' and runs only its own run folder.",
     instructions_too_large: "INSTRUCTIONS.md of 'Release Desk' is 20000 bytes; the limit is 16384.",
     registry_unreadable:
       'supervisor-managers.json could not be read: expected value at line 1. It was left as it is.',

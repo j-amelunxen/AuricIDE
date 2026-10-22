@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub const REGISTRY_FILE_NAME: &str = "supervisor-managers.json";
+/// Fixture `validationFileName`, kept in `<app_data_dir>/managers/<key>/`.
+pub const VALIDATION_FILE_NAME: &str = "validation.json";
 const REGISTRY_VERSION: u32 = 1;
 const MAX_NAME_LENGTH: usize = 40;
 const MAX_KEY_LENGTH: usize = 48;
@@ -248,7 +250,7 @@ fn ensure_name_free(registry: &Registry, name: &str, except: Option<&str>) -> Re
     }
 }
 
-fn timestamp_now() -> String {
+pub(super) fn timestamp_now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
@@ -435,6 +437,40 @@ pub fn read_instructions(
         .map_err(|error| format!("Could not read {}: {error}", file.display()))
 }
 
+/// The managers a launch may be about, or why the registry cannot say. A
+/// registry that cannot be read stops the launch: opening a manager folder
+/// without its rules would be wrong in a way nobody notices.
+pub fn launch_candidates(registry_path: &Path) -> Result<Vec<ManagerRecord>, String> {
+    read_registry(registry_path).map(|registry| registry.managers)
+}
+
+/// Books that `key` was opened now with `instructions` (`None`: no file).
+pub fn record_launch(
+    registry_path: &Path,
+    key: &str,
+    instructions: Option<&str>,
+) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(instructions.unwrap_or_default().as_bytes());
+    update_registry(registry_path, |registry| {
+        find_mut(registry, key)?.last_launch = Some(LastLaunch {
+            at: timestamp_now(),
+            instructions_sha256: format!("{digest:x}"),
+        });
+        Ok(())
+    })
+}
+
+/// The record behind `key`, or why there is none. For features that act on a
+/// manager's folder and must not touch anything else.
+pub(super) fn find_record(registry_path: &Path, key: &str) -> Result<ManagerRecord, String> {
+    read_registry(registry_path)?
+        .managers
+        .into_iter()
+        .find(|record| record.key == key)
+        .ok_or_else(|| not_found(key))
+}
+
 /// Marks the runs that belong to a manager. An unreadable registry marks
 /// nothing; `manager_list` is where its error is shown.
 pub fn attach_managers(runs: &mut [SupervisorRun], managers: &[ManagerRecord]) {
@@ -475,13 +511,16 @@ pub async fn manager_promote(
     name: String,
 ) -> Result<ManagerRecord, String> {
     let live = crate::agents::list_agents_impl(&state).await?;
-    promote(
-        &registry_path(&app)?,
-        &super::runs::runs_root(&app)?,
-        &run_dir,
-        &name,
-        &live,
-    )
+    let runs_root = super::runs::runs_root(&app)?;
+    let record = promote(&registry_path(&app)?, &runs_root, &run_dir, &name, &live)?;
+    // A supervisor already working in the folder becomes addressable at once.
+    let mut agents = state.lock().await;
+    super::several::key_live_supervisor(
+        agents.agents.values_mut().map(|process| &mut process.info),
+        &runs_root.join(&record.run_dir),
+        &record.key,
+    );
+    Ok(record)
 }
 
 #[tauri::command(async)]
@@ -588,6 +627,39 @@ mod tests {
             .iter()
             .map(|v| v.as_str().unwrap().to_string())
             .collect()
+    }
+
+    #[test]
+    fn a_launch_books_the_hash_of_the_instructions_and_nothing_else() {
+        let sandbox = Sandbox::new();
+        let record = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        record_launch(&sandbox.registry, &record.key, Some("abc")).unwrap();
+        let booked = list(&sandbox.registry).managers.remove(0);
+        let launch = booked.last_launch.clone().unwrap();
+        assert_eq!(
+            launch.instructions_sha256,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            ManagerRecord {
+                last_launch: None,
+                ..booked
+            },
+            record
+        );
+        record_launch(&sandbox.registry, &record.key, None).unwrap();
+        let without_file = list(&sandbox.registry)
+            .managers
+            .remove(0)
+            .last_launch
+            .unwrap();
+        assert_eq!(
+            without_file.instructions_sha256,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert!(record_launch(&sandbox.registry, "nobody", None).is_err());
     }
 
     // ---- the fixture ----
