@@ -86,7 +86,7 @@ describe('isManagerNameTaken', () => {
 
 describe('keyFromName follows Rust letter by letter', () => {
   // Rust's table folds these; NFKD alone drops them (stra-e, odz) or folds
-  // what Rust leaves alone (the ligature). The truth is `push_folded` in managers.rs.
+  // what Rust leaves alone or folds to other letters (the ligature). The truth is `push_folded` in managers.rs.
   it.each([
     ['Straße', 'strasse'],
     ['Łódź', 'lodz'],
@@ -94,7 +94,7 @@ describe('keyFromName follows Rust letter by letter', () => {
     ['Œuvre', 'oeuvre'],
     ['Øl', 'ol'],
     ['Đa', 'da'],
-    ['ﬁsh', 'sh'],
+    ['ﬁsh', 'fish'],
     ['Crème Brûlée', 'creme-brulee'],
   ])('turns %s into %s', (name, key) => {
     expect(keyFromName(name, [])).toBe(key);

@@ -30,8 +30,10 @@ const KEY_MAX_LENGTH = fixtures.keyFromName.maxLength;
 const KEY_FALLBACK = fixtures.keyFromName.fallback;
 /** Shaped like an agent id, which `events.subscribe` reads as an id (supervisorLink fixtures). */
 const RESERVED_KEY = /^agent-\d+$/;
-// Line breaks and every other control character: the menu bar lists names on one line.
-const NOT_ONE_LINE = /[\p{Cc}\p{Zl}\p{Zp}]/u;
+// Line breaks, control characters and the invisible or reordering format characters
+// (zero-width, bidi), as in `is_invisible_format` in managers.rs: names are shown on one line.
+const NOT_ONE_LINE =
+  /[\p{Cc}\p{Zl}\p{Zp}\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;
 
 export const MANAGER_NAME_INVALID_SENTENCE = `A Project Manager name needs 1 to ${MANAGER_NAME_MAX_LENGTH} characters on one line.`;
 
@@ -89,6 +91,9 @@ const FOLDED_LETTERS: readonly (readonly [string, string])[] = [
   ['ß', 'ss'],
   ['Ææ', 'ae'],
   ['Œœ', 'oe'],
+  ['ﬀ', 'ff'],
+  ['ﬁ', 'fi'],
+  ['ﬂ', 'fl'],
 ];
 
 /** Appends one character of a name to a key under construction; anything else is one dash. */
