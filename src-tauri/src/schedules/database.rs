@@ -113,6 +113,43 @@ fn is_real_file(path: &std::path::Path) -> bool {
 }
 
 pub fn upsert_impl(conn: &Connection, schedule: &Schedule) -> Result<Schedule, String> {
+    upsert_at(conn, schedule, Utc::now())
+}
+
+/// Saves a schedule and dates its next occurrence from the spec just written.
+///
+/// The runner would correct `next_due_at` on its next tick, but the panel shows
+/// the row this returns — keeping the old date meant an edited rhythm still
+/// read as the previous one. A spec the engine cannot walk stores no date,
+/// the same way the runner skips it, rather than refusing the save.
+pub fn upsert_at(
+    conn: &Connection,
+    schedule: &Schedule,
+    now: DateTime<Utc>,
+) -> Result<Schedule, String> {
+    let stored = write_schedule(conn, schedule)?;
+    // Walk from now: what was missed before is the runner's business, not the date.
+    let from_now = Schedule {
+        last_checked_at: Some(format_ts(now)),
+        ..stored.clone()
+    };
+    let next_due_at = due_occurrences(&from_now, now)
+        .ok()
+        .and_then(|result| result.next_due)
+        .map(format_ts);
+    conn.execute(
+        "UPDATE schedules SET next_due_at = ?2 WHERE id = ?1",
+        params![stored.id, next_due_at],
+    )
+    .map_err(|e| format!("Failed to date schedule: {}", e))?;
+    Ok(Schedule {
+        next_due_at,
+        ..stored
+    })
+}
+
+// code-gate: complexity-cyclomatic - one upsert statement; the count is the 15 bound columns, not branches
+fn write_schedule(conn: &Connection, schedule: &Schedule) -> Result<Schedule, String> {
     if let Some(slug) = schedule.mission_slug.as_deref() {
         if !valid_mission_slug(slug) {
             return Err("Mission slug must be one canonical path component".to_string());

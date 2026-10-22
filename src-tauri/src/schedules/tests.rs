@@ -344,6 +344,41 @@ fn upsert_updates_rather_than_duplicating() {
     assert_eq!(all[0].name, "Newsletter");
 }
 
+// The panel shows the stored row right after saving. Before this, an edit kept
+// the old rhythm's date: a Wednesday reminder switched to daily read "in 6 d"
+// until the panel was reopened after the next runner tick.
+#[test]
+fn saving_a_new_rhythm_moves_the_next_date_with_it() {
+    let conn = test_db();
+    let now = at("2026-10-22 09:27:00"); // Thursday, 11:27 Berlin
+    let stored = upsert_at(&conn, &weekly_wednesday(), now).expect("weekly");
+    assert_eq!(stored.next_due_at.as_deref(), Some("2026-10-28 16:00:00"));
+
+    let daily = Schedule {
+        cron_expr: Some("0 0 13 * * *".into()),
+        ..weekly_wednesday()
+    };
+    let stored = upsert_at(&conn, &daily, now).expect("daily");
+    assert_eq!(stored.next_due_at.as_deref(), Some("2026-10-22 11:00:00"));
+}
+
+#[test]
+fn a_switched_off_or_broken_schedule_saves_without_a_next_date() {
+    let conn = test_db();
+    let now = at("2026-10-22 09:27:00");
+    let off = Schedule {
+        enabled: false,
+        ..weekly_wednesday()
+    };
+    assert_eq!(upsert_at(&conn, &off, now).unwrap().next_due_at, None);
+
+    let broken = Schedule {
+        cron_expr: Some("not a cron".into()),
+        ..weekly_wednesday()
+    };
+    assert_eq!(upsert_at(&conn, &broken, now).unwrap().next_due_at, None);
+}
+
 #[test]
 fn deleting_removes_the_schedule() {
     let conn = test_db();
