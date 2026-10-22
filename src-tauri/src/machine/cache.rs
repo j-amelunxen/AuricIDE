@@ -28,7 +28,12 @@ impl VersionCache {
         entries.get(&(path.to_path_buf(), mtime)).copied()
     }
 
+    /// An unreadable answer is not kept: a one-off failure would otherwise
+    /// stand until the binary is reinstalled.
     pub fn put(&self, path: &Path, mtime: SystemTime, probe: VersionProbe) {
+        if probe == VersionProbe::Unreadable {
+            return;
+        }
         if let Ok(mut entries) = self.entries.lock() {
             entries.insert((path.to_path_buf(), mtime), probe);
         }
@@ -76,8 +81,20 @@ mod tests {
     #[test]
     fn another_path_is_another_binary() {
         let cache = VersionCache::default();
-        cache.put(Path::new("/a/okf"), at(10), VersionProbe::Unreadable);
+        cache.put(
+            Path::new("/a/okf"),
+            at(10),
+            VersionProbe::Version((1, 0, 0)),
+        );
         assert_eq!(cache.get(Path::new("/b/okf"), at(10)), None);
+    }
+
+    #[test]
+    fn an_unreadable_answer_is_asked_again_next_time() {
+        let cache = VersionCache::default();
+        let path = Path::new("/bin/okf");
+        cache.put(path, at(10), VersionProbe::Unreadable);
+        assert_eq!(cache.get(path, at(10)), None);
     }
 
     #[test]
