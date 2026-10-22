@@ -50,4 +50,38 @@ describe('useProjectManagers', () => {
     const { result } = renderHook(() => useProjectManagers());
     await waitFor(() => expect(result.current.error).toBe('The registry could not be read.'));
   });
+
+  it('keeps the same object when a re-read finds the registry unchanged', async () => {
+    mockRegistry.mockImplementation(async () => registryWith('a'));
+    const { result } = renderHook(() => useProjectManagers());
+    await waitFor(() => expect(result.current.managers).toHaveLength(1));
+    const first = result.current;
+    act(() => void window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(mockRegistry).toHaveBeenCalledTimes(2));
+    await act(async () => undefined);
+    expect(result.current).toBe(first);
+  });
+
+  it('keeps the last good list and names the error when a later read fails', async () => {
+    mockRegistry.mockResolvedValueOnce(registryWith('a'));
+    const { result } = renderHook(() => useProjectManagers());
+    await waitFor(() => expect(result.current.managers).toHaveLength(1));
+
+    mockRegistry.mockRejectedValueOnce(new Error('disk is busy'));
+    act(() => void window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(result.current.error).toContain('disk is busy'));
+    expect(result.current.managers.map((m) => m.key)).toEqual(['a']);
+  });
+
+  it('ignores an older read that finishes after a newer one', async () => {
+    let finishOld: (value: ReturnType<typeof registryWith>) => void = () => undefined;
+    mockRegistry.mockImplementationOnce(() => new Promise((resolve) => (finishOld = resolve)));
+    const { result } = renderHook(() => useProjectManagers());
+    mockRegistry.mockResolvedValueOnce(registryWith('new'));
+    act(() => void window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(result.current.managers.map((m) => m.key)).toEqual(['new']));
+
+    await act(async () => finishOld(registryWith('old')));
+    expect(result.current.managers.map((m) => m.key)).toEqual(['new']);
+  });
 });
