@@ -138,6 +138,10 @@ const agentId = z.string().min(1, 'agentId must not be empty');
 const offset = z.number().int().nonnegative();
 const optionalText = z.string().nullish();
 
+/** Rust's `WORKER_PROJECT_PATH_MESSAGE`: only a worker needs a folder to run in. */
+export const WORKER_PROJECT_PATH_MESSAGE =
+  'projectPath must not be empty: a worker runs in a project; only role "supervisor" starts without one';
+
 const noParams = z.object({}).transform(() => ({}));
 
 /**
@@ -215,7 +219,7 @@ const PARAMS = {
   kill: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   spawn: z
     .object({
-      projectPath: z.string().min(1, 'projectPath must not be empty'),
+      projectPath: optionalText,
       prompt: z.string().trim().min(1, 'prompt must not be empty'),
       provider: optionalText,
       model: optionalText,
@@ -231,8 +235,13 @@ const PARAMS = {
       message: 'only a supervisor takes a supervisor key',
       path: ['supervisorKey'],
     })
+    .refine((p) => p.role === 'supervisor' || Boolean(p.projectPath?.trim()), {
+      message: WORKER_PROJECT_PATH_MESSAGE,
+      path: ['projectPath'],
+    })
     .transform((p) => ({
-      projectPath: p.projectPath,
+      // A supervisor gets a run folder of its own; a path it names is dropped.
+      ...(p.role !== 'supervisor' && p.projectPath ? { projectPath: p.projectPath } : {}),
       prompt: p.prompt,
       provider: p.provider ?? null,
       model: p.model ?? null,

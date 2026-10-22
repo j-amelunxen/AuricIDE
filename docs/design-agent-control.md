@@ -60,17 +60,17 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
 
 All field names are camelCase on the wire.
 
-| method            | params                                                                                                                                                 | result                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `list_agents`     | —                                                                                                                                                      | `{ agents: AgentSummary[] }`             |
-| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                    | `OutputChunk`                            |
-| `send_input`      | `{ agentId \| supervisor, text: string, enter?: boolean (default true) }`                                                                              | `{ agentId, bytesWritten: number }`      |
-| `kill`            | `{ agentId }`                                                                                                                                          | `{ agentId, killed: true }`              |
-| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", supervisorKey?, worktree?, modelReason? }` | `{ agentId }`                            |
-| `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                  | `{ projects: ProjectEntry[], catalog? }` |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                                                    | `AwaitResult`                            |
-| `remove_worktree` | `{ agentId }`                                                                                                                                          | `WorktreeRemoval`                        |
-| `dismiss`         | `{ agentId }`                                                                                                                                          | `{ agentId, dismissed: true }`           |
+| method            | params                                                                                                                                                  | result                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `list_agents`     | —                                                                                                                                                       | `{ agents: AgentSummary[] }`             |
+| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                     | `OutputChunk`                            |
+| `send_input`      | `{ agentId \| supervisor, text: string, enter?: boolean (default true) }`                                                                               | `{ agentId, bytesWritten: number }`      |
+| `kill`            | `{ agentId }`                                                                                                                                           | `{ agentId, killed: true }`              |
+| `spawn`           | `{ projectPath?, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", supervisorKey?, worktree?, modelReason? }` | `{ agentId }`                            |
+| `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                   | `{ projects: ProjectEntry[], catalog? }` |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                                                     | `AwaitResult`                            |
+| `remove_worktree` | `{ agentId }`                                                                                                                                           | `WorktreeRemoval`                        |
+| `dismiss`         | `{ agentId }`                                                                                                                                           | `{ agentId, dismissed: true }`           |
 
 `role` and `await_result` belong to the supervisor scope and are described
 there; `supervisorKey` and `send_input { supervisor }` under "Several
@@ -187,9 +187,13 @@ No answer in time → `frontend_unavailable`.
   way a custom-agent notification launch does). Provider/model/permission mode
   default to the launch defaults stored for that working directory; the
   provider policy still applies in Rust (`resolve_permitted_provider`) and a
-  refusal is reported as `provider_denied`. `projectPath` must be an existing
-  directory that is an initialised AuricIDE project (`.auric/project.db`,
-  ADR 0002), else `invalid_params` naming which of the two is missing.
+  refusal is reported as `provider_denied`. For a worker `projectPath` is
+  required and must be an existing directory that is an initialised AuricIDE
+  project (`.auric/project.db`, ADR 0002), else `invalid_params` naming which
+  is missing. A supervisor (`role: "supervisor"`) needs only `prompt`: it gets
+  a run folder of its own and its projects from the supervisor policy. A
+  `projectPath` it names anyway is dropped while parsing, never checked or
+  passed on.
 - `kill` uses the same store action as the UI kill button.
 - `dismiss` uses the same store action as a finished card's Dismiss button
   (`dismissFinishedAgent`), then Rust forgets the agent's kept result. A

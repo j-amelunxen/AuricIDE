@@ -281,13 +281,30 @@
       }
     },
     {
-      "name": "spawn a supervisor (external callers only)",
+      "name": "spawn a supervisor (external callers only): a projectPath it names is dropped",
       "raw": "{\"id\":16,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"supervise\",\"role\":\"supervisor\"}}",
       "expected": {
         "id": 16,
         "method": "spawn",
         "params": {
-          "projectPath": "/tmp/example-project",
+          "prompt": "supervise",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null,
+          "role": "supervisor",
+          "worktree": null
+        }
+      }
+    },
+    {
+      "name": "spawn a supervisor with only a prompt",
+      "raw": "{\"id\":47,\"method\":\"spawn\",\"params\":{\"prompt\":\"supervise\",\"role\":\"supervisor\"}}",
+      "expected": {
+        "id": 47,
+        "method": "spawn",
+        "params": {
           "prompt": "supervise",
           "provider": null,
           "model": null,
@@ -451,6 +468,14 @@
       }
     },
     {
+      "name": "a worker spawn without projectPath",
+      "raw": "{\"id\":48,\"method\":\"spawn\",\"params\":{\"prompt\":\"run the tests\"}}",
+      "expectedError": {
+        "id": 48,
+        "code": "invalid_params"
+      }
+    },
+    {
       "name": "negative sinceOffset",
       "raw": "{\"id\":15,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\",\"sinceOffset\":-1}}",
       "expectedError": {
@@ -537,7 +562,6 @@
         "id": 40,
         "method": "spawn",
         "params": {
-          "projectPath": "/tmp/example-project",
           "prompt": "supervise",
           "provider": null,
           "model": null,

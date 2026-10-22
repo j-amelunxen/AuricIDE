@@ -13,6 +13,7 @@ import {
   parseControlParams,
   RUN_SOURCES,
   SPAWN_REFUSALS,
+  WORKER_PROJECT_PATH_MESSAGE,
   type ControlErrorCode,
   type ControlParams,
 } from './agentControl.contract';
@@ -110,7 +111,7 @@ function dismissFromControl(params: ControlParams<'dismiss'>, host: ControlHost)
  * so its permission mode and headless choice are honoured like a user-written
  * reminder's.
  */
-function spawnConfigFor(params: ControlParams<'spawn'>, providers: ProviderInfo[]): AgentConfig {
+function spawnConfigFor(params: WorkerSpawnRequest, providers: ProviderInfo[]): AgentConfig {
   const action: Extract<NotificationAction, { kind: 'spawn-agent' }> = {
     id: 'control-spawn',
     label: 'Start agent',
@@ -147,6 +148,8 @@ const spawnProvenance = z.object({
 });
 
 type SpawnRequest = ControlParams<'spawn'> & z.output<typeof spawnProvenance>;
+/** A worker's spawn: the contract requires its folder, the type says so once. */
+type WorkerSpawnRequest = SpawnRequest & { projectPath: string };
 
 function parseSpawnRequest(raw: unknown): SpawnRequest {
   const params = parseControlParams('spawn', raw);
@@ -185,7 +188,7 @@ function isNewSupervisor(request: SpawnRequest): boolean {
  * A `null` permission mode stays the provider's own default.
  */
 // code-gate: complexity-cyclomatic - one `??` per launch field, each with the same "nothing filled in for a child" rule
-function verbatimSpawnConfig(request: SpawnRequest): AgentConfig {
+function verbatimSpawnConfig(request: WorkerSpawnRequest): AgentConfig {
   const providerId = request.provider;
   const model = request.model;
   if (!providerId || !model) {
@@ -292,16 +295,19 @@ function supervisorRefusal(outcome: Exclude<LinkedSupervisorSpawn, { kind: 'spaw
 }
 
 async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
-  // Rust gives a supervisor a run folder of its own; its projectPath is never used.
+  // Rust gives a supervisor a run folder of its own; it names no projectPath.
   if (isNewSupervisor(params)) return supervisorFromControl(params, host);
-  if (!(await isDir(params.projectPath))) {
+  const { projectPath } = params;
+  if (!projectPath) throw new ControlError('invalid_params', WORKER_PROJECT_PATH_MESSAGE);
+  if (!(await isDir(projectPath))) {
     throw new ControlError(
       'invalid_params',
-      `projectPath is not an existing directory: ${params.projectPath}`
+      `projectPath is not an existing directory: ${projectPath}`
     );
   }
+  const worker = { ...params, projectPath };
   const config = inWorktree(
-    isVerbatimSpawn(params) ? verbatimSpawnConfig(params) : spawnConfigFor(params, host.providers),
+    isVerbatimSpawn(worker) ? verbatimSpawnConfig(worker) : spawnConfigFor(worker, host.providers),
     params.worktree
   );
   let spawned: AgentInfo;

@@ -246,6 +246,16 @@ describe('control-request spawn', () => {
     });
   });
 
+  it('refuses a worker spawn without projectPath before it reaches the store', async () => {
+    const h = host();
+    await handleControlRequest(
+      { reqId: 'r9', method: 'spawn', params: { prompt: 'run the tests' }, expiresAt: fresh() },
+      h
+    );
+    expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'invalid_params' } });
+    expect(h.spawnNewAgent).not.toHaveBeenCalled();
+  });
+
   it('answers invalid_params when the params break the contract', async () => {
     const h = host();
     await handleControlRequest(
@@ -449,6 +459,32 @@ describe('control-request spawn for a supervisor', () => {
       name: null,
     });
     expect(answered()[0].args).toMatchObject({ ok: true });
+  });
+
+  it('spawns a supervisor with only a prompt', async () => {
+    const spawnLinkedSupervisor = vi.fn(async () => ({
+      kind: 'spawned' as const,
+      agent: agent('agent-9', { role: 'supervisor' }),
+    }));
+    const h = host({ spawnLinkedSupervisor });
+    await handleControlRequest(
+      {
+        reqId: 's9',
+        method: 'spawn',
+        params: { prompt: 'supervise', role: 'supervisor' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(isDirMock).not.toHaveBeenCalled();
+    expect(spawnLinkedSupervisor).toHaveBeenCalledWith({
+      task: 'supervise',
+      provider: null,
+      model: null,
+      key: null,
+      name: null,
+    });
+    expect(answered()[0].args).toMatchObject({ ok: true, result: { agentId: 'agent-9' } });
   });
 
   it("answers a supervisor spawn the policy refuses in the socket's own codes", async () => {

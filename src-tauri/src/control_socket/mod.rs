@@ -731,28 +731,9 @@ impl Dispatcher {
 
     fn spawn(&self, spawn: FrontendSpawnParams) -> Outcome {
         let params = &spawn.params;
-        if !Path::new(&params.project_path).is_dir() {
-            return Err(ControlError::new(
-                ErrorCode::InvalidParams,
-                format!(
-                    "projectPath {} is not an existing directory",
-                    params.project_path
-                ),
-            ));
-        }
-        if !Path::new(&params.project_path)
-            .join(".auric")
-            .join("project.db")
-            .is_file()
-        {
-            return Err(ControlError::new(
-                ErrorCode::InvalidParams,
-                format!(
-                    "{} is not an AuricIDE project (no .auric/project.db); \
-                     open it once in AuricIDE, then spawn again",
-                    params.project_path
-                ),
-            ));
+        // A supervisor runs in a folder of its own; only a worker names one.
+        if params.role != Some(AgentRole::Supervisor) {
+            check_worker_project(params.project_path.as_deref())?;
         }
         let result = self.via_frontend("spawn", to_value(&spawn)?)?;
         let agent_id = result
@@ -1231,6 +1212,36 @@ pub fn control_respond(
     pending: tauri::State<'_, PendingRequestsState>,
 ) -> bool {
     pending.resolve(&req_id, FrontendReply { ok, result, error })
+}
+
+/// A worker's `projectPath` must be an initialised AuricIDE project (ADR 0002).
+fn check_worker_project(project_path: Option<&str>) -> Result<(), ControlError> {
+    let Some(project_path) = project_path else {
+        return Err(ControlError::new(
+            ErrorCode::InvalidParams,
+            protocol::WORKER_PROJECT_PATH_MESSAGE,
+        ));
+    };
+    if !Path::new(project_path).is_dir() {
+        return Err(ControlError::new(
+            ErrorCode::InvalidParams,
+            format!("projectPath {project_path} is not an existing directory"),
+        ));
+    }
+    if !Path::new(project_path)
+        .join(".auric")
+        .join("project.db")
+        .is_file()
+    {
+        return Err(ControlError::new(
+            ErrorCode::InvalidParams,
+            format!(
+                "{project_path} is not an AuricIDE project (no .auric/project.db); \
+                 open it once in AuricIDE, then spawn again"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// The bridge listens for `control-request` now; held requests go out.

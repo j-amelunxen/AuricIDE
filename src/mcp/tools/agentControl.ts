@@ -264,10 +264,18 @@ export function registerAgentControlTools(
       'Start a new agent in a project folder without switching the project open in the IDE. ' +
       'Provider, model and permission mode default to the last launch in that folder; the ' +
       "project's provider policy still applies (provider_denied). Returns the new agentId. " +
-      'Call list_projects first to find the folder: projectPath must be an initialised ' +
-      'AuricIDE project (initialized: true there), else the spawn is refused (invalid_params).',
+      'For a worker, call list_projects first to find the folder: projectPath must be an ' +
+      'initialised AuricIDE project (initialized: true there), else the spawn is refused ' +
+      '(invalid_params). A supervisor (role "supervisor") needs only prompt.',
     parameters: z.object({
-      projectPath: z.string().describe('Absolute path of the project folder to run in'),
+      projectPath: z
+        .string()
+        .optional()
+        .describe(
+          'Absolute path of the project folder a worker runs in; required for a worker. ' +
+            'Leave out with role "supervisor": it gets a run folder of its own and its ' +
+            'projects from the supervisor policy.'
+        ),
       prompt: z.string().describe('What the agent is told to do'),
       provider: z.string().optional().describe('Agent CLI id, e.g. "claude" or "codex"'),
       model: z.string().optional().describe('Model for that provider'),
@@ -284,7 +292,7 @@ export function registerAgentControlTools(
         .describe(
           'Start a supervisor instead of a worker: interactive, with the same launch prompt ' +
             'and policy (Settings → Supervisor) as the one the IDE tile starts, prompt as its ' +
-            'first task. It works in a run folder of its own, not in projectPath. Several may ' +
+            'first task. It needs no projectPath: it works in a run folder of its own. Several may ' +
             'run at once. Leave out for an ordinary agent.'
         ),
       supervisorKey: z

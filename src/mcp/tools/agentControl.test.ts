@@ -69,6 +69,16 @@ describe('agent control tools', () => {
     expect(call).toHaveBeenCalledWith('spawn', { ...base, role: 'supervisor' });
   });
 
+  it('spawn_agent starts a supervisor with only a prompt', async () => {
+    const call = vi.fn(async () => fixtures.responses.spawn.result) as unknown as ControlCaller;
+    const spawn = capture(call).get('spawn_agent') as CapturedTool & { parameters: z.ZodType };
+    const only = { prompt: 'supervise', role: 'supervisor' };
+    expect(spawn.parameters.safeParse(only).success).toBe(true);
+
+    await spawn.execute(only);
+    expect(call).toHaveBeenCalledWith('spawn', only);
+  });
+
   it('spawn_agent passes a supervisor key on to the socket', async () => {
     const call = vi.fn(async () => fixtures.responses.spawn.result) as unknown as ControlCaller;
     const spawn = capture(call).get('spawn_agent') as CapturedTool & { parameters: z.ZodType };

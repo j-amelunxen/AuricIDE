@@ -412,6 +412,65 @@ fn spawn_forwards_all_params_and_returns_the_new_agent_id() {
 }
 
 #[test]
+fn a_supervisor_spawns_with_only_a_prompt() {
+    let h = harness(vec![]);
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: true,
+        result: Some(json!({ "agentId": "agent-9" })),
+        error: None,
+    });
+    let response = call(
+        &h,
+        json!({ "id": 7, "method": "spawn",
+                "params": { "prompt": "supervise", "role": "supervisor" } }),
+    );
+    assert_eq!(response["result"], json!({ "agentId": "agent-9" }));
+    let requests = h.backend.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "spawn");
+    assert_eq!(
+        requests[0].params,
+        json!({
+            "prompt": "supervise", "provider": null, "model": null,
+            "permissionMode": null, "headless": null, "name": null,
+            "role": "supervisor", "worktree": null
+        })
+    );
+}
+
+#[test]
+fn a_supervisor_drops_a_project_path_it_names_without_checking_it() {
+    let h = harness(vec![]);
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: true,
+        result: Some(json!({ "agentId": "agent-9" })),
+        error: None,
+    });
+    let response = call(
+        &h,
+        json!({ "id": 7, "method": "spawn",
+                "params": { "projectPath": "/definitely/not/here", "prompt": "supervise",
+                            "role": "supervisor" } }),
+    );
+    assert_eq!(response["result"], json!({ "agentId": "agent-9" }));
+    let requests = h.backend.requests.lock().unwrap();
+    assert!(requests[0].params.get("projectPath").is_none());
+}
+
+#[test]
+fn a_worker_spawn_without_a_project_path_is_refused_before_the_frontend() {
+    let h = harness(vec![]);
+    let response = call(
+        &h,
+        json!({ "id": 7, "method": "spawn", "params": { "prompt": "run the tests" } }),
+    );
+    assert_eq!(error_code(&response), "invalid_params");
+    assert!(response["error"]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("only role \"supervisor\"")));
+    assert!(h.backend.requests.lock().unwrap().is_empty());
+}
+
+#[test]
 fn a_frontend_refusal_keeps_known_codes_and_demotes_unknown_ones() {
     let dir = auric_project();
     let project = dir.path().to_string_lossy().into_owned();

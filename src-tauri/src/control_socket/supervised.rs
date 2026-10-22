@@ -138,7 +138,13 @@ impl Dispatcher {
                 "a supervisor's spawn needs headless; provider and model may be left out",
             ));
         };
-        let project_path = canonical_project_path(&params.project_path);
+        let Some(project_path) = params.project_path.as_deref() else {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                super::protocol::WORKER_PROJECT_PATH_MESSAGE,
+            ));
+        };
+        let project_path = canonical_project_path(project_path);
         let (provider, choice) = self.supervised_choice(supervisor, &project_path, &params)?;
         let model = choice.model.clone();
         let request = SpawnRequest {
@@ -162,7 +168,7 @@ impl Dispatcher {
         let model_reason = params.model_reason.clone();
         let started = self.spawn(FrontendSpawnParams {
             params: SpawnParams {
-                project_path: project_path.clone(),
+                project_path: Some(project_path.clone()),
                 provider: Some(provider.clone()),
                 model: Some(model.clone()),
                 headless: Some(headless),

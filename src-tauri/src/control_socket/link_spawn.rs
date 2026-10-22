@@ -134,7 +134,7 @@ impl Dispatcher {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let permission_mode = check()?;
         self.start_link_agent(SpawnParams {
-            project_path: project_path.clone(),
+            project_path: Some(project_path.clone()),
             prompt,
             provider: Some(provider.id.clone()),
             model: Some(model.clone()),

@@ -118,7 +118,11 @@ pub struct AgentIdParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnParams {
-    pub project_path: String,
+    /// The folder a worker runs in. A supervisor takes none: it gets a run
+    /// folder of its own and its projects from the supervisor policy, so one
+    /// it names is dropped while parsing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
     pub prompt: String,
     #[serde(default)]
     pub provider: Option<String>,
@@ -332,6 +336,10 @@ fn normalise_fields(request: Request) -> Result<Request, ControlError> {
         .map_err(|message| ControlError::new(ErrorCode::InvalidParams, message))
 }
 
+pub(crate) const WORKER_PROJECT_PATH_MESSAGE: &str =
+    "projectPath must not be empty: a worker runs in a project; \
+     only role \"supervisor\" starts without one";
+
 fn normalise_params(request: Request) -> Result<Request, String> {
     let blank = |value: &str| value.trim().is_empty();
     match request {
@@ -362,8 +370,13 @@ fn normalise_params(request: Request) -> Result<Request, String> {
         Request::ListProjects(params) if params.project.as_deref().is_some_and(blank) => {
             Err("project must not be empty; leave it out to list every project".into())
         }
-        Request::Spawn(params) if blank(&params.project_path) || blank(&params.prompt) => {
-            Err("projectPath and prompt must not be empty".into())
+        Request::Spawn(params) if blank(&params.prompt) => Err("prompt must not be empty".into()),
+        Request::Spawn(mut params) if params.role == Some(AgentRole::Supervisor) => {
+            params.project_path = None;
+            Ok(Request::Spawn(params))
+        }
+        Request::Spawn(params) if params.project_path.as_deref().map_or(true, blank) => {
+            Err(WORKER_PROJECT_PATH_MESSAGE.into())
         }
         Request::Spawn(mut params) => {
             if params.role == Some(AgentRole::Worker) {
