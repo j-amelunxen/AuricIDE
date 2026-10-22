@@ -19,3 +19,6 @@ docs/automation-surface.md
 # Captured CLI output (anonymised). Kept byte-for-byte as the CLI wrote it, because the
 # parsers are tested against the real shape, not against a reformatted one.
 src-tauri/src/agent_usage/fixtures/
+
+# Captured third-party tool output and the bundles it ran on; byte-exact on purpose.
+src-tauri/src/machine/testdata/

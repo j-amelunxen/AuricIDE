@@ -1,0 +1,7 @@
+# okf v0.7.0 (module github.com/okf-memory/okf-agent-memory, commit 976d2dbc), captured 2026-10-22
+# command: okf validate findings/knowledge
+# exit: 0
+warn  facts-orphan.md: broken concept link -> ../facts/nowhere.md (target concept does not exist)
+warn  facts-orphan.md: orphan (no concept links in or out)
+
+OKF v0.2 check of "findings/knowledge" (v0.2): 3 concept(s), 0 error(s), 2 warning(s); 1 broken link(s), 1 orphan(s), 0 stale. Conformant.

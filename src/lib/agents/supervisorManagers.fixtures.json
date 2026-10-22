@@ -1,0 +1,215 @@
+{
+  "$comment": "Machine-checkable half of docs/design-project-manager.md (Project Managers: supervisors with a name and a memory). Rust reads it in supervisor::managers, supervisor::memory and machine tests (include_str!), TypeScript in src/lib/agents/supervisorManagers.ts. Change this first, then the doc, then both sides.",
+  "version": 1,
+  "registryFileName": "supervisor-managers.json",
+  "registryVersion": 1,
+  "validationFileName": "validation.json",
+  "names": {
+    "$comment": "Trimmed before the checks. Unique among non-archived managers ignoring case (manager_name_taken).",
+    "maxLength": 40,
+    "valid": ["Release Desk", "Inbox triage 2", "Équipe", "  Padded Name  "],
+    "invalid": ["", "   ", "line\nbreak", "tab\there", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+  },
+  "keyFromName": {
+    "$comment": "Fold to ASCII, lowercase, every run of other characters becomes one '-', trim dashes, cut to 48 (then trim a trailing dash again). Empty becomes 'manager'. A key that is taken (any registry entry, archived included, or a live supervisor) or reserved (supervisorLink.fixtures.json supervisorKeys.reservedPattern) gets -2, -3, ... appended, cut so the whole stays within 48.",
+    "maxLength": 48,
+    "fallback": "manager",
+    "cases": [
+      { "name": "Release Desk", "taken": [], "key": "release-desk" },
+      { "name": "  Release   Desk  ", "taken": [], "key": "release-desk" },
+      { "name": "Équipe Nord!", "taken": [], "key": "equipe-nord" },
+      { "name": "Release Desk", "taken": ["release-desk"], "key": "release-desk-2" },
+      {
+        "name": "Release Desk",
+        "taken": ["release-desk", "release-desk-2"],
+        "key": "release-desk-3"
+      },
+      { "name": "Agent 7", "taken": [], "key": "agent-7-2" },
+      { "name": "!!!", "taken": [], "key": "manager" },
+      {
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "taken": [],
+        "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  "promotionKey": {
+    "$comment": "Which key a promoted run ends up with: the live supervisor's key, else the key its supervisor.json names, else keyFromName(name). A run that already has an address keeps it.",
+    "cases": [
+      { "liveKey": "mail-triage", "fileKey": "old-desk", "name": "Inbox", "key": "mail-triage" },
+      { "liveKey": null, "fileKey": "old-desk", "name": "Inbox", "key": "old-desk" },
+      { "liveKey": null, "fileKey": null, "name": "Inbox", "key": "inbox" }
+    ]
+  },
+  "launchKey": {
+    "$comment": "admit_supervisor for a registry holding the managers below. resume: the run folder name a launch resumes, or null for a new supervisor. own: the key the launch names. result: the key it runs under, the folder a new launch turns into a resume of, or the refusal code. live: supervisors already running, as in agentControl.fixtures.json supervisors.",
+    "managers": [
+      { "key": "release-desk", "runDir": "2026-10-21_090000", "archivedAt": null },
+      {
+        "key": "archived-desk",
+        "runDir": "2026-10-19_080000",
+        "archivedAt": "2026-10-20T08:00:00Z"
+      }
+    ],
+    "cases": [
+      {
+        "resume": "2026-10-21_090000",
+        "own": null,
+        "live": [],
+        "result": { "key": "release-desk" }
+      },
+      {
+        "resume": "2026-10-21_090000",
+        "own": "release-desk",
+        "live": [],
+        "result": { "key": "release-desk" }
+      },
+      {
+        "resume": "2026-10-21_090000",
+        "own": "other-key",
+        "live": [],
+        "result": { "error": "manager_key_mismatch" }
+      },
+      {
+        "resume": null,
+        "own": "release-desk",
+        "live": [],
+        "result": { "key": "release-desk", "resumes": "2026-10-21_090000" }
+      },
+      {
+        "resume": null,
+        "own": "archived-desk",
+        "live": [],
+        "result": { "error": "manager_archived" }
+      },
+      {
+        "resume": "2026-10-19_080000",
+        "own": null,
+        "live": [],
+        "result": { "error": "manager_archived" }
+      },
+      {
+        "resume": null,
+        "own": "release-desk",
+        "live": [
+          {
+            "id": "agent-3",
+            "role": "supervisor",
+            "status": "running",
+            "supervisorKey": "release-desk",
+            "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+          }
+        ],
+        "result": { "error": "supervisor_key_in_use" }
+      },
+      {
+        "resume": "2026-10-21_090000",
+        "own": null,
+        "live": [
+          {
+            "id": "agent-3",
+            "role": "supervisor",
+            "status": "running",
+            "supervisorKey": "release-desk",
+            "repoPath": "/home/user/.auric/supervisors/2026-10-21_090000"
+          }
+        ],
+        "result": { "error": "run_dir_in_use" }
+      },
+      {
+        "resume": null,
+        "own": null,
+        "live": [],
+        "result": { "key": null }
+      }
+    ]
+  },
+  "refusals": {
+    "$comment": "Code -> sentence pattern. Rust produces the sentence, the frontend recognises the code by the pattern, as supervisors.runDirInUse does in agentControl.fixtures.json.",
+    "manager_name_invalid": "^A Project Manager name needs 1 to 40 characters on one line\\.$",
+    "manager_name_taken": "^A Project Manager named '.+' already exists\\.$",
+    "manager_run_missing": "^The supervisor run folder '.+' no longer exists\\.$",
+    "manager_run_taken": "^The run folder .+ already belongs to the Project Manager '.+'\\.$",
+    "manager_key_mismatch": "^The run folder .+ belongs to the Project Manager '.+' and runs only under its key '.+'\\.$",
+    "manager_archived": "^The Project Manager '.+' is archived\\. Restore it before opening it\\.$",
+    "manager_not_found": "^No Project Manager has the key '.+'\\.$",
+    "instructions_too_large": "^INSTRUCTIONS\\.md of '.+' is \\d+ bytes; the limit is 16384\\.$",
+    "registry_unreadable": "^supervisor-managers\\.json could not be read: .+ It was left as it is\\.$"
+  },
+  "instructions": {
+    "fileName": "INSTRUCTIONS.md",
+    "maxBytes": 16384,
+    "denyRules": ["Edit(./INSTRUCTIONS.md)", "Write(./INSTRUCTIONS.md)"],
+    "denyFlag": "--disallowedTools",
+    "$denyRulesVerified": "Claude Code 2.1.308, 2026-10-22, claude -p with --tools Read,Write,Edit,Glob,Grep,Bash --restricted --allowedTools Read Write Edit Glob Grep \"Bash(sleep *)\" --permission-mode dontAsk. Refused: Edit by relative path, Write by absolute path, Write through sub/../INSTRUCTIONS.md, and the Bash command 'sleep 1 && echo changed > INSTRUCTIONS.md'. Without the deny rules the same Edit went through (control). The rule matches the file name at any depth: sub/INSTRUCTIONS.md was refused too, with or without './'. Only print mode was run; the interactive TUI uses the same permission rules but was not checked."
+  },
+  "memory": {
+    "$comment": "The OKF bundle a manager keeps. Layout check = our contract (always runs, needs no tool). okf check = okf validate on the same folder when okf is installed (machine.okf).",
+    "bundleDir": "knowledge",
+    "okfVersion": "0.2",
+    "rootIndex": { "file": "index.md", "frontMatter": { "okf_version": "0.2" } },
+    "logFile": "log.md",
+    "logFormat": "One '## YYYY-MM-DD' heading per day, newest first, entries as '* **<Kind>**: <sentence>' (what okf init and okf create write).",
+    "sectionIndex": "index.md without front matter: '# <Section>' then one '* [<title>](<file>.md) - <description>' line per concept (what okf create maintains).",
+    "sections": {
+      "projects": "Project",
+      "decisions": "Decision",
+      "preferences": "Preference",
+      "people": "Person",
+      "facts": "Fact",
+      "lessons": "Lesson",
+      "sessions": "Session"
+    },
+    "requiredFields": ["type", "title", "description", "status"],
+    "optionalFields": ["tags", "generated", "superseded_by", "source"],
+    "statuses": ["draft", "stable", "deprecated"],
+    "layoutFindings": {
+      "$comment": "What the layout check reports, per concept file in a section folder. okf v0.7.0 itself does not report broken_front_matter (an unterminated quote passed as a concept) or dangling_superseded_by.",
+      "codes": [
+        "missing_front_matter",
+        "broken_front_matter",
+        "missing_field",
+        "unknown_status",
+        "type_not_section",
+        "dangling_superseded_by",
+        "not_in_section_index"
+      ]
+    },
+    "maxFindingsInPrompt": 20,
+    "validateTimeoutMs": 10000
+  },
+  "machine": {
+    "okf": {
+      "$comment": "Captured 2026-10-22 in src-tauri/src/machine/testdata/okf-*.txt, bundles in testdata/okf-bundles/. Installed with go install (Go 1.25.6, GOTOOLCHAIN=auto building with go1.26.0). The binary landed in ~/go/bin, which is not on this Mac's login-shell PATH.",
+      "module": "github.com/okf-memory/okf-agent-memory",
+      "package": "github.com/okf-memory/okf-agent-memory/cmd/okf",
+      "testedVersion": "0.7.0",
+      "testedCommit": "976d2dbcdb1c48f961990f5e11e1693f51bd0dcb",
+      "minVersion": "0.7.0",
+      "versionArgs": ["--version"],
+      "versionPattern": "^okf version v(\\d+)\\.(\\d+)\\.(\\d+)",
+      "extraDirs": ["~/go/bin"],
+      "fix": "go install github.com/okf-memory/okf-agent-memory/cmd/okf@latest",
+      "validateArgs": ["validate", "<bundle>", "--json"],
+      "exitCodes": {
+        "0": "conformant (warnings, broken links and orphans may still be present)",
+        "1": "not conformant",
+        "2": "bundle could not be loaded; output is plain text even with --json"
+      },
+      "jsonFields": {
+        "$comment": "broken_links and orphans are null, not [], when empty. warnings stayed [] while the text output listed warnings; findings live in errors, gate_findings, broken_links and orphans.",
+        "lists": ["errors", "warnings", "gate_findings", "broken_links", "orphans"],
+        "flags": ["is_conformant", "gate_passed"],
+        "counts": ["concept_count", "stale_count"],
+        "version": "declared_version"
+      }
+    },
+    "go": {
+      "minVersion": "1.21.0",
+      "$comment": "okf's go.mod asks for go 1.26.0; Go 1.21+ fetches that toolchain itself under GOTOOLCHAIN=auto.",
+      "versionArgs": ["version"],
+      "versionPattern": "^go version go(\\d+)\\.(\\d+)(?:\\.(\\d+))?",
+      "fix": "brew install go"
+    }
+  }
+}

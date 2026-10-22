@@ -344,6 +344,16 @@ half is `supervisors` in `agentControl.fixtures.json`
   the run's. The key and the run folder are checked again when the started
   process is entered into the manager, so two launches in the same moment
   cannot both win.
+- **A Project Manager's key is bound to its folder.** A promoted run
+  (`docs/design-project-manager.md`) has its key and folder in the Rust-owned
+  registry `<app_data_dir>/supervisor-managers.json`, not only in
+  `supervisor.json`, which the manager itself can write. `admit_supervisor`
+  makes the two one thing: resuming the folder runs under the manager's key,
+  another key is `manager_key_mismatch`, a new supervisor naming the key
+  becomes a resume of the folder, and an archived manager is
+  `manager_archived`. The rules above still apply after that, so one folder
+  still has one live supervisor. Fixture `launchKey` in
+  `supervisorManagers.fixtures.json`.
 - **Children follow a resumed supervisor.** It adopts the children of every
   earlier supervisor of its run folder (from the restart file, the kept run
   results, and for a restored agent the id it had): `spawnedByAgentId` old →

@@ -1,0 +1,10 @@
+# okf v0.7.0 (module github.com/okf-memory/okf-agent-memory, commit 976d2dbc), captured 2026-10-22
+# command: okf validate malformed/knowledge
+# exit: 1
+warn  decisions/bad-status.md: status 'final' is not draft|stable|deprecated
+warn  decisions/bad-status.md: orphan (no concept links in or out)
+warn  decisions/broken-yaml.md: orphan (no concept links in or out)
+warn  decisions/no-front-matter.md: orphan (no concept links in or out)
+error decisions/no-front-matter.md: missing YAML frontmatter block
+
+OKF v0.2 check of "malformed/knowledge" (v0.2): 5 concept(s), 1 error(s), 4 warning(s); 0 broken link(s), 3 orphan(s), 0 stale. NOT conformant.

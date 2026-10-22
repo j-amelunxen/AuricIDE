@@ -1,11 +1,10 @@
 # Project Managers: supervisors with a name and a memory
 
-Status: design, 2026-10-22. Nothing here is built yet. The requirements come
-from a narrated recording plus three decisions taken afterwards (listed under
-"Settled before this design"). The contract proposal is in the
-"Contract" section; once accepted it becomes
-`src/lib/agents/supervisorManagers.fixtures.json`. **Change the fixtures
-first**, then this file and the code.
+Status: design approved 2026-10-22; slice 0 (the contract) done, nothing
+else built yet. The requirements come from a narrated recording plus three
+decisions taken afterwards (listed under "Settled before this design"). The
+machine-checkable half is `src/lib/agents/supervisorManagers.fixtures.json`.
+**Change the fixtures first**, then this file and the code.
 
 A supervisor run today is disposable. It starts in a fresh folder under
 `~/.auric/supervisors/<start time>/`, writes some notes, and sinks down the
@@ -219,10 +218,16 @@ Examples:
   rules for `Edit` and `Write` on `INSTRUCTIONS.md` to the forced launch
   arguments (`supervisor_claude_arguments`, manager launches only); the prompt
   says the file belongs to the human. A provider without deny rules gets only
-  the prompt rule, and the hash comparison above makes a change visible. The
-  exact rule form must be checked against the installed Claude Code before it
-  goes into the fixture (slice 0); `--restricted` + `dontAsk` behaviour with
-  deny rules is not documented well enough to assume.
+  the prompt rule, and the hash comparison above makes a change visible.
+  Checked on Claude Code 2.1.308 with the supervisor's flags (`--restricted`,
+  `dontAsk`, `Bash(sleep *)`): `--disallowedTools "Edit(./INSTRUCTIONS.md)"
+"Write(./INSTRUCTIONS.md)"` refused an Edit by relative path, a Write by
+  absolute path, a Write through `sub/../INSTRUCTIONS.md` and
+  `sleep 1 && echo … > INSTRUCTIONS.md`; without the rules the same Edit
+  went through. The rule matches the file name at any depth, so a
+  `sub/INSTRUCTIONS.md` is refused too, which costs nothing here. Only print
+  mode was run; the interactive TUI uses the same rules, and the ignored
+  real-CLI test in slice 7 runs it that way.
 - **Editing.** "Edit Instructions…" opens the file in an ordinary editor tab,
   the same path the runs rail already uses to open run files. No custom
   editor: the file is meant to be diffable and editable anywhere.
@@ -262,7 +267,7 @@ and links, it does not move the originals. (Open question 1.)
 ```
 knowledge/
   index.md          okf_version, one line per section
-  log.md            one line per session: date, what changed in memory
+  log.md            okf's change log: '## YYYY-MM-DD', then '* **Kind**: sentence'
   projects/         one concept per AuricIDE project it works in (type Project)
   decisions/        what was decided, by whom, why (type Decision)
   preferences/      how the human likes things done, learned (type Preference)
@@ -273,12 +278,14 @@ knowledge/
   <section>/index.md  one line per concept
 ```
 
-Concept front matter, as the spike bundle used it: `type`, `title`,
-`description` (one sentence, the fact itself), `tags`, `status`
-(`stable` | `deprecated`), `generated { by, at }`, plus `superseded_by` and
-`source` where they apply. The exact field set and the root marker are taken
-from okf-agent-memory at a pinned commit in slice 0 and written into the
-fixture; this design does not guess beyond what the spike exercised.
+Concept front matter, as `okf create` v0.7.0 writes it: `type`, `title`,
+`description` (one sentence, the fact itself), `tags`, `generated { by, at }`,
+`status` (`draft` | `stable` | `deprecated`), plus `superseded_by` and
+`source` where they apply. The root `index.md` carries
+`okf_version: "0.2"`; section `index.md` files have no front matter and one
+`* [title](file.md) - description` line per concept. Promotion writes the
+root `index.md` and `log.md` itself in the shape `okf init` produces, so it
+needs no okf. All of this is in the fixture's `memory` block.
 
 ### The rules in the prompt
 
@@ -291,7 +298,8 @@ Draft of the section the launch prompt adds for a manager:
 > in `description`, details in the body. Never delete a concept that turned
 > out wrong or outdated: set `status: deprecated` and `superseded_by` to its
 > replacement, so an old fact cannot come back as current. Keep each section's
-> `index.md` in step with its files. Add one line to `log.md` per session.
+> `index.md` in step with its files. Add an entry to `log.md` for each change
+> (a `## YYYY-MM-DD` heading per day, entries as `* **Kind**: sentence`).
 > Write nothing about a person that the work does not need. Do not store
 > secrets, keys or tokens. `INSTRUCTIONS.md` belongs to the human; read it,
 > never change it. At the start of a session read `knowledge/index.md`, the
@@ -309,8 +317,11 @@ Two checks with different owners:
 - **Layout check (ours, always runs).** The summary walk already reads every
   concept's front matter. It also reports what breaks _our_ contract: a file
   in a section without front matter, a missing `type`/`title`/`description`/
-  `status`, a `type` that does not match its section, a `superseded_by`
-  pointing at nothing. These rules come from the fixture's `memory` block,
+  `status`, front matter that does not parse, a `type` that does not match
+  its section, a `superseded_by` pointing at nothing, a concept missing from
+  its section index. okf v0.7.0 reports neither broken front matter (a file
+  with an unterminated quote passed as a concept) nor a dangling
+  `superseded_by`, so this check is required, not a convenience. These rules come from the fixture's `memory` block,
   not from okf's spec, so there is nothing to drift from. It needs no tool
   and works on every machine.
 - **okf check (theirs, when okf is there).** `okf validate` on the bundle,
@@ -398,8 +409,8 @@ What a probe costs:
   start their own shell.
 - **Resolving** is a `stat` per PATH entry plus the extra folders: well under
   a millisecond. It is never cached; it runs every time.
-- **The version probe** starts the tool once (`okf --version` or what slice 0
-  finds), tens of milliseconds. It is cached by **(absolute path, file
+- **The version probe** starts the tool once (`okf --version`, which prints
+  `okf version v0.7.0 (OKF v0.2 specification)`), tens of milliseconds. It is cached by **(absolute path, file
   modification time)**: same binary, same answer; a reinstall or upgrade
   changes the mtime and the next check probes again.
 
@@ -470,14 +481,15 @@ which `GOTOOLCHAIN=auto` downloads on demand when the local Go is at least
 **Recommendation: a command, no Install button, in the first version.**
 
 - The fix line is `go install github.com/okf-memory/okf-agent-memory/cmd/okf@latest`
-  (exact module path confirmed in slice 0). `@latest`, not a pinned version:
+  (module path confirmed; on this Mac it built in about 5 s and landed in
+  `~/go/bin`, which the login-shell PATH does not contain). `@latest`, not a pinned version:
   pinning would make us the owner of okf's upgrades. A version that is too
   old is caught by the minimum check instead.
 - When `go` itself is missing or older than 1.21, the okf line's fix is
   `brew install go` first; the Machine page shows `go` as its own row with
   "needed by: okf".
-- An Install button would mean running a Go toolchain download (hundreds of
-  MB, network, minutes) from inside the IDE with progress and failure
+- An Install button would mean running `go install` (and, on a machine whose
+  Go is older than okf's 1.26, a toolchain download) from inside the IDE with progress and failure
   reporting, for a check that is advisory. Parakeet earned its button because
   transcription does not work at all without it; okf does not clear that bar.
   (Open question 4.)
@@ -489,22 +501,37 @@ which `GOTOOLCHAIN=auto` downloads on demand when the local Go is at least
 
 ### Version drift and parsing
 
-okf is open source, so its behaviour is checkable and we check it: slice 0
-builds it at a known commit, captures `--version`, a clean `validate`, a
-`validate` with findings and one with malformed front matter, and checks
-whether a machine-readable output mode exists. Those captures are the
-parser's source of truth.
+okf is open source, so its behaviour is checkable and we check it. Slice 0
+installed v0.7.0 (commit `976d2dbc`, the `v0.7.0` tag) and captured
+`--version` and `validate` in text and `--json` form for a clean bundle, one
+with findings, a malformed one and a missing one
+(`src-tauri/src/machine/testdata/okf-*.txt`, the bundles next to them in
+`okf-bundles/`). Those captures are the parser's source of truth. What they
+showed:
 
-- **Minimum version** is the one the captures came from (the spike used
-  v0.4.4). Older, or a version string we cannot read: state `outdated` (or
+- `okf validate <bundle> --json` exists and is what we call. Exit `0` means
+  conformant (broken links and orphans may still be listed), `1` not
+  conformant, `2` the bundle could not be loaded, and then the output is
+  plain text even with `--json`.
+- In the JSON, `broken_links` and `orphans` are `null` when empty, not `[]`;
+  `warnings` stayed empty while the text output listed warnings, because they
+  are reported under `broken_links`, `orphans` and `gate_findings`. A parser
+  that trusts the field names alone would miss them.
+- Without `--strict`, orphans are warnings. A young memory has many, so we
+  report them as findings but do not pass `--strict`.
+
+- **Minimum version** is the one the captures came from, v0.7.0 (the
+  spike's v0.4.4 is older and was never captured). Older, or a version string we cannot read: state `outdated` (or
   `unrecognised`), the check does not run, the line says which version was
   found and the fix command. We do not parse output from a version we never
   saw at all.
 - **Newer than tested** runs, parsed defensively. The line notes "tested
-  with 0.4.4".
-- **Parsing order**: exit code first; then a machine-readable mode if okf has
-  one; else line patterns from the captures. Lines that match no pattern are
-  counted, not shown: "okf reported 3 things we could not read", with the
+  with 0.7.0".
+- **Parsing order**: exit code first; exit `2` is `failed` without reading
+  the body as JSON. Otherwise the JSON, every list read as "absent or null
+  means empty". JSON that does not parse, or lacks `is_conformant`, is
+  `unrecognised`. Entries we cannot place are counted, not shown: "okf
+  reported 3 things we could not read", with the
   cleaned text in the fold and the full output in a log file. Exit non-zero
   with nothing recognisable is `failed`, one sentence, details folded. A
   timeout is `failed` too, with the time in the sentence.
@@ -647,8 +674,9 @@ ignored.
 
 ## Contract
 
-Proposal for `src/lib/agents/supervisorManagers.fixtures.json`, read by Rust
-(`include_str!`) and TypeScript. Abbreviated:
+`src/lib/agents/supervisorManagers.fixtures.json`, read by Rust
+(`include_str!`) and TypeScript. The file is the reference; this excerpt is
+abbreviated and only shows its shape:
 
 ```json
 {
@@ -691,11 +719,11 @@ Proposal for `src/lib/agents/supervisorManagers.fixtures.json`, read by Rust
   "instructions": {
     "fileName": "INSTRUCTIONS.md",
     "maxBytes": 16384,
-    "denyRules": "filled in slice 0 after checking Claude Code"
+    "denyRules": ["Edit(./INSTRUCTIONS.md)", "Write(./INSTRUCTIONS.md)"]
   },
   "memory": {
     "bundleDir": "knowledge",
-    "okfVersion": "filled in slice 0 from the pinned okf commit",
+    "okfVersion": "0.2",
     "sections": {
       "projects": "Project",
       "decisions": "Decision",
@@ -763,17 +791,17 @@ The UI is checked in browser mode with a seeded store (`pnpm dev` +
 Each is sized for one agent. Contract first, then Rust and the TS library in
 parallel, then UI, then QA.
 
-| #   | Slice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Depends on | Files                                                                                                                                                                                                                                                                                           |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | **Contract.** Fixture file. Pin okf-agent-memory, read its spec, fill `okfVersion` and the front matter fields, capture `okf validate` outputs. Capture `okf --version`, find out whether `validate` has a machine-readable mode, confirm the module path and where `go install` puts the binary. Check deny-rule syntax against the installed Claude Code with `--restricted` + `dontAsk` and fill `denyRules`. Add the paragraphs to `design-agent-control.md` and `design-supervisor-link.md`. | –          | `src/lib/agents/supervisorManagers.fixtures.json`, `src-tauri/src/machine/testdata/okf-*.txt`, the two design docs                                                                                                                                                                              |
-| 1   | **Rust registry.** Record, read/write, promote/rename/archive/restore/remove, Tauri commands, `SupervisorRun.manager` in the runs list.                                                                                                                                                                                                                                                                                                                                                           | 0          | `src-tauri/src/supervisor/managers.rs` (new), `supervisor/mod.rs`, `supervisor/runs.rs`, `lib.rs`                                                                                                                                                                                               |
-| 2a  | **Machine seam.** Move the mechanism out of `video_import/preflight.rs` into `machine/`, declared table (`ffmpeg`, `ffprobe`, `go`, `okf`), version cache keyed by path + mtime, `refresh_login_shell_env`, `machine_dependencies` command for the Settings page. Full Rust suite (shared foundation).                                                                                                                                                                                            | 0          | `src-tauri/src/machine/` (new), `video_import/preflight.rs` (+ tests), `agents/shell_env.rs`, `lib.rs`                                                                                                                                                                                          |
-| 2   | **Rust memory.** Summary walk with the layout check, okf validate through `machine/` with timeout and defensive parsing, `validation.json`, trigger on session end, regression notification.                                                                                                                                                                                                                                                                                                      | 0          | `src-tauri/src/supervisor/memory.rs` (new), `agents/run_results.rs` (hook)                                                                                                                                                                                                                      |
-| 3   | **TS library.** IPC wrappers, `keyFromName`/name rules on the fixture, runs split, prompt sections, `supervisorConfigFor` manager branch, `openManager` in `openSupervisor.ts`.                                                                                                                                                                                                                                                                                                                   | 0          | `src/lib/tauri/supervisorManagers.ts` (new), `src/lib/agents/supervisorManagers.ts` (new), `supervisorLaunchPrompt.ts`, `supervisorLaunch.ts`, `store/agent/agentLifecycle.ts`, `openSupervisor.ts`                                                                                             |
-| 4   | **Rust launch.** `launchKey` rules in `admit_supervisor`, manager name on the agent, `lastLaunch` written, deny rules in `supervisor_claude_arguments`, live key set on promotion.                                                                                                                                                                                                                                                                                                                | 1          | `src-tauri/src/agents/manager.rs`, `supervisor/several.rs`, `agents/tests.rs`                                                                                                                                                                                                                   |
-| 5   | **Rail UI.** Sections, context menus, Promote sheet, inline inspector, Restart actions.                                                                                                                                                                                                                                                                                                                                                                                                           | 1, 3       | `SupervisorRunsPanel.tsx`, `PromoteManagerSheet.tsx` (new), `ManagerInspector.tsx` (new), tests next to them                                                                                                                                                                                    |
-| 6   | **Quick Access, menu bar, Settings.** Manager tiles, Supervisor tile submenu, menu bar section and shortcuts, Settings list, presentation pref, Settings → Machine page (reads `machine_dependencies`; Video Import links to it).                                                                                                                                                                                                                                                                 | 4, 5       | `QuickAccess.tsx`, `ManagerTile.tsx` (new), `SupervisorTile.tsx`, `src-tauri/src/menu_bar.rs`, `src/lib/tauri/menuBar.ts`, `useSupervisorMenuBar.ts`, `src/lib/quickAccess/supervisorMenuBar.ts`, `SupervisorContent.tsx`, `MachineContent.tsx` (new), `VideoImportContent.tsx`, `appConfig.ts` |
-| 7   | **QA and docs.** Probe script, ignored real-CLI test, adversarial QA pair, `CLAUDE.md` section next to the supervisor, `automation-surface:check`.                                                                                                                                                                                                                                                                                                                                                | 1–6        | `scripts/probe-project-manager.mjs` (new), `CLAUDE.md`, `docs/automation-surface.md`                                                                                                                                                                                                            |
+| #   | Slice                                                                                                                                                                                                                                                                                                                                                             | Depends on | Files                                                                                                                                                                                                                                                                                           |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | **Contract. Done 2026-10-22.** Fixture file. okf v0.7.0 installed and captured (version, validate text/JSON for clean, findings, malformed, missing bundle), module path and install folder recorded. Deny rules checked against Claude Code 2.1.308 and written into `denyRules`. Paragraphs added to `design-agent-control.md` and `design-supervisor-link.md`. | –          | `src/lib/agents/supervisorManagers.fixtures.json`, `src-tauri/src/machine/testdata/okf-*.txt`, the two design docs                                                                                                                                                                              |
+| 1   | **Rust registry.** Record, read/write, promote/rename/archive/restore/remove, Tauri commands, `SupervisorRun.manager` in the runs list.                                                                                                                                                                                                                           | 0          | `src-tauri/src/supervisor/managers.rs` (new), `supervisor/mod.rs`, `supervisor/runs.rs`, `lib.rs`                                                                                                                                                                                               |
+| 2a  | **Machine seam.** Move the mechanism out of `video_import/preflight.rs` into `machine/`, declared table (`ffmpeg`, `ffprobe`, `go`, `okf`), version cache keyed by path + mtime, `refresh_login_shell_env`, `machine_dependencies` command for the Settings page. Full Rust suite (shared foundation).                                                            | 0          | `src-tauri/src/machine/` (new), `video_import/preflight.rs` (+ tests), `agents/shell_env.rs`, `lib.rs`                                                                                                                                                                                          |
+| 2   | **Rust memory.** Summary walk with the layout check, okf validate through `machine/` with timeout and defensive parsing, `validation.json`, trigger on session end, regression notification.                                                                                                                                                                      | 0          | `src-tauri/src/supervisor/memory.rs` (new), `agents/run_results.rs` (hook)                                                                                                                                                                                                                      |
+| 3   | **TS library.** IPC wrappers, `keyFromName`/name rules on the fixture, runs split, prompt sections, `supervisorConfigFor` manager branch, `openManager` in `openSupervisor.ts`.                                                                                                                                                                                   | 0          | `src/lib/tauri/supervisorManagers.ts` (new), `src/lib/agents/supervisorManagers.ts` (new), `supervisorLaunchPrompt.ts`, `supervisorLaunch.ts`, `store/agent/agentLifecycle.ts`, `openSupervisor.ts`                                                                                             |
+| 4   | **Rust launch.** `launchKey` rules in `admit_supervisor`, manager name on the agent, `lastLaunch` written, deny rules in `supervisor_claude_arguments`, live key set on promotion.                                                                                                                                                                                | 1          | `src-tauri/src/agents/manager.rs`, `supervisor/several.rs`, `agents/tests.rs`                                                                                                                                                                                                                   |
+| 5   | **Rail UI.** Sections, context menus, Promote sheet, inline inspector, Restart actions.                                                                                                                                                                                                                                                                           | 1, 3       | `SupervisorRunsPanel.tsx`, `PromoteManagerSheet.tsx` (new), `ManagerInspector.tsx` (new), tests next to them                                                                                                                                                                                    |
+| 6   | **Quick Access, menu bar, Settings.** Manager tiles, Supervisor tile submenu, menu bar section and shortcuts, Settings list, presentation pref, Settings → Machine page (reads `machine_dependencies`; Video Import links to it).                                                                                                                                 | 4, 5       | `QuickAccess.tsx`, `ManagerTile.tsx` (new), `SupervisorTile.tsx`, `src-tauri/src/menu_bar.rs`, `src/lib/tauri/menuBar.ts`, `useSupervisorMenuBar.ts`, `src/lib/quickAccess/supervisorMenuBar.ts`, `SupervisorContent.tsx`, `MachineContent.tsx` (new), `VideoImportContent.tsx`, `appConfig.ts` |
+| 7   | **QA and docs.** Probe script, ignored real-CLI test, adversarial QA pair, `CLAUDE.md` section next to the supervisor, `automation-surface:check`.                                                                                                                                                                                                                | 1–6        | `scripts/probe-project-manager.mjs` (new), `CLAUDE.md`, `docs/automation-surface.md`                                                                                                                                                                                                            |
 
 Slices 1, 2a and 3 run side by side; 2 follows 2a. 4 waits for 1. 5 needs the commands
 from 1 and the library from 3.

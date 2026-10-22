@@ -1,0 +1,16 @@
+# okf v0.7.0 (module github.com/okf-memory/okf-agent-memory, commit 976d2dbc), captured 2026-10-22
+# command: okf validate clean/knowledge --json
+# exit: 0
+{
+  "bundle_path": "clean/knowledge",
+  "declared_version": "0.2",
+  "concept_count": 2,
+  "errors": [],
+  "warnings": [],
+  "gate_findings": [],
+  "broken_links": null,
+  "orphans": null,
+  "stale_count": 0,
+  "is_conformant": true,
+  "gate_passed": true
+}
