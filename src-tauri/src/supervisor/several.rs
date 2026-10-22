@@ -144,6 +144,15 @@ pub fn is_busy_refusal(message: &str) -> bool {
         || message.contains("is already the key of a running supervisor")
 }
 
+/// Whether a refused restore leaves its offer in place: a supervisor that
+/// must wait for another one, or a Project Manager that is archived and can be
+/// restored first. Neither is used up by trying.
+pub fn keeps_restore_offer(message: &str) -> bool {
+    is_busy_refusal(message) || message.ends_with(MANAGER_ARCHIVED_SUFFIX)
+}
+
+const MANAGER_ARCHIVED_SUFFIX: &str = "is archived. Restore it before opening it.";
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct SupervisorFile {
     key: Option<String>,
@@ -192,7 +201,7 @@ pub fn manager_key_mismatch_message(dir: &str, name: &str, key: &str) -> String 
 
 /// The sentence fixture `refusals.manager_archived` matches.
 pub fn manager_archived_message(name: &str) -> String {
-    format!("The Project Manager '{name}' is archived. Restore it before opening it.")
+    format!("The Project Manager '{name}' {MANAGER_ARCHIVED_SUFFIX}")
 }
 
 /// A manager's key on a run folder that is not its own: the key is the
@@ -441,6 +450,19 @@ pub(crate) mod tests {
             .is_none(),
             "a finished supervisor holds nothing"
         );
+    }
+
+    #[test]
+    fn a_refused_restore_keeps_its_offer_when_waiting_or_restoring_would_help() {
+        assert!(keeps_restore_offer(&manager_archived_message("Desk")));
+        assert!(keeps_restore_offer(&run_dir_in_use_message(
+            Path::new("/home/user/.auric/supervisors/a"),
+            "agent-3"
+        )));
+        assert!(!keeps_restore_offer(&manager_key_mismatch_message(
+            "a", "Desk", "desk"
+        )));
+        assert!(!keeps_restore_offer("The run folder is gone."));
     }
 
     #[test]

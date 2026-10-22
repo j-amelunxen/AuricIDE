@@ -276,9 +276,10 @@ pub async fn resume_interrupted_agent(
     let spawned =
         spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await;
     // A supervisor whose run folder or key another live supervisor holds can
-    // be resumed once that one ends; its offer is not used up by trying.
+    // be resumed once that one ends, and an archived Project Manager once it
+    // is restored; the offer is not used up by trying.
     if let Err(refusal) = &spawned {
-        if crate::supervisor::several::is_busy_refusal(refusal) {
+        if crate::supervisor::several::keeps_restore_offer(refusal) {
             if let Err(error) = persistence
                 .lock()
                 .map_err(|e| e.to_string())

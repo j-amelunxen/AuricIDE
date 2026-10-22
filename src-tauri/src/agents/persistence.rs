@@ -67,6 +67,7 @@ pub fn resumed_config(
         resume_run_dir: is_supervisor.then(|| persisted.cwd.clone()).flatten(),
         replaces_agent_id: is_supervisor.then(|| persisted.id.clone()),
         resumed_run_dir: None,
+        launch_to_book: None,
         supervisor_key: persisted.supervisor_key,
         cwd: persisted.cwd,
         role: persisted.role,
