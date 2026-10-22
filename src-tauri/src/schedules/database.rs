@@ -129,8 +129,12 @@ pub fn upsert_at(
 ) -> Result<Schedule, String> {
     let stored = write_schedule(conn, schedule)?;
     // Walk from now: what was missed before is the runner's business, not the date.
+    // All three window fields move, or a row stamped later than `now` (its
+    // `created_at` is the real clock) would start the walk past the next date.
     let from_now = Schedule {
+        last_fired_at: None,
         last_checked_at: Some(format_ts(now)),
+        created_at: format_ts(now),
         ..stored.clone()
     };
     let next_due_at = due_occurrences(&from_now, now)
