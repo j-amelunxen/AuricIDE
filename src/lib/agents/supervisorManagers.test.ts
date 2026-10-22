@@ -5,11 +5,16 @@ import fixtures from './supervisorManagers.fixtures.json';
 import linkFixtures from './supervisorLink.fixtures.json';
 import {
   findLaunchManager,
+  instructionsChangedSince,
+  instructionsPreview,
   isManagerNameTaken,
   keyFromName,
   layoutRulesRunWithoutOkf,
   managerRefusalCode,
+  MANAGER_OKF_FIX,
   memoryFindingLines,
+  nameFromKey,
+  sha256Hex,
   splitSupervisorRuns,
   validateManagerName,
 } from './supervisorManagers';
@@ -273,5 +278,74 @@ describe('layoutRulesRunWithoutOkf', () => {
 
   it.each(['ok', 'findings', 'failed', 'never'] as const)('is false when okf is %s', (state) => {
     expect(layoutRulesRunWithoutOkf(state)).toBe(false);
+  });
+});
+
+describe('nameFromKey', () => {
+  it('turns an address back into a readable name', () => {
+    expect(nameFromKey('mail-triage')).toBe('Mail Triage');
+    expect(nameFromKey('release-desk-2')).toBe('Release Desk 2');
+  });
+
+  it('yields an empty name for no key', () => {
+    expect(nameFromKey('')).toBe('');
+  });
+});
+
+describe('sha256Hex', () => {
+  it('matches the digest Rust books for the same text', async () => {
+    expect(await sha256Hex('')).toBe(
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+    );
+    expect(await sha256Hex('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    );
+  });
+});
+
+describe('instructionsChangedSince', () => {
+  const launch = (instructionsSha256: string) => ({
+    at: '2026-10-22T10:16:02Z',
+    instructionsSha256,
+  });
+
+  it('is false before the first start: nothing was injected yet', async () => {
+    expect(await instructionsChangedSince(null, 'anything')).toBe(false);
+  });
+
+  it('is false while the file still says what the start injected', async () => {
+    expect(await instructionsChangedSince(launch(await sha256Hex('Be brief.')), 'Be brief.')).toBe(
+      false
+    );
+  });
+
+  it('is true once the file differs from what the start injected', async () => {
+    expect(await instructionsChangedSince(launch(await sha256Hex('Be brief.')), 'Be long.')).toBe(
+      true
+    );
+  });
+
+  it('reads a missing file as the empty text Rust hashed', async () => {
+    expect(await instructionsChangedSince(launch(await sha256Hex('')), null)).toBe(false);
+    expect(await instructionsChangedSince(launch(await sha256Hex('Be brief.')), null)).toBe(true);
+  });
+});
+
+describe('instructionsPreview', () => {
+  it('skips the heading and the template comment, and shows the first real line', () => {
+    const text =
+      '# Instructions for X\n\n<!-- steer,\n   grant nothing -->\n\n- Write in Spanish.\n';
+    expect(instructionsPreview(text)).toBe('Write in Spanish.');
+  });
+
+  it('is null for a file with only a heading and comments, or no file', () => {
+    expect(instructionsPreview('# Title\n<!-- note -->\n')).toBeNull();
+    expect(instructionsPreview(null)).toBeNull();
+  });
+});
+
+describe('MANAGER_OKF_FIX', () => {
+  it('is the install command the contract declares', () => {
+    expect(MANAGER_OKF_FIX).toBe(fixtures.machine.okf.fix);
   });
 });

@@ -2,17 +2,34 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAgentDuration } from '@/lib/agents/duration';
-import { resumeSupervisor } from '@/lib/agents/openSupervisor';
+import { openManager, resumeSupervisor } from '@/lib/agents/openSupervisor';
 import { runningSupervisors, supervisorUsingRunDir } from '@/lib/agents/supervisorLaunch';
+import { splitSupervisorRuns, type SupervisorRunGroups } from '@/lib/agents/supervisorManagers';
 import { buildRunTree, supervisorRunLabel, type RunTreeNode } from '@/lib/agents/supervisorRuns';
 import { useStore } from '@/lib/store';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { revealInFileManager } from '@/lib/tauri/opener';
+import {
+  managerArchive,
+  managerRegistry,
+  managerRemove,
+  managerRename,
+  managerRestore,
+  managerValidate,
+  type SupervisorManager,
+} from '@/lib/tauri/supervisorManagers';
 import {
   supervisorRunFiles,
   supervisorRunsList,
   type SupervisorRun,
 } from '@/lib/tauri/supervisorRuns';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
+import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ManagerRow, MoreActionsButton, type MenuPoint } from './ManagerRow';
+import { PromoteManagerSheet } from './PromoteManagerSheet';
+import { ManagerNameSheet } from './ManagerNameSheet';
+import { managerMenu, runMenu } from './runMenus';
 
 interface SupervisorRunsPanelProps {
   /** Opens a file in an editor tab, as the explorer does. */
@@ -217,6 +234,7 @@ interface RunRowProps {
   onToggle: () => void;
   onResume: () => void;
   onShow: (agentId: string) => void;
+  onMenu: (point: MenuPoint) => void;
   isFolderOpen: (key: string) => boolean;
   toggleFolder: (key: string) => void;
   onOpenFile: (path: string) => void;
@@ -231,6 +249,7 @@ function RunRow({
   onToggle,
   onResume,
   onShow,
+  onMenu,
   isFolderOpen,
   toggleFolder,
   onOpenFile,
@@ -240,8 +259,12 @@ function RunRow({
   const files = `${run.fileCount}${run.truncated ? '+' : ''} file${run.fileCount === 1 ? '' : 's'}`;
   const changed = ago(run.modifiedAtMs, now);
   return (
-    <li>
+    <li data-testid="run-row">
       <div
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onMenu({ x: event.clientX, y: event.clientY });
+        }}
         className={`group flex items-center gap-1.5 px-3 py-1 text-sm transition-colors ${
           isOpen
             ? 'bg-primary/10 text-foreground'
@@ -272,6 +295,7 @@ function RunRow({
             </span>
           </span>
         </button>
+        <MoreActionsButton label={`More actions for ${label}`} revealed={isOpen} onOpen={onMenu} />
         <RunAction
           run={run}
           label={label}
@@ -295,11 +319,86 @@ function RunRow({
   );
 }
 
+type NameSheet =
+  { kind: 'promote'; run: SupervisorRun } | { kind: 'rename'; manager: SupervisorManager };
+
+type Confirmation = {
+  kind: 'archive' | 'remove' | 'restart';
+  manager: SupervisorManager;
+  live?: AgentInfo;
+};
+
+interface OpenMenu extends MenuPoint {
+  options: ContextMenuOption[];
+}
+
+interface Registry {
+  managers: SupervisorManager[];
+  error: string | null;
+}
+
+type ManagedRun = SupervisorRunGroups['managers'][number];
+
+const NO_REGISTRY: Registry = { managers: [], error: null };
+
+/** The registry can be out of reach (browser mode); the runs still say who the managers are. */
+const readRegistry = (): Promise<Registry> => managerRegistry().catch((): Registry => NO_REGISTRY);
+
+/** Wide enough for "Remove Project Manager…" without a truncation. */
+const MENU_WIDTH = 232;
+
+const INSTRUCTIONS_FILE = 'INSTRUCTIONS.md';
+
+const CONFIRMATIONS: Record<
+  Confirmation['kind'],
+  {
+    title: (name: string) => string;
+    message: string;
+    confirmLabel: string;
+    variant: 'destroy' | 'discard' | 'elevate';
+  }
+> = {
+  archive: {
+    title: (name) => `Archive ${name}?`,
+    message:
+      'It leaves Quick Access and the menu bar. Its folder, instructions and memory stay, and a running session keeps running until you stop it.',
+    confirmLabel: 'Archive',
+    variant: 'discard',
+  },
+  remove: {
+    title: (name) => `Remove ${name}?`,
+    message:
+      'The Project Manager is forgotten. Its folder stays and becomes an ordinary run. Nothing on disk is deleted.',
+    confirmLabel: 'Remove',
+    variant: 'destroy',
+  },
+  restart: {
+    title: (name) => `Restart ${name}?`,
+    message:
+      'Its running session ends and the folder is opened again with the current instructions. Agents it started keep running.',
+    confirmLabel: 'Restart',
+    variant: 'elevate',
+  },
+};
+
+const detailOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <h3 className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-muted/70">
+      {children}
+    </h3>
+  );
+}
+
 /**
  * The folders earlier supervisor runs left under `~/.auric/supervisors/`:
  * the history, the working notes, the transcripts. Most recently changed
  * first; a run unfolds into its files, newest on top, and can be resumed —
  * a new supervisor in that folder, told to catch up before it acts.
+ *
+ * Runs a human chose to keep are Project Managers (`docs/design-project-manager.md`):
+ * pinned above the runs by name, each with an inspector, an archive and a menu.
  *
  * Nothing watches the folder, so the list reads on mount, on refresh, when
  * the window comes back into focus and when a supervisor starts or ends.
@@ -311,14 +410,22 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   const live = useMemo(() => runningSupervisors(agents), [agents]);
   const liveKey = live.map((agent) => `${agent.id}:${agent.repoPath ?? ''}`).join('|');
   const spawnSupervisor = useStore((s) => s.spawnSupervisor);
+  const killRunningAgent = useStore((s) => s.killRunningAgent);
   const showToast = useStore((s) => s.showToast);
   const [runs, setRuns] = useState<SupervisorRun[] | null>(null);
+  const [registry, setRegistry] = useState<Registry>(NO_REGISTRY);
   const [error, setError] = useState<string | null>(null);
   /** Open runs by path: `null` while their files are read. */
   const [trees, setTrees] = useState<Record<string, RunTreeNode[] | null>>({});
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [resuming, setResuming] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [expandedManagers, setExpandedManagers] = useState<Set<string>>(new Set());
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [memoryReads, setMemoryReads] = useState<Record<string, number>>({});
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [nameSheet, setNameSheet] = useState<NameSheet | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   // Read by a refresh, which reloads whatever is open without re-subscribing to it.
   const treesRef = useRef(trees);
   useEffect(() => {
@@ -331,10 +438,7 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
         const tree = buildRunTree(await supervisorRunFiles(path));
         setTrees((current) => (path in current ? { ...current, [path]: tree } : current));
       } catch (cause) {
-        showToast(
-          `Could not read the run: ${cause instanceof Error ? cause.message : String(cause)}`,
-          'error'
-        );
+        showToast(`Could not read the run: ${detailOf(cause)}`, 'error');
         setTrees(({ [path]: _closed, ...rest }) => rest);
       }
     },
@@ -343,14 +447,15 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
 
   const refresh = useCallback(
     () =>
-      supervisorRunsList().then(
-        (listed) => {
+      Promise.all([supervisorRunsList(), readRegistry()]).then(
+        ([listed, known]) => {
           setRuns(listed);
+          setRegistry(known);
           setError(null);
           setNow(Date.now());
           for (const path of Object.keys(treesRef.current)) void loadTree(path);
         },
-        (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
+        (cause: unknown) => setError(detailOf(cause))
       ),
     [loadTree]
   );
@@ -369,6 +474,9 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
     };
   }, [refresh]);
 
+  const groups = useMemo(() => splitSupervisorRuns(runs ?? []), [runs]);
+  const blockedReason = registry.error ?? undefined;
+
   const toggleRun = (run: SupervisorRun) => {
     if (run.path in trees) {
       setTrees(({ [run.path]: _closed, ...rest }) => rest);
@@ -380,6 +488,14 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
 
   const toggleFolder = (key: string) =>
     setOpenFolders((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const toggleManager = (key: string) =>
+    setExpandedManagers((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -399,6 +515,138 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
       setResuming(null);
     }
   };
+
+  /** The full record: the registry has `lastLaunch`, the run only the identity. */
+  const managerOf = (run: ManagedRun): SupervisorManager =>
+    registry.managers.find((m) => m.key === run.manager.key) ?? {
+      ...run.manager,
+      runDir: run.name,
+      promotedAt: '',
+      lastLaunch: null,
+    };
+
+  /** Runs a registry change, then reads everything again; a refusal is a toast. */
+  const change = async (
+    failure: string,
+    action: () => Promise<unknown>,
+    success?: string
+  ): Promise<boolean> => {
+    try {
+      await action();
+    } catch (cause) {
+      showToast(`${failure}: ${detailOf(cause)}`, 'error');
+      return false;
+    }
+    if (success) showToast(success, 'success');
+    await refresh();
+    return true;
+  };
+
+  const open = (manager: SupervisorManager) =>
+    openManager({ spawnSupervisor, showToast }, manager.key, {
+      onNothingVisible: () => undefined,
+      onShow: onSelectAgent,
+    });
+
+  const validateMemory = async (manager: SupervisorManager) => {
+    setExpandedManagers((current) => new Set(current).add(manager.key));
+    try {
+      const { findings } = await managerValidate(manager.key);
+      setMemoryReads((current) => ({ ...current, [manager.key]: (current[manager.key] ?? 0) + 1 }));
+      showToast(
+        findings.length === 0
+          ? `${manager.name}: memory has no problems.`
+          : `${manager.name}: memory has ${findings.length} ${findings.length === 1 ? 'problem' : 'problems'}.`,
+        findings.length === 0 ? 'success' : 'info'
+      );
+    } catch (cause) {
+      showToast(`Could not check the memory: ${detailOf(cause)}`, 'error');
+    }
+  };
+
+  const restart = async (manager: SupervisorManager, running: AgentInfo) => {
+    try {
+      await killRunningAgent(running.id);
+    } catch (cause) {
+      showToast(`Could not stop ${manager.name}: ${detailOf(cause)}`, 'error');
+      return;
+    }
+    await open(manager);
+  };
+
+  const confirmed = async ({ kind, manager, live: running }: Confirmation) => {
+    setConfirmation(null);
+    if (kind === 'archive') {
+      await change(`Could not archive ${manager.name}`, () => managerArchive(manager.key));
+    } else if (kind === 'remove') {
+      await change(`Could not remove ${manager.name}`, () => managerRemove(manager.key));
+    } else if (running) {
+      await restart(manager, running);
+    }
+  };
+
+  const showMenu = (point: MenuPoint, options: ContextMenuOption[]) =>
+    setMenu({ ...point, options });
+
+  const managerMenuFor = (run: ManagedRun) => {
+    const manager = managerOf(run);
+    const archived = run.manager.archivedAt !== null;
+    return managerMenu(archived, blockedReason, {
+      open: () => void open(manager),
+      editInstructions: () => onOpenFile(`${run.path.replace(/\/+$/, '')}/${INSTRUCTIONS_FILE}`),
+      rename: () => setNameSheet({ kind: 'rename', manager }),
+      showInFinder: () =>
+        void revealInFileManager(run.path).catch((cause: unknown) =>
+          showToast(`Could not show the folder: ${detailOf(cause)}`, 'error')
+        ),
+      validateMemory: () => void validateMemory(manager),
+      archive: () => setConfirmation({ kind: 'archive', manager }),
+      restore: () =>
+        void change(`Could not restore ${manager.name}`, () => managerRestore(manager.key)),
+      remove: () => setConfirmation({ kind: 'remove', manager }),
+    });
+  };
+
+  const renderManager = (run: ManagedRun, archived: boolean) => {
+    const manager = managerOf(run);
+    const running = supervisorUsingRunDir(live, run.path);
+    return (
+      <ManagerRow
+        key={run.path}
+        manager={manager}
+        run={run}
+        now={now}
+        liveSupervisor={running}
+        archived={archived}
+        expanded={!archived && expandedManagers.has(manager.key)}
+        folderOpen={run.path in trees}
+        files={
+          <RunFiles
+            tree={trees[run.path] ?? null}
+            isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
+            toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
+            onOpenFile={onOpenFile}
+            now={now}
+          />
+        }
+        reloadToken={memoryReads[manager.key] ?? 0}
+        onToggle={() => toggleManager(manager.key)}
+        onToggleFolder={() => toggleRun(run)}
+        onMenu={(point) => showMenu(point, managerMenuFor(run))}
+        onOpen={() => void open(manager)}
+        onEditInstructions={() =>
+          onOpenFile(`${run.path.replace(/\/+$/, '')}/${INSTRUCTIONS_FILE}`)
+        }
+        onRestart={() => running && setConfirmation({ kind: 'restart', manager, live: running })}
+      />
+    );
+  };
+
+  const hasManagers = groups.managers.length + groups.archived.length > 0;
+  const takenKeys = [
+    ...registry.managers.map((m) => m.key),
+    ...live.map((agent) => agent.supervisorKey).filter((key): key is string => !!key),
+  ];
 
   return (
     <div data-testid="supervisor-runs-panel" className="flex h-full flex-col bg-panel-bg">
@@ -444,25 +692,110 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
           </p>
         </div>
       ) : (
-        <ul className="flex-1 overflow-y-auto py-1">
-          {runs.map((run) => (
-            <RunRow
-              key={run.path}
-              run={run}
-              now={now}
-              liveHere={supervisorUsingRunDir(live, run.path)}
-              tree={trees[run.path]}
-              resuming={resuming}
-              onToggle={() => toggleRun(run)}
-              onResume={() => void resume(run)}
-              onShow={onSelectAgent}
-              // Folder keys are relative to their run; prefix them so two runs never share one.
-              isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
-              toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
-              onOpenFile={onOpenFile}
-            />
-          ))}
-        </ul>
+        <div className="flex-1 overflow-y-auto py-1">
+          {groups.managers.length > 0 && (
+            <>
+              <SectionTitle>Project Managers</SectionTitle>
+              <ul>{groups.managers.map((run) => renderManager(run, false))}</ul>
+            </>
+          )}
+          {groups.archived.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setArchivedOpen((openNow) => !openNow)}
+                aria-expanded={archivedOpen}
+                className="flex w-full items-center gap-1 px-3 pb-1 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-muted/70 transition-colors hover:text-foreground"
+              >
+                <AuricIcon
+                  name={archivedOpen ? 'expand_more' : 'chevron_right'}
+                  aria-hidden="true"
+                  className="text-[13px]"
+                />
+                Archived ({groups.archived.length})
+              </button>
+              {archivedOpen && <ul>{groups.archived.map((run) => renderManager(run, true))}</ul>}
+            </>
+          )}
+          {hasManagers && <SectionTitle>Recent Runs</SectionTitle>}
+          <ul>
+            {groups.recent.map((run) => (
+              <RunRow
+                key={run.path}
+                run={run}
+                now={now}
+                liveHere={supervisorUsingRunDir(live, run.path)}
+                tree={trees[run.path]}
+                resuming={resuming}
+                onToggle={() => toggleRun(run)}
+                onResume={() => void resume(run)}
+                onShow={onSelectAgent}
+                onMenu={(point) =>
+                  showMenu(
+                    point,
+                    runMenu(blockedReason, () => setNameSheet({ kind: 'promote', run }))
+                  )
+                }
+                // Folder keys are relative to their run; prefix them so two runs never share one.
+                isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
+                toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
+                onOpenFile={onOpenFile}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          options={menu.options}
+          onClose={() => setMenu(null)}
+          ariaLabel="Actions"
+          width={MENU_WIDTH}
+        />
+      )}
+      {nameSheet?.kind === 'promote' && (
+        <PromoteManagerSheet
+          run={nameSheet.run}
+          liveSupervisor={supervisorUsingRunDir(live, nameSheet.run.path)}
+          takenKeys={takenKeys}
+          managers={registry.managers}
+          registryError={registry.error}
+          onPromoted={(promoted) => {
+            setExpandedManagers((current) => new Set(current).add(promoted.key));
+            showToast(`${promoted.name} is now a Project Manager.`, 'success');
+            void refresh();
+          }}
+          onClose={() => setNameSheet(null)}
+        />
+      )}
+      {nameSheet?.kind === 'rename' && (
+        <ManagerNameSheet
+          title="Rename Project Manager"
+          confirmLabel="Rename"
+          initialName={nameSheet.manager.name}
+          addressFor={() => nameSheet.manager.key}
+          managers={registry.managers}
+          exceptKey={nameSheet.manager.key}
+          blockedReason={blockedReason}
+          onSubmit={async (name) => {
+            await managerRename(nameSheet.manager.key, name);
+            await refresh();
+          }}
+          onClose={() => setNameSheet(null)}
+        />
+      )}
+      {confirmation && (
+        <ConfirmDialog
+          title={CONFIRMATIONS[confirmation.kind].title(confirmation.manager.name)}
+          message={CONFIRMATIONS[confirmation.kind].message}
+          confirmLabel={CONFIRMATIONS[confirmation.kind].confirmLabel}
+          variant={CONFIRMATIONS[confirmation.kind].variant}
+          onConfirm={() => void confirmed(confirmation)}
+          onCancel={() => setConfirmation(null)}
+        />
       )}
     </div>
   );

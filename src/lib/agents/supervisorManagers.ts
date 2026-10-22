@@ -23,6 +23,8 @@ export const MANAGER_CONCEPT_FIELDS = {
 };
 export const MANAGER_OKF_VERSION = fixtures.memory.okfVersion;
 export const MANAGER_LOG_FILE = fixtures.memory.logFile;
+/** The one line that installs okf; the inspector offers it to copy, never runs it. */
+export const MANAGER_OKF_FIX = fixtures.machine.okf.fix;
 
 const KEY_MAX_LENGTH = fixtures.keyFromName.maxLength;
 const KEY_FALLBACK = fixtures.keyFromName.fallback;
@@ -172,4 +174,45 @@ export function memoryFindingLines<F extends Pick<ManagerMemoryFinding, 'path' |
 /** okf cannot check the bundle here, so only our layout rules are watching. */
 export function layoutRulesRunWithoutOkf(state: OkfState): boolean {
   return state === 'missing' || state === 'outdated' || state === 'unrecognised';
+}
+
+/** "mail-triage" -> "Mail Triage": the name the Promote sheet suggests for a run that has a key. */
+export function nameFromKey(key: string): string {
+  return key
+    .split('-')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Lowercase hex SHA-256 of the UTF-8 text, as Rust books it in `lastLaunch`. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Whether `INSTRUCTIONS.md` differs from what the last start injected. Before
+ * the first start there is nothing to differ from; a missing file hashes as the
+ * empty text, as in `record_launch`.
+ */
+export async function instructionsChangedSince(
+  lastLaunch: SupervisorManager['lastLaunch'],
+  currentText: string | null
+): Promise<boolean> {
+  if (!lastLaunch) return false;
+  return (await sha256Hex(currentText ?? '')) !== lastLaunch.instructionsSha256;
+}
+
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
+/** The first line of substance in the instructions, for one line of the inspector. */
+export function instructionsPreview(text: string | null): string | null {
+  if (text === null) return null;
+  const line = text
+    .replace(HTML_COMMENT, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l !== '' && !l.startsWith('#'));
+  return line ? line.replace(/^[-*]\s+/, '') : null;
 }
