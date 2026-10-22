@@ -65,18 +65,48 @@ function cutKey(base: string, suffix: string): string {
 }
 
 /**
- * The address a new manager gets from its name: fold to ASCII, lowercase, runs
+ * Letters that fold to ASCII for a key, exactly `FOLDED_LETTERS` in
+ * `supervisor/managers.rs`. Not Unicode normalisation: NFKD would drop ß, Ł, Ø
+ * and Đ, and fold ligatures Rust leaves alone, so the sheet would show an
+ * address Rust does not assign.
+ */
+const FOLDED_LETTERS: readonly (readonly [string, string])[] = [
+  ['ÀÁÂÃÄÅàáâãäåĀāĂăĄą', 'a'],
+  ['ÇçĆćĈĉĊċČč', 'c'],
+  ['ĎďĐđ', 'd'],
+  ['ÈÉÊËèéêëĒēĔĕĖėĘęĚě', 'e'],
+  ['ĜĝĞğĠġĢģ', 'g'],
+  ['ÌÍÎÏìíîïĨĩĪīĬĭĮįİı', 'i'],
+  ['ĹĺĻļĽľŁł', 'l'],
+  ['ÑñŃńŅņŇň', 'n'],
+  ['ÒÓÔÕÖØòóôõöøŌōŎŏŐő', 'o'],
+  ['ŔŕŖŗŘř', 'r'],
+  ['ŚśŜŝŞşŠš', 's'],
+  ['ŢţŤť', 't'],
+  ['ÙÚÛÜùúûüŨũŪūŬŭŮůŰűŲų', 'u'],
+  ['ÝýÿŶŷŸ', 'y'],
+  ['ŹźŻżŽž', 'z'],
+  ['ß', 'ss'],
+  ['Ææ', 'ae'],
+  ['Œœ', 'oe'],
+];
+
+/** Appends one character of a name to a key under construction; anything else is one dash. */
+function foldLetter(key: string, character: string): string {
+  if (/^[A-Za-z0-9]$/.test(character)) return key + character.toLowerCase();
+  const ascii = FOLDED_LETTERS.find(([letters]) => letters.includes(character))?.[1];
+  if (ascii) return key + ascii;
+  return key.endsWith('-') ? key : `${key}-`;
+}
+
+/**
+ * The address a new manager gets from its name: fold to ASCII (the table above), lowercase, runs
  * of anything else become one dash. `taken` is every registry key (archived
  * included) and every live supervisor's key; a taken or reserved key gets -2,
  * -3, … appended.
  */
 export function keyFromName(name: string, taken: readonly string[]): string {
-  const folded = name
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const folded = [...name].reduce(foldLetter, '').replace(/^-+|-+$/g, '');
   const base = cutKey(folded, '') || KEY_FALLBACK;
   const unavailable = (key: string) => taken.includes(key) || RESERVED_KEY.test(key);
   if (!unavailable(base)) return base;

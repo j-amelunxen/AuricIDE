@@ -55,7 +55,9 @@ export function PromoteManagerSheet({
   onClose,
 }: PromoteManagerSheetProps) {
   const okfMissing = useOkfMissing();
-  const ownKey = liveSupervisor?.supervisorKey || undefined;
+  // Rust keeps a run's own key unless a registry manager already holds it.
+  const liveKey = liveSupervisor?.supervisorKey || undefined;
+  const ownKey = managers.some((manager) => manager.key === liveKey) ? undefined : liveKey;
   return (
     <ManagerNameSheet
       title="Promote to Project Manager"
