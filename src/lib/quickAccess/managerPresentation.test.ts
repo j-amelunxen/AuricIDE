@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import {
+  forgetRemovedManagers,
   managersForMenuBar,
   managersForQuickAccess,
   parseManagerPresentations,
@@ -96,5 +97,25 @@ describe('updateManagerPresentation', () => {
     updateManagerPresentation('a', { shortcut: 'F5' });
     updateManagerPresentation('a', { shortcut: null });
     expect(localStorage.getItem(APP_CONFIG_KEYS.supervisorManagers)).toBe('{"a":{}}');
+  });
+});
+
+describe('forgetRemovedManagers', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('drops the choices of a key the registry no longer has, so a new manager starts clean', () => {
+    updateManagerPresentation('gone', { shortcut: 'F5', menuBar: false });
+    updateManagerPresentation('kept', { shortcut: 'F6' });
+    forgetRemovedManagers(['kept']);
+    expect(readManagerPresentations()).toEqual({ kept: { shortcut: 'F6' } });
+  });
+
+  it('writes nothing when every stored key is still in the registry', () => {
+    updateManagerPresentation('kept', { shortcut: 'F6' });
+    const changed = vi.fn();
+    window.addEventListener(APP_CONFIG_CHANGED_EVENT, changed);
+    forgetRemovedManagers(['kept', 'other']);
+    window.removeEventListener(APP_CONFIG_CHANGED_EVENT, changed);
+    expect(changed).not.toHaveBeenCalled();
   });
 });

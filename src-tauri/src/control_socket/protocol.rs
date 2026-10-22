@@ -34,6 +34,11 @@ pub enum ErrorCode {
     SupervisorKeyInvalid,
     SupervisorKeyInUse,
     UnknownSupervisor,
+    ManagerArchived,
+    ManagerKeyMismatch,
+    ManagerKeyForeignFolder,
+    InstructionsTooLarge,
+    RegistryUnreadable,
     Internal,
 }
 
@@ -685,6 +690,11 @@ pub(crate) mod tests {
             ErrorCode::SupervisorKeyInvalid,
             ErrorCode::SupervisorKeyInUse,
             ErrorCode::UnknownSupervisor,
+            ErrorCode::ManagerArchived,
+            ErrorCode::ManagerKeyMismatch,
+            ErrorCode::ManagerKeyForeignFolder,
+            ErrorCode::InstructionsTooLarge,
+            ErrorCode::RegistryUnreadable,
             ErrorCode::Internal,
         ];
         let ours: Vec<Value> = codes

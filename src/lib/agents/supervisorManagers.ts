@@ -30,8 +30,10 @@ const KEY_MAX_LENGTH = fixtures.keyFromName.maxLength;
 const KEY_FALLBACK = fixtures.keyFromName.fallback;
 /** Shaped like an agent id, which `events.subscribe` reads as an id (supervisorLink fixtures). */
 const RESERVED_KEY = /^agent-\d+$/;
-// Line breaks and every other control character: the menu bar lists names on one line.
-const NOT_ONE_LINE = /[\p{Cc}\p{Zl}\p{Zp}]/u;
+// Line breaks, control characters and the invisible or reordering format characters
+// (zero-width, bidi), as in `is_invisible_format` in managers.rs: names are shown on one line.
+const NOT_ONE_LINE =
+  /[\p{Cc}\p{Zl}\p{Zp}\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;
 
 export const MANAGER_NAME_INVALID_SENTENCE = `A Project Manager name needs 1 to ${MANAGER_NAME_MAX_LENGTH} characters on one line.`;
 
@@ -65,18 +67,51 @@ function cutKey(base: string, suffix: string): string {
 }
 
 /**
- * The address a new manager gets from its name: fold to ASCII, lowercase, runs
+ * Letters that fold to ASCII for a key, exactly `FOLDED_LETTERS` in
+ * `supervisor/managers.rs`. Not Unicode normalisation: NFKD would drop ß, Ł, Ø
+ * and Đ, and fold ligatures Rust leaves alone, so the sheet would show an
+ * address Rust does not assign.
+ */
+const FOLDED_LETTERS: readonly (readonly [string, string])[] = [
+  ['ÀÁÂÃÄÅàáâãäåĀāĂăĄą', 'a'],
+  ['ÇçĆćĈĉĊċČč', 'c'],
+  ['ĎďĐđ', 'd'],
+  ['ÈÉÊËèéêëĒēĔĕĖėĘęĚě', 'e'],
+  ['ĜĝĞğĠġĢģ', 'g'],
+  ['ÌÍÎÏìíîïĨĩĪīĬĭĮįİı', 'i'],
+  ['ĹĺĻļĽľŁł', 'l'],
+  ['ÑñŃńŅņŇň', 'n'],
+  ['ÒÓÔÕÖØòóôõöøŌōŎŏŐő', 'o'],
+  ['ŔŕŖŗŘř', 'r'],
+  ['ŚśŜŝŞşŠš', 's'],
+  ['ŢţŤť', 't'],
+  ['ÙÚÛÜùúûüŨũŪūŬŭŮůŰűŲų', 'u'],
+  ['ÝýÿŶŷŸ', 'y'],
+  ['ŹźŻżŽž', 'z'],
+  ['ß', 'ss'],
+  ['Ææ', 'ae'],
+  ['Œœ', 'oe'],
+  ['ﬀ', 'ff'],
+  ['ﬁ', 'fi'],
+  ['ﬂ', 'fl'],
+];
+
+/** Appends one character of a name to a key under construction; anything else is one dash. */
+function foldLetter(key: string, character: string): string {
+  if (/^[A-Za-z0-9]$/.test(character)) return key + character.toLowerCase();
+  const ascii = FOLDED_LETTERS.find(([letters]) => letters.includes(character))?.[1];
+  if (ascii) return key + ascii;
+  return key.endsWith('-') ? key : `${key}-`;
+}
+
+/**
+ * The address a new manager gets from its name: fold to ASCII (the table above), lowercase, runs
  * of anything else become one dash. `taken` is every registry key (archived
  * included) and every live supervisor's key; a taken or reserved key gets -2,
  * -3, … appended.
  */
 export function keyFromName(name: string, taken: readonly string[]): string {
-  const folded = name
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const folded = [...name].reduce(foldLetter, '').replace(/^-+|-+$/g, '');
   const base = cutKey(folded, '') || KEY_FALLBACK;
   const unavailable = (key: string) => taken.includes(key) || RESERVED_KEY.test(key);
   if (!unavailable(base)) return base;
@@ -157,6 +192,18 @@ export function splitSupervisorRuns(runs: SupervisorRun[]): SupervisorRunGroups 
   };
 }
 
+/** Longest finding message or path the prompt carries; a file's own text must not fill it. */
+const FINDING_TEXT_MAX_LENGTH = 200;
+
+/** One line, no control characters, cut to length: a finding quotes file content. */
+function promptSafe(text: string): string {
+  const oneLine = text.replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').trim();
+  const characters = [...oneLine];
+  return characters.length <= FINDING_TEXT_MAX_LENGTH
+    ? oneLine
+    : `${characters.slice(0, FINDING_TEXT_MAX_LENGTH - 1).join('')}…`;
+}
+
 /** The findings the next start prompt carries, capped at the contract's limit. */
 export function memoryFindingLines<F extends Pick<ManagerMemoryFinding, 'path' | 'message'>>(
   findings: F[]
@@ -166,7 +213,9 @@ export function memoryFindingLines<F extends Pick<ManagerMemoryFinding, 'path' |
 } {
   const shown = findings.slice(0, fixtures.memory.maxFindingsInPrompt);
   return {
-    lines: shown.map((f) => (f.path ? `- ${f.path}: ${f.message}` : `- ${f.message}`)),
+    lines: shown.map((f) =>
+      f.path ? `- ${promptSafe(f.path)}: ${promptSafe(f.message)}` : `- ${promptSafe(f.message)}`
+    ),
     omitted: findings.length - shown.length,
   };
 }

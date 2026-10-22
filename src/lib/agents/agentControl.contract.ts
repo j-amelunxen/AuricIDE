@@ -46,6 +46,11 @@ export const CONTROL_ERROR_CODES = [
   'supervisor_key_invalid',
   'supervisor_key_in_use',
   'unknown_supervisor',
+  'manager_archived',
+  'manager_key_mismatch',
+  'manager_key_foreign_folder',
+  'instructions_too_large',
+  'registry_unreadable',
   'internal',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];

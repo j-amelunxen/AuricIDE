@@ -8,7 +8,11 @@
     "$comment": "Trimmed before the checks. Unique among non-archived managers ignoring case (manager_name_taken).",
     "maxLength": 40,
     "valid": ["Release Desk", "Inbox triage 2", "Équipe", "  Padded Name  "],
-    "invalid": ["", "   ", "line\nbreak", "tab\there", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    "invalid": [
+      "zero\u200bwidth",
+      "right-to-left\u202eoverride",
+      "isolate\u2066x",
+      "bom\ufeffname","", "   ", "line\nbreak", "tab\there", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
   },
   "keyFromName": {
     "$comment": "Fold to ASCII, lowercase, every run of other characters becomes one '-', trim dashes, cut to 48 (then trim a trailing dash again). Empty becomes 'manager'. A key that is taken (any registry entry, archived included, or a live supervisor) or reserved (supervisorLink.fixtures.json supervisorKeys.reservedPattern) gets -2, -3, ... appended, cut so the whole stays within 48.",
@@ -30,7 +34,14 @@
         "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "taken": [],
         "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
+      },
+      { "name": "Straße", "taken": [], "key": "strasse" },
+      { "name": "Łódź Desk", "taken": [], "key": "lodz-desk" },
+      { "name": "Æther", "taken": [], "key": "aether" },
+      { "name": "Œuvre", "taken": [], "key": "oeuvre" },
+      { "name": "Ørsted", "taken": [], "key": "orsted" },
+      { "name": "Đorđe", "taken": [], "key": "dorde" },
+      { "name": "ﬁnance ﬂow", "taken": [], "key": "finance-flow" }
     ]
   },
   "promotionKey": {
@@ -38,7 +49,15 @@
     "cases": [
       { "liveKey": "mail-triage", "fileKey": "old-desk", "name": "Inbox", "key": "mail-triage" },
       { "liveKey": null, "fileKey": "old-desk", "name": "Inbox", "key": "old-desk" },
-      { "liveKey": null, "fileKey": null, "name": "Inbox", "key": "inbox" }
+      { "liveKey": null, "fileKey": null, "name": "Inbox", "key": "inbox" },
+      {
+        "$comment": "otherLiveKeys: keys of live supervisors working elsewhere. The remembered key is theirs now, so it is not taken.",
+        "liveKey": null,
+        "fileKey": "old-desk",
+        "otherLiveKeys": ["old-desk"],
+        "name": "Inbox",
+        "key": "inbox"
+      }
     ]
   },
   "launchKey": {
@@ -127,6 +146,21 @@
         "own": "release-desk",
         "live": [],
         "result": { "error": "manager_key_foreign_folder" }
+      },
+      {
+        "$comment": "fileKey: the key the resumed folder's supervisor.json remembers. A manager's key there does not make a plain resume a manager.",
+        "resume": "2026-09-01_090000",
+        "own": null,
+        "fileKey": "release-desk",
+        "live": [],
+        "result": { "error": "manager_key_foreign_folder" }
+      },
+      {
+        "resume": "2026-09-01_090000",
+        "own": null,
+        "fileKey": "docs",
+        "live": [],
+        "result": { "key": "docs" }
       }
     ]
   },

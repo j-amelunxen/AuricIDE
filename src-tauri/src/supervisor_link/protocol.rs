@@ -51,7 +51,7 @@ pub const EVENTS: [&str; 8] = [
 /// Every code the link may answer with. A code from elsewhere (the control
 /// dispatcher, the frontend) that is not in this list goes out as `internal`
 /// with the original code kept in the message.
-pub const ERROR_CODES: [&str; 26] = [
+pub const ERROR_CODES: [&str; 31] = [
     "invalid_request",
     "unsupported_version",
     "unknown_method",
@@ -77,6 +77,11 @@ pub const ERROR_CODES: [&str; 26] = [
     "supervisor_key_invalid",
     "supervisor_key_in_use",
     "unknown_supervisor",
+    "manager_archived",
+    "manager_key_mismatch",
+    "manager_key_foreign_folder",
+    "instructions_too_large",
+    "registry_unreadable",
     "internal",
 ];
 

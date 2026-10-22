@@ -315,6 +315,7 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         supervisor_key: None,
         resumed_run_dir: None,
         replaces_agent_id: None,
+        launch_to_book: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");
@@ -1389,10 +1390,17 @@ impl ManagerWorld {
         live: &[AgentInfo],
     ) -> Result<AgentConfig, String> {
         let resume_run_dir = resume.map(|folder| self.run(folder).to_string_lossy().into_owned());
-        admit_spawn(
+        self.admit_config(
             supervisor_test_config(serde_json::json!({
                 "role": "supervisor", "resumeRunDir": resume_run_dir, "supervisorKey": key
             })),
+            live,
+        )
+    }
+
+    fn admit_config(&self, config: AgentConfig, live: &[AgentInfo]) -> Result<AgentConfig, String> {
+        admit_spawn(
+            config,
             Some(self.app_data.path()),
             Some(self.home.path()),
             live,
@@ -1445,6 +1453,10 @@ fn every_launch_key_case_of_the_fixture_is_decided_as_it_says() {
                 world.live_supervisor(agent["supervisorKey"].as_str(), folder)
             })
             .collect();
+        if let (Some(folder), Some(file_key)) = (case["resume"].as_str(), case["fileKey"].as_str())
+        {
+            crate::supervisor::several::write_run_key(&world.run(folder), Some(file_key)).unwrap();
+        }
         let outcome = world.admit(case["resume"].as_str(), case["own"].as_str(), &live);
         let expected = &case["result"];
         match (expected.get("error"), outcome) {
@@ -1549,6 +1561,38 @@ fn an_unreadable_registry_stops_a_resume_but_not_a_plain_new_supervisor() {
 }
 
 #[test]
+fn a_manager_launch_is_booked_only_once_the_spawn_goes_ahead_and_never_on_a_restore() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let no_launch = serde_json::Value::Null;
+    let admitted = world.admit(Some("2026-10-21_090000"), None, &[]).unwrap();
+    assert_eq!(
+        world.registry()["managers"][0]["lastLaunch"],
+        no_launch,
+        "admission alone books nothing: the spawn can still fail after it"
+    );
+    let booking = admitted
+        .launch_to_book
+        .expect("a fresh launch is to be booked");
+    assert_eq!(booking.key, "release-desk");
+
+    let mut restored = supervisor_test_config(serde_json::json!({
+        "role": "supervisor",
+        "resumeRunDir": world.run("2026-10-21_090000").to_string_lossy(),
+    }));
+    restored.replaces_agent_id = Some("agent-1".into());
+    let restored = world.admit_config(restored, &[]).unwrap();
+    assert_eq!(restored.name, "Release Desk");
+    assert!(
+        restored.launch_to_book.is_none(),
+        "a restored session replays its old prompt, so it launched with no new instructions"
+    );
+}
+
+#[test]
 fn opening_a_manager_records_the_instructions_it_was_launched_with() {
     use sha2::{Digest, Sha256};
     let world = ManagerWorld::with_managers(
@@ -1561,7 +1605,17 @@ fn opening_a_manager_records_the_instructions_it_was_launched_with() {
         "Write Spanish.",
     )
     .unwrap();
-    world.admit(Some("2026-10-21_090000"), None, &[]).unwrap();
+    let booking = world
+        .admit(Some("2026-10-21_090000"), None, &[])
+        .unwrap()
+        .launch_to_book
+        .unwrap();
+    crate::supervisor::managers::record_launch(
+        &world.app_data.path().join("supervisor-managers.json"),
+        &booking.key,
+        booking.instructions.as_deref(),
+    )
+    .unwrap();
     let launch = &world.registry()["managers"][0]["lastLaunch"];
     assert_eq!(
         launch["instructionsSha256"],
@@ -1596,6 +1650,27 @@ fn instructions_over_the_limit_refuse_the_launch_and_record_nothing() {
     assert_eq!(
         world.registry()["managers"][0]["lastLaunch"],
         serde_json::Value::Null
+    );
+}
+
+#[test]
+fn only_the_run_folder_of_a_manager_gets_the_deny_rules() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    let denied =
+        |folder: &str| super::manager::manager_denied_tools_for_run(world.app_data.path(), folder);
+    assert_eq!(denied("2026-10-21_090000"), manager_denied_tools());
+    assert!(
+        denied("2026-09-01_090000").is_empty(),
+        "a plain run is unrestricted"
+    );
+    std::fs::remove_file(world.app_data.path().join("supervisor-managers.json")).unwrap();
+    assert!(
+        denied("2026-10-21_090000").is_empty(),
+        "no registry, no manager"
     );
 }
 

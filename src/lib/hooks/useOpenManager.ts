@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { openManager } from '@/lib/agents/openSupervisor';
 import { useStore } from '@/lib/store';
 
@@ -14,17 +14,20 @@ interface OpenManagerHooks {
 /**
  * Opens a Project Manager by key (a running one is focused) the way every
  * surface does: the Quick Access tile, its submenu and the Settings list.
- * `opening` is the key being started, so one click cannot start it twice.
+ * `opening` is the key being started. A ref guards the start itself: state
+ * updates only after a render, so two clicks in one tick would both pass it.
  */
 export function useOpenManager({ onOpenSettings, onSelectAgent }: OpenManagerHooks = {}) {
   const spawnSupervisor = useStore((s) => s.spawnSupervisor);
   const selectAgent = useStore((s) => s.selectAgent);
   const showToast = useStore((s) => s.showToast);
   const [opening, setOpening] = useState<string | null>(null);
+  const inFlight = useRef(false);
 
   const open = useCallback(
     async (key: string) => {
-      if (opening) return;
+      if (inFlight.current) return;
+      inFlight.current = true;
       setOpening(key);
       try {
         await openManager({ spawnSupervisor, showToast }, key, {
@@ -32,10 +35,11 @@ export function useOpenManager({ onOpenSettings, onSelectAgent }: OpenManagerHoo
           onShow: onSelectAgent ?? selectAgent,
         });
       } finally {
+        inFlight.current = false;
         setOpening(null);
       }
     },
-    [opening, spawnSupervisor, showToast, onOpenSettings, onSelectAgent, selectAgent]
+    [spawnSupervisor, showToast, onOpenSettings, onSelectAgent, selectAgent]
   );
 
   return { open, opening };

@@ -86,6 +86,27 @@ describe('PromoteManagerSheet', () => {
     expect(screen.getByText('Address: mail-triage')).toBeInTheDocument();
   });
 
+  it('does not claim a run’s key that another manager already holds, as Rust does not', () => {
+    open({
+      liveSupervisor: liveAgent,
+      managers: [manager({ key: 'mail-triage', name: 'Mail Triage' })],
+      takenKeys: ['mail-triage'],
+    });
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Inbox' },
+    });
+    expect(screen.getByText('Address: inbox')).toBeInTheDocument();
+  });
+
+  it('shows the address Rust folds for letters Unicode normalisation would drop', () => {
+    open();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Straße Łódź' },
+    });
+    expect(screen.getByText('Address: strasse-lodz')).toBeInTheDocument();
+  });
+
   it('derives the address from the name and steps past keys already taken', () => {
     open({ takenKeys: ['inbox-triage'] });
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
