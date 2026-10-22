@@ -32,6 +32,9 @@ vi.mock('@/lib/tauri/agents', async (importOriginal) => ({
 }));
 vi.mock('@/lib/tauri/supervisorPolicy', () => ({ supervisorPolicyGet }));
 vi.mock('@/lib/tauri/supervisorRuns', () => ({ supervisorRunsList }));
+vi.mock('@/lib/tauri/supervisorManagers', () => ({
+  supervisorManagersList: vi.fn(async () => []),
+}));
 vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),
   listProviders: vi.fn(async () => [

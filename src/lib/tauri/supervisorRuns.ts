@@ -1,4 +1,5 @@
 import { invoke } from './invoke';
+import type { SupervisorManager } from './supervisorManagers';
 
 /** One earlier supervisor run folder under `~/.auric/supervisors/` (`supervisor/runs.rs`). */
 export interface SupervisorRun {
@@ -10,6 +11,11 @@ export interface SupervisorRun {
   fileCount: number;
   /** Rust stopped counting; `fileCount` is a floor. */
   truncated: boolean;
+  /**
+   * The Project Manager that owns this folder (`docs/design-project-manager.md`).
+   * Absent or null for an ordinary run.
+   */
+  manager?: Pick<SupervisorManager, 'key' | 'name' | 'archivedAt'> | null;
 }
 
 export interface SupervisorRunFile {

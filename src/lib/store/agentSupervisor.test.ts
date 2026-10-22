@@ -6,6 +6,11 @@ import { forgetSupervisorRunResults, spawnAgent, type AgentInfo } from '../tauri
 import { supervisorPolicyGet } from '../tauri/supervisorPolicy';
 import { emptySupervisorPolicy, defaultSupervisorProjectPolicy } from '../config/supervisorPolicy';
 import type { ProviderInfo } from '../tauri/providers';
+import {
+  managerInstructions,
+  managerMemory,
+  supervisorManagersList,
+} from '../tauri/supervisorManagers';
 
 vi.mock('../tauri/agents', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,6 +53,13 @@ vi.mock('../tauri/providers', () => ({
   listProviders: vi.fn(async () => [CLAUDE_FROM_REGISTRY, CODEX_FROM_REGISTRY]),
 }));
 vi.mock('../tauri/supervisorPolicy', () => ({ supervisorPolicyGet: vi.fn() }));
+vi.mock('../tauri/supervisorManagers', () => ({
+  supervisorManagersList: vi.fn(async () => []),
+  managerInstructions: vi.fn(async () => null),
+  managerMemory: vi.fn(async () => {
+    throw new Error('no memory yet');
+  }),
+}));
 vi.mock('../tauri/providerPolicy', () => ({
   projectProviderPolicyGet: vi.fn(async () => ({ allow: null, deny: [] })),
 }));
@@ -435,5 +447,151 @@ describe('spawnLinkedSupervisor (supervisor link)', () => {
     });
     expect(await store.getState().spawnLinkedSupervisor({})).toEqual({ kind: 'nothing-visible' });
     expect(spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('Project Manager launches', () => {
+  const FOLDER = '/home/me/.auric/supervisors/2026-10-21_090000';
+  const record = {
+    key: 'release-desk',
+    name: 'Release Desk',
+    runDir: '2026-10-21_090000',
+    promotedAt: '2026-10-22T10:15:00Z',
+    archivedAt: null as string | null,
+    lastLaunch: null,
+  };
+  let store: StoreApi<StoreState>;
+  const lastConfig = () => vi.mocked(spawnAgent).mock.calls[0][0];
+
+  beforeEach(() => {
+    vi.mocked(spawnAgent).mockClear();
+    vi.mocked(supervisorManagersList).mockReset().mockResolvedValue([record]);
+    vi.mocked(managerInstructions).mockReset().mockResolvedValue('Write in Spanish.');
+    vi.mocked(managerMemory).mockReset().mockRejectedValue(new Error('no memory yet'));
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+    store = createStore<StoreState>()(
+      (...args) =>
+        ({
+          ...createAgentSlice(...(args as Parameters<typeof createAgentSlice>)),
+          providers: [CLAUDE],
+          starredProjects: [],
+          rootPath: null,
+        }) as unknown as StoreState
+    );
+  });
+
+  it('resumes a manager folder as the manager: its name, key, instructions and memory rules', async () => {
+    await store.getState().spawnSupervisor({ task: '', resumeRunDir: FOLDER });
+
+    expect(lastConfig()).toMatchObject({
+      name: 'Release Desk',
+      supervisorKey: 'release-desk',
+      resumeRunDir: FOLDER,
+    });
+    expect(lastConfig().task).toContain('## You are the Project Manager "Release Desk"');
+    expect(lastConfig().task).toContain('Write in Spanish.');
+    expect(managerInstructions).toHaveBeenCalledWith('release-desk');
+  });
+
+  it('puts the last memory check into the prompt', async () => {
+    vi.mocked(managerMemory).mockResolvedValue({
+      concepts: {},
+      deprecated: 0,
+      newestChangeMs: null,
+      findings: [
+        { source: 'layout', code: 'missing_field', path: 'facts/a.md', message: 'no title' },
+      ],
+      okf: 'ok',
+      checkedAt: null,
+    });
+    await store.getState().spawnSupervisor({ task: '', resumeRunDir: FOLDER });
+    expect(lastConfig().task).toContain('- facts/a.md: no title');
+  });
+
+  it('starts anyway when the memory summary cannot be read', async () => {
+    const launch = await store.getState().spawnSupervisor({ task: '', resumeRunDir: FOLDER });
+    expect(launch.kind).toBe('spawned');
+    expect(lastConfig().task).not.toContain('## Memory check');
+  });
+
+  it('refuses the launch when the instructions cannot be read, rather than start without them', async () => {
+    vi.mocked(managerInstructions).mockRejectedValue(
+      "INSTRUCTIONS.md of 'Release Desk' is 20000 bytes; the limit is 16384."
+    );
+    await expect(
+      store.getState().spawnSupervisor({ task: '', resumeRunDir: FOLDER })
+    ).rejects.toMatch(/limit is 16384/);
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('opens a manager by key: Rust turns the key into a resume of its folder', async () => {
+    await store.getState().spawnSupervisor({ task: '', managerKey: 'release-desk' });
+    expect(lastConfig()).toMatchObject({ name: 'Release Desk', supervisorKey: 'release-desk' });
+    expect(lastConfig()).not.toHaveProperty('resumeRunDir');
+  });
+
+  it('hands back the running manager instead of starting a second', async () => {
+    const live: AgentInfo = {
+      id: 'sup-9',
+      name: 'Release Desk',
+      model: 'sonnet',
+      provider: 'claude',
+      status: 'running',
+      startedAt: 1,
+      role: 'supervisor',
+      supervisorKey: 'release-desk',
+    };
+    store.setState({ agents: [live] });
+    expect(
+      await store.getState().spawnSupervisor({ task: '', managerKey: 'release-desk' })
+    ).toEqual({ kind: 'run_in_use', agent: live });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('refuses to open a key the registry does not know, with the contract sentence', async () => {
+    await expect(
+      store.getState().spawnSupervisor({ task: '', managerKey: 'nobody' })
+    ).rejects.toThrow("No Project Manager has the key 'nobody'.");
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('refuses to open an archived manager, with the contract sentence', async () => {
+    vi.mocked(supervisorManagersList).mockResolvedValue([
+      { ...record, archivedAt: '2026-10-23T08:00:00Z' },
+    ]);
+    await expect(
+      store.getState().spawnSupervisor({ task: '', managerKey: 'release-desk' })
+    ).rejects.toThrow(
+      "The Project Manager 'Release Desk' is archived. Restore it before opening it."
+    );
+  });
+
+  it('keeps a plain resume plain, and reads no instructions for it', async () => {
+    await store
+      .getState()
+      .spawnSupervisor({ task: '', resumeRunDir: '/home/me/.auric/supervisors/2026-01-01_000000' });
+    expect(lastConfig().name).toBe('Supervisor');
+    expect(lastConfig().task).toContain('## Picking up an earlier run');
+    expect(managerInstructions).not.toHaveBeenCalled();
+  });
+
+  it('asks the registry nothing for a brand-new supervisor', async () => {
+    await store.getState().spawnSupervisor({ task: 'do it' });
+    expect(supervisorManagersList).not.toHaveBeenCalled();
+  });
+
+  it('gives a manager launched over the supervisor link its sections, under its key', async () => {
+    const launch = await store.getState().spawnLinkedSupervisor({ key: 'release-desk' });
+    expect(launch.kind).toBe('spawned');
+    expect(lastConfig()).toMatchObject({ name: 'Release Desk', supervisorKey: 'release-desk' });
+    expect(lastConfig().task).toContain('Write in Spanish.');
+  });
+
+  it('keeps the name a link client chose for a plain keyed supervisor', async () => {
+    await store.getState().spawnLinkedSupervisor({ key: 'mail-triage', name: 'Mail triage' });
+    expect(lastConfig()).toMatchObject({ name: 'Mail triage', supervisorKey: 'mail-triage' });
+    expect(lastConfig().task).not.toContain('Project Manager');
   });
 });

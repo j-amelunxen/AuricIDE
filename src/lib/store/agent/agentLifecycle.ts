@@ -11,7 +11,10 @@ import {
   readSupervisorInstructions,
   supervisorSpawnConfig,
   supervisorUsingRunDir,
+  supervisorWithKey,
+  type SupervisorManagerLaunch,
 } from '@/lib/agents/supervisorLaunch';
+import { findLaunchManager, missingManagerError } from '@/lib/agents/supervisorManagers';
 import {
   SUPPORTED_SUPERVISOR_PROVIDERS,
   supervisorProvidersOf,
@@ -28,6 +31,11 @@ import {
   resumeInterruptedAgent as resumeInterruptedAgentApi,
   spawnAgent,
 } from '@/lib/tauri/agents';
+import {
+  managerInstructions,
+  managerMemory,
+  supervisorManagersList,
+} from '@/lib/tauri/supervisorManagers';
 import type { PmGoalRun } from '@/lib/tauri/goals';
 import type { NotificationInput } from '@/lib/tauri/notifications';
 import type { PmTicket } from '@/lib/tauri/pm';
@@ -200,6 +208,10 @@ export async function handleSpawnSupervisor(
     // One live supervisor per run folder; Rust's `run_dir_in_use` is the backstop.
     const inUse = supervisorUsingRunDir(agents, skill.resumeRunDir);
     if (inUse) return { kind: 'run_in_use', agent: inUse };
+  } else if (skill?.managerKey) {
+    // A manager runs under its key, so its live supervisor is found by it.
+    const inUse = supervisorWithKey(agents, skill.managerKey);
+    if (inUse) return { kind: 'run_in_use', agent: inUse };
   } else if (!task && !skill?.forceNew) {
     const running = newestRunningSupervisor(agents);
     if (running) return { kind: 'running', agent: running };
@@ -241,6 +253,8 @@ export async function handleSpawnSupervisor(
     task,
     model: skill?.model,
     resumeRunDir: skill?.resumeRunDir,
+    key: skill?.managerKey,
+    mustBeManager: skill?.managerKey !== undefined,
   });
   if (!config) return { kind: 'nothing-visible' };
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
@@ -262,6 +276,10 @@ async function supervisorConfigFor(
     task: string;
     model: string | undefined;
     resumeRunDir?: string;
+    /** A supervisor key the launch names; it is a manager's when the registry says so. */
+    key?: string;
+    /** The key must name a usable manager: opening one, not just addressing a supervisor. */
+    mustBeManager?: boolean;
   }
 ): Promise<AgentConfig | null> {
   const allowedPaths = Object.entries(policy.projects)
@@ -279,7 +297,34 @@ async function supervisorConfigFor(
     model: launch.model,
     instructions: readSupervisorInstructions(launch.provider),
     resumeRunDir: launch.resumeRunDir,
+    manager: await managerLaunchFor(launch),
   });
+}
+
+/**
+ * The Project Manager a launch is for, with what its prompt needs from Rust.
+ * Only a launch that names a folder or a key asks the registry. The memory
+ * summary is advisory and never blocks; the instructions are not: starting a
+ * manager without the file the human wrote would be wrong in a way nobody
+ * notices, so an unreadable or oversized file refuses the launch.
+ */
+async function managerLaunchFor(target: {
+  resumeRunDir?: string;
+  key?: string;
+  mustBeManager?: boolean;
+}): Promise<SupervisorManagerLaunch | undefined> {
+  if (!target.resumeRunDir && !target.key) return undefined;
+  const managers = await supervisorManagersList();
+  const record = findLaunchManager(managers, target);
+  if (!record) {
+    if (target.mustBeManager && target.key) throw missingManagerError(managers, target.key);
+    return undefined;
+  }
+  const [instructions, memory] = await Promise.all([
+    managerInstructions(record.key),
+    managerMemory(record.key).catch(() => null),
+  ]);
+  return { record, instructions, memory };
 }
 
 /**
@@ -308,9 +353,11 @@ export async function handleSpawnLinkedSupervisor(
     provider,
     task: launch.task?.trim() ?? '',
     model: launch.model ?? undefined,
+    key: launch.key ?? undefined,
   });
   if (!config) return { kind: 'nothing-visible' };
-  const named = launch.name ? { ...config, name: launch.name } : config;
+  // A Project Manager keeps its own name: that is what its card and the menu bar show.
+  const named = launch.name && !config.supervisorKey ? { ...config, name: launch.name } : config;
   const keyed = launch.key ? { ...named, supervisorKey: launch.key } : named;
   return { kind: 'spawned', agent: await get().spawnNewAgent(keyed) };
 }

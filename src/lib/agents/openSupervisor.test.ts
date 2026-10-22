@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { openSupervisor, resumeSupervisor } from './openSupervisor';
+import { openManager, openSupervisor, resumeSupervisor } from './openSupervisor';
 import type { AgentInfo } from '@/lib/tauri/agents';
 
 type SupervisorStore = Parameters<typeof openSupervisor>[0];
@@ -190,5 +190,71 @@ describe('resumeSupervisor', () => {
       "Could not resume the supervisor: '/x' is not a supervisor run folder.",
       'error'
     );
+  });
+});
+
+describe('openManager', () => {
+  const agent: AgentInfo = {
+    id: 'agent-4',
+    name: 'Release Desk',
+    status: 'running',
+    model: 'sonnet',
+    startedAt: 1,
+    provider: 'claude',
+    role: 'supervisor',
+    supervisorKey: 'release-desk',
+  };
+  const setup = (result: unknown) => {
+    const store: SupervisorStore = {
+      spawnSupervisor: vi.fn().mockResolvedValue(result),
+      showToast: vi.fn(),
+    };
+    return { store, hooks: { onNothingVisible: vi.fn(), onShow: vi.fn() } };
+  };
+
+  it('opens the manager by key, never as a new supervisor', async () => {
+    const { store, hooks } = setup({ kind: 'spawned', agent });
+    await openManager(store, 'release-desk', hooks);
+    expect(store.spawnSupervisor).toHaveBeenCalledWith({ task: '', managerKey: 'release-desk' });
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-4');
+  });
+
+  it('brings the live manager forward without a toast', async () => {
+    const { store, hooks } = setup({ kind: 'run_in_use', agent });
+    await openManager(store, 'release-desk', hooks);
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-4');
+    expect(store.showToast).not.toHaveBeenCalled();
+  });
+
+  it('sends the human to Settings when no project is allowed', async () => {
+    const { store, hooks } = setup({ kind: 'nothing-visible' });
+    await openManager(store, 'release-desk', hooks);
+    expect(hooks.onNothingVisible).toHaveBeenCalled();
+    expect(hooks.onShow).not.toHaveBeenCalled();
+  });
+
+  it('says why a refusal from the registry stopped it, in its own words', async () => {
+    const store: SupervisorStore = {
+      spawnSupervisor: vi
+        .fn()
+        .mockRejectedValue(
+          "The Project Manager 'Release Desk' is archived. Restore it before opening it."
+        ),
+      showToast: vi.fn(),
+    };
+    const hooks = { onNothingVisible: vi.fn(), onShow: vi.fn() };
+    await openManager(store, 'release-desk', hooks);
+    expect(store.showToast).toHaveBeenCalledWith(
+      "Could not open the Project Manager: The Project Manager 'Release Desk' is archived. Restore it before opening it.",
+      'error'
+    );
+    expect(hooks.onShow).not.toHaveBeenCalled();
+  });
+
+  it('returns quietly when the provider choice was cancelled', async () => {
+    const { store, hooks } = setup({ kind: 'cancelled' });
+    await openManager(store, 'release-desk', hooks);
+    expect(hooks.onShow).not.toHaveBeenCalled();
+    expect(store.showToast).not.toHaveBeenCalled();
   });
 });

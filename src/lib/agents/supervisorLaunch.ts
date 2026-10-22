@@ -9,12 +9,14 @@ import {
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import { projectProviderPolicyGet } from '@/lib/tauri/providerPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import type { ManagerMemorySummary, SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import { isFinishedAgent } from './fleet';
 import {
   buildSupervisorLaunchPrompt,
   supervisorPromptProjects,
   supervisorPromptSkills,
 } from './supervisorLaunchPrompt';
+import { layoutRulesRunWithoutOkf } from './supervisorManagers';
 
 /**
  * Every supervisor that still runs, newest first: by start time, a tie going
@@ -32,6 +34,11 @@ export function runningSupervisors(agents: AgentInfo[]): AgentInfo[] {
 /** The one a plain click on the tile brings forward instead of starting another. */
 export function newestRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefined {
   return runningSupervisors(agents)[0];
+}
+
+/** The live supervisor running under this key; a Project Manager always does. */
+export function supervisorWithKey(agents: AgentInfo[], key: string): AgentInfo | undefined {
+  return runningSupervisors(agents).find((agent) => agent.supervisorKey === key);
 }
 
 const withoutTrailingSlash = (path: string) => path.replace(/\/+$/, '');
@@ -96,6 +103,17 @@ export interface SupervisorSpawnInput {
   instructions?: string;
   /** An earlier run's folder to work in again; Rust checks it is one. */
   resumeRunDir?: string;
+  /** Set when the launch is a Project Manager's (`docs/design-project-manager.md`). */
+  manager?: SupervisorManagerLaunch;
+}
+
+/** What a manager's launch needs from Rust: its record, instructions file and last memory check. */
+export interface SupervisorManagerLaunch {
+  record: SupervisorManager;
+  /** The text of `INSTRUCTIONS.md`; null when the file is missing. */
+  instructions: string | null;
+  /** The last memory check; null when it could not be read, which never blocks a launch. */
+  memory: ManagerMemorySummary | null;
 }
 
 /**
@@ -117,8 +135,9 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
   const providerId = input.provider ?? input.policy.supervisor.provider;
   const provider = input.providers.find((p) => p.id === providerId);
   const instructions = input.instructions ?? readSupervisorInstructions(providerId);
+  const { manager } = input;
   return {
-    name: 'Supervisor',
+    name: manager?.record.name ?? 'Supervisor',
     role: 'supervisor',
     provider: providerId,
     model: input.model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
@@ -136,9 +155,17 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
         chrome: input.policy.supervisor.chrome === true && providerId === 'claude',
         instructions: instructions || undefined,
         resumedRun: input.resumeRunDir?.split('/').filter(Boolean).pop(),
+        manager: manager && {
+          name: manager.record.name,
+          instructions: manager.instructions,
+          findings: manager.memory?.findings ?? [],
+          okfAvailable: !manager.memory || !layoutRulesRunWithoutOkf(manager.memory.okf),
+        },
       }
     ),
     ...(input.resumeRunDir ? { resumeRunDir: input.resumeRunDir } : {}),
+    // Without a folder, Rust turns a manager's key into a resume of its folder.
+    ...(manager ? { supervisorKey: manager.record.key } : {}),
     projectPath: null,
     headless: false,
     runSource: 'ui',

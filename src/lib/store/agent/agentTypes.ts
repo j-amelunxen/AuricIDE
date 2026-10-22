@@ -75,6 +75,12 @@ export interface SupervisorSkillLaunch {
    * supervisor, refused while a live one already works in that folder.
    */
   resumeRunDir?: string;
+  /**
+   * Open this Project Manager (`docs/design-project-manager.md`): its live
+   * supervisor when there is one, else a resume of its folder. Refused for a key
+   * the registry does not know or one that is archived.
+   */
+  managerKey?: string;
   /** Start a new supervisor even without a task, rather than open the running one. */
   forceNew?: boolean;
 }

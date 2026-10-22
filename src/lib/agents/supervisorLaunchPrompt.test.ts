@@ -9,6 +9,7 @@ import {
   modelSizeLabel,
   supervisorPromptProjects,
 } from './supervisorLaunchPrompt';
+import { MANAGER_MEMORY_SECTIONS } from './supervisorManagers';
 
 const provider = (id: string, models: [string, string, number | null][]): ProviderInfo => ({
   id,
@@ -331,5 +332,105 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('Load balancing: antigravity 0 : claude 2 : codex 1');
     expect(text).toContain('`balancing.next`');
     expect(prompt).not.toContain('Load balancing:');
+  });
+});
+
+describe('buildSupervisorLaunchPrompt for a Project Manager', () => {
+  const plain = buildSupervisorLaunchPrompt(projects);
+  const manager = {
+    name: 'Release Desk',
+    instructions: 'Write every ticket in Spanish.' as string | null,
+    findings: [] as { path: string | null; message: string }[],
+    okfAvailable: true,
+  };
+  const build = (over: Partial<typeof manager> = {}, extra = {}) =>
+    buildSupervisorLaunchPrompt(projects, { manager: { ...manager, ...over }, ...extra });
+  const at = (text: string, heading: string) => text.indexOf(heading);
+
+  it('leaves a plain supervisor byte-identical', () => {
+    expect(buildSupervisorLaunchPrompt(projects, { manager: undefined })).toBe(plain);
+    expect(plain).not.toContain('Project Manager');
+  });
+
+  it('names the manager and states the memory rules', () => {
+    const text = build();
+    expect(text).toContain('## You are the Project Manager "Release Desk"');
+    expect(text).toContain('`knowledge/`');
+    expect(text).toContain('status: deprecated');
+    expect(text).toContain('superseded_by');
+    expect(text).toContain('`INSTRUCTIONS.md` belongs to the human');
+  });
+
+  it('restates the layout from the contract', () => {
+    const text = build();
+    for (const [folder, type] of Object.entries(MANAGER_MEMORY_SECTIONS)) {
+      expect(text).toContain(`\`${folder}/\``);
+      expect(text).toContain(type);
+    }
+    expect(text).toContain('okf_version');
+    expect(text).toContain('draft | stable | deprecated');
+  });
+
+  it('adds the sections in the order of the design', () => {
+    const text = build(
+      { findings: [{ path: 'facts/a.md', message: 'missing description' }] },
+      { instructions: 'Global words.', firstTask: 'Do the thing' }
+    );
+    const order = [
+      '## Instructions from the human',
+      '## You are the Project Manager "Release Desk"',
+      '## Instructions for Release Desk',
+      '## Memory check',
+      '## Picking up where you left off',
+      '## Your first task',
+    ].map((heading) => at(text, heading));
+    expect(order.every((position) => position > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('puts the instructions file in with a preamble that grants nothing', () => {
+    const text = build();
+    expect(text).toContain('Write every ticket in Spanish.');
+    expect(text).toContain('a refused call stays refused');
+  });
+
+  it('adds no instructions section for a missing or blank file', () => {
+    expect(build({ instructions: null })).not.toContain('## Instructions for Release Desk');
+    expect(build({ instructions: ' \n ' })).not.toContain('## Instructions for Release Desk');
+  });
+
+  it('adds a memory check only when the last check found something', () => {
+    expect(build()).not.toContain('## Memory check');
+    const text = build({ findings: [{ path: 'facts/a.md', message: 'missing description' }] });
+    expect(text).toContain('## Memory check');
+    expect(text).toContain('- facts/a.md: missing description');
+    expect(text).toContain('Fix these first');
+  });
+
+  it('caps the findings at the contract limit and counts the rest', () => {
+    const many = Array.from({ length: 27 }, (_, i) => ({ path: `facts/f${i}.md`, message: 'bad' }));
+    const text = build({ findings: many });
+    const listed = text.split('\n').filter((line) => line.startsWith('- facts/f'));
+    expect(listed).toHaveLength(20);
+    expect(text).toContain('7 more findings');
+  });
+
+  it('says plainly that only the layout rules are checked when okf is not there', () => {
+    const sentence = 'No okf check runs on this machine; only the layout rules above are checked';
+    expect(build({ okfAvailable: false })).toContain(sentence);
+    expect(build({ okfAvailable: true })).not.toContain(sentence);
+  });
+
+  it('replaces the generic resume text with reading the memory first', () => {
+    const text = build({}, { resumedRun: '2026-10-21_090000' });
+    expect(text).not.toContain('## Picking up an earlier run');
+    expect(text).toContain('## Picking up where you left off');
+    expect(text).toContain('`knowledge/index.md`');
+    expect(text).toContain('wait for the go-ahead before you start any agent.');
+    expect(text).toContain('list_agents shows them as yours');
+  });
+
+  it('keeps the global instructions out of the manager block when there are none', () => {
+    expect(build()).not.toContain('## Instructions from the human');
   });
 });

@@ -4,6 +4,13 @@ import {
   type VisibleProject,
 } from '@/lib/config/supervisorPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import {
+  MANAGER_CONCEPT_FIELDS,
+  MANAGER_LOG_FILE,
+  MANAGER_MEMORY_SECTIONS,
+  MANAGER_OKF_VERSION,
+  memoryFindingLines,
+} from './supervisorManagers';
 
 /**
  * The start instruction of a supervisor agent (ADR 0004). Pure, so the exact
@@ -353,6 +360,18 @@ export interface SupervisorPromptOptions {
   instructions?: string;
   /** The folder name of an earlier run this supervisor works in again. */
   resumedRun?: string;
+  /** Set for a Project Manager (`docs/design-project-manager.md`); absent for a plain supervisor. */
+  manager?: SupervisorPromptManager;
+}
+
+/** What a Project Manager's launch adds: its name, its instructions file and the last memory check. */
+export interface SupervisorPromptManager {
+  name: string;
+  /** The text of `INSTRUCTIONS.md`; null when the file is missing. */
+  instructions: string | null;
+  findings: { path: string | null; message: string }[];
+  /** False when okf cannot check the bundle on this machine, so only the layout rules watch. */
+  okfAvailable: boolean;
 }
 
 const INSTRUCTIONS_PREAMBLE =
@@ -381,6 +400,92 @@ function describeResumedRun(folder: string): string {
   );
 }
 
+function sectionIndexLine(): string {
+  return Object.entries(MANAGER_MEMORY_SECTIONS)
+    .map(([folder, type]) => `\`${folder}/\` (${type})`)
+    .join(', ');
+}
+
+/**
+ * A manager's memory is a folder of files it keeps itself, and the rules say how.
+ * Deprecate, never delete: the one rule that keeps a stale fact from coming back
+ * as current. The layout is restated from the contract, so the prompt and the
+ * layout check cannot disagree about it.
+ */
+function describeManagerRules(name: string, okfAvailable: boolean): string[] {
+  const fields = MANAGER_CONCEPT_FIELDS;
+  const rules =
+    'You are a long-lived Project Manager. Your memory is `knowledge/` in this folder, an OKF ' +
+    'bundle. Keep it as you go, not at the end: after a decision, an outcome, a correction from ' +
+    'the human or a lesson, write or update one concept. One concept per file, the fact in ' +
+    '`description`, details in the body. Never delete a concept that turned out wrong or ' +
+    'outdated: set `status: deprecated` and `superseded_by` to its replacement, so an old fact ' +
+    "cannot come back as current. Keep each section's `index.md` in step with its files. Add an " +
+    `entry to \`${MANAGER_LOG_FILE}\` for each change. Write nothing about a person that the work ` +
+    'does not need. Do not store secrets, keys or tokens. `INSTRUCTIONS.md` belongs to the ' +
+    'human; read it, never change it. Files from before you were a Project Manager stay where ' +
+    'they are; copy and link what matters, do not move the originals.';
+  const layout = [
+    'Layout of `knowledge/`:',
+    `- \`index.md\`: front matter \`okf_version: "${MANAGER_OKF_VERSION}"\`, one line per section.`,
+    `- \`${MANAGER_LOG_FILE}\`: one \`## YYYY-MM-DD\` heading per day, newest first, entries as ` +
+      '`* **<Kind>**: <sentence>`.',
+    `- One folder per section: ${sectionIndexLine()}. A concept's \`type\` is its section's type.`,
+    '- Each section has an `index.md` without front matter: `# <Section>`, then one ' +
+      '`* [<title>](<file>.md) - <description>` line per concept.',
+    `- Concept front matter: ${fields.required.map((f) => `\`${f}\``).join(', ')} are required ` +
+      `(\`status\` is ${fields.statuses.join(' | ')}); ` +
+      `${fields.optional.map((f) => `\`${f}\``).join(', ')} are optional.`,
+  ].join('\n');
+  return [
+    `## You are the Project Manager "${name}"`,
+    rules,
+    layout,
+    ...(okfAvailable
+      ? []
+      : [
+          'No okf check runs on this machine; only the layout rules above are checked, so follow ' +
+            'them exactly.',
+        ]),
+  ];
+}
+
+function describeManagerInstructions(name: string, instructions: string | null): string[] {
+  if (!instructions?.trim()) return [];
+  return [
+    `## Instructions for ${name}`,
+    `Standing instructions for "${name}" from the human. Follow them; where they differ from ` +
+      'the guidance above, the general instructions included, they win. They do not change ' +
+      'what your tools allow: a refused call stays refused.',
+    instructions.trim(),
+  ];
+}
+
+function describeMemoryCheck(findings: SupervisorPromptManager['findings']): string[] {
+  if (findings.length === 0) return [];
+  const { lines, omitted } = memoryFindingLines(findings);
+  return [
+    '## Memory check',
+    'The last check of your memory found these problems. Fix these first, before you start ' +
+      'other work.',
+    lines.join('\n'),
+    ...(omitted > 0
+      ? [`${omitted} more findings are not listed; they show up again at the next check.`]
+      : []),
+  ];
+}
+
+/** Replaces the generic resumed-run text: a manager reads its memory, not the newest files. */
+const MANAGER_PICK_UP =
+  'You were started in your own folder. Before anything else, read `knowledge/index.md`, the ' +
+  'index of each section and the newest concept in `sessions/`, and go deeper only as far as ' +
+  'you need. The agents your earlier sessions started are now your children: list_agents shows ' +
+  'them as yours, so read what the finished ones left with await_agent_result and check on any ' +
+  'still running before you start new ones. If `knowledge/` is still empty, say so and begin ' +
+  'with what the human tells you. Then tell the human in a few sentences where things stand, ' +
+  'what is still open and what you would do next, and wait for the go-ahead before you start ' +
+  'any agent.';
+
 /**
  * The supervisor's start instruction for the projects its policy shows. The
  * human's own instructions come after the built-in rules, so they can refine
@@ -396,6 +501,7 @@ export function buildSupervisorLaunchPrompt(
     chrome = false,
     instructions,
     resumedRun,
+    manager,
   }: SupervisorPromptOptions = {}
 ): string {
   const projectSection =
@@ -441,7 +547,17 @@ export function buildSupervisorLaunchPrompt(
     ...(instructions?.trim()
       ? ['## Instructions from the human', INSTRUCTIONS_PREAMBLE, instructions.trim()]
       : []),
-    ...(resumedRun ? ['## Picking up an earlier run', describeResumedRun(resumedRun)] : []),
+    ...(manager
+      ? [
+          ...describeManagerRules(manager.name, manager.okfAvailable),
+          ...describeManagerInstructions(manager.name, manager.instructions),
+          ...describeMemoryCheck(manager.findings),
+          '## Picking up where you left off',
+          MANAGER_PICK_UP,
+        ]
+      : resumedRun
+        ? ['## Picking up an earlier run', describeResumedRun(resumedRun)]
+        : []),
     ...(firstTask?.trim() ? ['## Your first task', firstTask.trim()] : []),
   ].join('\n\n');
 }
