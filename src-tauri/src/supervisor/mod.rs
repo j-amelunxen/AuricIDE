@@ -11,6 +11,8 @@ pub mod attachments;
 pub mod managers;
 pub mod memory;
 pub mod policy;
+#[cfg(test)]
+mod probe_driver;
 pub mod runs;
 pub mod several;
 

@@ -225,9 +225,12 @@ Examples:
   absolute path, a Write through `sub/../INSTRUCTIONS.md` and
   `sleep 1 && echo … > INSTRUCTIONS.md`; without the rules the same Edit
   went through. The rule matches the file name at any depth, so a
-  `sub/INSTRUCTIONS.md` is refused too, which costs nothing here. Only print
-  mode was run; the interactive TUI uses the same rules, and the ignored
-  real-CLI test in slice 7 runs it that way.
+  `sub/INSTRUCTIONS.md` is refused too, which costs nothing here. In the
+  interactive TUI (2026-10-22, Claude Code 2.1.308, haiku, the request typed
+  as a bracketed paste): with the rules the Edit and the Write on
+  `INSTRUCTIONS.md` were refused while an Edit on `NOTES.md` went through;
+  without them (`AURIC_DENY_CONTROL=1`) the Write replaced the file. The
+  ignored test is `manager_deny_rule_holds_in_the_interactive_tui`.
 - **Editing.** "Edit Instructions…" opens the file in an ordinary editor tab,
   the same path the runs rail already uses to open run files. No custom
   editor: the file is meant to be diffable and editable anywhere.

@@ -629,6 +629,87 @@ if: "existing" }` is idempotent (a lost race answers the winner);
   policy it was made against; 24 h expiry; every outcome in an audit log.
 - Real-app check: `node scripts/probe-supervisor-link.mjs [--watch 20]`.
 
+### Project Managers — supervisors with a name and a memory
+
+A supervisor run the human chose to keep: "Promote to Project Manager…" on a
+row of the Supervisor Runs rail gives it a name, a pinned place in the rail,
+a Quick Access tile, a menu-bar entry, an `INSTRUCTIONS.md` and an organised
+memory in its folder. Underneath it is still a supervisor: same scope, same
+policy, same socket. The contract is `docs/design-project-manager.md`, the
+machine-checkable half `src/lib/agents/supervisorManagers.fixtures.json` (read
+by Rust and TS — change it first). In code it is **manager**
+(`supervisor/managers.rs`, `supervisorManagers.ts`, `managerKey`), never `pm`
+or `ProjectManager*`: both already mean the tickets.
+
+- **The registry is the truth, not the folder.**
+  `<app_data_dir>/supervisor-managers.json`, Rust-owned, 0600, temp file +
+  rename. The manager's own file tools reach its whole run folder,
+  `supervisor.json` included, so identity cannot live there; Rust writes the
+  key into `supervisor.json` on each launch and never reads it back for a
+  manager. `runDir` is a folder name, resolved under the runs root with
+  `resolve_run_dir` on every use. An unreadable or unknown-version registry is
+  never overwritten: the UI shows the error and offers no promote, rename or
+  archive until it is fixed, and a launch that needs it is refused.
+- **The key is the identity and never moves.** Promotion keeps the run's live
+  key, else the one in its `supervisor.json`, else `keyFromName` (fixture
+  `promotionKey`). Rename changes `name` only; the key stays reserved through
+  archive. Names are unique ignoring case among non-archived managers, because
+  the menu bar lists them by name.
+- **Rust binds folder and key at launch** (`several::manager_launch`, inside
+  `admit_supervisor`, fixture `launchKey`). Resuming a manager folder runs
+  under its key, another key there is `manager_key_mismatch`, the key on a
+  foreign folder is `manager_key_foreign_folder`, an archived manager is
+  `manager_archived`. A **new** supervisor under a manager's key becomes a
+  resume of its folder, which is what makes
+  `supervisors.spawn { key, if: "existing" }` answer the live manager or a
+  resumed one, never a stranger under its name. One live instance per manager
+  is the existing `run_dir_in_use` / `supervisor_key_in_use`. Open is the one
+  verb on every surface: bring a live one forward, else resume the folder.
+  A manager promoted while it runs keeps its process and prompt and becomes
+  one from its next start ("Restart Now" in the inspector).
+- **`INSTRUCTIONS.md` steers, it grants nothing.** The frontend reads it
+  through `manager_instructions` (16 KiB at most, larger refuses the launch
+  with `instructions_too_large`) and `buildSupervisorLaunchPrompt` adds it
+  after the global instructions; no spawn check or policy ever reads it. The
+  launch books `lastLaunch.instructionsSha256`; the inspector compares it with
+  the file and offers Restart rather than letting an edit look live. For
+  Claude, `supervisor_claude_arguments` adds
+  `--disallowedTools "Edit(./INSTRUCTIONS.md)" "Write(./INSTRUCTIONS.md)"` on
+  manager launches only (a plain supervisor's arguments are byte-identical to
+  before). The prompt rule alone is not evidence; the ignored test below runs
+  the real CLI in its TUI with those exact arguments.
+- **Memory is an OKF bundle in `knowledge/`, plain files.** The manager writes
+  concepts with its own file tools; it gets no `okf mcp` server and no `okf`
+  grant. Rust checks it after every manager session ends (`memory::start`,
+  subscribed to run-result session ends) and on demand
+  (`manager_validate`): our **layout check** always (front matter, required
+  fields, type per section, dangling `superseded_by`, section index; okf
+  reports neither of the first two), **`okf validate --json`** only when okf is
+  on the machine, 10 s bounded. The result is
+  `<app_data_dir>/managers/<key>/validation.json`; at most 20 findings go into
+  the next start prompt under "Memory check". Deprecate, never delete: the one
+  rule the prompt repeats, because only `superseded_by` kept stale facts out.
+- **okf is a machine dependency, never pinned.** `src-tauri/src/machine/` is
+  the seam video import and managers share: a declared table (`ffmpeg`,
+  `ffprobe`, `go`, `okf`), resolution through the login shell's PATH plus extra
+  folders (`~/go/bin`, where `go install` lands and PATH usually does not
+  reach), a version cache keyed by path + mtime, and "Check Again" re-harvesting
+  the login-shell env (`refresh_login_shell_env`). Settings → Machine
+  (`machine_dependencies`) lists every row with its fix command. Nothing is
+  said at app start; one inbox note only when okf worked and then broke
+  (`machine:okf:<state>`). Without okf a manager works as before and loses
+  only the okf half of the check.
+- **Presentation is an app pref, identity is Rust's.**
+  `auric.supervisor.managers` (Quick Access, menu bar, shortcut) is keyed by
+  manager key; a key the registry no longer has is ignored.
+- Real-app checks: `node scripts/probe-project-manager.mjs --app-data <dir>
+--project <path> [--argv-log <dir>]` against an **isolated** instance (it
+  promotes, archives and removes in that registry; the recipe is in its
+  header), and
+  `cargo test --lib manager_deny_rule_holds_in_the_interactive_tui -- --ignored --nocapture`
+  (`AURIC_DENY_CONTROL=1` runs it without the rules and expects the edit to
+  land).
+
 ### The terminals in a window of their own
 
 The terminal modal can be detached into a second OS window (label `agents`,

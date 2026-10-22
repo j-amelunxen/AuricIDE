@@ -20,4 +20,6 @@ pub use shell_env::*;
 pub use types::*;
 
 #[cfg(test)]
+mod manager_deny_tui_tests;
+#[cfg(test)]
 mod tests;
