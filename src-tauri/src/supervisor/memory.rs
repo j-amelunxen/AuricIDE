@@ -144,8 +144,38 @@ impl Places {
     }
 }
 
-fn read_stored(file: &Path) -> Option<ManagerMemorySummary> {
-    serde_json::from_slice(&std::fs::read(file).ok()?).ok()
+/// The summary as written to disk, with the identity of the manager it was
+/// made for. A key can be given out again after a removal; the identity is what
+/// keeps the next manager from inheriting the old one's findings.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredValidation {
+    run_dir: String,
+    promoted_at: String,
+    #[serde(flatten)]
+    summary: ManagerMemorySummary,
+}
+
+fn read_stored(file: &Path, record: &ManagerRecord) -> Option<ManagerMemorySummary> {
+    let stored: StoredValidation = serde_json::from_slice(&std::fs::read(file).ok()?).ok()?;
+    (stored.run_dir == record.run_dir && stored.promoted_at == record.promoted_at)
+        .then_some(stored.summary)
+}
+
+/// Removes the stored results of managers that are no longer in the registry.
+fn prune_orphaned_validations(places: &Places, kept_keys: &[&str]) {
+    let Ok(entries) = std::fs::read_dir(&places.managers_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let is_orphan = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| !kept_keys.contains(&name));
+        if is_orphan && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 // ---- the two operations ----
@@ -154,7 +184,7 @@ fn read_stored(file: &Path) -> Option<ManagerMemorySummary> {
 /// okf `never`, which stores nothing.
 pub async fn memory_of(places: &Places, key: &str) -> Result<ManagerMemorySummary, String> {
     let record = find_record(&places.registry, key)?;
-    if let Some(stored) = read_stored(&places.validation_file(key)) {
+    if let Some(stored) = read_stored(&places.validation_file(key), &record) {
         return Ok(stored);
     }
     let bundle = places.bundle_of(&record)?;
@@ -187,8 +217,14 @@ async fn store_validation(
     let scan = blocking(move || layout::scan(&bundle)).await?;
     let summary = compose(scan, reading, Some(timestamp_now()));
     let file = places.validation_file(&record.key);
-    let previous = read_stored(&file).map_or(OkfState::Never, |stored| stored.okf);
-    write_json_atomic(&file, &summary)?;
+    let previous = read_stored(&file, record).map_or(OkfState::Never, |stored| stored.okf);
+    let stored = StoredValidation {
+        run_dir: record.run_dir.clone(),
+        promoted_at: record.promoted_at.clone(),
+        summary,
+    };
+    write_json_atomic(&file, &stored)?;
+    let summary = stored.summary;
     Ok(Validation {
         manager_name: record.name.clone(),
         summary,
@@ -310,6 +346,13 @@ async fn check_after_session(app: &tauri::AppHandle, agent: &AgentInfo) {
 
 /// Listens for the end of supervisor sessions for the app's lifetime.
 pub fn start(app: &tauri::AppHandle) {
+    if let Ok(places) = Places::of(app) {
+        let registry = list(&places.registry);
+        if registry.error.is_none() {
+            let keys: Vec<&str> = registry.managers.iter().map(|m| m.key.as_str()).collect();
+            prune_orphaned_validations(&places, &keys);
+        }
+    }
     let ended = app.state::<RunResultsState>().subscribe_session_ends();
     let app = app.clone();
     std::thread::spawn(move || {
@@ -480,6 +523,44 @@ mod tests {
         .unwrap();
         let cached = memory_of(&setup.places, &setup.record.key).await.unwrap();
         assert_eq!(cached, done.summary);
+    }
+
+    #[tokio::test]
+    async fn a_manager_that_reuses_a_removed_ones_key_does_not_inherit_its_findings() {
+        let setup = setup();
+        store_validation(
+            &setup.places,
+            &setup.record,
+            bundle(&setup),
+            reading(OkfState::Findings, &["okf_orphan"]),
+        )
+        .await
+        .unwrap();
+        let file = setup.places.validation_file(&setup.record.key);
+        assert!(read_stored(&file, &setup.record).is_some());
+        let other_run = ManagerRecord {
+            run_dir: "2026-10-02_090000".to_string(),
+            ..setup.record.clone()
+        };
+        assert!(read_stored(&file, &other_run).is_none());
+        let promoted_later = ManagerRecord {
+            promoted_at: "2099-01-01T00:00:00Z".to_string(),
+            ..setup.record.clone()
+        };
+        assert!(read_stored(&file, &promoted_later).is_none());
+    }
+
+    #[test]
+    fn stored_results_of_managers_that_are_gone_are_deleted() {
+        let setup = setup();
+        for key in ["kept", "gone"] {
+            let file = setup.places.validation_file(key);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "{}").unwrap();
+        }
+        prune_orphaned_validations(&setup.places, &["kept"]);
+        assert!(setup.places.validation_file("kept").exists());
+        assert!(!setup.places.validation_file("gone").exists());
     }
 
     #[tokio::test]
