@@ -736,14 +736,26 @@ function allowedOffers(offered: ModelOption[], allowed: string[]): ModelOption[]
 const hasRank = (option: ModelOption): option is ModelOption & { rank: number } =>
   typeof option.rank === 'number' && Number.isInteger(option.rank);
 
+/** A speed variant: id or label contains "fast" (`modelChoiceRules`). */
+function isFastModel(option: ModelOption): boolean {
+  return option.value.toLowerCase().includes('fast') || option.label.toLowerCase().includes('fast');
+}
+
 /**
  * The model a supervisor's spawn runs when it names none: the allowed model
- * with the smallest rank, the first in the provider's order on a tie.
+ * with the smallest rank; a same-rank tie prefers a non-fast model, else the
+ * first in the provider's order.
  */
 export function smallestRankedModel(offered: ModelOption[], allowed: string[]): ModelOption | null {
   let best: (ModelOption & { rank: number }) | null = null;
   for (const option of allowedOffers(offered, allowed).filter(hasRank)) {
-    if (best === null || option.rank < best.rank) best = option;
+    if (
+      best === null ||
+      option.rank < best.rank ||
+      (option.rank === best.rank && isFastModel(best) && !isFastModel(option))
+    ) {
+      best = option;
+    }
   }
   return best;
 }
