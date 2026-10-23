@@ -124,9 +124,12 @@ reaches back into it (5 references), so the two form a cycle that is deliberate:
 dispatcher, two doors.
 
 **MCP runtime** — `mcp.rs` (writes per-agent MCP config, starts/stops the server),
+`node_runtime.rs` (picks a Node whose ABI matches the bundled `better-sqlite3`
+addon and writes that absolute path into every generated MCP config),
 `src/mcp/` (FastMCP server, `cli.ts` mode switch, 25 tool files, about 90 tools),
 bundled by `pnpm mcp:bundle` into `src-tauri/resources/auric-mcp/` (a build output,
-not in git). Purpose: three server modes, see `interfaces.md` section 2.
+not in git; `manifest.json` records `nodeModuleVersion`). Purpose: three server
+modes, see `interfaces.md` section 2.
 Depends on: project DB (`better-sqlite3`), notifications DB, control socket client.
 
 **Git** — `git/` (28 files, git2-rs: status, diff, stage, commit, push, blame, branches,

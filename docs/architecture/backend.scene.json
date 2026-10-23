@@ -120,7 +120,7 @@
     },
     {
       "id": "mcpRs",
-      "label": "mcp.rs (MCP launcher)",
+      "label": "mcp.rs + node_runtime.rs",
       "preset": "box",
       "group": "services",
       "level": 2,
@@ -128,7 +128,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "1256"
+          "value": "1765"
         }
       ],
       "position": [-4.7, -11.3, 0]

@@ -78,6 +78,7 @@ fn project_a_gets_connector_and_briefing_b_gets_neither_for_each_adapter() {
         let configs = crate::mcp::write_agent_mcp_configs_with_connectors(
             temp.path(),
             runtime,
+            "node",
             root,
             &BTreeMap::new(),
             &resolved,
@@ -158,6 +159,7 @@ fn generated_config_launches_real_stdio_fixture_with_host_project_arguments() {
     let configs = crate::mcp::write_agent_mcp_configs_with_connectors(
         temp.path(),
         Path::new("/runtime"),
+        "node",
         &a,
         &BTreeMap::new(),
         &connectors,
@@ -221,6 +223,7 @@ fn manifest_startup_timeout_defaults_and_flows_into_stdio_mcp_configurations() {
         let configs = crate::mcp::write_agent_mcp_configs_with_connectors(
             temp.path(),
             Path::new("/runtime"),
+            "node",
             &a,
             &BTreeMap::new(),
             &connectors,

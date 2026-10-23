@@ -138,6 +138,11 @@ pub fn attach_usage_sidecar(
     }
 }
 
+async fn resolved_mcp_node(runtime: &std::path::Path) -> String {
+    let path_var = crate::node_runtime::path_from_env(cached_login_shell_env().await);
+    crate::node_runtime::command_for_mcp(runtime, &path_var)
+}
+
 /// Binds a spawn to its project's Auric MCP server: one private config per
 /// agent, the provider's launch material, and the reserved Auric variables.
 /// The server's environment (`crate::mcp::agent_mcp_server_env`) is computed
@@ -149,6 +154,7 @@ fn bind_to_project_mcp(
     provider: (&str, &dyn crate::providers::AgentProvider),
     cwd: Option<&str>,
     connectors: &[crate::connectors::ResolvedConnector],
+    node: &str,
 ) -> Result<crate::providers::SpawnCommand, String> {
     let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
     let notifications_db = app
@@ -164,13 +170,19 @@ fn bind_to_project_mcp(
             .map(|registry| registry.as_ref()),
         agent_cwd.as_deref(),
     );
-    let mcp_configs =
-        crate::mcp::ensure_agent_mcp_config(app, binding.project_root(), &mcp_env, connectors)?;
+    let mcp_configs = crate::mcp::ensure_agent_mcp_config(
+        app,
+        binding.project_root(),
+        &mcp_env,
+        connectors,
+        node,
+    )?;
     let mut provider_binding = binding
         .provider_binding()
         .with_mcp_config_path(mcp_configs.standard.to_string_lossy().into_owned())
         .with_crush_config_path(mcp_configs.crush.to_string_lossy().into_owned())
         .with_runtime_entrypoint(runtime_entrypoint.to_string_lossy().into_owned())
+        .with_mcp_command(node)
         .with_mcp_env(mcp_env);
     provider_binding.connectors = connectors.to_vec();
     let (provider_id, provider) = provider;
@@ -243,9 +255,11 @@ pub fn supervisor_codex_arguments(
     socket: &std::path::Path,
     pm: &[(String, String)],
     pm_env: &std::collections::BTreeMap<String, String>,
+    node: &str,
 ) -> Result<Vec<String>, String> {
     let runtime_str =
         serde_json::to_string(&runtime.to_string_lossy()).map_err(|e| e.to_string())?;
+    let node_str = serde_json::to_string(node).map_err(|e| e.to_string())?;
     let socket_str = serde_json::to_string(&socket.to_string_lossy()).map_err(|e| e.to_string())?;
     let sup_args =
         format!("mcp_servers.{SUPERVISOR_MCP_SERVER}.args=[{runtime_str},\"--supervisor\"]");
@@ -255,7 +269,7 @@ pub fn supervisor_codex_arguments(
     let mut arguments = vec![
         "-c".to_string(),
         crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{SUPERVISOR_MCP_SERVER}.command=\"node\""
+            "mcp_servers.{SUPERVISOR_MCP_SERVER}.command={node_str}"
         )),
         "-c".to_string(),
         crate::providers::shell_quote_argument(&sup_args),
@@ -276,7 +290,7 @@ pub fn supervisor_codex_arguments(
             format!("mcp_servers.{name}.args=[{runtime_str},\"--project-root\",{project_str}]");
         arguments.push("-c".to_string());
         arguments.push(crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{name}.command=\"node\""
+            "mcp_servers.{name}.command={node_str}"
         )));
         arguments.push("-c".to_string());
         arguments.push(crate::providers::shell_quote_argument(&args));
@@ -433,6 +447,7 @@ fn bind_to_supervisor_mcp(
     app: &AppHandle,
     provider_id: &str,
     cwd: Option<&str>,
+    node: &str,
 ) -> Result<(crate::providers::SpawnCommand, OwnedFile), String> {
     let runtime = crate::mcp::runtime_entrypoint(app)?;
     let app_data = app
@@ -458,7 +473,7 @@ fn bind_to_supervisor_mcp(
         None,
     );
     let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
-        &app_data, &runtime, &pm, &pm_env,
+        &app_data, &runtime, &pm, &pm_env, node,
     )?);
     let arguments = if provider_id == "codex" {
         supervisor_codex_arguments(
@@ -466,6 +481,7 @@ fn bind_to_supervisor_mcp(
             &crate::control_socket::socket_path_in(&app_data),
             &pm,
             &pm_env,
+            node,
         )?
     } else {
         let pm_names: Vec<String> = pm.into_iter().map(|(name, _)| name).collect();
@@ -867,11 +883,13 @@ pub async fn spawn_agent_impl(
         usage_config.as_ref(),
     );
     if is_supervisor {
+        let node = resolved_mcp_node(&crate::mcp::runtime_entrypoint(app)?).await;
         let (bound, config_file) =
-            bind_to_supervisor_mcp(spawn_cmd, app, provider_id, config.cwd.as_deref())?;
+            bind_to_supervisor_mcp(spawn_cmd, app, provider_id, config.cwd.as_deref(), &node)?;
         spawn_cmd = bound;
         launch_file = Some(config_file);
     } else if let Some(binding) = project_binding.as_ref() {
+        let node = resolved_mcp_node(&crate::mcp::runtime_entrypoint(app)?).await;
         spawn_cmd = bind_to_project_mcp(
             spawn_cmd,
             app,
@@ -879,6 +897,7 @@ pub async fn spawn_agent_impl(
             (provider_id, provider.as_ref()),
             config.cwd.as_deref(),
             &connectors,
+            &node,
         )?;
         if runs_claude_code(&spawn_cmd) {
             super::claude_mcp_guard::check_auric_pm_enabled(

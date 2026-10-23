@@ -219,6 +219,9 @@ pub struct ProviderProjectBinding {
     pub mcp_config_path: Option<String>,
     pub crush_config_path: Option<String>,
     pub runtime_entrypoint: Option<String>,
+    /// Absolute `node` whose ABI matches the bundled addon; Codex `-c` overrides
+    /// use this so they cannot fall back to a bare `node` on PATH.
+    pub mcp_command: Option<String>,
     /// The environment the Auric MCP server gets (`crate::mcp::agent_mcp_server_env`).
     /// Config-file providers carry it in the file; Codex, configured on the
     /// command line, gets it as an inline table.
@@ -234,6 +237,7 @@ impl ProviderProjectBinding {
             mcp_config_path: None,
             crush_config_path: None,
             runtime_entrypoint: None,
+            mcp_command: None,
             mcp_env: BTreeMap::new(),
             connectors: Vec::new(),
         }
@@ -251,6 +255,11 @@ impl ProviderProjectBinding {
 
     pub fn with_runtime_entrypoint(mut self, path: impl Into<String>) -> Self {
         self.runtime_entrypoint = Some(path.into());
+        self
+    }
+
+    pub fn with_mcp_command(mut self, command: impl Into<String>) -> Self {
+        self.mcp_command = Some(command.into());
         self
     }
 
@@ -310,12 +319,14 @@ pub fn codex_project_binding_injection(
         .as_deref()
         .ok_or_else(|| "Codex MCP binding is missing the runtime entrypoint".to_string())?;
     let runtime = serde_json::to_string(runtime).map_err(|error| error.to_string())?;
+    let command = serde_json::to_string(binding.mcp_command.as_deref().unwrap_or("node"))
+        .map_err(|error| error.to_string())?;
     let project =
         serde_json::to_string(&binding.project_root).map_err(|error| error.to_string())?;
     let args = format!("mcp_servers.auric-pm.args=[{runtime},\"--project-root\",{project}]");
     let mut arguments = vec![
         "-c".to_string(),
-        shell_quote_argument("mcp_servers.auric-pm.command=\"node\""),
+        shell_quote_argument(&format!("mcp_servers.auric-pm.command={command}")),
         "-c".to_string(),
         shell_quote_argument(&args),
         "-c".to_string(),

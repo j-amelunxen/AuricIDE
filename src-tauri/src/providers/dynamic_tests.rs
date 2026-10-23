@@ -1014,6 +1014,25 @@ fn an_environment_only_binding_is_a_binding() {
 /// refused, not asked. Conductor agents report back through auric-pm's write
 /// tools, so the bound server has to be pre-approved as a whole.
 #[test]
+fn codex_binding_uses_the_resolved_node_path() {
+    let binding = ProviderProjectBinding::new("/repo/p", "/repo/p/.auric/project.db")
+        .with_runtime_entrypoint("/rt/server.mjs")
+        .with_mcp_command("/opt/homebrew/bin/node");
+    let injection = codex_project_binding_injection(&binding).unwrap();
+    let overrides: Vec<String> = injection
+        .arguments
+        .chunks(2)
+        .filter(|pair| pair[0] == "-c")
+        .map(|pair| as_shell_sees_it(&pair[1]))
+        .collect();
+
+    assert!(
+        overrides.contains(&r#"mcp_servers.auric-pm.command="/opt/homebrew/bin/node""#.to_string()),
+        "{overrides:#?}"
+    );
+}
+
+#[test]
 fn codex_binding_pre_approves_every_auric_pm_tool_for_headless_runs() {
     let binding = ProviderProjectBinding::new("/repo/p", "/repo/p/.auric/project.db")
         .with_runtime_entrypoint("/rt/server.mjs");

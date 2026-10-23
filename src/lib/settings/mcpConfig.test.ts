@@ -140,4 +140,15 @@ describe('buildControlAddCommand', () => {
       `claude mcp add --scope user auric-control -- node '/Users/jen/My Apps/it'\\''s/server.mjs' --control`
     );
   });
+
+  it('passes through the resolved absolute node path', () => {
+    expect(
+      buildControlAddCommand({
+        command: '/opt/homebrew/bin/node',
+        args: ['/rt/server.mjs', '--project-root', '/p'],
+      })
+    ).toBe(
+      'claude mcp add --scope user auric-control -- /opt/homebrew/bin/node /rt/server.mjs --control'
+    );
+  });
 });

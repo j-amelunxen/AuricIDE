@@ -34,22 +34,11 @@ pub struct NodeChoice {
     pub problem: Option<String>,
 }
 
-impl NodeChoice {
-    /// The unverified choice used in tests and when nothing better is known.
-    pub fn bare() -> Self {
-        Self {
-            command: "node".to_string(),
-            problem: None,
-        }
-    }
-}
-
 /// Reads the ABI from the `manifest.json` next to `server.mjs`. `None` for a
 /// bundle built before the ABI was recorded.
 pub fn read_bundle_abi(runtime: &Path) -> Option<BundleAbi> {
     let manifest = runtime.parent()?.join("manifest.json");
-    let value: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
     let modules = value.get("nodeModuleVersion")?;
     let modules = match modules {
         serde_json::Value::String(text) => text.trim().to_string(),
@@ -68,7 +57,11 @@ pub fn read_bundle_abi(runtime: &Path) -> Option<BundleAbi> {
 
 /// Candidate `node` binaries in priority order: the PATH we were handed, the
 /// usual install folders, then version-manager installs (newest first).
-pub fn candidate_nodes(path_var: &str, home: Option<&Path>, nvm_dir: Option<&Path>) -> Vec<PathBuf> {
+pub fn candidate_nodes(
+    path_var: &str,
+    home: Option<&Path>,
+    nvm_dir: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = path_var
         .split(':')
         .filter(|dir| !dir.is_empty())
@@ -235,6 +228,24 @@ pub fn node_choice(runtime: &Path, path_var: &str) -> NodeChoice {
     }
 }
 
+/// PATH from a harvested environment, else this process's PATH.
+pub fn path_from_env(env: &[(String, String)]) -> String {
+    env.iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| value.clone())
+        .or_else(|| std::env::var("PATH").ok())
+        .unwrap_or_default()
+}
+
+/// Node command to write into MCP configs. Logs when the choice is unverified.
+pub fn command_for_mcp(runtime: &Path, path_var: &str) -> String {
+    let choice = node_choice(runtime, path_var);
+    if let Some(problem) = &choice.problem {
+        eprintln!("MCP node: {problem}");
+    }
+    choice.command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,7 +308,10 @@ mod tests {
             fake_node(&nvm.join("versions/node").join(version).join("bin"));
         }
         let list = candidate_nodes("/a/bin::/b/bin", Some(tmp.path()), None);
-        let text: Vec<String> = list.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        let text: Vec<String> = list
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(text[0], "/a/bin/node");
         assert_eq!(text[1], "/b/bin/node");
         assert_eq!(text[2], "/opt/homebrew/bin/node");
@@ -376,5 +390,28 @@ mod tests {
         let choice = node_choice(&tmp.path().join("server.mjs"), &path);
         assert!(choice.problem.is_none(), "{:?}", choice.problem);
         assert!(choice.command.starts_with('/'));
+        assert_eq!(
+            command_for_mcp(&tmp.path().join("server.mjs"), &path),
+            choice.command
+        );
+    }
+
+    #[test]
+    fn path_from_env_prefers_the_harvested_path() {
+        let env = vec![
+            ("HOME".to_string(), "/Users/dev".to_string()),
+            ("PATH".to_string(), "/a/bin:/b/bin".to_string()),
+        ];
+        assert_eq!(path_from_env(&env), "/a/bin:/b/bin");
+    }
+
+    #[test]
+    fn path_from_env_falls_back_to_the_process_path() {
+        let from_process = std::env::var("PATH").unwrap_or_default();
+        assert_eq!(path_from_env(&[]), from_process);
+        assert_eq!(
+            path_from_env(&[("HOME".to_string(), "/tmp".to_string())]),
+            from_process
+        );
     }
 }

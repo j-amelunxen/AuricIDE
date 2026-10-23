@@ -72,6 +72,11 @@ One packaged Node runtime, `src-tauri/resources/auric-mcp/` (build output of
 
 - **Transport:** stdio JSON-RPC. The supervisor additionally gets one `auric-pm-<folder>`
   server per permitted, initialised project (`--strict-mcp-config`).
+- **Node binary:** every generated MCP config (`command`) is the absolute path of a
+  Node whose ABI matches `manifest.json` `nodeModuleVersion` (`node_runtime.rs`).
+  A bare `node` on PATH may be a different major and then `better-sqlite3` dies
+  before `initialize`. Codex `-c` overrides carry the same path. If none matches,
+  the config falls back to `node` and the problem is logged.
 - **Stability:** `--control` and `--supervisor` have fixtures and docs
   (`docs/design-agent-control.md`, `agentControl.fixtures.json`); `--project-root` tools
   are documented in `docs/spec/modules/fastmcp-server.md` (stale, see README gap 12) and

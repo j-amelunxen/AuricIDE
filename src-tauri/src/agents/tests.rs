@@ -1082,9 +1082,10 @@ fn supervisor_codex_arguments_configures_mcp_servers() {
     let mut pm_env = std::collections::BTreeMap::new();
     pm_env.insert("AURIC_PROJECT".to_string(), "p1".to_string());
 
-    let args = supervisor_codex_arguments(runtime, socket, &pm, &pm_env).unwrap();
+    let args = supervisor_codex_arguments(runtime, socket, &pm, &pm_env, "/opt/homebrew/bin/node")
+        .unwrap();
     let joined = args.join(" ");
-    assert!(joined.contains("mcp_servers.auric-supervisor.command=\"node\""));
+    assert!(joined.contains("mcp_servers.auric-supervisor.command=\"/opt/homebrew/bin/node\""));
     assert!(
         joined.contains("mcp_servers.auric-supervisor.args=[\"/bin/runtime.js\",\"--supervisor\"]")
     );
@@ -1094,7 +1095,7 @@ fn supervisor_codex_arguments_configures_mcp_servers() {
         "mcp_servers.auric-supervisor.env={\"AURIC_CONTROL_SOCKET\"=\"/tmp/auric.sock\"}"
     ));
 
-    assert!(joined.contains("mcp_servers.auric-pm-p1.command=\"node\""));
+    assert!(joined.contains("mcp_servers.auric-pm-p1.command=\"/opt/homebrew/bin/node\""));
     assert!(joined.contains(
         "mcp_servers.auric-pm-p1.args=[\"/bin/runtime.js\",\"--project-root\",\"/work/p1\"]"
     ));

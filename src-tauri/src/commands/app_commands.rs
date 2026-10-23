@@ -135,7 +135,7 @@ pub struct McpLaunchSpec {
 /// launch. The project contributes only data; executable code always comes
 /// from the installed AuricIDE runtime.
 #[tauri::command]
-pub fn mcp_launch_spec(
+pub async fn mcp_launch_spec(
     project_path: String,
     app: tauri::AppHandle,
 ) -> Result<McpLaunchSpec, String> {
@@ -157,6 +157,9 @@ pub fn mcp_launch_spec(
     }
 
     let runtime = mcp::runtime_entrypoint(&app)?;
+    let path_var =
+        crate::node_runtime::path_from_env(crate::agents::cached_login_shell_env().await);
+    let command = crate::node_runtime::command_for_mcp(&runtime, &path_var);
 
     let mut env = BTreeMap::new();
     if let Ok(app_data_dir) = app.path().app_data_dir() {
@@ -169,7 +172,7 @@ pub fn mcp_launch_spec(
     }
 
     Ok(McpLaunchSpec {
-        command: "node".to_string(),
+        command,
         args: vec![
             runtime.to_string_lossy().into_owned(),
             "--project-root".to_string(),

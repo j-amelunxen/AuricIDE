@@ -855,6 +855,7 @@ mod tests {
             Path::new("/data/control.sock"),
             &[],
             &BTreeMap::new(),
+            "node",
         )
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -876,6 +877,7 @@ mod tests {
             Path::new("/s"),
             &[],
             &BTreeMap::new(),
+            "node",
         )
         .unwrap();
         assert_ne!(path, second, "one file per supervisor");
@@ -895,6 +897,7 @@ mod tests {
             Path::new("/s"),
             &pm,
             &env,
+            "node",
         )
         .unwrap();
         let config: serde_json::Value =
@@ -915,6 +918,41 @@ mod tests {
                 .is_none(),
             "no launch folder: request_agent_launch stays refused, spawns go through the policy"
         );
+    }
+
+    #[test]
+    fn generated_configs_use_the_resolved_node_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let node = "/opt/homebrew/bin/node";
+        let configs = super::write_agent_mcp_configs_with_connectors(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            node,
+            Path::new("/repo/project"),
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
+        let standard: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&configs.standard).unwrap()).unwrap();
+        assert_eq!(standard["mcpServers"]["auric-pm"]["command"], node);
+        let crush: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&configs.crush).unwrap()).unwrap();
+        assert_eq!(crush["mcp"]["auric-pm"]["command"], node);
+
+        let path = write_supervisor_mcp_config(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            Path::new("/s"),
+            &[("auric-pm-alpha".to_string(), "/abs/alpha".to_string())],
+            &BTreeMap::new(),
+            node,
+        )
+        .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config["mcpServers"]["auric-supervisor"]["command"], node);
+        assert_eq!(config["mcpServers"]["auric-pm-alpha"]["command"], node);
     }
 
     #[test]
