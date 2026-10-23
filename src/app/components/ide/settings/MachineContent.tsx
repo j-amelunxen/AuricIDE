@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
+import { loadAppConfig, setAppConfigValue } from '@/lib/config/appConfig';
 import { dependencyView, neededBy, type DependencyState } from '@/lib/machine/dependencyView';
 import { useStore } from '@/lib/store';
 import { copyToClipboard } from '@/lib/tauri/clipboard';
@@ -89,6 +91,34 @@ export function MachineContent() {
   const [reports, setReports] = useState<DependencyReport[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [taskLogEnabled, setTaskLogEnabled] = useState(() => loadAppConfig().taskLogEnabled);
+  const [taskLogDir, setTaskLogDir] = useState(() => loadAppConfig().taskLogDir);
+
+  const handleTaskLogEnabledChange = (checked: boolean) => {
+    setAppConfigValue('taskLogEnabled', checked);
+    setTaskLogEnabled(checked);
+  };
+
+  const handleTaskLogDirChange = (value: string) => {
+    setTaskLogDir(value);
+    setAppConfigValue('taskLogDir', value.trim());
+  };
+
+  const handleBrowseTaskLogDir = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Choose Task Log Folder',
+      });
+      if (typeof selected === 'string' && selected.trim()) {
+        handleTaskLogDirChange(selected.trim());
+      }
+    } catch {
+      showToast('Could not open folder picker', 'error');
+    }
+  };
 
   const check = useCallback(async (refresh: boolean) => {
     setChecking(true);
@@ -162,6 +192,59 @@ export function MachineContent() {
             ))}
           </ul>
         )}
+      </SettingsSection>
+
+      <SettingsSection title="Track Tasks Over Time" icon="history">
+        <p className="text-xs leading-relaxed text-foreground-muted">
+          Write finished agent tasks to monthly JSONL files (
+          <code className="font-mono text-[11px]">tasks-YYYY-MM.jsonl</code>) with task title,
+          duration, provider, model, and usage for billing.
+        </p>
+        <SettingsToggle
+          label="Track tasks over time"
+          description="Appends one JSONL line per finished task, rotated by month"
+          testId="task-log-enabled-toggle"
+          checked={taskLogEnabled}
+          onChange={handleTaskLogEnabledChange}
+        />
+        <div className="space-y-1.5">
+          <label htmlFor="task-log-dir-input" className="block text-xs font-medium text-foreground">
+            Log Folder (optional)
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="task-log-dir-input"
+              data-testid="task-log-dir-input"
+              type="text"
+              value={taskLogDir}
+              onChange={(event) => handleTaskLogDirChange(event.target.value)}
+              placeholder="Default: <app_data_dir>/task-logs"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none placeholder:text-foreground-muted/50 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/70"
+            />
+            <button
+              type="button"
+              data-testid="task-log-dir-browse"
+              onClick={() => void handleBrowseTaskLogDir()}
+              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-white/10"
+            >
+              Browse…
+            </button>
+            {taskLogDir && (
+              <button
+                type="button"
+                data-testid="task-log-dir-clear"
+                onClick={() => handleTaskLogDirChange('')}
+                className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-foreground-muted">
+            Leave empty to store monthly files in the application data folder under{' '}
+            <code className="font-mono">task-logs/</code>.
+          </p>
+        </div>
       </SettingsSection>
     </div>
   );

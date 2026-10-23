@@ -1105,17 +1105,21 @@ pub async fn spawn_agent_impl(
         };
         let report_exit = proc_opt.is_some();
 
-        let exit_code: i32 = match proc_opt {
-            Some(mut process) => tokio::task::spawn_blocking(move || {
-                process
-                    .child
-                    .wait()
-                    .map(|status| if status.success() { 0 } else { 1 })
-                    .unwrap_or(-1)
-            })
-            .await
-            .unwrap_or(-1),
-            None => 0,
+        let (exit_code, finished_info) = match proc_opt {
+            Some(mut process) => {
+                let info = process.info;
+                let code = tokio::task::spawn_blocking(move || {
+                    process
+                        .child
+                        .wait()
+                        .map(|status| if status.success() { 0 } else { 1 })
+                        .unwrap_or(-1)
+                })
+                .await
+                .unwrap_or(-1);
+                (code, info)
+            }
+            None => (0, finished_info),
         };
 
         let status = if exit_code == 0 {
@@ -1149,7 +1153,7 @@ pub async fn spawn_agent_impl(
                     console_tail,
                     now_ms(),
                 ),
-                finished_info,
+                finished_info.clone(),
             );
         }
         if let Some(buffers) = &output_buffers {
@@ -1168,7 +1172,7 @@ pub async fn spawn_agent_impl(
 
         // A kill got there first when the agent is gone from the manager: it
         // reported the verdict and let go of the anchor itself.
-        if let (true, Some(capture)) = (report_exit, usage) {
+        if report_exit {
             let outcome = if exit_code == 0 {
                 Outcome::Success
             } else {
@@ -1178,9 +1182,10 @@ pub async fn spawn_agent_impl(
             // exit must not wait for it.
             let app = app_clone.clone();
             tauri::async_runtime::spawn(async move {
-                book_usage(
+                finish_run_records(
                     &app,
-                    capture,
+                    finished_info,
+                    usage,
                     outcome,
                     cli_result,
                     EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
@@ -1365,16 +1370,17 @@ async fn prepare_usage_capture(
 }
 
 /// Reads a finished run's evidence, appends its usage row and tells the
-/// frontend. A failure is logged, never raised: the run itself already ended.
+/// frontend. Returns the written row when one was booked. A failure is logged,
+/// never raised: the run itself already ended.
 async fn book_usage(
     app: &AppHandle,
     capture: UsageCapture,
     outcome: Outcome,
     cli_result: Option<crate::agent_usage::claude::CliResult>,
     wait: EvidenceWait,
-) {
+) -> Option<crate::agent_usage::record::UsageRecord> {
     let Ok(home) = app.path().home_dir() else {
-        return;
+        return None;
     };
     let claude_prices = app
         .try_state::<crate::cc_usage::CcUsageService>()
@@ -1395,12 +1401,78 @@ async fn book_usage(
         Ok(Ok(Some(row))) => {
             let _ = app.emit(
                 USAGE_RECORDED_EVENT,
-                UsageRecordedEvent { project_path, row },
+                UsageRecordedEvent {
+                    project_path,
+                    row: row.clone(),
+                },
             );
+            Some(row)
         }
-        Ok(Ok(None)) => {}
-        Ok(Err(error)) => eprintln!("Agent usage: could not record a run: {error}"),
-        Err(error) => eprintln!("Agent usage: recording a run aborted: {error}"),
+        Ok(Ok(None)) => None,
+        Ok(Err(error)) => {
+            eprintln!("Agent usage: could not record a run: {error}");
+            None
+        }
+        Err(error) => {
+            eprintln!("Agent usage: recording a run aborted: {error}");
+            None
+        }
+    }
+}
+
+/// Books usage (when the run belonged to an initialised project) and writes
+/// the finished task to the monthly JSONL log when task logging is enabled.
+///
+/// The task log entry is stamped with `finished_at` taken before waiting for
+/// the transcript, so the recorded duration and month match the actual moment
+/// the run ended.
+async fn finish_run_records(
+    app: &AppHandle,
+    info: AgentInfo,
+    capture: Option<UsageCapture>,
+    outcome: Outcome,
+    cli_result: Option<crate::agent_usage::claude::CliResult>,
+    wait: EvidenceWait,
+) {
+    let finished_at = chrono::Utc::now();
+    let cli_summary = cli_result
+        .as_ref()
+        .map(crate::task_log::TaskUsageSummary::from_cli_result);
+    let usage_row = match capture {
+        Some(capture) => book_usage(app, capture, outcome, cli_result, wait).await,
+        None => None,
+    };
+    let summary = usage_row
+        .as_ref()
+        .map(crate::task_log::TaskUsageSummary::from_usage_record)
+        .or(cli_summary);
+    record_task_log(app, info, finished_at, outcome, summary).await;
+}
+
+async fn record_task_log(
+    app: &AppHandle,
+    info: AgentInfo,
+    finished_at: chrono::DateTime<chrono::Utc>,
+    outcome: Outcome,
+    summary: Option<crate::task_log::TaskUsageSummary>,
+) {
+    let Ok(app_data) = app.path().app_data_dir() else {
+        return;
+    };
+    let recorded = tokio::task::spawn_blocking(move || {
+        crate::task_log::record_finished_task_in(
+            &app_data,
+            &info,
+            finished_at,
+            outcome,
+            summary.as_ref(),
+        )
+    })
+    .await;
+    match recorded {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("Task log: could not record a finished task: {error}"),
+        Err(error) => eprintln!("Task log: recording a finished task aborted: {error}"),
     }
 }
 
@@ -1556,19 +1628,20 @@ pub async fn kill_agent_impl(
     }
     // Tokens spent before a kill were spent, so the run is booked from its
     // transcript. Off this call: the kill answers now, the row follows.
-    if let Some(capture) = process.usage.take() {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            book_usage(
-                &app,
-                capture,
-                Outcome::Killed,
-                None,
-                EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
-            )
-            .await
-        });
-    }
+    let capture = process.usage.take();
+    let killed_info = process.info.clone();
+    let app_for_records = app.clone();
+    tauri::async_runtime::spawn(async move {
+        finish_run_records(
+            &app_for_records,
+            killed_info,
+            capture,
+            Outcome::Killed,
+            None,
+            EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
+        )
+        .await
+    });
     let verdict = process
         .launch_request_uid
         .as_deref()
@@ -1644,34 +1717,44 @@ const SHUTDOWN_BOOKING_BUDGET: std::time::Duration = std::time::Duration::from_s
 
 pub async fn cleanup_all_agents(app: AppHandle) {
     let state = app.state::<AgentManagerState>();
-    let captures: Vec<UsageCapture> = {
+    let drained: Vec<(AgentInfo, Option<UsageCapture>)> = {
         let mut manager = state.lock().await;
         manager
             .agents
             .drain()
-            .filter_map(|(_, process)| process.usage)
+            .map(|(_, process)| (process.info, process.usage))
             .collect()
     };
-    book_at_shutdown(&app, captures).await;
+    book_at_shutdown(&app, drained).await;
 }
 
 /// The runs that were alive when the app quit are booked as killed: tokens
 /// spent before the quit were spent. Their transcripts are read within the
 /// budget; a run that does not make it is booked without tokens rather than
 /// not at all.
-async fn book_at_shutdown(app: &AppHandle, captures: Vec<UsageCapture>) {
+async fn book_at_shutdown(app: &AppHandle, runs: Vec<(AgentInfo, Option<UsageCapture>)>) {
     let deadline = tokio::time::Instant::now() + SHUTDOWN_BOOKING_BUDGET;
-    for capture in captures {
-        let read = book_usage(
-            app,
-            capture.clone(),
-            Outcome::Killed,
-            None,
-            EvidenceWait::Now,
-        );
-        if tokio::time::timeout_at(deadline, read).await.is_err() {
-            book_usage(app, capture, Outcome::Killed, None, EvidenceWait::Skip).await;
-        }
+    let finished_at = chrono::Utc::now();
+    for (info, capture) in runs {
+        let usage_row = if let Some(capture) = capture {
+            let read = book_usage(
+                app,
+                capture.clone(),
+                Outcome::Killed,
+                None,
+                EvidenceWait::Now,
+            );
+            match tokio::time::timeout_at(deadline, read).await {
+                Ok(row) => row,
+                Err(_) => book_usage(app, capture, Outcome::Killed, None, EvidenceWait::Skip).await,
+            }
+        } else {
+            None
+        };
+        let summary = usage_row
+            .as_ref()
+            .map(crate::task_log::TaskUsageSummary::from_usage_record);
+        record_task_log(app, info, finished_at, Outcome::Killed, summary).await;
     }
 }
 

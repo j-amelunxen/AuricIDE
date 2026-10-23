@@ -36,6 +36,7 @@ mod recent_projects;
 mod schedules;
 mod supervisor;
 mod supervisor_link;
+mod task_log;
 mod themes;
 mod ui_watchdog;
 mod usage_limits;

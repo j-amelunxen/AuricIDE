@@ -31,6 +31,8 @@ describe('app config', () => {
     setAppConfigValue('agentTerminalAutoArrange', false);
     setAppConfigValue('agentLogPersist', true);
     setAppConfigValue('agentLogRetentionDays', 7);
+    setAppConfigValue('taskLogEnabled', true);
+    setAppConfigValue('taskLogDir', '/Users/dev/billing/tasks');
 
     expect(loadAppConfig()).toEqual({
       enableDeepNlp: true,
@@ -42,6 +44,8 @@ describe('app config', () => {
       agentTerminalAutoArrange: false,
       agentLogPersist: true,
       agentLogRetentionDays: 7,
+      taskLogEnabled: true,
+      taskLogDir: '/Users/dev/billing/tasks',
     });
   });
 
@@ -161,6 +165,23 @@ describe('agent log persistence', () => {
     // Zero days means "no age limit", not "keep nothing" — without a row cap
     // that choice would let the file grow without any bound at all.
     expect(AGENT_LOG_MAX_ROWS).toBe(200_000);
+  });
+});
+
+describe('task log persistence (JSONL)', () => {
+  it('stays off with an empty custom directory until switched on', () => {
+    expect(APP_CONFIG_DEFAULTS.taskLogEnabled).toBe(false);
+    expect(APP_CONFIG_DEFAULTS.taskLogDir).toBe('');
+    expect(loadAppConfig().taskLogEnabled).toBe(false);
+    expect(loadAppConfig().taskLogDir).toBe('');
+    expect(APP_CONFIG_KEYS.taskLogEnabled).toBe('auric.task-log.enabled');
+    expect(APP_CONFIG_KEYS.taskLogDir).toBe('auric.task-log.dir');
+  });
+
+  it('trims whitespace around a configured task log directory', () => {
+    localStorage.setItem(APP_CONFIG_KEYS.taskLogDir, '  /Users/dev/logs  ');
+
+    expect(loadAppConfig().taskLogDir).toBe('/Users/dev/logs');
   });
 });
 

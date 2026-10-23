@@ -48,6 +48,8 @@ export const APP_CONFIG_KEYS = {
   agentConsoleProjectsCollapsed: 'auric.agent-console.projects-collapsed',
   agentLogPersist: 'auric.agent-log.persist',
   agentLogRetentionDays: 'auric.agent-log.retention-days',
+  taskLogEnabled: 'auric.task-log.enabled',
+  taskLogDir: 'auric.task-log.dir',
   inboxSort: 'auric.inbox.sort',
   quickAccessSort: 'auric.quick-access.sort',
   quickAccessOrder: 'auric.quick-access.order',
@@ -130,6 +132,17 @@ export interface AppConfig {
   agentLogPersist: boolean;
   /** How long stored activity is kept, in days. `0` is no age limit. */
   agentLogRetentionDays: number;
+  /**
+   * Write finished agent runs to monthly JSONL files (`tasks-YYYY-MM.jsonl`).
+   * Off by default: writing task logs to disk is opt-in. Read from Rust out of
+   * the `webview-prefs.json` mirror (`src-tauri/src/task_log.rs`).
+   */
+  taskLogEnabled: boolean;
+  /**
+   * Optional folder where `tasks-YYYY-MM.jsonl` files are written. Blank uses
+   * `<app_data_dir>/task-logs/`.
+   */
+  taskLogDir: string;
 }
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
@@ -142,6 +155,8 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   agentTerminalAutoArrange: true,
   agentLogPersist: false,
   agentLogRetentionDays: 2,
+  taskLogEnabled: false,
+  taskLogDir: '',
 };
 
 /** The single read. Absent storage — SSR, tests, a blocked webview — is empty. */
@@ -192,6 +207,11 @@ function decodeChoice(raw: string | null, allowed: readonly number[], fallback: 
   return allowed.includes(value) ? value : fallback;
 }
 
+function decodeString(raw: string | null, fallback: string): string {
+  if (raw === null) return fallback;
+  return raw.trim();
+}
+
 export function loadAppConfig(): AppConfig {
   return {
     enableDeepNlp: decodeBoolean(
@@ -231,6 +251,14 @@ export function loadAppConfig(): AppConfig {
       readAppPref(APP_CONFIG_KEYS.agentLogRetentionDays),
       AGENT_LOG_RETENTION_DAYS,
       APP_CONFIG_DEFAULTS.agentLogRetentionDays
+    ),
+    taskLogEnabled: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.taskLogEnabled),
+      APP_CONFIG_DEFAULTS.taskLogEnabled
+    ),
+    taskLogDir: decodeString(
+      readAppPref(APP_CONFIG_KEYS.taskLogDir),
+      APP_CONFIG_DEFAULTS.taskLogDir
     ),
   };
 }

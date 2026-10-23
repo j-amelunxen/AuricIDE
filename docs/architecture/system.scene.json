@@ -84,7 +84,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "190"
+          "value": "191"
         }
       ],
       "position": [3.75, -11.2, 0],
@@ -451,7 +451,7 @@
         },
         {
           "label": "rust files",
-          "value": "190"
+          "value": "191"
         },
         {
           "label": "MCP tool files",

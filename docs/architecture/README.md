@@ -99,7 +99,7 @@ Uses: nearly everything below. Not used by anything except Tauri.
 
 **Agent runtime** — `agents/` (20 files: manager, PTY output buffer, awaiting-input
 detection, write sandbox, launch dir, run results, MCP guard), `agent_persistence.rs`,
-`agent_log.rs`, `agent_window.rs`, `providers/` (provider registry, `dynamic-providers/`
+`agent_log.rs`, `task_log.rs`, `agent_window.rs`, `providers/` (provider registry, `dynamic-providers/`
 JSON), `provider_policy.rs`, `connectors/`. Purpose: spawn, stream, kill and persist
 agent processes. Depends on: providers (35 references), supervisor (32), mcp (9),
 notifications (8), agent_usage (7). It is the most connected module in the backend.
@@ -144,8 +144,9 @@ notifications (mutual).
 
 **Usage** — `cc_usage/` (what the CLIs consumed, from transcripts), `usage_limits/`
 (quota window via a Claude `--settings` statusLine sidecar and the Codex CLI),
-`agent_usage/` (cost of one run, booked into `pm_agent_usage`). Depends on: providers,
-agents, webview_prefs.
+`agent_usage/` (cost of one run, booked into `pm_agent_usage`), `task_log.rs`
+(monthly JSONL log `tasks-YYYY-MM.jsonl` of finished agent tasks, opt-in for billing).
+Depends on: providers, agents, webview_prefs.
 
 **Imports and machine tools** — `video_import/` (transcription, frames), `machine/`
 (declared table of `ffmpeg`, `ffprobe`, `go`, `okf`; absolute-path resolution through

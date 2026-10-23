@@ -116,6 +116,20 @@ fn confine_wraps_the_whole_command_line() {
 #[cfg(target_os = "macos")]
 #[test]
 fn a_confined_shell_writes_its_workspace_and_nothing_else() {
+    // Nested `sandbox-exec` is denied when the test runner itself runs inside
+    // a macOS Seatbelt sandbox (e.g. an agent CLI harness).
+    let probe = std::process::Command::new(SANDBOX_EXEC)
+        .args(["-p", "(version 1)\n(allow default)", "/usr/bin/true"])
+        .output();
+    if let Ok(out) = probe {
+        if !out.status.success()
+            && String::from_utf8_lossy(&out.stderr)
+                .contains("sandbox_apply: Operation not permitted")
+        {
+            return;
+        }
+    }
+
     let workspace = scratch();
     let outside = scratch();
     let home = scratch();

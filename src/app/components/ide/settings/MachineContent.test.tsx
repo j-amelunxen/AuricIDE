@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import type { DependencyReport } from '@/lib/tauri/machine';
 
-const { machineDependencies, copyToClipboard } = vi.hoisted(() => ({
+const { machineDependencies, copyToClipboard, openDialog } = vi.hoisted(() => ({
   machineDependencies: vi.fn(),
   copyToClipboard: vi.fn(async () => true),
+  openDialog: vi.fn(),
 }));
 vi.mock('@/lib/tauri/machine', () => ({ machineDependencies }));
 vi.mock('@/lib/tauri/clipboard', () => ({ copyToClipboard }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openDialog }));
 
 import { MachineContent } from './MachineContent';
 
@@ -56,8 +58,10 @@ const okfOutsidePath = report({
 
 describe('Settings → Machine', () => {
   beforeEach(() => {
+    localStorage.clear();
     machineDependencies.mockReset();
     copyToClipboard.mockClear();
+    openDialog.mockReset();
     useStore.setState({ toasts: [] });
   });
 
@@ -162,5 +166,34 @@ describe('Settings → Machine', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not check this machine.');
     expect(screen.queryByText(/IPC/)).toBeNull();
+  });
+
+  it('keeps task tracking off by default and persists toggle and folder changes', async () => {
+    const user = userEvent.setup();
+    machineDependencies.mockResolvedValue([]);
+    render(<MachineContent />);
+
+    const toggle = await screen.findByTestId('task-log-enabled-toggle');
+    const dirInput = screen.getByTestId('task-log-dir-input');
+
+    expect(toggle).not.toBeChecked();
+    expect(dirInput).toHaveValue('');
+
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem('auric.task-log.enabled')).toBe('true');
+
+    await user.type(dirInput, '/Users/dev/billing');
+    expect(localStorage.getItem('auric.task-log.dir')).toBe('/Users/dev/billing');
+
+    openDialog.mockResolvedValueOnce('/Users/dev/chosen-logs');
+    await user.click(screen.getByTestId('task-log-dir-browse'));
+    expect(openDialog).toHaveBeenCalledWith(expect.objectContaining({ directory: true }));
+    expect(dirInput).toHaveValue('/Users/dev/chosen-logs');
+    expect(localStorage.getItem('auric.task-log.dir')).toBe('/Users/dev/chosen-logs');
+
+    await user.click(screen.getByTestId('task-log-dir-clear'));
+    expect(dirInput).toHaveValue('');
+    expect(localStorage.getItem('auric.task-log.dir')).toBe('');
   });
 });
