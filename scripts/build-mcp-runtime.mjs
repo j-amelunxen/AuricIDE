@@ -56,6 +56,21 @@ for (const dependency of ['better-sqlite3', 'bindings', 'file-uri-to-path']) {
   cpSync(source, join(output, 'node_modules', dependency), { recursive: true });
 }
 
+// `require('better-sqlite3')` succeeds on a mismatched Node; opening a
+// database is what loads the native addon. Fail here rather than write an
+// ABI the copied .node cannot actually serve.
+const bundledSqlite = createRequire(join(output, 'node_modules/better-sqlite3/package.json'));
+try {
+  const Database = bundledSqlite('better-sqlite3');
+  const db = new Database(':memory:');
+  db.close();
+} catch (error) {
+  const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
+  throw new Error(
+    `better-sqlite3 in the MCP bundle cannot open a database in Node ${process.version} (ABI ${process.versions.modules}). Run the bundle step with the Node this addon was compiled for. ${detail}`
+  );
+}
+
 writeFileSync(
   join(output, 'manifest.json'),
   `${JSON.stringify({
