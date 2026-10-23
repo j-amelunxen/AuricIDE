@@ -6,6 +6,7 @@ import {
   paneLayout,
   placeAgent,
   presetGrid,
+  presetOrder,
   reconcileGrid,
   removeAgent,
   showAgent,
@@ -284,5 +285,21 @@ describe('terminalGrid – preset layouts', () => {
 
   it('is null when there are fewer agents than panes', () => {
     expect(presetGrid(['a', 'b'], 3)).toBeNull();
+  });
+
+  it('puts supervisors ahead of the agents they started, each kept in tab order', () => {
+    const tabs = [
+      { id: 'w1' },
+      { id: 's1', role: 'supervisor' as const },
+      { id: 'w2', role: 'worker' as const },
+      { id: 's2', role: 'supervisor' as const },
+      { id: 'w3' },
+    ];
+    expect(presetOrder(tabs)).toEqual(['s1', 's2', 'w1', 'w2', 'w3']);
+    expect(presetGrid(presetOrder(tabs), 3)).toEqual(['s1', 's2', 's1', 'w1']);
+  });
+
+  it('keeps the tab order when no supervisor runs', () => {
+    expect(presetOrder([{ id: 'a' }, { id: 'b' }, { id: 'c' }])).toEqual(['a', 'b', 'c']);
   });
 });

@@ -30,6 +30,7 @@ import {
   placeAgent,
   PRESET_PANES,
   presetGrid,
+  presetOrder,
   reconcileGrid,
   removeAgent,
   showAgent,
@@ -190,7 +191,7 @@ function useTerminalGrid(
     [agent.id, apply, cells]
   );
 
-  /** A layout button: the first tabs in strip order fill the panes, the first one gets the focus. */
+  /** A layout button: supervisors, then the other tabs in strip order, fill the panes. */
   const arrange = useCallback(
     (orderedIds: readonly string[], panes: PresetPanes) => {
       const next = presetGrid(orderedIds, panes);
@@ -225,7 +226,7 @@ function PresetGlyph({ panes }: { panes: PresetPanes }) {
   );
 }
 
-/** Two, three or four panes in one click, filled from the front of the tab strip. */
+/** Two, three or four panes in one click, supervisors first, then the front of the tab strip. */
 function LayoutPresets({
   agentCount,
   onArrange,
@@ -240,7 +241,7 @@ function LayoutPresets({
       className="flex items-center gap-0.5 rounded-lg border border-white/10 p-0.5"
     >
       {PRESET_PANES.map((panes) => {
-        const label = `Show the first ${panes} tabs side by side`;
+        const label = `Show ${panes} terminals side by side, supervisors first`;
         const enough = agentCount >= panes;
         return (
           <button
@@ -541,12 +542,7 @@ export function AgentTerminalWorkspace({
           {(agents?.length ?? 0) > 1 && (
             <LayoutPresets
               agentCount={agents?.length ?? 0}
-              onArrange={(panes) =>
-                grid.arrange(
-                  tabOrder.map((a) => a.id),
-                  panes
-                )
-              }
+              onArrange={(panes) => grid.arrange(presetOrder(tabOrder), panes)}
             />
           )}
           <span className="font-mono text-[9px] text-foreground-muted opacity-40">{agent.id}</span>

@@ -67,18 +67,31 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
       agent: fourth,
       agents: [running, finished, third, fourth],
     });
-    await user.click(screen.getByRole('button', { name: 'Show the first 3 tabs side by side' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Show 3 terminals side by side, supervisors first' })
+    );
     expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'c']);
     expect(onSwitchAgent).toHaveBeenCalledWith(running);
+  });
+
+  it('a layout button seats the supervisor even when its tab is not in front', async () => {
+    const user = userEvent.setup();
+    const third: AgentInfo = { ...running, id: 'c', name: 'Gamma' };
+    const boss: AgentInfo = { ...running, id: 's', name: 'Boss', role: 'supervisor' };
+    renderWorkspace({ agents: [running, finished, third, boss] });
+    await user.click(
+      screen.getByRole('button', { name: 'Show 2 terminals side by side, supervisors first' })
+    );
+    expect(useStore.getState().terminalGridCells).toEqual(['s', 'a', 's', 'a']);
   });
 
   it('offers a layout only when there are enough tabs to fill it', () => {
     renderWorkspace();
     expect(
-      screen.getByRole('button', { name: 'Show the first 2 tabs side by side' })
+      screen.getByRole('button', { name: 'Show 2 terminals side by side, supervisors first' })
     ).toBeEnabled();
     expect(
-      screen.getByRole('button', { name: 'Show the first 4 tabs side by side' })
+      screen.getByRole('button', { name: 'Show 4 terminals side by side, supervisors first' })
     ).toBeDisabled();
   });
 

@@ -184,6 +184,18 @@ export function presetGrid(agentIds: readonly string[], panes: PresetPanes): Gri
   return [a, b, c, d];
 }
 
+/**
+ * Who a preset fills its panes with, in turn: supervisors first, then everyone
+ * else, each in tab order. A supervisor is the agent a person steers the rest
+ * through, so when there are more agents than panes it is a child that waits
+ * in a tab, never the supervisor.
+ */
+export function presetOrder(agents: readonly { id: string; role?: string }[]): string[] {
+  const supervisors = agents.filter((a) => a.role === 'supervisor');
+  const rest = agents.filter((a) => a.role !== 'supervisor');
+  return [...supervisors, ...rest].map((a) => a.id);
+}
+
 /** Takes an agent out; its neighbours grow into the space. Null when it was the last one. */
 export function removeAgent(cells: GridCells, agentId: string): GridCells | null {
   if (!cells.includes(agentId)) return cells;
