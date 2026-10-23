@@ -9,7 +9,8 @@ import type { Notification, NotificationAction } from './types';
 
 type AutoAgentAction =
   | Extract<NotificationAction, { kind: 'spawn-agent' }>
-  | Extract<NotificationAction, { kind: 'run-skill' }>;
+  | Extract<NotificationAction, { kind: 'run-skill' }>
+  | Extract<NotificationAction, { kind: 'open-manager' }>;
 
 function isEligibleAutoStart(notification: Notification, nowMs: number): boolean {
   return (
@@ -21,11 +22,16 @@ function isEligibleAutoStart(notification: Notification, nowMs: number): boolean
 }
 
 function isAutoAgentAction(action: NotificationAction): action is AutoAgentAction {
-  return (action.kind === 'spawn-agent' || action.kind === 'run-skill') && action.launch === 'auto';
+  return (
+    (action.kind === 'spawn-agent' ||
+      action.kind === 'run-skill' ||
+      action.kind === 'open-manager') &&
+    action.launch === 'auto'
+  );
 }
 
 /**
- * The `spawn-agent` and `run-skill` actions in a notification batch that
+ * The `spawn-agent`, `run-skill` and `open-manager` actions in a notification batch that
  * qualify for an automatic start: a user-authored payload, still unread and
  * unanswered, whose occurrence is fresh, and whose action explicitly asks for
  * `launch: 'auto'`.

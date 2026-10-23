@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { openManager } from '@/lib/agents/openSupervisor';
+import { openManager, type OpenManagerOptions } from '@/lib/agents/openSupervisor';
 import { useStore } from '@/lib/store';
 
 interface OpenManagerHooks {
@@ -19,27 +19,35 @@ interface OpenManagerHooks {
  */
 export function useOpenManager({ onOpenSettings, onSelectAgent }: OpenManagerHooks = {}) {
   const spawnSupervisor = useStore((s) => s.spawnSupervisor);
+  const sendAgentInput = useStore((s) => s.sendAgentInput);
   const selectAgent = useStore((s) => s.selectAgent);
   const showToast = useStore((s) => s.showToast);
   const [opening, setOpening] = useState<string | null>(null);
-  const inFlight = useRef(false);
+  const inFlight = useRef(0);
 
   const open = useCallback(
-    async (key: string) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
+    async (key: string, options?: OpenManagerOptions) => {
+      // A second plain Open adds nothing. An Ask carries work and must not be
+      // lost: `openManager` itself lines it up behind the start in flight.
+      if (inFlight.current > 0 && !options?.task?.trim()) return;
+      inFlight.current += 1;
       setOpening(key);
       try {
-        await openManager({ spawnSupervisor, showToast }, key, {
-          onNothingVisible: () => onOpenSettings?.('supervisor'),
-          onShow: onSelectAgent ?? selectAgent,
-        });
+        await openManager(
+          { spawnSupervisor, showToast, sendAgentInput, agents: useStore.getState().agents },
+          key,
+          {
+            onNothingVisible: () => onOpenSettings?.('supervisor'),
+            onShow: onSelectAgent ?? selectAgent,
+          },
+          options
+        );
       } finally {
-        inFlight.current = false;
-        setOpening(null);
+        inFlight.current -= 1;
+        if (inFlight.current === 0) setOpening(null);
       }
     },
-    [spawnSupervisor, showToast, onOpenSettings, onSelectAgent, selectAgent]
+    [spawnSupervisor, sendAgentInput, showToast, onOpenSettings, onSelectAgent, selectAgent]
   );
 
   return { open, opening };

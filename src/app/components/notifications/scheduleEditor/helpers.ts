@@ -1,4 +1,5 @@
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
+import { managerAction } from '@/lib/notifications/managerAction';
 import { dailyCron, weeklyCron } from '@/lib/notifications/scheduleFormat';
 import type { NotificationAction, NotificationLaunch } from '@/lib/notifications/types';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
@@ -85,6 +86,15 @@ export function actionDraftOf(schedule: Schedule | null): ActionDraft {
       // A payload saved before the launch existed — or the run-skill default —
       // opens the panel. Only an explicit `auto` may start on its own.
       launch: action.launch ?? 'dialog',
+    };
+  }
+  if (action?.kind === 'open-manager') {
+    return {
+      choice: 'manager',
+      managerKey: action.managerKey,
+      managerName: action.managerName,
+      task: action.task ?? '',
+      launch: action.launch === 'auto' ? 'auto' : 'direct',
     };
   }
   if (action?.kind === 'spawn-agent') {
@@ -260,6 +270,15 @@ export function actionsFromDraft(
       },
     ];
   }
+  if (draft.choice === 'manager') {
+    if (draft.managerKey === '') return [];
+    return [
+      managerAction(
+        { key: draft.managerKey, name: draft.managerName },
+        { task: draft.task, launch: draft.launch }
+      ),
+    ];
+  }
   if (draft.choice === 'skill') {
     if (draft.snapshot === undefined || projectPath === null) return [];
     return [{ ...draft.snapshot, repoPath: projectPath }];
@@ -300,6 +319,7 @@ export function saveBlocked(name: string, draft: ActionDraft): boolean {
   if (draft.choice === 'skill' && draft.snapshot === undefined) return true;
   if (draft.choice === 'combo' && draft.snapshot === undefined) return true;
   if (draft.choice === 'conductor' && draft.ticketBudget < 1) return true;
+  if (draft.choice === 'manager' && draft.managerKey === '') return true;
   return false;
 }
 

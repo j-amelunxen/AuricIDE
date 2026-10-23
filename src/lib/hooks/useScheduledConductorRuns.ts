@@ -25,6 +25,7 @@ import {
   launchFailedAnswer,
   launchStartedAnswer,
 } from '@/lib/notifications/launchRequest';
+import { managerOpener } from '@/lib/notifications/managerOpener';
 import { notificationTrust, type NotificationTrust } from '@/lib/notifications/trust';
 import {
   parseNotificationActions,
@@ -302,7 +303,10 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
   }, [notifications, agents, openProject, grantTick, scheduleRetry, providersLoaded]);
 }
 
-type AutoStartAction = Extract<NotificationAction, { kind: 'spawn-agent' | 'run-skill' }>;
+type AutoStartAction = Extract<
+  NotificationAction,
+  { kind: 'spawn-agent' | 'run-skill' | 'open-manager' }
+>;
 type SpawnAgentAction = Extract<NotificationAction, { kind: 'spawn-agent' }>;
 type GrantStartOutcome = LaunchClaimOutcome | 'claim-failed' | 'spawn-failed';
 
@@ -362,7 +366,13 @@ async function startAgentFromNotification(
 ): Promise<boolean> {
   const store = useStore.getState();
   const request = isLaunchRequest(notification);
-  await store.markNotificationRead(notification.uid);
+  // A manager reminder can come back declined (the human is typing in that
+  // terminal, or a dialog would be needed). It then stays unread with its
+  // button, so it is marked read only once it has really happened. The
+  // attempted-set in the caller keeps it from firing twice meanwhile.
+  const markReadAfter = action.kind === 'open-manager';
+  let declined = false;
+  if (!markReadAfter) await store.markNotificationRead(notification.uid);
   try {
     await executeNotificationAction(
       action,
@@ -385,6 +395,15 @@ async function startAgentFromNotification(
         startConductorRun: async () => undefined,
         // Never by itself: a policy proposal is decided by a click only.
         decidePolicyProposal: async () => undefined,
+        // Automatic: the terminal stays where the user left it.
+        openManager: async (managerKey, options) => {
+          const outcome = await managerOpener(() => useStore.getState(), { show: false })(
+            managerKey,
+            options
+          );
+          declined = outcome === 'declined';
+          return outcome;
+        },
       },
       {
         fallbackCwd: store.rootPath ?? undefined,
@@ -396,8 +415,10 @@ async function startAgentFromNotification(
         notificationUid: notification.uid,
       }
     );
-    return true;
+    if (markReadAfter && !declined) await store.markNotificationRead(notification.uid);
+    return !declined;
   } catch (error) {
+    if (markReadAfter) await store.markNotificationRead(notification.uid);
     if (request) await store.answerNotification(notification.uid, launchFailedAnswer(error));
     const message =
       error instanceof NotificationActionError && error.code === 'missing-project'

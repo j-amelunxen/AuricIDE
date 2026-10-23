@@ -21,6 +21,8 @@ import {
   type SupervisorManager,
 } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
+import { knowledgeFilePath, MEMORY_INDEX_FILE } from './managerFiles';
+import { formatSessionAge } from './sessionAge';
 
 interface ManagerInspectorProps {
   manager: SupervisorManager;
@@ -31,6 +33,9 @@ interface ManagerInspectorProps {
   /** Bumped by whoever validated the memory elsewhere, so the summary is read again. */
   reloadToken: number;
   onOpen: () => void;
+  onAsk: () => void;
+  /** Opens a file of the manager's folder; the rail makes it a tab, Settings opens it in the default app. */
+  onOpenFile: (path: string) => void;
   onEditInstructions: () => void;
   /** Ends the running session and resumes the folder. The caller confirms. */
   onRestart: () => void;
@@ -53,6 +58,9 @@ const TEXT_BUTTON =
   'rounded px-1 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40';
 const ICON_BUTTON =
   'flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground';
+
+const ACTION_BUTTON =
+  'rounded-md border border-border-dark px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-white/5';
 
 const PLURAL_EXCEPTIONS: Record<string, string> = { Person: 'People' };
 
@@ -90,6 +98,28 @@ function Row({
         {action}
       </dd>
     </div>
+  );
+}
+
+/** A row's content that opens a file: a plain button, so it reads and tabs like one. */
+function RowButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="block w-full min-w-0 rounded text-left transition-colors hover:text-primary"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -163,6 +193,7 @@ function useLoaded<T>(load: () => Promise<T>, reloadToken: number) {
  * in Settings): the address, the instructions, the memory and the folder. A
  * status line appears only when something asks the human for an action.
  */
+// code-gate: complexity-cyclomatic, complexity-function-length, complexity-parameter-count - one destructured props object; each branch is a status line or row shown only in its own state
 export function ManagerInspector({
   manager,
   run,
@@ -170,11 +201,15 @@ export function ManagerInspector({
   folderOpen,
   reloadToken,
   onOpen,
+  onAsk,
+  onOpenFile,
   onEditInstructions,
   onRestart,
   onToggleFolder,
 }: ManagerInspectorProps) {
   const showToast = useStore((s) => s.showToast);
+  // The age moves by the minute and the inspector is short-lived: read once, not per render.
+  const [mountedAt] = useState(() => Date.now());
   const [instructions] = useLoaded(() => managerInstructions(manager.key), reloadToken);
   const [memory, setMemory] = useLoaded(() => managerMemory(manager.key), reloadToken);
   const [instructionsChanged, setInstructionsChanged] = useState(false);
@@ -219,6 +254,7 @@ export function ManagerInspector({
   const problems = summary?.findings ?? [];
   const okfOff = summary ? OKF_OFF_REASON[summary.okf] : undefined;
   const total = summary ? totalConcepts(summary.concepts) : 0;
+  const session = summary?.lastSession ?? null;
   const promotedWhileRunning = liveSupervisor !== undefined && manager.lastLaunch === null;
   const changedWhileRunning = liveSupervisor !== undefined && instructionsChanged;
 
@@ -357,7 +393,10 @@ export function ManagerInspector({
           {memory.state === 'error' ? (
             <span className="text-amber-200">{memory.message}</span>
           ) : summary ? (
-            <>
+            <RowButton
+              title="Open the memory index"
+              onClick={() => onOpenFile(knowledgeFilePath(run.path, MEMORY_INDEX_FILE))}
+            >
               <span className="block">
                 {total} {total === 1 ? 'concept' : 'concepts'} · {memoryCheckLabel(summary)}
               </span>
@@ -366,9 +405,30 @@ export function ManagerInspector({
                   {conceptBreakdown(summary.concepts)}
                 </span>
               )}
-            </>
+            </RowButton>
           ) : (
             <span className="text-foreground-muted">Reading…</span>
+          )}
+        </Row>
+        <Row label="Last session">
+          {session ? (
+            <RowButton
+              title={`Open the session note: ${session.title}`}
+              onClick={() => onOpenFile(knowledgeFilePath(run.path, session.path))}
+            >
+              <span className="block truncate" title={session.description}>
+                {session.description}
+              </span>
+              <span className="block text-[11px] text-foreground-muted">
+                {formatSessionAge(mountedAt - session.atMs)}
+              </span>
+            </RowButton>
+          ) : summary ? (
+            <span className="text-foreground-muted">No session note yet</span>
+          ) : (
+            <span className="text-foreground-muted">
+              {memory.state === 'error' ? 'Not available' : 'Reading…'}
+            </span>
           )}
         </Row>
         <div className="flex items-start gap-2 py-0.5">
@@ -393,13 +453,17 @@ export function ManagerInspector({
         </div>
       </dl>
 
-      <div className="pt-1">
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onOpen} className={ACTION_BUTTON}>
+          Open
+        </button>
         <button
           type="button"
-          onClick={onOpen}
-          className="rounded-md border border-border-dark px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-white/5"
+          onClick={onAsk}
+          aria-label={`Ask ${manager.name}…`}
+          className={ACTION_BUTTON}
         >
-          Open
+          Ask…
         </button>
       </div>
     </div>

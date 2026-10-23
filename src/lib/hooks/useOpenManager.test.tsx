@@ -29,6 +29,25 @@ describe('useOpenManager', () => {
     await waitFor(() => expect(result.current.opening).toBeNull());
   });
 
+  it('lets an Ask through while an Open is in flight, so the work is not lost', async () => {
+    let finish: () => void = () => undefined;
+    mockOpenManager.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve))
+    );
+    mockOpenManager.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useOpenManager());
+
+    act(() => {
+      void result.current.open('release-desk');
+      void result.current.open('release-desk', { task: 'Check tickets' });
+    });
+    expect(mockOpenManager).toHaveBeenCalledTimes(2);
+    expect(mockOpenManager.mock.calls[1][3]).toEqual({ task: 'Check tickets' });
+
+    finish();
+    await waitFor(() => expect(result.current.opening).toBeNull());
+  });
+
   it('can open again once the first open has finished', async () => {
     mockOpenManager.mockResolvedValue(undefined);
     const { result } = renderHook(() => useOpenManager());
@@ -36,5 +55,20 @@ describe('useOpenManager', () => {
     await act(async () => result.current.open('release-desk'));
     await act(async () => result.current.open('release-desk'));
     expect(mockOpenManager).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes the task and model on to the one open verb', async () => {
+    mockOpenManager.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useOpenManager());
+
+    await act(async () =>
+      result.current.open('release-desk', { task: 'Check tickets', model: 'haiku' })
+    );
+    expect(mockOpenManager).toHaveBeenCalledWith(
+      expect.objectContaining({ sendAgentInput: expect.any(Function), agents: expect.any(Array) }),
+      'release-desk',
+      expect.objectContaining({ onShow: expect.any(Function) }),
+      { task: 'Check tickets', model: 'haiku' }
+    );
   });
 });

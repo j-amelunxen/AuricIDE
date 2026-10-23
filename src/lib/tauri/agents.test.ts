@@ -34,6 +34,20 @@ describe('agent IPC wrappers', () => {
     });
   });
 
+  describe('sendMessageToAgent for text nobody typed', () => {
+    it('marks automatic text so Rust can refuse it while the human is drafting', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      const { sendMessageToAgent } = await import('./agents');
+      await sendMessageToAgent('a1', 'task\r', { automatic: true });
+      expect(mockInvoke).toHaveBeenCalledWith('agent_send_message', {
+        agentId: 'a1',
+        text: 'task',
+        enter: true,
+        automatic: true,
+      });
+    });
+  });
+
   describe('spawnAgent', () => {
     it('sends the attribution fields to the backend untouched', async () => {
       mockInvoke.mockResolvedValueOnce({ id: 'a1' });

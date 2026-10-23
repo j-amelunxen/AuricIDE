@@ -290,7 +290,7 @@ describe('NotificationRow', () => {
     expect(props.onAction).toHaveBeenCalledWith(row, action);
   });
 
-  it('disables an action that arrives with a disabledReason', () => {
+  it('keeps an action with a disabledReason focusable, inert, and explains it in visible text', () => {
     const action: NotificationAction = {
       id: 'run',
       label: 'Changelog starten',
@@ -301,14 +301,19 @@ describe('NotificationRow', () => {
       repoPath: '/gone',
     };
     const row = makeNotification({ actions: [action] });
-    renderPanel({
+    const props = renderPanel({
       notifications: [row],
       parseActions: () => [{ action, disabledReason: 'Projektordner nicht gefunden' }],
     });
 
     const button = screen.getByTestId<HTMLButtonElement>(`notification-action-${row.uid}-run`);
-    expect(button.disabled).toBe(true);
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button.disabled).toBe(false);
     expect(button.title).toBe('Projektordner nicht gefunden');
+    const reason = screen.getByText('Projektordner nicht gefunden');
+    expect(button.getAttribute('aria-describedby')).toBe(reason.id);
+    fireEvent.click(button);
+    expect(props.onAction).not.toHaveBeenCalled();
   });
 
   describe('a settled question', () => {

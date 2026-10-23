@@ -12,10 +12,12 @@ import { managersForQuickAccess } from '@/lib/quickAccess/managerPresentation';
 import { useManagerPresentations } from '@/lib/quickAccess/useManagerPresentations';
 import { useStore } from '@/lib/store';
 import { managerArchive, type SupervisorManager } from '@/lib/tauri/supervisorManagers';
-import { revealInFileManager } from '@/lib/tauri/opener';
+import { FOLDER_MISSING_SENTENCE, openFileInEditor } from '@/app/components/agents/managerFiles';
+import { useAskManager } from '@/app/components/agents/useAskManager';
 import { ManagerConfirmDialog } from '@/app/components/agents/SupervisorRunsPanel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { ManagerTile } from './ManagerTile';
+import { useLastSessionHints } from './useLastSessionHints';
 import type { SupervisorTileProps } from './SupervisorTile';
 
 const detailOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -32,6 +34,8 @@ export function ManagerTiles({ onOpenSettings, onSelectAgent }: SupervisorTilePr
   const projectOpen = useStore((s) => s.rootPath !== null);
   const showToast = useStore((s) => s.showToast);
   const { open, opening } = useOpenManager({ onOpenSettings, onSelectAgent });
+  const { ask, sheet: askSheet } = useAskManager({ onOpenSettings, onSelectAgent });
+  const { hintFor, request: requestHint } = useLastSessionHints();
   const [menu, setMenu] = useState<{ x: number; y: number; manager: SupervisorManager } | null>(
     null
   );
@@ -52,13 +56,13 @@ export function ManagerTiles({ onOpenSettings, onSelectAgent }: SupervisorTilePr
 
   if (tiles.length === 0) return null;
 
-  const showInstructions = async (manager: SupervisorManager) => {
+  const editInstructions = async (manager: SupervisorManager) => {
     try {
       const path = await managerInstructionsPath(manager);
       if (!path) throw new Error('its folder is gone');
-      await revealInFileManager(path);
+      await openFileInEditor(path);
     } catch (cause) {
-      showToast(`Could not show the instructions: ${detailOf(cause)}`, 'error');
+      showToast(`Could not open the instructions: ${detailOf(cause)}`, 'error');
     }
   };
 
@@ -71,19 +75,28 @@ export function ManagerTiles({ onOpenSettings, onSelectAgent }: SupervisorTilePr
     }
   };
 
-  const menuOptions = (manager: SupervisorManager): ContextMenuOption[] => [
-    { label: 'Open', icon: 'open_in_new', action: () => void open(manager.key) },
-    {
-      label: 'Show Instructions in Finder',
-      icon: 'folder',
-      action: () => void showInstructions(manager),
-    },
-    ...(projectOpen
-      ? [{ label: 'Show in Runs', icon: 'history', action: requestShowSupervisorRuns }]
-      : []),
-    { type: 'separator' },
-    { label: 'Archive…', icon: 'archive', action: () => setArchiving(manager) },
-  ];
+  const menuOptions = (manager: SupervisorManager): ContextMenuOption[] => {
+    const archiveItem: ContextMenuOption = {
+      label: 'Archive…',
+      icon: 'archive',
+      action: () => setArchiving(manager),
+    };
+    if (manager.runMissing) return [archiveItem];
+    return [
+      { label: 'Open', icon: 'open_in_new', action: () => void open(manager.key) },
+      { label: `Ask ${manager.name}…`, icon: 'send', action: () => ask(manager) },
+      {
+        label: 'Edit Instructions',
+        icon: 'edit',
+        action: () => void editInstructions(manager),
+      },
+      ...(projectOpen
+        ? [{ label: 'Show in Runs', icon: 'history', action: requestShowSupervisorRuns }]
+        : []),
+      { type: 'separator' },
+      archiveItem,
+    ];
+  };
 
   return (
     <>
@@ -94,7 +107,12 @@ export function ManagerTiles({ onOpenSettings, onSelectAgent }: SupervisorTilePr
           managerKey={manager.key}
           status={managerStatus(liveSupervisorOfManager(live, manager.key), now)}
           opening={opening === manager.key}
-          onOpen={() => void open(manager.key)}
+          folderMissing={manager.runMissing === true}
+          lastSession={hintFor(manager.key)}
+          onHint={() => requestHint(manager.key)}
+          onOpen={() =>
+            manager.runMissing ? showToast(FOLDER_MISSING_SENTENCE, 'info') : void open(manager.key)
+          }
           onContextMenu={(event) => setMenu({ x: event.clientX, y: event.clientY, manager })}
         />
       ))}
@@ -108,6 +126,7 @@ export function ManagerTiles({ onOpenSettings, onSelectAgent }: SupervisorTilePr
           onClose={() => setMenu(null)}
         />
       )}
+      {askSheet}
       {archiving && (
         <ManagerConfirmDialog
           kind="archive"

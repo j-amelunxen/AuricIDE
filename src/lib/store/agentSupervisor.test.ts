@@ -4,6 +4,7 @@ import { createAgentSlice } from './agentSlice';
 import type { StoreState } from './index';
 import { forgetSupervisorRunResults, spawnAgent, type AgentInfo } from '../tauri/agents';
 import { supervisorPolicyGet } from '../tauri/supervisorPolicy';
+import { updateManagerPresentation } from '../quickAccess/managerPresentation';
 import { emptySupervisorPolicy, defaultSupervisorProjectPolicy } from '../config/supervisorPolicy';
 import type { ProviderInfo } from '../tauri/providers';
 import {
@@ -302,6 +303,28 @@ describe('spawnSupervisor', () => {
     expect(launch).toEqual({ kind: 'cancelled' });
     expect(spawnAgent).not.toHaveBeenCalled();
   });
+
+  it('does not open the provider choice for an automatic start: nothing happens', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: null,
+      chrome: false,
+    };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+
+    const openSupervisorProviderChoice = vi.fn(async () => 'codex');
+    store.setState({ openSupervisorProviderChoice } as never);
+
+    const launch = await store
+      .getState()
+      .spawnSupervisor({ task: 'x', managerKey: 'release-desk', automatic: true });
+    expect(openSupervisorProviderChoice).not.toHaveBeenCalled();
+    expect(launch).toEqual({ kind: 'cancelled' });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
 });
 
 describe("clearing a supervisor card forgets its children's results", () => {
@@ -409,6 +432,20 @@ describe('spawnLinkedSupervisor (supervisor link)', () => {
     });
   });
 
+  it("uses the manager's stored model when the client names none", async () => {
+    localStorage.clear();
+    updateManagerPresentation('mail-triage', { model: 'haiku' });
+    await store.getState().spawnLinkedSupervisor({ key: 'mail-triage' });
+    expect(vi.mocked(spawnAgent).mock.calls[0][0].model).toBe('haiku');
+  });
+
+  it("prefers the client's model over the stored one", async () => {
+    localStorage.clear();
+    updateManagerPresentation('mail-triage', { model: 'haiku' });
+    await store.getState().spawnLinkedSupervisor({ key: 'mail-triage', model: 'opus' });
+    expect(vi.mocked(spawnAgent).mock.calls[0][0].model).toBe('opus');
+  });
+
   it('sends no key when the client chose none', async () => {
     await store.getState().spawnLinkedSupervisor({ task: 'x' });
     expect(vi.mocked(spawnAgent).mock.calls[0][0]).not.toHaveProperty('supervisorKey');
@@ -505,6 +542,7 @@ describe('Project Manager launches', () => {
       ],
       okf: 'ok',
       checkedAt: null,
+      lastSession: null,
     });
     await store.getState().spawnSupervisor({ task: '', resumeRunDir: FOLDER });
     expect(lastConfig().task).toContain('- facts/a.md: no title');

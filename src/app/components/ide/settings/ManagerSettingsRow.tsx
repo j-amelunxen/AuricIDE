@@ -6,8 +6,11 @@ import { ShortcutRecorder } from '@/app/components/cockpit/ShortcutRecorder';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
 import { managerMonogram } from '@/lib/agents/managerStatus';
+import { FOLDER_MISSING_SENTENCE } from '@/app/components/agents/managerFiles';
+import { SELECT_CLASS } from './SupervisorProjectRow';
 import type { ManagerPresentation } from '@/lib/quickAccess/managerPresentation';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import type { ModelOption } from '@/lib/tauri/providers';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 
@@ -17,34 +20,53 @@ interface ManagerSettingsRowProps {
   run: SupervisorRun | null;
   liveSupervisor: AgentInfo | undefined;
   presentation: ManagerPresentation;
+  /** The models the supervisor's provider offers; the picker lists these after "Default". */
+  models: ModelOption[];
   /** The shortcut is also claimed by a skill or another manager. */
   shortcutShared: boolean;
   onChange: (patch: Partial<ManagerPresentation>) => void;
   onOpen: () => void;
+  onAsk: () => void;
+  onArchive: () => void;
   onShowInstructions: () => void;
+  /** Settings has no editor: a file of the manager's folder opens in the default app. */
+  onShowFile: (path: string) => void;
   onShowFolder: () => void;
   onRestart: () => void;
 }
 
+const ROW_BUTTON =
+  'shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-foreground transition-colors hover:bg-white/10';
+
 /**
  * One Project Manager in Settings: how it is shown, and the same inspector as
  * the runs rail, opened on demand. Settings has no editor and no file tree, so
- * "Edit" and the folder row go to Finder.
+ * "Edit" opens the default app and the folder row goes to Finder.
  */
+// code-gate: complexity-function-length, complexity-parameter-count - one props object for a presentational row; the length is its JSX, not logic
 export function ManagerSettingsRow({
   manager,
   run,
   liveSupervisor,
   presentation,
+  models,
   shortcutShared,
   onChange,
   onOpen,
+  onAsk,
+  onArchive,
   onShowInstructions,
+  onShowFile,
   onShowFolder,
   onRestart,
 }: ManagerSettingsRowProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsId = `manager-details-${manager.key}`;
+  const folderMissing = manager.runMissing === true;
+  const staleModel =
+    presentation.model !== null && !models.some((model) => model.value === presentation.model)
+      ? presentation.model
+      : null;
   return (
     <li
       data-testid={`manager-settings-${manager.key}`}
@@ -62,16 +84,35 @@ export function ManagerSettingsRow({
           <p className="truncate text-[10px] text-foreground-muted">
             <span className="font-mono">{manager.key}</span>
             {' · '}
-            {liveSupervisor ? <span className="text-primary">Running</span> : 'Not running'}
+            {folderMissing ? (
+              <span className="text-amber-200">Folder missing</span>
+            ) : liveSupervisor ? (
+              <span className="text-primary">Running</span>
+            ) : (
+              'Not running'
+            )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onOpen}
-          className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-foreground transition-colors hover:bg-white/10"
-        >
-          Open
-        </button>
+        {folderMissing ? (
+          <button type="button" onClick={onArchive} className={ROW_BUTTON}>
+            Archive…
+          </button>
+        ) : (
+          <>
+            <button type="button" onClick={onOpen} className={ROW_BUTTON}>
+              Open
+            </button>
+            <button
+              type="button"
+              onClick={onAsk}
+              data-manager-focus={manager.key}
+              aria-label={`Ask ${manager.name}…`}
+              className={ROW_BUTTON}
+            >
+              Ask…
+            </button>
+          </>
+        )}
       </div>
 
       <div className="mt-3 space-y-3 border-t border-white/5 pt-3">
@@ -98,6 +139,28 @@ export function ManagerSettingsRow({
             onChange={(shortcut) => onChange({ shortcut: shortcut ?? null })}
           />
         </div>
+        <label className="block space-y-1">
+          <span className="block text-xs text-foreground">Model</span>
+          <select
+            aria-label={`${manager.name} model`}
+            value={presentation.model ?? ''}
+            onChange={(event) => onChange({ model: event.target.value || null })}
+            className={`${SELECT_CLASS} w-full`}
+          >
+            <option value="">Default</option>
+            {staleModel !== null && (
+              <option value={staleModel}>{staleModel} (no longer offered)</option>
+            )}
+            {models.map((model) => (
+              <option key={model.value} value={model.value}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+          <span className="block text-[11px] text-foreground-muted">
+            Used when it starts. Default follows Settings → Supervisor.
+          </span>
+        </label>
       </div>
 
       <button
@@ -124,13 +187,17 @@ export function ManagerSettingsRow({
               folderOpen={false}
               reloadToken={0}
               onOpen={onOpen}
+              onAsk={onAsk}
+              onOpenFile={onShowFile}
               onEditInstructions={onShowInstructions}
               onRestart={onRestart}
               onToggleFolder={onShowFolder}
             />
           ) : (
             <p className="pl-6 text-[11px] text-foreground-muted">
-              Its folder is not where the registry expects it, so there is nothing to inspect.
+              {folderMissing
+                ? `${FOLDER_MISSING_SENTENCE} There is nothing to inspect.`
+                : 'Its folder is not where the registry expects it, so there is nothing to inspect.'}
             </p>
           )}
         </div>

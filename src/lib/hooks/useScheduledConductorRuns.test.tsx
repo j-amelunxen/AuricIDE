@@ -47,6 +47,11 @@ vi.mock('@/lib/tauri/notifications', async (importOriginal) => ({
   },
 }));
 
+const mockOpenManager = vi.fn(async (..._args: unknown[]) => undefined as unknown);
+vi.mock('@/lib/agents/openSupervisor', () => ({
+  openManager: (...args: unknown[]) => mockOpenManager(...args),
+}));
+
 import { useStore } from '@/lib/store';
 import { SPAWN_DEFAULTS_KEY } from '@/lib/agents/spawnDefaults';
 import { LAUNCH_RETRY_MS, useScheduledConductorRuns } from './useScheduledConductorRuns';
@@ -508,6 +513,80 @@ describe('useScheduledConductorRuns', () => {
     );
     expect(selectAgent).not.toHaveBeenCalled();
     expect(markNotificationRead).toHaveBeenCalledWith('n-skill');
+  });
+
+  describe('an open-manager auto launch', () => {
+    const openManagerAction = {
+      id: 'open',
+      label: 'Open Release Desk',
+      kind: 'open-manager',
+      managerKey: 'release-desk',
+      managerName: 'Release Desk',
+      task: 'Check the open release tickets',
+      launch: 'auto',
+    };
+
+    beforeEach(() => mockOpenManager.mockClear());
+
+    it('hands the task to the manager without taking the screen', async () => {
+      useStore.setState({
+        notifications: [autoAgentNotification({ uid: 'n-mgr', actions: [openManagerAction] })],
+      });
+      renderHook(() => useScheduledConductorRuns(openProject));
+      await vi.waitFor(() => expect(mockOpenManager).toHaveBeenCalled());
+
+      const [, key, hooks, options] = mockOpenManager.mock.calls[0] as [
+        unknown,
+        string,
+        { onShow: (agentId: string) => void },
+        { task?: string },
+      ];
+      expect(key).toBe('release-desk');
+      expect(options).toEqual({ task: 'Check the open release tickets', automatic: true });
+      hooks.onShow('agent-4');
+      expect(selectAgent).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(markNotificationRead).toHaveBeenCalledWith('n-mgr'));
+      expect(spawnNewAgent).not.toHaveBeenCalled();
+    });
+
+    it('leaves the reminder unread, and tries only once, when the manager declines', async () => {
+      mockOpenManager.mockResolvedValueOnce('declined' as never);
+      useStore.setState({
+        notifications: [autoAgentNotification({ uid: 'n-mgr', actions: [openManagerAction] })],
+      });
+      const { rerender } = renderHook(() => useScheduledConductorRuns(openProject));
+      await vi.waitFor(() => expect(mockOpenManager).toHaveBeenCalled());
+      await Promise.resolve();
+
+      expect(markNotificationRead).not.toHaveBeenCalled();
+      useStore.setState({
+        notifications: [autoAgentNotification({ uid: 'n-mgr', actions: [openManagerAction] })],
+      });
+      rerender();
+      await Promise.resolve();
+      expect(mockOpenManager).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for an automatic delivery', async () => {
+      useStore.setState({
+        notifications: [autoAgentNotification({ uid: 'n-mgr', actions: [openManagerAction] })],
+      });
+      renderHook(() => useScheduledConductorRuns(openProject));
+      await vi.waitFor(() => expect(mockOpenManager).toHaveBeenCalled());
+      expect(mockOpenManager.mock.calls[0][3]).toMatchObject({ automatic: true });
+    });
+
+    it('stays a button for a model-written payload', async () => {
+      useStore.setState({
+        notifications: [
+          autoAgentNotification({ uid: 'n-mgr', source: 'agent', actions: [openManagerAction] }),
+        ],
+      });
+      renderHook(() => useScheduledConductorRuns(openProject));
+      await Promise.resolve();
+
+      expect(mockOpenManager).not.toHaveBeenCalled();
+    });
   });
 });
 

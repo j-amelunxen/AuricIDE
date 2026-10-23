@@ -146,18 +146,31 @@ export function NotificationRow({
       ) : (
         actions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-2.5 pb-2.5 pl-[26px]">
-            {actions.map((presented) => (
-              <button
-                key={presented.action.id}
-                data-testid={`notification-action-${notification.uid}-${presented.action.id}`}
-                disabled={presented.disabledReason !== undefined}
-                title={presented.disabledReason}
-                onClick={() => onAction(notification, presented.action)}
-                className="press-feedback rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {presented.action.label}
-              </button>
-            ))}
+            {actions.map((presented) => {
+              const reasonId = `notification-action-reason-${notification.uid}-${presented.action.id}`;
+              const blocked = presented.disabledReason !== undefined;
+              return (
+                <div key={presented.action.id} className="flex flex-col items-start gap-0.5">
+                  <button
+                    data-testid={`notification-action-${notification.uid}-${presented.action.id}`}
+                    aria-disabled={blocked || undefined}
+                    aria-describedby={blocked ? reasonId : undefined}
+                    title={presented.disabledReason}
+                    onClick={blocked ? undefined : () => onAction(notification, presented.action)}
+                    className={`press-feedback rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground hover:bg-white/10 ${
+                      blocked ? 'cursor-not-allowed opacity-40' : ''
+                    }`}
+                  >
+                    {presented.action.label}
+                  </button>
+                  {blocked && (
+                    <span id={reasonId} className="text-[10px] text-foreground-muted">
+                      {presented.disabledReason}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )
       )}

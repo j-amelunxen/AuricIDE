@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import managerFixtures from '@/lib/agents/supervisorManagers.fixtures.json';
 import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
 import type { Notification, NotificationAction } from './types';
 import { autoAgentLaunches, goalLaunchBlockReason } from './autoLaunch';
@@ -190,5 +191,42 @@ describe('goalLaunchBlockReason', () => {
 
   it('never blocks a spawn-agent action with no goalId', () => {
     expect(goalLaunchBlockReason([], [], spawnForGoal())).toBeNull();
+  });
+});
+
+describe('autoAgentLaunches for open-manager', () => {
+  const openManager = (launch: 'auto' | 'direct' | null): NotificationAction => ({
+    id: 'open',
+    label: 'Open Release Desk',
+    kind: 'open-manager',
+    managerKey: 'release-desk',
+    managerName: 'Release Desk',
+    task: 'Check the open release tickets',
+    ...(launch ? { launch } : {}),
+  });
+
+  // The rejected rows are the MCP vocabulary's to refuse (notifications.test.ts); everything that
+  // can reach the inbox is decided here.
+  const reachable = managerFixtures.openManagerAction.cases.filter((c) => c.result !== 'rejected');
+
+  it.each(reachable)(
+    '$dispatcher / launch $launch / fresh $fresh gives a $result',
+    ({ dispatcher, launch, fresh, result }) => {
+      const n = notification({
+        source: dispatcher as Notification['source'],
+        dedupeKey: fresh ? freshKey : staleKey,
+      });
+      const launches = autoAgentLaunches(
+        [n],
+        parseOne([openManager(launch as 'auto' | 'direct' | null)]),
+        nowMs
+      );
+      expect(launches.length > 0 ? 'auto' : 'button').toBe(result);
+    }
+  );
+
+  it('does not start one for a manager schedule an agent created through MCP', () => {
+    const n = notification({ dedupeKey: 'schedule:mcp-1727000000000-4242-1:2026-08-17 09:30:00' });
+    expect(autoAgentLaunches([n], parseOne([openManager('auto')]), nowMs)).toEqual([]);
   });
 });

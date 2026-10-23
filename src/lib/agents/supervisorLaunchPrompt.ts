@@ -237,7 +237,7 @@ const SPAWN_RULES = [
     'project (one small, current answer instead of every project), then state one line: ' +
     'which project, headless or interactive, which model, and why that model.',
   '- **An answer you need** (a question, a check, a short fix with a verdict): ' +
-    '`headless: true`, then follow "Nie blockierend warten".',
+    '`headless: true`, then follow "Never block while waiting".',
   '- **Long-running or multi-step work, or work a human may need to answer**: ' +
     '`headless: false`, only where interactive runs are allowed. Report the agent id, then ' +
     'watch it as "Working with your agents" says.',
@@ -475,16 +475,29 @@ function describeMemoryCheck(findings: SupervisorPromptManager['findings']): str
   ];
 }
 
-/** Replaces the generic resumed-run text: a manager reads its memory, not the newest files. */
-const MANAGER_PICK_UP =
+const MANAGER_READ_FIRST =
   'You were started in your own folder. Before anything else, read `knowledge/index.md`, the ' +
   'index of each section and the newest concept in `sessions/`, and go deeper only as far as ' +
   'you need. The agents your earlier sessions started are now your children: list_agents shows ' +
   'them as yours, so read what the finished ones left with await_agent_result and check on any ' +
   'still running before you start new ones. If `knowledge/` is still empty, say so and begin ' +
-  'with what the human tells you. Then tell the human in a few sentences where things stand, ' +
-  'what is still open and what you would do next, and wait for the go-ahead before you start ' +
-  'any agent.';
+  'with what the human tells you. ';
+
+/**
+ * Replaces the generic resumed-run text: a manager reads its memory, not the newest files. A
+ * first task is the human's answer to "what next", so it does not wait for a go-ahead; anything
+ * beyond it still does.
+ */
+function managerPickUp(hasFirstTask: boolean): string {
+  return hasFirstTask
+    ? MANAGER_READ_FIRST +
+        'Then work on your first task without waiting for a go-ahead for it, and tell the ' +
+        'human in a few sentences where things stand while you do. Do not start anything beyond ' +
+        'that task until the human gives the go-ahead.'
+    : MANAGER_READ_FIRST +
+        'Then tell the human in a few sentences where things stand, what is still open and ' +
+        'what you would do next, and wait for the go-ahead before you start any agent.';
+}
 
 /**
  * The supervisor's start instruction for the projects its policy shows. The
@@ -528,7 +541,7 @@ export function buildSupervisorLaunchPrompt(
       : []),
     '## Starting an agent',
     SPAWN_RULES,
-    '## Nie blockierend warten',
+    '## Never block while waiting',
     WAIT_RULES,
     '## Stalled agents',
     'At each check compare outputBytes and activity with the last check. After 15 minutes ' +
@@ -553,7 +566,7 @@ export function buildSupervisorLaunchPrompt(
           ...describeManagerInstructions(manager.name, manager.instructions),
           ...describeMemoryCheck(manager.findings),
           '## Picking up where you left off',
-          MANAGER_PICK_UP,
+          managerPickUp(Boolean(firstTask?.trim())),
         ]
       : resumedRun
         ? ['## Picking up an earlier run', describeResumedRun(resumedRun)]

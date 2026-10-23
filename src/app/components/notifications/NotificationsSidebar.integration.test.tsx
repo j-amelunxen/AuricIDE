@@ -488,7 +488,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
-    await waitFor(() => expect(button).toBeDisabled());
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
     expect(button).toHaveAttribute('title', 'Project folder not found');
 
     expect(spawnAgentMock).not.toHaveBeenCalled();

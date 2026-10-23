@@ -10,6 +10,7 @@ const {
   supervisorRunFiles,
   managerRegistry,
   managerPromote,
+  managerCreate,
   managerRename,
   managerArchive,
   managerRestore,
@@ -24,6 +25,7 @@ const {
   supervisorRunFiles: vi.fn(),
   managerRegistry: vi.fn(),
   managerPromote: vi.fn(),
+  managerCreate: vi.fn(),
   managerRename: vi.fn(),
   managerArchive: vi.fn(),
   managerRestore: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('@/lib/tauri/supervisorRuns', () => ({ supervisorRunsList, supervisorRun
 vi.mock('@/lib/tauri/supervisorManagers', () => ({
   managerRegistry,
   managerPromote,
+  managerCreate,
   managerRename,
   managerArchive,
   managerRestore,
@@ -242,6 +245,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
   beforeEach(() => {
     supervisorRunFiles.mockReset().mockResolvedValue([]);
     managerPromote.mockReset().mockResolvedValue({ ...desk, key: 'fresh-one', name: 'Fresh One' });
+    managerCreate.mockReset().mockResolvedValue({ ...desk, key: 'new-desk', name: 'New Desk' });
     managerRename.mockReset().mockResolvedValue(desk);
     managerArchive.mockReset().mockResolvedValue(desk);
     managerRestore.mockReset().mockResolvedValue(desk);
@@ -254,6 +258,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
       findings: [],
       okf: 'ok',
       checkedAt: '2026-10-22T11:00:00Z',
+      lastSession: null,
     });
     managerValidate.mockReset().mockResolvedValue({
       concepts: { Fact: 2 },
@@ -262,6 +267,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
       findings: [],
       okf: 'ok',
       checkedAt: '2026-10-22T12:00:00Z',
+      lastSession: null,
     });
     revealInFileManager.mockReset().mockResolvedValue(undefined);
     machineDependencies.mockReset().mockResolvedValue([]);
@@ -281,11 +287,12 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     expect(screen.getAllByTestId('run-row')).toHaveLength(1);
   });
 
-  it('shows no section titles while there are no managers', async () => {
+  it('keeps the Project Managers header with its New button while there are no managers', async () => {
     render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
     await screen.findByText('Oct 16, 18:50');
-    expect(screen.queryByText('Project Managers')).not.toBeInTheDocument();
-    expect(screen.queryByText('Recent Runs')).not.toBeInTheDocument();
+    expect(screen.getByText('Project Managers')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New Project Manager…' })).toBeEnabled();
+    expect(screen.queryAllByTestId('manager-row')).toHaveLength(0);
   });
 
   it('marks a running manager and keeps archived ones folded until asked', async () => {
@@ -347,7 +354,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     expect(useStore.getState().toasts.at(-1)?.message).toContain('Fresh One');
   });
 
-  it('offers a manager Open, Edit Instructions, Rename, Show in Finder, Validate and Archive', async () => {
+  it('offers a manager Open, Ask, Edit Instructions, Rename, Show in Finder, Validate and Archive', async () => {
     withManagers();
     render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
     const menu = await rowMenu(/^Release Desk/);
@@ -356,7 +363,8 @@ describe('SupervisorRunsPanel: Project Managers', () => {
       .map((item) => item.textContent);
     expect(labels).toEqual([
       'Open',
-      'Edit Instructions…',
+      'Ask Release Desk…',
+      'Edit Instructions',
       'Rename…',
       'Show in Finder',
       'Validate Memory',
@@ -380,7 +388,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     const onOpenFile = vi.fn();
     render(<SupervisorRunsPanel onOpenFile={onOpenFile} onSelectAgent={vi.fn()} />);
     fireEvent.click(
-      within(await rowMenu(/^Release Desk/)).getByRole('menuitem', { name: 'Edit Instructions…' })
+      within(await rowMenu(/^Release Desk/)).getByRole('menuitem', { name: 'Edit Instructions' })
     );
     expect(onOpenFile).toHaveBeenCalledWith(`${ROOT}/${desk.runDir}/INSTRUCTIONS.md`);
   });
@@ -508,5 +516,214 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     expect(await screen.findByText('release-desk')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: `Folder ${desk.runDir}` }));
     expect(await screen.findByRole('button', { name: /^INSTRUCTIONS\.md/ })).toBeInTheDocument();
+  });
+
+  describe('the working loop', () => {
+    const live = (over: Partial<AgentInfo> = {}): AgentInfo => ({
+      ...supervisor,
+      supervisorKey: 'release-desk',
+      repoPath: `${ROOT}/${desk.runDir}`,
+      ...over,
+    });
+
+    it('asks a stopped manager: the sheet says it starts, and the task starts it', async () => {
+      withManagers();
+      const spawnSupervisor = vi.fn(async () => ({ kind: 'spawned' as const, agent: supervisor }));
+      useStore.setState({ spawnSupervisor });
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(
+        within(await rowMenu(/^Release Desk/)).getByRole('menuitem', { name: 'Ask Release Desk…' })
+      );
+      expect(screen.getByText('Release Desk starts and works on this first.')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task' }), {
+        target: { value: 'Plan the release.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+      await waitFor(() =>
+        expect(spawnSupervisor).toHaveBeenCalledWith(
+          expect.objectContaining({ task: 'Plan the release.', managerKey: 'release-desk' })
+        )
+      );
+    });
+
+    it('asks a running manager: the task goes in as one message', async () => {
+      withManagers();
+      const sendAgentInput = vi.fn(async () => undefined);
+      useStore.setState({ agents: [live()], sendAgentInput });
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(
+        within(await rowMenu(/^Release Desk/)).getByRole('menuitem', { name: 'Ask Release Desk…' })
+      );
+      expect(
+        screen.getByText('Release Desk is running; this goes in as a message.')
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task' }), {
+        target: { value: 'Plan the release.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() =>
+        expect(sendAgentInput).toHaveBeenCalledWith('sup-1', 'Plan the release.\r')
+      );
+    });
+
+    it('asks from the inspector, next to Open', async () => {
+      withManagers();
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^Release Desk/ }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Ask Release Desk…' }));
+      expect(screen.getByRole('dialog', { name: 'Ask Release Desk' })).toBeInTheDocument();
+    });
+
+    it('opens the memory index and the last session note as tabs from the inspector', async () => {
+      withManagers();
+      managerMemory.mockResolvedValue({
+        concepts: { Fact: 2 },
+        deprecated: 0,
+        newestChangeMs: 1,
+        findings: [],
+        okf: 'ok',
+        checkedAt: '2026-10-22T11:00:00Z',
+        lastSession: {
+          title: 'Planning',
+          description: 'Agreed the cut-off.',
+          atMs: Date.now() - 60_000,
+          path: 'sessions/planning.md',
+        },
+      });
+      const onOpenFile = vi.fn();
+      render(<SupervisorRunsPanel onOpenFile={onOpenFile} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^Release Desk/ }));
+      fireEvent.click(await screen.findByRole('button', { name: /Agreed the cut-off/ }));
+      expect(onOpenFile).toHaveBeenLastCalledWith(
+        `${ROOT}/${desk.runDir}/knowledge/sessions/planning.md`
+      );
+      fireEvent.click(await screen.findByRole('button', { name: /2 concepts/ }));
+      expect(onOpenFile).toHaveBeenLastCalledWith(`${ROOT}/${desk.runDir}/knowledge/index.md`);
+    });
+
+    it('creates a manager from the header button and shows its row unfolded', async () => {
+      withManagers();
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'New Project Manager…' }));
+      expect(screen.getByRole('dialog', { name: 'New Project Manager' })).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'New Desk' },
+      });
+      expect(screen.getByText('Address: new-desk')).toBeInTheDocument();
+      const created = { ...desk, key: 'new-desk', name: 'New Desk', runDir: '2026-10-23_100000' };
+      managerRegistry.mockResolvedValue({
+        managers: [desk, triage, oldDesk, created],
+        error: null,
+      });
+      supervisorRunsList.mockResolvedValue([
+        runOf(triage),
+        runOf(desk),
+        runOf(oldDesk),
+        runOf(created),
+      ]);
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      await waitFor(() => expect(managerCreate).toHaveBeenCalledWith('New Desk'));
+      expect(await screen.findByText('new-desk')).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('keeps the sheet open under the field when Rust says the name is taken', async () => {
+      managerCreate.mockRejectedValue(
+        new Error("A Project Manager named 'New Desk' already exists.")
+      );
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'New Project Manager…' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'New Desk' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
+      expect(screen.getByRole('dialog', { name: 'New Project Manager' })).toBeInTheDocument();
+    });
+
+    it('reports a folder that could not be created as a toast and keeps the sheet', async () => {
+      managerCreate.mockRejectedValue(
+        new Error("Could not create a run folder for 'New Desk': disk full")
+      );
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'New Project Manager…' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'New Desk' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      await waitFor(() =>
+        expect(useStore.getState().toasts.at(-1)?.message).toContain('disk full')
+      );
+      expect(screen.getByRole('dialog', { name: 'New Project Manager' })).toBeInTheDocument();
+    });
+
+    it('turns New off, with the reason, when the registry cannot be read', async () => {
+      withManagers('supervisor-managers.json could not be read: bad. It was left as it is.');
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      const button = await screen.findByRole('button', { name: 'New Project Manager…' });
+      await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+      expect(button).toHaveAttribute('title', expect.stringContaining('could not be read'));
+    });
+
+    describe('a manager whose folder is gone', () => {
+      const gone = {
+        ...desk,
+        key: 'gone-desk',
+        name: 'Gone Desk',
+        runDir: '2026-09-01_000000',
+        runMissing: true,
+      };
+      const goneArchived = {
+        ...gone,
+        key: 'gone-old',
+        name: 'Gone Old',
+        archivedAt: '2026-10-01T00:00:00Z',
+      };
+
+      beforeEach(() => {
+        supervisorRunsList.mockResolvedValue([RUN]);
+        managerRegistry.mockResolvedValue({ managers: [gone, goneArchived], error: null });
+      });
+
+      it('is listed from the registry as "Folder missing", with nothing to unfold', async () => {
+        render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+        const row = (await screen.findByText('Gone Desk')).closest('[data-testid="manager-row"]');
+        expect(row).toHaveTextContent('Folder missing');
+        expect(within(row as HTMLElement).queryByRole('button', { expanded: false })).toBeNull();
+      });
+
+      it('offers only Archive when active', async () => {
+        render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+        const menu = await rowMenu(/^Gone Desk/);
+        expect(
+          within(menu)
+            .getAllByRole('menuitem')
+            .map((item) => item.textContent)
+        ).toEqual(['Archive…']);
+      });
+
+      it('offers Restore and Remove when archived', async () => {
+        render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+        await screen.findByText('Gone Desk');
+        fireEvent.click(screen.getByRole('button', { name: /Archived \(1\)/ }));
+        const menu = await rowMenu(/^Gone Old/);
+        expect(
+          within(menu)
+            .getAllByRole('menuitem')
+            .map((item) => item.textContent)
+        ).toEqual(['Restore', 'Remove Project Manager…']);
+      });
+
+      it('archives after a confirmation', async () => {
+        render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+        fireEvent.click(
+          within(await rowMenu(/^Gone Desk/)).getByRole('menuitem', { name: 'Archive…' })
+        );
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive' })
+        );
+        await waitFor(() => expect(managerArchive).toHaveBeenCalledWith('gone-desk'));
+      });
+    });
   });
 });

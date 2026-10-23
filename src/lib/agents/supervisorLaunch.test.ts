@@ -226,6 +226,7 @@ describe('supervisorSpawnConfig', () => {
       ],
       okf: 'ok' as const,
       checkedAt: null,
+      lastSession: null,
     };
     const launchFor = (over = {}) => ({ record, instructions: 'Be brief.', memory, ...over });
 
@@ -235,6 +236,33 @@ describe('supervisorSpawnConfig', () => {
       expect(config?.task).toContain('## You are the Project Manager "Release Desk"');
       expect(config?.task).toContain('Be brief.');
       expect(config?.task).toContain('- facts/a.md: no title');
+    });
+
+    describe('with a model of its own', () => {
+      const withModel = (model: string | undefined, providers = [CLAUDE]) =>
+        supervisorSpawnConfig({ ...input, providers, model, manager: launchFor() });
+
+      it('runs on a model the provider offers', () => {
+        expect(withModel('haiku')?.model).toBe('haiku');
+      });
+
+      it('drops a model the provider no longer offers and uses the default', () => {
+        expect(withModel('retired-model')?.model).toBe('opus');
+      });
+
+      it('keeps the name of a provider that lists no models at all unchecked', () => {
+        const bare = { ...CLAUDE, models: [] };
+        expect(withModel('anything', [bare])?.model).toBe('anything');
+      });
+
+      it('keeps the model when the provider list could not be read', () => {
+        expect(withModel('haiku', [])?.model).toBe('haiku');
+      });
+
+      it('does not second-guess the model of a plain supervisor skill', () => {
+        const config = supervisorSpawnConfig({ ...input, model: 'retired-model' });
+        expect(config?.model).toBe('retired-model');
+      });
     });
 
     it('resumes the folder it was given, and never uses the generic resume text', () => {

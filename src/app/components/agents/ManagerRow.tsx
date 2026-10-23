@@ -7,6 +7,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ManagerInspector } from './ManagerInspector';
+import { FOLDER_MISSING_SENTENCE } from './managerFiles';
 
 export const ROW_MORE_BUTTON =
   'flex h-6 w-6 shrink-0 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
@@ -61,6 +62,8 @@ interface ManagerRowProps {
   onToggleFolder: () => void;
   onMenu: (point: MenuPoint) => void;
   onOpen: () => void;
+  onAsk: () => void;
+  onOpenFile: (path: string) => void;
   onEditInstructions: () => void;
   onRestart: () => void;
 }
@@ -89,6 +92,8 @@ export function ManagerRow({
   onToggleFolder,
   onMenu,
   onOpen,
+  onAsk,
+  onOpenFile,
   onEditInstructions,
   onRestart,
 }: ManagerRowProps) {
@@ -112,6 +117,7 @@ export function ManagerRow({
           onClick={(event) =>
             archived ? onMenu({ x: event.clientX, y: event.clientY }) : onToggle()
           }
+          data-manager-focus={manager.key}
           aria-expanded={archived ? undefined : expanded}
           aria-haspopup={archived ? 'menu' : undefined}
           title={run.path}
@@ -156,6 +162,8 @@ export function ManagerRow({
             folderOpen={folderOpen}
             reloadToken={reloadToken}
             onOpen={onOpen}
+            onAsk={onAsk}
+            onOpenFile={onOpenFile}
             onEditInstructions={onEditInstructions}
             onRestart={onRestart}
             onToggleFolder={onToggleFolder}
@@ -163,6 +171,61 @@ export function ManagerRow({
           {folderOpen && files}
         </>
       )}
+    </li>
+  );
+}
+
+/**
+ * A Project Manager whose run folder is gone: it stays listed so the human can
+ * archive or remove it, and offers nothing that needs the folder. A click
+ * opens its menu, as for an archived row.
+ */
+export function MissingManagerRow({
+  manager,
+  archived,
+  onMenu,
+}: {
+  manager: Pick<SupervisorManager, 'name'>;
+  archived: boolean;
+  onMenu: (point: MenuPoint) => void;
+}) {
+  return (
+    <li data-testid="manager-row">
+      <div
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onMenu({ x: event.clientX, y: event.clientY });
+        }}
+        className="group flex items-center gap-1.5 px-3 py-1 text-sm text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+      >
+        <button
+          type="button"
+          onClick={(event) => onMenu({ x: event.clientX, y: event.clientY })}
+          aria-haspopup="menu"
+          title={FOLDER_MISSING_SENTENCE}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+        >
+          <AuricIcon
+            name="chevron_right"
+            aria-hidden="true"
+            className="invisible shrink-0 text-[15px]"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+              <span className="truncate">{manager.name}</span>
+            </span>
+            <span className="block truncate pl-3 text-[11px] text-amber-200">
+              {archived ? 'Archived · Folder missing' : 'Folder missing'}
+            </span>
+          </span>
+        </button>
+        <MoreActionsButton
+          label={`More actions for ${manager.name}`}
+          revealed={false}
+          onOpen={onMenu}
+        />
+      </div>
     </li>
   );
 }

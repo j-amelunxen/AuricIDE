@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useProjectManagers } from '@/lib/hooks/useProjectManagers';
 import { defaultCommands } from '@/lib/commands/registry';
 import { executeNotificationAction, NotificationActionError } from '@/lib/notifications/execute';
 import {
@@ -10,6 +11,7 @@ import {
   launchFailedAnswer,
   launchStartedAnswer,
 } from '@/lib/notifications/launchRequest';
+import { managerOpener } from '@/lib/notifications/managerOpener';
 import { notificationTrust } from '@/lib/notifications/trust';
 import {
   presentNotificationActions,
@@ -26,6 +28,7 @@ import {
   type Notification,
   type NotificationAction,
 } from '@/lib/notifications/types';
+import { withManagerAvailability } from './managerActionAvailability';
 
 export interface UseNotificationActionsInput {
   /** Every row the caller can show — the probe list is derived from it. */
@@ -105,6 +108,7 @@ export function useNotificationActions({
   const rootPath = useStore((s) => s.rootPath);
   const starredProjects = useStore((s) => s.starredProjects);
   const markNotificationRead = useStore((s) => s.markNotificationRead);
+  const { managers, loaded: managersLoaded } = useProjectManagers();
 
   const [repoDirStatus, setRepoDirStatus] = useState<Map<string, RepoDirStatus>>(new Map());
   const probedPaths = useRef(new Set<string>());
@@ -119,15 +123,19 @@ export function useNotificationActions({
 
   const parseActions = useCallback(
     (notification: Notification): PresentedAction[] =>
-      presentNotificationActions(
-        // The row goes along: whether it may carry a policy-proposal button
-        // depends on who raised it, and this is where every surface asks.
-        parseNotificationActions(notification.actions, isKnownCommandId, notification),
-        starredProjects,
-        repoDirStatus,
-        rootPath
+      withManagerAvailability(
+        presentNotificationActions(
+          // The row goes along: whether it may carry a policy-proposal button
+          // depends on who raised it, and this is where every surface asks.
+          parseNotificationActions(notification.actions, isKnownCommandId, notification),
+          starredProjects,
+          repoDirStatus,
+          rootPath
+        ),
+        managers,
+        managersLoaded
       ),
-    [starredProjects, repoDirStatus, rootPath]
+    [starredProjects, repoDirStatus, rootPath, managers, managersLoaded]
   );
 
   // Probe each new repoPath once. Absent / in-flight reads as unknown (button
@@ -216,6 +224,8 @@ export function useNotificationActions({
               store.openWorkPlace('goals');
             },
             openAgent: (agentId) => store.selectAgent(agentId),
+            // A click shows the manager's terminal, like every other Start button.
+            openManager: managerOpener(() => useStore.getState(), { show: true }),
             runCommand: onRunCommand,
             // A run against a different project opens it first — closing every
             // tab — so this asks before doing that, the same in-app `confirm`

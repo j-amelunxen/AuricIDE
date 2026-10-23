@@ -253,8 +253,19 @@ export async function sendToAgent(agentId: string, message: string): Promise<voi
  * the Enter nor cuts the text. Raw keystrokes from a terminal view stay on
  * `sendToAgent`.
  */
-export async function sendMessageToAgent(agentId: string, message: string): Promise<void> {
+export async function sendMessageToAgent(
+  agentId: string,
+  message: string,
+  options: { automatic?: boolean } = {}
+): Promise<void> {
   const enter = message.endsWith(TERMINAL_ENTER);
   const text = enter ? message.slice(0, -TERMINAL_ENTER.length) : message;
-  await invoke('agent_send_message', { agentId, text, enter });
+  // `automatic`: nobody typed this (a reminder). Rust refuses it with `human_drafting`
+  // while the human has unsent text in that terminal, and does not book it as theirs.
+  await invoke('agent_send_message', {
+    agentId,
+    text,
+    enter,
+    ...(options.automatic ? { automatic: true } : {}),
+  });
 }

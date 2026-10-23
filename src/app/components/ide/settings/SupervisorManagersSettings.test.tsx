@@ -10,6 +10,10 @@ import { SupervisorManagersSettings } from './SupervisorManagersSettings';
 
 const mocks = vi.hoisted(() => ({
   managerRegistry: vi.fn(),
+  managerCreate: vi.fn(async () => undefined),
+  managerArchive: vi.fn(async () => undefined),
+  listProviders: vi.fn(async (): Promise<unknown[]> => []),
+  supervisorPolicyGet: vi.fn(async () => ({ policy: { supervisor: { provider: 'claude' } } })),
   managerRestore: vi.fn(async () => undefined),
   managerRemove: vi.fn(async () => undefined),
   managerInstructions: vi.fn(async () => '# Instructions\n\nWrite every release note.'),
@@ -20,10 +24,12 @@ const mocks = vi.hoisted(() => ({
     findings: [],
     okf: 'ok',
     checkedAt: null,
+    lastSession: null,
   })),
   managerValidate: vi.fn(),
   supervisorRunsList: vi.fn(),
   revealInFileManager: vi.fn(async () => undefined),
+  openPathInDefaultApp: vi.fn(async () => undefined),
   openManager: vi.fn(async () => undefined),
   machineDependencies: vi.fn(async () => []),
   copyToClipboard: vi.fn(async () => true),
@@ -31,6 +37,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/tauri/supervisorManagers', () => ({
   managerRegistry: mocks.managerRegistry,
+  managerCreate: mocks.managerCreate,
+  managerArchive: mocks.managerArchive,
   managerRestore: mocks.managerRestore,
   managerRemove: mocks.managerRemove,
   managerInstructions: mocks.managerInstructions,
@@ -39,8 +47,16 @@ vi.mock('@/lib/tauri/supervisorManagers', () => ({
   supervisorManagersList: vi.fn(async () => []),
   MANAGERS_CHANGED_EVENT: 'auric:managers-changed',
 }));
+vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),
+  listProviders: mocks.listProviders,
+}));
+vi.mock('@/lib/tauri/supervisorPolicy', () => ({ supervisorPolicyGet: mocks.supervisorPolicyGet }));
 vi.mock('@/lib/tauri/supervisorRuns', () => ({ supervisorRunsList: mocks.supervisorRunsList }));
-vi.mock('@/lib/tauri/opener', () => ({ revealInFileManager: mocks.revealInFileManager }));
+vi.mock('@/lib/tauri/opener', () => ({
+  revealInFileManager: mocks.revealInFileManager,
+  openPathInDefaultApp: mocks.openPathInDefaultApp,
+}));
 vi.mock('@/lib/tauri/machine', () => ({ machineDependencies: mocks.machineDependencies }));
 vi.mock('@/lib/tauri/clipboard', () => ({ copyToClipboard: mocks.copyToClipboard }));
 vi.mock('@/lib/agents/openSupervisor', async (importOriginal) => ({
@@ -89,17 +105,20 @@ describe('Settings → Supervisor → Project Managers', () => {
   beforeEach(() => {
     localStorage.clear();
     for (const mock of Object.values(mocks)) mock.mockClear();
+    mocks.listProviders.mockResolvedValue([]);
     mocks.supervisorRunsList.mockResolvedValue([run(FOLDER)]);
     useStore.setState({ agents: [], toasts: [] });
   });
 
-  it('says how a manager is made instead of offering a New button', async () => {
+  it('offers New Project Manager and says runs can also be promoted from the rail', async () => {
     registryWith(null);
     render(<SupervisorManagersSettings />);
 
     expect(await screen.findByTestId('manager-settings-empty')).toBeInTheDocument();
-    expect(screen.getByText(/Promote a run from the Supervisor Runs rail/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /new/i })).toBeNull();
+    expect(
+      screen.getByText(/Runs can also be promoted from the Supervisor Runs rail/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New Project Manager…' })).toBeEnabled();
   });
 
   it('lists each manager with its address and whether it runs', async () => {
@@ -207,6 +226,19 @@ describe('Settings → Supervisor → Project Managers', () => {
     );
   });
 
+  it('opens the instructions file in the default app, not in Finder', async () => {
+    registryWith(null, manager('release-desk', 'Release Desk'));
+    render(<SupervisorManagersSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit instructions' }));
+    await waitFor(() =>
+      expect(mocks.openPathInDefaultApp).toHaveBeenCalledWith(
+        `/Users/dev/.auric/supervisors/${FOLDER}/INSTRUCTIONS.md`
+      )
+    );
+    expect(mocks.revealInFileManager).not.toHaveBeenCalled();
+  });
+
   it('opens a manager by its key', async () => {
     registryWith(null, manager('release-desk', 'Release Desk'));
     render(<SupervisorManagersSettings />);
@@ -218,7 +250,8 @@ describe('Settings → Supervisor → Project Managers', () => {
       expect(mocks.openManager).toHaveBeenCalledWith(
         expect.anything(),
         'release-desk',
-        expect.anything()
+        expect.anything(),
+        undefined
       )
     );
   });
@@ -253,5 +286,164 @@ describe('Settings → Supervisor → Project Managers', () => {
       'title',
       'The registry could not be read.'
     );
+  });
+
+  describe('the working loop', () => {
+    const MODELS = [
+      { value: 'big', label: 'Big', rank: 3 },
+      { value: 'small', label: 'Small', rank: 1 },
+      { value: 'retired', label: 'Retired', rank: 2, available: false },
+    ];
+
+    it('creates a manager through the name sheet', async () => {
+      registryWith(null);
+      render(<SupervisorManagersSettings />);
+      fireEvent.click(await screen.findByRole('button', { name: 'New Project Manager…' }));
+      expect(screen.getByRole('dialog', { name: 'New Project Manager' })).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Inbox Triage' },
+      });
+      expect(screen.getByText('Address: inbox-triage')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      await waitFor(() => expect(mocks.managerCreate).toHaveBeenCalledWith('Inbox Triage'));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it("keeps the sheet open with Rust's sentence when the name is refused", async () => {
+      registryWith(null);
+      mocks.managerCreate.mockRejectedValueOnce(
+        new Error("A Project Manager named 'Inbox Triage' already exists.")
+      );
+      render(<SupervisorManagersSettings />);
+      fireEvent.click(await screen.findByRole('button', { name: 'New Project Manager…' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Inbox Triage' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
+      expect(screen.getByRole('dialog', { name: 'New Project Manager' })).toBeInTheDocument();
+    });
+
+    it('turns New off with the reason when the registry cannot be read', async () => {
+      registryWith('The registry could not be read.');
+      render(<SupervisorManagersSettings />);
+      const button = await screen.findByRole('button', { name: 'New Project Manager…' });
+      await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+      expect(button.getAttribute('aria-describedby')).toBe(
+        screen.getByText('The registry could not be read.').id
+      );
+      fireEvent.click(button);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('asks a stopped manager from its row', async () => {
+      registryWith(null, manager('release-desk', 'Release Desk'));
+      render(<SupervisorManagersSettings />);
+      const row = await screen.findByTestId('manager-settings-release-desk');
+      fireEvent.click(within(row).getByRole('button', { name: 'Ask Release Desk…' }));
+      expect(screen.getByText('Release Desk starts and works on this first.')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task' }), {
+        target: { value: 'Plan the release.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+      await waitFor(() =>
+        expect(mocks.openManager).toHaveBeenCalledWith(
+          expect.anything(),
+          'release-desk',
+          expect.anything(),
+          { task: 'Plan the release.' }
+        )
+      );
+    });
+
+    it('tells the sheet a running manager gets a message', async () => {
+      registryWith(null, manager('release-desk', 'Release Desk'));
+      useStore.setState({ agents: [liveRelease] });
+      render(<SupervisorManagersSettings />);
+      const row = await screen.findByTestId('manager-settings-release-desk');
+      fireEvent.click(within(row).getByRole('button', { name: 'Ask Release Desk…' }));
+      expect(
+        screen.getByText('Release Desk is running; this goes in as a message.')
+      ).toBeInTheDocument();
+    });
+
+    it("offers Default and the supervisor provider's available models, smallest first", async () => {
+      mocks.listProviders.mockResolvedValue([{ id: 'claude', name: 'Claude', models: MODELS }]);
+      registryWith(null, manager('release-desk', 'Release Desk'));
+      render(<SupervisorManagersSettings />);
+      const picker = await screen.findByRole('combobox', { name: 'Release Desk model' });
+      await waitFor(() =>
+        expect(
+          within(picker)
+            .getAllByRole('option')
+            .map((o) => o.textContent)
+        ).toEqual(['Default', 'Small', 'Big'])
+      );
+    });
+
+    it('stores the chosen model and clears it again with Default', async () => {
+      mocks.listProviders.mockResolvedValue([{ id: 'claude', name: 'Claude', models: MODELS }]);
+      registryWith(null, manager('release-desk', 'Release Desk'));
+      render(<SupervisorManagersSettings />);
+      const picker = await screen.findByRole('combobox', { name: 'Release Desk model' });
+      await screen.findByRole('option', { name: 'Small' });
+      fireEvent.change(picker, { target: { value: 'small' } });
+      expect(readManagerPresentations()['release-desk']?.model).toBe('small');
+      fireEvent.change(picker, { target: { value: '' } });
+      expect(readManagerPresentations()['release-desk']?.model).toBeUndefined();
+    });
+
+    it('keeps a stored model the provider stopped offering visible, marked as such', async () => {
+      localStorage.setItem(
+        APP_CONFIG_KEYS.supervisorManagers,
+        JSON.stringify({ 'release-desk': { model: 'gone-model' } })
+      );
+      registryWith(null, manager('release-desk', 'Release Desk'));
+      render(<SupervisorManagersSettings />);
+      expect(
+        await screen.findByRole('option', { name: 'gone-model (no longer offered)' })
+      ).toBeInTheDocument();
+    });
+
+    describe('a manager whose folder is gone', () => {
+      const gone = { ...manager('gone', 'Gone Desk'), runMissing: true };
+
+      it('reads "Folder missing" and offers neither Open nor Ask', async () => {
+        registryWith(null, gone);
+        render(<SupervisorManagersSettings />);
+        const row = await screen.findByTestId('manager-settings-gone');
+        expect(row).toHaveTextContent('Folder missing');
+        expect(within(row).queryByRole('button', { name: 'Open' })).toBeNull();
+        expect(within(row).queryByRole('button', { name: /^Ask / })).toBeNull();
+      });
+
+      it('archives after a confirmation', async () => {
+        registryWith(null, gone);
+        render(<SupervisorManagersSettings />);
+        const row = await screen.findByTestId('manager-settings-gone');
+        fireEvent.click(within(row).getByRole('button', { name: 'Archive…' }));
+        expect(mocks.managerArchive).not.toHaveBeenCalled();
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive' })
+        );
+        await waitFor(() => expect(mocks.managerArchive).toHaveBeenCalledWith('gone'));
+      });
+
+      it('says so in Details instead of throwing when there is no run to inspect', async () => {
+        registryWith(null, gone);
+        mocks.supervisorRunsList.mockResolvedValue([]);
+        render(<SupervisorManagersSettings />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Details' }));
+        expect(screen.getByText(/Its folder is gone/)).toBeInTheDocument();
+      });
+
+      it('is marked in the archived list too', async () => {
+        registryWith(null, { ...gone, archivedAt: '2026-10-22T00:00:00Z' });
+        render(<SupervisorManagersSettings />);
+        fireEvent.click(await screen.findByRole('button', { name: /Archived \(1\)/ }));
+        expect(screen.getByText(/Folder missing/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Restore' })).toBeEnabled();
+      });
+    });
   });
 });

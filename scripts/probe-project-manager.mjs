@@ -7,7 +7,8 @@
 //
 //   node scripts/probe-project-manager.mjs --app-data <dir> --project <projectPath>
 //                                          [--runs-root <dir>] [--driver <test binary>]
-//                                          [--argv-log <dir>] [--keep]
+//                                          [--argv-log <dir>] [--restart-cmd <shell command>]
+//                                          [--keep]
 //
 // RUN IT AGAINST AN ISOLATED INSTANCE. It promotes, renames, archives and
 // removes a manager in the registry under --app-data. The recipe: build once
@@ -41,9 +42,19 @@
 //   the `launchKey` fixture test in Rust. Keying a supervisor that is live while
 //   it is promoted needs the Tauri command too.
 //
+// THE WORKING LOOP
+//   Every ended session leaves one inbox note (fixture `sessionEnd`), read from
+//   `notifications.db` under --app-data, opened read-only. A kill takes the
+//   exit path; for the quit path the probe needs --restart-cmd, a shell command
+//   that stops the isolated instance while a manager runs and starts it again
+//   (no Cmd+Q from a terminal: stopping the PID is the quit). Without it that
+//   section is skipped. Automatic delivery (`automatic: true`, refusal
+//   `human_drafting`) is not reachable: control.sock's `send_input` has no such
+//   field, only the IDE's own `agent_send_message` does.
+//
 // Exit code 0 when every check passes, 1 on a failed check, 2 on bad usage.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   appendFileSync,
@@ -52,6 +63,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -76,15 +88,18 @@ const keep = args.includes('--keep');
 if (!appData || !projectArg) {
   console.error(
     'usage: node scripts/probe-project-manager.mjs --app-data <dir> --project <projectPath> ' +
-      '[--runs-root <dir>] [--driver <test binary>] [--argv-log <dir>] [--keep]'
+      '[--runs-root <dir>] [--driver <test binary>] [--argv-log <dir>] ' +
+      '[--restart-cmd <shell command>] [--keep]'
   );
   process.exit(2);
 }
 const runsRoot = flag('--runs-root') ?? join(homedir(), '.auric', 'supervisors');
 const argvLog = flag('--argv-log');
+const restartCmd = flag('--restart-cmd');
 const controlSocket = join(appData, 'control.sock');
 const linkSocket = join(appData, 'supervisor-link.sock');
 const registryPath = join(appData, fixture.registryFileName);
+const notificationsDb = join(appData, 'notifications.db');
 
 const failures = [];
 let passed = 0;
@@ -294,6 +309,85 @@ async function waitForFile(file, seconds) {
 }
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
+
+// ── the inbox, read-only ────────────────────────────────────────────────────
+
+const sessionEnd = fixture.sessionEnd;
+/** The dedupe key of the note for the session that began at `startedAt`. */
+const sessionDedupe = (key, startedAt) =>
+  sessionEnd.dedupeKey
+    .replace('<key>', key)
+    .replace('<startedAtMs>', String(Date.parse(startedAt)));
+
+/** Rows whose dedupe key starts with `prefix`, through a read-only connection. */
+function inboxRows(prefix) {
+  if (!existsSync(notificationsDb)) return [];
+  const uri = `file:${encodeURI(notificationsDb)}?mode=ro`;
+  const like = `${prefix.replace(/'/g, "''")}%`;
+  const out = execFileSync(
+    'sqlite3',
+    [
+      '-json',
+      uri,
+      'SELECT source, origin, kind, severity, title, body, actions, dedupe_key, read_at ' +
+        `FROM notifications WHERE dedupe_key LIKE '${like}' ORDER BY id`,
+    ],
+    { encoding: 'utf8' }
+  ).trim();
+  return out ? JSON.parse(out) : [];
+}
+
+async function waitForRows(dedupe, seconds) {
+  for (let i = 0; i < seconds * 4 && inboxRows(dedupe).length === 0; i += 1) await sleep(250);
+  return inboxRows(dedupe);
+}
+
+/** Checks one session note against the fixture; `body` is the exact text expected. */
+function checkSessionNote(rows, label, { name, key, body }) {
+  check(rows.length === 1, `${label}: exactly one inbox note`, `${rows.length} rows`);
+  const row = rows[0];
+  if (!row) return;
+  const actions = JSON.parse(row.actions ?? '[]');
+  check(
+    row.title === sessionEnd.title.replace('<name>', name) &&
+      row.severity === sessionEnd.level &&
+      row.source === sessionEnd.dispatcher,
+    `${label}: title, level and dispatcher as the fixture says`,
+    `${row.title} / ${row.severity} / ${row.source}`
+  );
+  check(
+    typeof body === 'string' ? row.body === body : body.test(row.body ?? ''),
+    `${label}: the body`,
+    row.body
+  );
+  const open = actions[0];
+  check(
+    actions.length === 1 &&
+      open.kind === sessionEnd.action.kind &&
+      open.label === sessionEnd.action.label.replace('<name>', name) &&
+      open.managerKey === key &&
+      open.managerName === name &&
+      open.task === undefined &&
+      open.launch === undefined,
+    `${label}: one open-manager action with key and name, no task, no launch`,
+    row.actions
+  );
+}
+
+async function controlAnswers(seconds) {
+  for (let i = 0; i < seconds * 2; i += 1) {
+    if ((await control('list_agents', {}, 2000)).ok) return true;
+    await sleep(500);
+  }
+  return false;
+}
+
+async function liveManager(key) {
+  const reply = await control('list_agents');
+  return reply.ok
+    ? reply.result.agents.find((agent) => agent.supervisorKey === key && agent.status === 'running')
+    : undefined;
+}
 const recordOf = (key) => readJson(registryPath).managers.find((m) => m.key === key);
 const denyRules = fixture.instructions.denyRules;
 
@@ -305,7 +399,7 @@ if (!pong.ok) {
   console.error(`control.sock at ${controlSocket} does not answer: ${pong.error.message}`);
   process.exit(2);
 }
-const link = linkSession();
+let link = linkSession();
 try {
   await link.ready;
 } catch (error) {
@@ -508,6 +602,12 @@ const facts = join(bundle, 'facts');
 mkdirSync(facts, { recursive: true });
 writeFileSync(join(facts, 'no-front-matter.md'), 'A concept without front matter.\n');
 const validationFile = join(appData, 'managers', KEY, fixture.validationFileName);
+const plainSession = recordOf(KEY)?.session;
+check(
+  typeof plainSession?.startedAt === 'string' && plainSession.notedAt === null,
+  'the start booked a session, not yet noted',
+  JSON.stringify(plainSession)
+);
 if (managerId) await kill(managerId);
 const validated = await waitForFile(validationFile, 30);
 check(validated, 'ending the session writes validation.json');
@@ -528,7 +628,133 @@ if (validated) {
   );
 }
 
-// ── 8. Archive, restore, remove ─────────────────────────────────────────────
+// ── 8. The working loop: one note per session ───────────────────────────────
+
+// A session that wrote no note says so; the broken concept above adds a count.
+const withoutNote = sessionEnd.bodyWithoutNote.replace('<name>', RENAMED);
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+if (plainSession?.startedAt) {
+  const rows = await waitForRows(sessionDedupe(KEY, plainSession.startedAt), 30);
+  checkSessionNote(rows, 'a kill without a session note', {
+    name: RENAMED,
+    key: KEY,
+    body: new RegExp(
+      `^${escape(withoutNote)}( The memory check found (at least )?\\d+ problems?\\.)?$`
+    ),
+  });
+  check(
+    recordOf(KEY)?.session?.notedAt === plainSession.startedAt,
+    'the registry books the session as noted',
+    JSON.stringify(recordOf(KEY)?.session)
+  );
+}
+
+// A session that wrote one: its description is the body, nothing appended.
+rmSync(join(facts, 'no-front-matter.md'), { force: true });
+await sleep(1100); // a new session must start in a later second than the last
+const noted = await control('spawn', {
+  projectPath: project,
+  prompt: 'probe: a session that writes a note',
+  role: 'supervisor',
+  supervisorKey: KEY,
+});
+check(noted.ok, 'the manager starts again by key', noted.error?.message ?? '');
+const notedSession = recordOf(KEY)?.session;
+const sessions = join(bundle, fixture.lastSession.section);
+mkdirSync(sessions, { recursive: true });
+const DESCRIPTION = `Probe session ${randomBytes(3).toString('hex')}: checked the working loop.`;
+writeFileSync(
+  join(sessions, 'probe-session.md'),
+  `---\ntype: Session\ntitle: Probe session\ndescription: ${DESCRIPTION}\nstatus: stable\n---\n\nWritten while the session ran.\n`
+);
+const sessionIndex = join(sessions, 'index.md');
+appendFileSync(
+  sessionIndex,
+  `${existsSync(sessionIndex) ? '' : '# Sessions\n\n'}* [Probe session](probe-session.md) - ${DESCRIPTION}\n`
+);
+if (noted.ok) await kill(noted.result.agentId);
+if (notedSession?.startedAt) {
+  const rows = await waitForRows(sessionDedupe(KEY, notedSession.startedAt), 30);
+  checkSessionNote(rows, 'a kill after a session note', {
+    name: RENAMED,
+    key: KEY,
+    body: DESCRIPTION,
+  });
+  const after = recordOf(KEY)?.session;
+  check(
+    after?.startedAt === notedSession.startedAt && after?.notedAt === after?.startedAt,
+    'session.notedAt == session.startedAt',
+    JSON.stringify(after)
+  );
+}
+
+// ── 9. The working loop: a session ended by quitting the app ────────────────
+
+console.log(
+  'skip  automatic delivery while drafting: control.sock send_input takes no `automatic`'
+);
+if (!restartCmd) {
+  console.log('skip  quit catch-up: no --restart-cmd given');
+} else {
+  await sleep(1100);
+  const live = await control('spawn', {
+    projectPath: project,
+    prompt: 'probe: a session the app quits under',
+    role: 'supervisor',
+    supervisorKey: KEY,
+  });
+  check(live.ok, 'the manager runs when the app is quit', live.error?.message ?? '');
+  const quitSession = recordOf(KEY)?.session;
+  const quitKey = quitSession?.startedAt ? sessionDedupe(KEY, quitSession.startedAt) : '';
+  link.close();
+
+  execSync(restartCmd, { stdio: 'inherit', timeout: 180_000 });
+  check(await controlAnswers(120), 'the restarted instance answers on control.sock');
+  const caught = await waitForRows(quitKey, 30);
+  checkSessionNote(caught, 'the quit session, caught up at the next start', {
+    name: RENAMED,
+    key: KEY,
+    body: withoutNote, // the only note was written before this session began
+  });
+  const firstRestart = recordOf(KEY)?.session;
+  console.log(`      registry after the first restart: ${JSON.stringify(firstRestart)}`);
+  check(
+    firstRestart?.startedAt !== quitSession?.startedAt ||
+      firstRestart?.notedAt === quitSession?.startedAt,
+    'the quit session is booked as noted or replaced by a restored one',
+    JSON.stringify(firstRestart)
+  );
+
+  // A manager restored at start is a session of its own; end it the ordinary way.
+  const restored = await liveManager(KEY);
+  console.log(`      restored at start: ${restored ? restored.id : 'none'}`);
+  if (restored) {
+    await kill(restored.id);
+    if (firstRestart?.startedAt) await waitForRows(sessionDedupe(KEY, firstRestart.startedAt), 30);
+  }
+  const before = inboxRows(`manager-session:${KEY}:`).length;
+
+  execSync(restartCmd, { stdio: 'inherit', timeout: 180_000 });
+  check(await controlAnswers(120), 'the instance answers after a second restart');
+  await sleep(10_000); // the catch-up runs at start; give it the time the first one had
+  const again = await liveManager(KEY);
+  check(
+    inboxRows(quitKey).length === 1,
+    'a second restart adds no second note for the quit session',
+    `${inboxRows(quitKey).length} rows`
+  );
+  check(
+    again || inboxRows(`manager-session:${KEY}:`).length === before,
+    'a second restart adds no session note at all',
+    `${before} -> ${inboxRows(`manager-session:${KEY}:`).length}`
+  );
+  if (again) await kill(again.id);
+
+  link = linkSession();
+  await link.ready;
+}
+
+// ── 10. Archive, restore, remove ─────────────────────────────────────────────
 
 const archived = one({ op: 'archive', key: KEY });
 check(archived.ok && typeof archived.value.archivedAt === 'string', 'archive sets archivedAt');

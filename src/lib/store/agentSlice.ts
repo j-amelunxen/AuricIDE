@@ -139,8 +139,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   killRunningAgent: (agentId) => handleKillRunningAgent(agentId, get, set),
 
-  sendAgentInput: async (agentId, text) => {
-    await sendMessageToAgent(agentId, text);
+  sendAgentInput: async (agentId, text, options) => {
+    // Without options the call stays exactly what every other sender makes.
+    if (options) await sendMessageToAgent(agentId, text, options);
+    else await sendMessageToAgent(agentId, text);
     get().recordAgentSentMessage(agentId, text);
   },
 

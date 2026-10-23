@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useStore } from '@/lib/store';
+import { openFileTab } from './openFileTab';
 import { type FileNode } from '@/lib/store/fileTreeSlice';
 import { readDirectory } from '@/lib/tauri/fs';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
@@ -11,15 +12,14 @@ import type { IDEState } from './liveIDEState';
 export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Promise<boolean>) {
   const handleFileSelect = useCallback(
     async (path: string) => {
-      if (useStore.getState().pmDirty) {
-        if (!(await leaveWorkPlace())) return;
-      } else {
-        useStore.getState().closeWorkPlace();
-      }
-      state.selectFile(path);
+      if (useStore.getState().pmDirty && !(await leaveWorkPlace())) return;
+      openFileTab(path, {
+        closeWorkPlace: useStore.getState().closeWorkPlace,
+        selectFile: state.selectFile,
+        openTab: state.openTab,
+      });
       state.setSelectedPaths([path]);
       state.setSelectionAnchor(path);
-      state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
     },
     [state, leaveWorkPlace]
   );

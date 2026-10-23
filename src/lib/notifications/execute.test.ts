@@ -23,6 +23,7 @@ function makeDeps(): NotificationActionDeps {
     runCommand: vi.fn(),
     startConductorRun: vi.fn(async () => undefined),
     decidePolicyProposal: vi.fn(async () => undefined),
+    openManager: vi.fn(async () => 'opened' as const),
   };
 }
 
@@ -947,5 +948,50 @@ describe('policy-proposal', () => {
     await expect(executeNotificationAction(apply, deps, fromLink)).rejects.toThrow(
       'The proposal has expired'
     );
+  });
+});
+
+describe('executeNotificationAction for open-manager', () => {
+  const action: Extract<NotificationAction, { kind: 'open-manager' }> = {
+    id: 'open',
+    label: 'Open Release Desk',
+    kind: 'open-manager',
+    managerKey: 'release-desk',
+    managerName: 'Release Desk',
+    task: 'Check the open release tickets',
+  };
+
+  it('hands a user-authored task to the one open verb', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(action, deps, { trust: 'user' });
+    expect(deps.openManager).toHaveBeenCalledWith('release-desk', {
+      task: 'Check the open release tickets',
+    });
+  });
+
+  it('opens without the task when a model wrote the payload', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(action, deps, { trust: 'foreign' });
+    expect(deps.openManager).toHaveBeenCalledWith('release-desk', {});
+  });
+
+  it('is foreign by default, like every other action', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(action, deps);
+    expect(deps.openManager).toHaveBeenCalledWith('release-desk', {});
+  });
+
+  it('opens without a task when the payload names none', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...action, task: undefined }, deps, { trust: 'user' });
+    expect(deps.openManager).toHaveBeenCalledWith('release-desk', {});
+  });
+
+  it('does nothing else: no spawn, no dialog, no folder probe', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(action, deps, { trust: 'user' });
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+    expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+    expect(deps.projectDirExists).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ vi.mock('./invoke', () => ({ invoke: vi.fn() }));
 import { invoke } from './invoke';
 import {
   managerArchive,
+  managerCreate,
   managerInstructions,
   managerMemory,
   managerPromote,
@@ -41,6 +42,16 @@ describe('supervisor manager IPC', () => {
     const sentence = 'supervisor-managers.json could not be read: bad. It was left as it is.';
     vi.mocked(invoke).mockResolvedValue({ managers: [], error: sentence });
     await expect(supervisorManagersList()).rejects.toBe(sentence);
+  });
+
+  it('creates a manager without an earlier run and tells the surfaces', async () => {
+    const listener = vi.fn();
+    window.addEventListener(MANAGERS_CHANGED_EVENT, listener);
+    vi.mocked(invoke).mockResolvedValue({ key: 'release-desk' });
+    expect(await managerCreate('Release Desk')).toEqual({ key: 'release-desk' });
+    expect(invoke).toHaveBeenCalledWith('manager_create', { name: 'Release Desk' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(MANAGERS_CHANGED_EVENT, listener);
   });
 
   it('promotes a run folder under a name', async () => {

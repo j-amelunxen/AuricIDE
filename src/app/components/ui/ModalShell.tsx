@@ -26,6 +26,8 @@ export interface ModalShellProps {
   onClose: () => void;
   /** Whether clicking the backdrop triggers onClose, defaults to true. */
   closeOnBackdropClick?: boolean;
+  /** Where focus goes on close, for a dialog opened from something that is gone by then (a menu). */
+  returnFocusTo?: () => HTMLElement | null;
   /** Child elements rendered inside the dialog container. */
   children: ReactNode;
 }
@@ -45,9 +47,10 @@ export function ModalShell({
   backdropClassName = '',
   onClose,
   closeOnBackdropClick = true,
+  returnFocusTo,
   children,
 }: ModalShellProps) {
-  const dialogRef = useDialogA11y<HTMLDivElement>();
+  const dialogRef = useDialogA11y<HTMLDivElement>({ returnFocusTo });
   useOverlayLayer({ id, kind, active, onEscape: onClose });
 
   const computedTitleId = title ? (titleId ?? `${id}-modal-title`) : undefined;

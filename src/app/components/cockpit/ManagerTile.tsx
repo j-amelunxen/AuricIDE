@@ -10,6 +10,12 @@ interface ManagerTileProps {
   status: ManagerStatus;
   /** The manager is being started: the click is already handled. */
   opening: boolean;
+  /** The run folder is gone: the tile is dimmed and a click explains instead of opening. */
+  folderMissing?: boolean;
+  /** Where it stands in its own words, when known; the tooltip's second line. */
+  lastSession?: string;
+  /** The pointer or focus arrived: the moment to fetch what the tooltip will say. */
+  onHint?: () => void;
   onOpen: () => void;
   onContextMenu: (event: MouseEvent<HTMLButtonElement>) => void;
 }
@@ -37,10 +43,17 @@ export function ManagerTile({
   managerKey,
   status,
   opening,
+  folderMissing = false,
+  lastSession,
+  onHint,
   onOpen,
   onContextMenu,
 }: ManagerTileProps) {
-  const dot = DOT_CLASS[status];
+  const dot = folderMissing ? 'bg-amber-400' : DOT_CLASS[status];
+  const state = folderMissing ? 'folder missing' : STATUS_WORDS[status];
+  const tooltip = opening
+    ? `Opening ${name}…`
+    : [`${name}, ${state}`, lastSession].filter(Boolean).join('\n');
   return (
     <div
       data-testid={`quick-access-manager-item-${managerKey}`}
@@ -51,16 +64,21 @@ export function ManagerTile({
           type="button"
           data-testid={`quick-access-manager-${managerKey}`}
           data-status={status}
+          data-manager-focus={managerKey}
+          aria-describedby={lastSession ? `${managerKey}-last-session` : undefined}
           onClick={onOpen}
+          onPointerEnter={onHint}
+          onFocus={onHint}
           onContextMenu={(event) => {
             event.preventDefault();
             onContextMenu(event);
           }}
           disabled={opening}
           aria-busy={opening}
-          aria-label={`${name}, ${STATUS_WORDS[status]}`}
-          title={opening ? `Opening ${name}…` : `${name}, ${STATUS_WORDS[status]}`}
-          className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/15 via-white/[0.06] to-transparent text-primary-light shadow-sm ring-1 ring-white/10 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.18)] hover:ring-white/25 active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light disabled:cursor-progress disabled:opacity-70"
+          aria-label={`${name}, ${state}`}
+          aria-disabled={folderMissing || undefined}
+          title={tooltip}
+          className={`relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/15 via-white/[0.06] to-transparent text-primary-light shadow-sm ring-1 ring-white/10 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.18)] hover:ring-white/25 active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light disabled:cursor-progress ${folderMissing ? 'opacity-50' : 'disabled:opacity-70'}`}
         >
           <span aria-hidden="true" className="text-[13px] font-semibold tracking-wide">
             {managerMonogram(name)}
@@ -74,6 +92,11 @@ export function ManagerTile({
           )}
         </button>
       </div>
+      {lastSession && (
+        <span id={`${managerKey}-last-session`} className="sr-only">
+          {lastSession}
+        </span>
+      )}
       <span
         title={name}
         className="max-w-full truncate text-[10px] font-medium text-foreground-muted"

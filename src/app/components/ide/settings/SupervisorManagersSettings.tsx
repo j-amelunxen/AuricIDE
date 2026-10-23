@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ManagerConfirmDialog } from '@/app/components/agents/SupervisorRunsPanel';
+import { ManagerNameSheet } from '@/app/components/agents/ManagerNameSheet';
+import { useAskManager } from '@/app/components/agents/useAskManager';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { liveSupervisorOfManager } from '@/lib/agents/managerStatus';
 import { managerInstructionsPath } from '@/lib/agents/managerFolder';
 import { runningSupervisors } from '@/lib/agents/supervisorLaunch';
+import { keyFromName } from '@/lib/agents/supervisorManagers';
 import { useOpenManager } from '@/lib/hooks/useOpenManager';
 import { useProjectManagers } from '@/lib/hooks/useProjectManagers';
 import { presentationOf, updateManagerPresentation } from '@/lib/quickAccess/managerPresentation';
@@ -15,26 +18,30 @@ import { duplicateShortcuts, readMenuBarPrefs } from '@/lib/quickAccess/supervis
 import { useManagerPresentations } from '@/lib/quickAccess/useManagerPresentations';
 import { useStore } from '@/lib/store';
 import type { AgentInfo } from '@/lib/tauri/agents';
-import { revealInFileManager } from '@/lib/tauri/opener';
+import { openPathInDefaultApp, revealInFileManager } from '@/lib/tauri/opener';
 import {
+  managerArchive,
+  managerCreate,
   managerRemove,
   managerRestore,
   type SupervisorManager,
 } from '@/lib/tauri/supervisorManagers';
 import { supervisorRunsList, type SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ManagerSettingsRow } from './ManagerSettingsRow';
+import { useSupervisorModels } from './useSupervisorModels';
 
 const detailOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 type Confirmation =
   | { kind: 'restart'; manager: SupervisorManager; live: AgentInfo }
+  | { kind: 'archive'; manager: SupervisorManager }
   | { kind: 'remove'; manager: SupervisorManager };
 
 /**
  * Settings → Supervisor → Project Managers: every manager, how it is shown
- * (Quick Access, menu bar, shortcut) and the same inspector as the runs rail.
- * A management surface, not the entry point: a manager is made by promoting a
- * run, so there is no "New" button here.
+ * (Quick Access, menu bar, shortcut, model) and the same inspector as the runs
+ * rail. A manager is made here with "New Project Manager…", or by promoting a
+ * run from the rail.
  */
 export function SupervisorManagersSettings() {
   const { managers, error } = useProjectManagers();
@@ -43,10 +50,13 @@ export function SupervisorManagersSettings() {
   const killRunningAgent = useStore((s) => s.killRunningAgent);
   const showToast = useStore((s) => s.showToast);
   const { open } = useOpenManager();
+  const { ask, sheet: askSheet } = useAskManager();
+  const models = useSupervisorModels();
   const live = useMemo(() => runningSupervisors(agents), [agents]);
   const [runs, setRuns] = useState<SupervisorRun[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [creating, setCreating] = useState(false);
   const menuBar = readMenuBarPrefs();
 
   useEffect(() => {
@@ -87,8 +97,20 @@ export function SupervisorManagersSettings() {
       await revealInFileManager(path);
     });
 
+  const openInDefaultApp = (path: string | null, failure: string) =>
+    guarded(failure, async () => {
+      if (!path) throw new Error('its folder is gone');
+      await openPathInDefaultApp(path);
+    });
+
   const confirmed = async (pending: Confirmation) => {
     setConfirmation(null);
+    if (pending.kind === 'archive') {
+      await guarded(`Could not archive ${pending.manager.name}`, () =>
+        managerArchive(pending.manager.key)
+      );
+      return;
+    }
     if (pending.kind === 'remove') {
       await guarded(`Could not remove ${pending.manager.name}`, () =>
         managerRemove(pending.manager.key)
@@ -108,9 +130,22 @@ export function SupervisorManagersSettings() {
   return (
     <SettingsSection title="Project Managers" icon="folder">
       <p className="text-xs leading-relaxed text-foreground-muted">
-        A Project Manager is a supervisor with a name and a memory. Promote a run from the
-        Supervisor Runs rail to add one.
+        A Project Manager is a supervisor with a name and a memory. Runs can also be promoted from
+        the Supervisor Runs rail.
       </p>
+      <div>
+        <button
+          type="button"
+          onClick={error ? undefined : () => setCreating(true)}
+          aria-disabled={!!error || undefined}
+          aria-describedby={error ? 'manager-settings-error' : undefined}
+          className={`rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-foreground transition-colors hover:bg-white/10 ${
+            error ? 'cursor-not-allowed opacity-40' : ''
+          }`}
+        >
+          New Project Manager…
+        </button>
+      </div>
 
       {active.length > 0 && !(menuBar.tray && menuBar.shortcuts) && (
         <p
@@ -124,7 +159,11 @@ export function SupervisorManagersSettings() {
       )}
 
       {error && (
-        <p role="alert" className="rounded-md bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+        <p
+          id="manager-settings-error"
+          role="alert"
+          className="rounded-md bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200"
+        >
           {error}
         </p>
       )}
@@ -148,12 +187,16 @@ export function SupervisorManagersSettings() {
                 run={run}
                 liveSupervisor={liveSupervisor}
                 presentation={presentation}
+                models={models}
                 shortcutShared={!!presentation.shortcut && claimed.has(presentation.shortcut)}
                 onChange={(patch) => updateManagerPresentation(manager.key, patch)}
                 onOpen={() => void open(manager.key)}
+                onAsk={() => ask(manager)}
+                onArchive={() => setConfirmation({ kind: 'archive', manager })}
+                onShowFile={(path) => void openInDefaultApp(path, 'Could not open the file')}
                 onShowInstructions={() =>
                   void managerInstructionsPath(manager).then((path) =>
-                    showInFinder(path, 'Could not show the instructions')
+                    openInDefaultApp(path, 'Could not open the instructions')
                   )
                 }
                 onShowFolder={() =>
@@ -193,6 +236,9 @@ export function SupervisorManagersSettings() {
                 >
                   <span className="min-w-0 flex-1 truncate text-xs text-foreground-muted">
                     {manager.name}
+                    {manager.runMissing && (
+                      <span className="text-amber-200"> · Folder missing</span>
+                    )}
                   </span>
                   <button
                     type="button"
@@ -223,6 +269,31 @@ export function SupervisorManagersSettings() {
         </div>
       )}
 
+      {creating && (
+        <ManagerNameSheet
+          title="New Project Manager"
+          confirmLabel="Create"
+          initialName=""
+          addressFor={(name) =>
+            keyFromName(
+              name,
+              managers.map((manager) => manager.key)
+            )
+          }
+          managers={managers}
+          blockedReason={error ?? undefined}
+          onSubmit={async (name) => {
+            await managerCreate(name);
+          }}
+          onClose={() => setCreating(false)}
+        >
+          <p className="text-xs text-foreground-muted">
+            It gets a folder of its own, an instructions file and a memory in knowledge/. Open it to
+            put it to work.
+          </p>
+        </ManagerNameSheet>
+      )}
+      {askSheet}
       {confirmation && (
         <ManagerConfirmDialog
           kind={confirmation.kind}

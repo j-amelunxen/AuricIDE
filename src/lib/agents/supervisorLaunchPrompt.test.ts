@@ -95,7 +95,7 @@ describe('buildSupervisorLaunchPrompt', () => {
   const prompt = buildSupervisorLaunchPrompt(projects);
 
   it('keeps the human reachable while children work', () => {
-    expect(prompt).toContain('## Nie blockierend warten');
+    expect(prompt).toContain('## Never block while waiting');
     expect(prompt).toContain(
       'For headless children, end your turn and wait for the IDE finish pingback.'
     );
@@ -428,6 +428,33 @@ describe('buildSupervisorLaunchPrompt for a Project Manager', () => {
     expect(text).toContain('`knowledge/index.md`');
     expect(text).toContain('wait for the go-ahead before you start any agent.');
     expect(text).toContain('list_agents shows them as yours');
+  });
+
+  describe('with a first task', () => {
+    const task = 'Check the open release tickets';
+    const withTask = () => build({}, { firstTask: task });
+
+    it('still reads the memory first', () => {
+      const text = withTask();
+      expect(text).toContain('`knowledge/index.md`');
+      expect(text).toContain('list_agents shows them as yours');
+    });
+
+    it('works on the task without waiting for a go-ahead for it', () => {
+      const text = withTask();
+      expect(text).toContain('Then work on your first task without waiting for a go-ahead for it');
+      expect(text).not.toContain('wait for the go-ahead before you start any agent.');
+    });
+
+    it('keeps everything beyond the task behind the go-ahead', () => {
+      expect(withTask()).toContain(
+        'Do not start anything beyond that task until the human gives the go-ahead'
+      );
+    });
+
+    it('treats a blank task as no task', () => {
+      expect(build({}, { firstTask: '  \n ' })).toBe(build());
+    });
   });
 
   it('keeps the global instructions out of the manager block when there are none', () => {

@@ -5,6 +5,7 @@ import { resolveSkillLaunch } from '@/lib/agents/skillLaunch';
 import { runKindFor } from '@/lib/agents/spawnTargets';
 import { loadSpawnDefaults, type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
+import type { OpenManagerOutcome } from '@/lib/agents/openSupervisor';
 import type { NotificationTrust } from './trust';
 import {
   POLICY_PROPOSAL_ORIGIN,
@@ -58,6 +59,12 @@ export interface NotificationActionDeps {
    * message is the sentence to show.
    */
   decidePolicyProposal: (proposalId: string, decision: PolicyProposalDecision) => Promise<void>;
+  /**
+   * The one open verb for a Project Manager (`openManager`): a running one
+   * gets the task as a message, a stopped one is resumed with it. It reports
+   * its own refusals (archived, unknown key) as toasts.
+   */
+  openManager: (managerKey: string, options: { task?: string }) => Promise<OpenManagerOutcome>;
 }
 
 export class NotificationActionError extends Error {
@@ -462,6 +469,13 @@ export async function executeNotificationAction(
       });
       return;
     }
+    case 'open-manager':
+      // A model must not hand another long-lived agent a task, not even behind a click.
+      await deps.openManager(
+        action.managerKey,
+        context.trust === 'user' && action.task ? { task: action.task } : {}
+      );
+      return;
     case 'run-combo': {
       if (!(await deps.projectDirExists(action.repoPath))) {
         throw new NotificationActionError(

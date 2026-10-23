@@ -15,6 +15,13 @@ export interface SupervisorManager {
   archivedAt: string | null;
   /** What the last start injected; null before the first start after promotion. */
   lastLaunch: { at: string; instructionsSha256: string } | null;
+  /**
+   * The run folder no longer resolves under the runs root. The manager stays
+   * listed: the UI says "Folder missing" and offers only Archive or Remove.
+   */
+  runMissing?: boolean;
+  /** Only the session-end notes use it: when the last session started and when it last wrote a note. */
+  session?: { startedAt: string; notedAt: string | null } | null;
 }
 
 /** What `okf validate` came to on this machine; `never` before the first check. */
@@ -30,6 +37,16 @@ export interface ManagerMemoryFinding {
   message: string;
 }
 
+/** The newest non-deprecated concept in `knowledge/sessions/`, as the manager wrote it. */
+export interface ManagerLastSession {
+  title: string;
+  description: string;
+  /** `generated.at` when it parses, else the file's modification time; ms since the epoch. */
+  atMs: number;
+  /** Relative to `knowledge/`. */
+  path: string;
+}
+
 export interface ManagerMemorySummary {
   /** Concept count per section type (`Decision`, `Fact`, …). */
   concepts: Record<string, number>;
@@ -40,6 +57,8 @@ export interface ManagerMemorySummary {
   findings: ManagerMemoryFinding[];
   okf: OkfState;
   checkedAt: string | null;
+  /** Where the manager stands, in its own words; null before it wrote a session note. */
+  lastSession: ManagerLastSession | null;
 }
 
 /** What `manager_list` answers: the managers, or why the registry could not be read. */
@@ -75,6 +94,11 @@ async function changeRegistry<T>(command: string, args: Record<string, unknown>)
   const result = await invoke<T>(command, args);
   window.dispatchEvent(new Event(MANAGERS_CHANGED_EVENT));
   return result;
+}
+
+/** A manager without an earlier run: Rust makes a fresh run folder and promotes it in one step. */
+export async function managerCreate(name: string): Promise<SupervisorManager> {
+  return await changeRegistry<SupervisorManager>('manager_create', { name });
 }
 
 export async function managerPromote(runDir: string, name: string): Promise<SupervisorManager> {

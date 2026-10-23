@@ -7,6 +7,7 @@
 //! fixture first.
 
 use super::{FindingSource, MemoryFinding};
+use serde::{Deserialize, Serialize};
 use serde_yaml::Value as Yaml;
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -21,6 +22,9 @@ const MAX_CONCEPT_FILES: usize = 10_000;
 const FRONT_MATTER_READ_LIMIT: u64 = 16 * 1024;
 const SECTION_INDEX_READ_LIMIT: u64 = 1024 * 1024;
 const SECTION_INDEX_FILE: &str = "index.md";
+/// A model-written `generated.at` further ahead of the file's own time than
+/// this cannot pin an old note as the newest one.
+const GENERATED_AHEAD_LIMIT_MS: u64 = 24 * 60 * 60 * 1000;
 const FRONT_MATTER_FENCE: &str = "---";
 /// What a quoted status or file name may take of the prompt: a finding is a
 /// sentence, never a way to paste a page into it.
@@ -33,6 +37,10 @@ pub struct Layout {
     pub bundle_dir: String,
     root_index: String,
     log_file: String,
+    /// The section whose newest concept is the manager's last session.
+    session_section: String,
+    /// `sessionEnd.bodyMaxChars`: what a notification body may quote.
+    pub session_body_max_chars: usize,
     /// Section folder to concept type, in folder order.
     sections: BTreeMap<String, String>,
     required_fields: Vec<String>,
@@ -63,6 +71,14 @@ pub fn layout() -> &'static Layout {
                 .unwrap_or_default()
                 .to_string(),
             log_file: memory["logFile"].as_str().unwrap_or_default().to_string(),
+            session_section: fixture["lastSession"]["section"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            session_body_max_chars: fixture["sessionEnd"]["bodyMaxChars"]
+                .as_u64()
+                .and_then(|max| usize::try_from(max).ok())
+                .unwrap_or(MAX_QUOTED_CHARS),
             sections: memory["sections"]
                 .as_object()
                 .into_iter()
@@ -76,12 +92,24 @@ pub fn layout() -> &'static Layout {
     })
 }
 
+/// The newest session note a manager wrote (fixture `lastSession`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastSession {
+    pub title: String,
+    pub description: String,
+    pub at_ms: u64,
+    /// Relative to `knowledge/`.
+    pub path: String,
+}
+
 /// What the walk learned about one bundle.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Scan {
     pub concepts: BTreeMap<String, u32>,
     pub deprecated: u32,
     pub newest_change_ms: Option<u64>,
+    pub last_session: Option<LastSession>,
     pub findings: Vec<MemoryFinding>,
 }
 
@@ -140,26 +168,140 @@ fn is_real_folder_at(path: &Path) -> bool {
 /// Shortened and stripped of control characters, so text taken from a file
 /// cannot start a line of its own in the prompt.
 fn tidy(text: &str) -> String {
+    tidy_to(text, MAX_QUOTED_CHARS)
+}
+
+fn tidy_to(text: &str, limit: usize) -> String {
     let mut shown: String = text
         .chars()
         .filter(|c| !c.is_control())
-        .take(MAX_QUOTED_CHARS + 1)
+        .take(limit + 1)
         .collect();
-    if shown.chars().count() > MAX_QUOTED_CHARS {
-        shown = shown.chars().take(MAX_QUOTED_CHARS).collect();
+    if shown.chars().count() > limit {
+        shown = shown.chars().take(limit).collect();
         shown.push('…');
     }
     shown
 }
 
+fn modified_ms(file: &Path) -> Option<u64> {
+    std::fs::metadata(file)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+}
+
+/// `generated.at` as epoch milliseconds, when it is an RFC 3339 time.
+fn generated_at_ms(fields: &serde_yaml::Mapping) -> Option<u64> {
+    let at = fields.get("generated")?.get("at")?.as_str()?;
+    let parsed = chrono::DateTime::parse_from_rfc3339(at).ok()?;
+    u64::try_from(parsed.timestamp_millis()).ok()
+}
+
+/// The time a session note counts from: its own `generated.at` unless that is
+/// more than a day ahead of the file's modification time, else the file's.
+fn session_time_ms(file: &Path, fields: &serde_yaml::Mapping) -> Option<u64> {
+    let modified = modified_ms(file);
+    match (generated_at_ms(fields), modified) {
+        (Some(generated), Some(modified))
+            if generated > modified.saturating_add(GENERATED_AHEAD_LIMIT_MS) =>
+        {
+            Some(modified)
+        }
+        (Some(generated), _) => Some(generated),
+        (None, modified) => modified,
+    }
+}
+
+/// Keeps `file` in `held` when it is newer than what `held` has.
+fn keep_newer_session(
+    held: &mut Option<LastSession>,
+    relative: &str,
+    file: &Path,
+    fields: &serde_yaml::Mapping,
+) {
+    let Some(at_ms) = session_time_ms(file, fields) else {
+        return;
+    };
+    if held.as_ref().is_some_and(|kept| kept.at_ms >= at_ms) {
+        return;
+    }
+    let text = |name: &str| fields.get(name).and_then(Yaml::as_str).unwrap_or_default();
+    *held = Some(LastSession {
+        title: text("title").to_string(),
+        description: text("description").to_string(),
+        at_ms,
+        path: relative.to_string(),
+    });
+}
+
+/// The non-deprecated session concepts with readable front matter, as
+/// (path relative to the bundle, file, fields).
+fn session_concepts(bundle: &Path) -> Vec<(String, std::path::PathBuf, serde_yaml::Mapping)> {
+    let folder = &layout().session_section;
+    let section = bundle.join(folder);
+    if !is_real_folder_at(bundle) || !is_real_folder_at(&section) {
+        return Vec::new();
+    }
+    let mut budget = MAX_CONCEPT_FILES;
+    let (files, _) = concept_files(&section, &mut budget);
+    files
+        .into_iter()
+        .filter_map(|name| {
+            let file = section.join(&name);
+            let FrontMatter::Fields(fields) = read_front_matter(&file) else {
+                return None;
+            };
+            let deprecated = fields.get("status").and_then(Yaml::as_str) == Some("deprecated");
+            (!deprecated).then(|| (format!("{folder}/{name}"), file, fields))
+        })
+        .collect()
+}
+
+/// The last session alone, without the rest of the walk: only the sessions
+/// section is read, bounded like the main walk. Cheap enough to run on every
+/// request.
+pub fn last_session(bundle: &Path) -> Option<LastSession> {
+    let mut held = None;
+    for (relative, file, fields) in session_concepts(bundle) {
+        keep_newer_session(&mut held, &relative, &file, &fields);
+    }
+    held
+}
+
+/// What the manager wrote down during a session that began at `started_ms`:
+/// the description (else the title) of the newest session note whose file
+/// time is at or after that start, floored to the whole second. File time,
+/// not `generated.at`: the manager's own clock reading proves nothing.
+pub fn session_note_since(bundle: &Path, started_ms: u64) -> Option<String> {
+    let since = started_ms / 1000 * 1000;
+    let (_, fields) = session_concepts(bundle)
+        .into_iter()
+        .filter_map(|(_, file, fields)| {
+            Some((modified_ms(&file).filter(|at| *at >= since)?, fields))
+        })
+        .max_by_key(|(at, _)| *at)?;
+    let text = |name: &str| {
+        fields
+            .get(name)
+            .and_then(Yaml::as_str)
+            .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|value| !value.is_empty())
+    };
+    let quoted = text("description").or_else(|| text("title"))?;
+    // Under the cap by one so the ellipsis stays inside it.
+    let cap = layout().session_body_max_chars;
+    Some(tidy_to(&quoted, cap.saturating_sub(1)))
+}
+
 impl Scan {
     fn note_change(&mut self, file: &Path) {
-        let changed = std::fs::metadata(file)
-            .and_then(|meta| meta.modified())
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok());
-        self.newest_change_ms = self.newest_change_ms.max(changed);
+        self.newest_change_ms = self.newest_change_ms.max(modified_ms(file));
+    }
+
+    fn note_session(&mut self, relative: &str, file: &Path, fields: &serde_yaml::Mapping) {
+        keep_newer_session(&mut self.last_session, relative, file, fields);
     }
 
     fn report(&mut self, code: &str, path: &str, message: String) {
@@ -204,7 +346,11 @@ impl Scan {
                 .filter(|value| !value.trim().is_empty())
         };
         let declared_type = text("type").unwrap_or(section_type);
-        self.count(declared_type, text("status") == Some("deprecated"));
+        let deprecated = text("status") == Some("deprecated");
+        self.count(declared_type, deprecated);
+        if folder == layout().session_section && !deprecated {
+            self.note_session(&relative, &file, fields);
+        }
         for field in &layout().required_fields {
             if text(field).is_none() {
                 self.report(
@@ -403,6 +549,164 @@ mod tests {
         assert_eq!(scan.concepts, BTreeMap::from([("Decision".to_string(), 1)]));
         assert_eq!(scan.deprecated, 0);
         assert!(scan.newest_change_ms.is_some());
+    }
+
+    #[test]
+    fn the_last_session_follows_the_fixture_cases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../src/lib/agents/supervisorManagers.fixtures.json"
+        ))
+        .unwrap();
+        for case in fixture["lastSession"]["cases"].as_array().unwrap() {
+            let bundle = tempfile::tempdir().unwrap();
+            for entry in case["files"].as_array().unwrap() {
+                let file = entry["file"].as_str().unwrap();
+                let path = bundle.path().join("sessions").join(file);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, session_note(entry)).unwrap();
+                let mtime = UNIX_EPOCH
+                    + std::time::Duration::from_millis(entry["mtimeMs"].as_u64().unwrap());
+                fs::File::options()
+                    .write(true)
+                    .open(&path)
+                    .unwrap()
+                    .set_modified(mtime)
+                    .unwrap();
+            }
+            let picked = scan(bundle.path()).last_session.map(|s| s.path);
+            let expected = case["picks"]
+                .as_str()
+                .map(|file| format!("sessions/{file}"));
+            assert_eq!(picked, expected, "{}", case["name"]);
+        }
+    }
+
+    fn session_note(entry: &serde_json::Value) -> String {
+        if entry["brokenFrontMatter"].as_bool() == Some(true) {
+            return "---\ntype: [unclosed\n".to_string();
+        }
+        let generated = entry["generatedAt"].as_str().map_or(String::new(), |at| {
+            format!("generated:\n  by: manager\n  at: \"{at}\"\n")
+        });
+        format!(
+            "---\ntype: Session\ntitle: Note {file}\ndescription: Said {file}.\nstatus: {status}\n{generated}---\n",
+            file = entry["file"].as_str().unwrap(),
+            status = entry["status"].as_str().unwrap(),
+        )
+    }
+
+    fn write_session(bundle: &Path, name: &str, front: &str, mtime_ms: u64) {
+        let path = bundle.join("sessions").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, format!("---\ntype: Session\n{front}---\n")).unwrap();
+        let mtime = UNIX_EPOCH + std::time::Duration::from_millis(mtime_ms);
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+    }
+
+    const NOTE: &str = "title: T\ndescription: Agreed the cadence.\nstatus: stable\n";
+
+    #[test]
+    fn a_note_counts_by_file_time_from_the_session_start_floored_to_the_second() {
+        let bundle = tempfile::tempdir().unwrap();
+        write_session(bundle.path(), "a.md", NOTE, 5_000);
+        assert_eq!(
+            session_note_since(bundle.path(), 5_700).as_deref(),
+            Some("Agreed the cadence."),
+            "written in the first second of the session"
+        );
+        assert_eq!(session_note_since(bundle.path(), 6_000), None);
+    }
+
+    #[test]
+    fn a_future_generated_date_does_not_make_an_old_note_count_as_written() {
+        let bundle = tempfile::tempdir().unwrap();
+        let front = format!("{NOTE}generated:\n  at: \"2099-01-01T00:00:00Z\"\n");
+        write_session(bundle.path(), "a.md", &front, 1_000);
+        assert_eq!(session_note_since(bundle.path(), 5_000), None);
+    }
+
+    #[test]
+    fn the_newest_note_by_file_time_speaks_and_deprecated_or_broken_ones_do_not() {
+        let bundle = tempfile::tempdir().unwrap();
+        write_session(
+            bundle.path(),
+            "old.md",
+            "title: T\ndescription: Old.\nstatus: stable\n",
+            6_000,
+        );
+        write_session(
+            bundle.path(),
+            "new.md",
+            "title: T\ndescription: New.\nstatus: stable\n",
+            8_000,
+        );
+        write_session(
+            bundle.path(),
+            "gone.md",
+            "title: T\ndescription: Gone.\nstatus: deprecated\n",
+            9_000,
+        );
+        let broken = bundle.path().join("sessions/broken.md");
+        fs::write(&broken, "no front matter").unwrap();
+        assert_eq!(
+            session_note_since(bundle.path(), 5_000).as_deref(),
+            Some("New.")
+        );
+    }
+
+    #[test]
+    fn the_body_is_the_title_when_the_description_is_empty_and_nothing_when_both_are() {
+        let bundle = tempfile::tempdir().unwrap();
+        write_session(
+            bundle.path(),
+            "a.md",
+            "title: Weekly sync\ndescription: \"\"\nstatus: stable\n",
+            6_000,
+        );
+        assert_eq!(
+            session_note_since(bundle.path(), 5_000).as_deref(),
+            Some("Weekly sync")
+        );
+        write_session(
+            bundle.path(),
+            "a.md",
+            "title: \"\"\ndescription: \"  \"\nstatus: stable\n",
+            6_000,
+        );
+        assert_eq!(session_note_since(bundle.path(), 5_000), None);
+    }
+
+    #[test]
+    fn the_body_is_one_clean_line_cut_to_the_fixture_limit() {
+        let bundle = tempfile::tempdir().unwrap();
+        let long = "word ".repeat(100);
+        let front = format!(
+            "title: T\ndescription: \"line one\\nline\\ttwo \\u0007{long}\"\nstatus: stable\n"
+        );
+        write_session(bundle.path(), "a.md", &front, 6_000);
+        let body = session_note_since(bundle.path(), 5_000).unwrap();
+        assert!(body.starts_with("line one line two word"), "{body}");
+        assert!(!body.chars().any(char::is_control));
+        assert_eq!(body.chars().count(), layout().session_body_max_chars);
+        assert!(body.ends_with('…'));
+    }
+
+    #[test]
+    fn the_last_session_carries_what_the_manager_wrote() {
+        let bundle = bundle_with(&[(
+            "sessions/one.md",
+            "---\ntype: Session\ntitle: Weekly sync\ndescription: Agreed the cadence.\nstatus: stable\ngenerated:\n  at: \"2026-10-22T09:00:00Z\"\n---\n",
+        )]);
+        let session = scan(bundle.path()).last_session.unwrap();
+        assert_eq!(session.title, "Weekly sync");
+        assert_eq!(session.description, "Agreed the cadence.");
+        assert_eq!(session.at_ms, 1_792_659_600_000);
+        assert_eq!(session.path, "sessions/one.md");
     }
 
     #[test]

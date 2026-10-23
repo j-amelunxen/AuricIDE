@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { createTestNotificationsDb, getAnswer } from '../notificationsDb';
+import managerFixtures from '@/lib/agents/supervisorManagers.fixtures.json';
 import { notifyActionSchema, registerNotificationTools } from './notifications';
 
 /**
@@ -269,6 +270,35 @@ describe('notification MCP tools', () => {
     // The schema is the privilege boundary; the frontend parser is not.
     it('rejects a well-formed run-skill at the schema', () => {
       expect(notifyActionSchema.safeParse(runSkill).success).toBe(false);
+    });
+
+    // A model must not hand another long-lived agent a task, not even behind a click.
+    it.each(managerFixtures.openManagerAction.cases.map((c) => [c.dispatcher, c.launch]))(
+      'rejects a well-formed open-manager at the schema (%s, launch %s)',
+      (_dispatcher, launch) => {
+        const openManager = {
+          id: 'open',
+          label: 'Open Release Desk',
+          kind: managerFixtures.openManagerAction.kind,
+          managerKey: 'release-desk',
+          managerName: 'Release Desk',
+          task: 'Check the open release tickets',
+          ...(launch ? { launch } : {}),
+        };
+        expect(notifyActionSchema.safeParse(openManager).success).toBe(false);
+      }
+    );
+
+    it('refuses notify when an action is open-manager and inserts no row', async () => {
+      const openManager = {
+        id: 'open',
+        label: 'Open',
+        kind: 'open-manager',
+        managerKey: 'release-desk',
+        managerName: 'Release Desk',
+      };
+      await expect(call('notify', { title: 'x', actions: [openManager] })).rejects.toThrow();
+      expect(db.prepare('SELECT * FROM notifications').all()).toHaveLength(0);
     });
 
     it('rejects a well-formed run-combo at the schema', () => {

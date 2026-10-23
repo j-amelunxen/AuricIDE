@@ -49,7 +49,33 @@ describe('useProjectManagers', () => {
     mockRegistry.mockRejectedValueOnce(new Error('Tauri IPC is unavailable (manager_list)'));
     const { result } = renderHook(() => useProjectManagers());
     await waitFor(() => expect(mockRegistry).toHaveBeenCalled());
-    expect(result.current).toEqual({ managers: [], error: null });
+    expect(result.current).toEqual({ managers: [], error: null, loaded: false });
+  });
+
+  it('is not loaded until the first answer, and loaded when that answer is empty', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    mockRegistry.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { result } = renderHook(() => useProjectManagers());
+    expect(result.current.loaded).toBe(false);
+    answer({ managers: [], error: null });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.managers).toEqual([]);
+  });
+
+  it('stays loaded after later answers with data', async () => {
+    mockRegistry.mockResolvedValueOnce(registryWith());
+    const { result } = renderHook(() => useProjectManagers());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    mockRegistry.mockResolvedValueOnce(registryWith('a'));
+    act(() => void window.dispatchEvent(new Event(MANAGERS_CHANGED_EVENT)));
+    await waitFor(() => expect(result.current.managers).toHaveLength(1));
+    expect(result.current.loaded).toBe(true);
+  });
+
+  it('counts a failed read as an answer', async () => {
+    mockRegistry.mockRejectedValueOnce(new Error('disk gone'));
+    const { result } = renderHook(() => useProjectManagers());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
   });
 
   it('keeps the registry error so a writer can be disabled', async () => {

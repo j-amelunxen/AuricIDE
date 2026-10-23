@@ -86,6 +86,8 @@ pub struct AgentConfig {
 pub struct LaunchToBook {
     pub key: String,
     pub instructions: Option<String>,
+    /// A supervisor restored after an app restart: a new session, no launch.
+    pub restored: bool,
 }
 
 impl AgentConfig {

@@ -20,3 +20,13 @@ export async function revealInFileManager(path: string): Promise<void> {
   const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
   await revealItemInDir(path);
 }
+
+/**
+ * Opens `path` with the system's default app via tauri-plugin-opener. The
+ * capability only covers the supervisor run folders (`~/.auric/supervisors`),
+ * so anything else is refused by the plugin.
+ */
+export async function openPathInDefaultApp(path: string): Promise<void> {
+  const { openPath } = await import('@tauri-apps/plugin-opener');
+  await openPath(path);
+}

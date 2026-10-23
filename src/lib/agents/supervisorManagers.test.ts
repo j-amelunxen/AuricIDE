@@ -154,6 +154,9 @@ describe('managerRefusalCode', () => {
     instructions_too_large: "INSTRUCTIONS.md of 'Release Desk' is 20000 bytes; the limit is 16384.",
     registry_unreadable:
       'supervisor-managers.json could not be read: expected value at line 1. It was left as it is.',
+    human_drafting: 'The human is typing in this terminal; the message was not sent.',
+    manager_create_failed:
+      "Could not create a run folder for 'Release Desk': Permission denied (os error 13)",
   };
 
   it('has a sample for every code in the contract', () => {

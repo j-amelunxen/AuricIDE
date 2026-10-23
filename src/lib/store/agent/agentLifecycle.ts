@@ -19,6 +19,7 @@ import {
   SUPPORTED_SUPERVISOR_PROVIDERS,
   supervisorProvidersOf,
 } from '@/lib/config/supervisorProviders';
+import { presentationOf, readManagerPresentations } from '@/lib/quickAccess/managerPresentation';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import {
@@ -233,6 +234,8 @@ export async function handleSpawnSupervisor(
   if (!chosenProvider) {
     if (candidates.length <= 1) {
       chosenProvider = candidates[0];
+    } else if (skill?.automatic) {
+      return { kind: 'cancelled' };
     } else if (host.openSupervisorProviderChoice) {
       const candidateDetails = candidates.map((id) => {
         const found = providers.find((p) => p.id === id);
@@ -352,7 +355,11 @@ export async function handleSpawnLinkedSupervisor(
   const config = await supervisorConfigFor(host, policy, providers, {
     provider,
     task: launch.task?.trim() ?? '',
-    model: launch.model ?? undefined,
+    // A manager reached by key keeps its stored model when the client names none.
+    model:
+      launch.model ??
+      (launch.key ? presentationOf(readManagerPresentations(), launch.key).model : null) ??
+      undefined,
     key: launch.key ?? undefined,
   });
   if (!config) return { kind: 'nothing-visible' };

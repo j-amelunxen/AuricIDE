@@ -2388,6 +2388,17 @@ describe('sendAgentInput', () => {
     expect(agents.sendMessageToAgent).toHaveBeenCalledWith('agent-1', '1\n');
   });
 
+  it('passes the automatic mark on to the wire', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    const agents = await import('../tauri/agents');
+
+    await store.getState().sendAgentInput('agent-1', 'task\r', { automatic: true });
+
+    expect(agents.sendMessageToAgent).toHaveBeenCalledWith('agent-1', 'task\r', {
+      automatic: true,
+    });
+  });
+
   it('does not decide the bytes itself — a free-text send goes through verbatim', async () => {
     const store = createStore<AgentSlice>()(createAgentSlice);
     const agents = await import('../tauri/agents');

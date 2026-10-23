@@ -583,8 +583,14 @@ fn admit_supervisor(
     } else {
         Vec::new()
     };
+    let runs_root = crate::supervisor::supervisor_runs_root(home);
     let resume_dir = requested_dir
-        .map(|requested| crate::supervisor::reuse_supervisor_run_dir(home, &requested))
+        .map(|requested| {
+            crate::supervisor::reuse_supervisor_run_dir(home, &requested).map_err(|error| {
+                managers::missing_manager_folder(&candidates, &runs_root, &requested)
+                    .unwrap_or(error)
+            })
+        })
         .transpose()?;
     let resume_folder = resume_dir
         .as_deref()
@@ -604,7 +610,7 @@ fn admit_supervisor(
     let cwd = match (resume_dir, manager) {
         (Some(dir), _) => dir,
         (None, Some(manager)) => {
-            let folder = crate::supervisor::supervisor_runs_root(home).join(&manager.run_dir);
+            let folder = managers::resolve_manager_run(&runs_root, &manager.run_dir)?;
             crate::supervisor::reuse_supervisor_run_dir(home, &folder.to_string_lossy())?
         }
         (None, None) => {
@@ -639,19 +645,15 @@ fn admit_supervisor(
         }
     }
     if let (Some(manager), Some(registry)) = (manager, registry.as_deref()) {
-        let instructions = managers::read_instructions(
-            registry,
-            &crate::supervisor::supervisor_runs_root(home),
-            &manager.key,
-        )?;
+        let instructions = managers::read_instructions(registry, &runs_root, &manager.key)?;
         // A restored session replays the prompt it started with, so what
-        // it was launched with is not these instructions.
-        if config.replaces_agent_id.is_none() {
-            config.launch_to_book = Some(super::types::LaunchToBook {
-                key: manager.key.clone(),
-                instructions,
-            });
-        }
+        // it was launched with is not these instructions: it books a new
+        // session and leaves the launch as it was.
+        config.launch_to_book = Some(super::types::LaunchToBook {
+            key: manager.key.clone(),
+            restored: config.replaces_agent_id.is_some(),
+            instructions,
+        });
         config.name = manager.name.clone();
     }
     // The key is an address, not something the run depends on: a folder that
@@ -1195,12 +1197,21 @@ fn book_manager_launch(app: &AppHandle, booking: &super::types::LaunchToBook) {
         return;
     };
     let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
-    if let Err(error) = crate::supervisor::managers::record_launch(
-        &registry,
-        &booking.key,
-        booking.instructions.as_deref(),
-    ) {
+    if let Err(error) = apply_booking(&registry, booking) {
         eprintln!("Project Manager: {error}");
+    }
+}
+
+/// A restore books a new session only; any other start books the launch too.
+pub(super) fn apply_booking(
+    registry: &std::path::Path,
+    booking: &super::types::LaunchToBook,
+) -> Result<(), String> {
+    use crate::supervisor::managers;
+    if booking.restored {
+        managers::record_session_start(registry, &booking.key)
+    } else {
+        managers::record_launch(registry, &booking.key, booking.instructions.as_deref())
     }
 }
 

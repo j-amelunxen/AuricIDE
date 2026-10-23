@@ -8,19 +8,26 @@ import {
   type ManagerRegistry,
 } from '@/lib/tauri/supervisorManagers';
 
-const NO_MANAGERS: ManagerRegistry = { managers: [], error: null };
+/** The registry as the UI sees it: `loaded` turns true with the first answer, success or failure. */
+export type ProjectManagersState = ManagerRegistry & { loaded: boolean };
+
+const NO_MANAGERS: ProjectManagersState = { managers: [], error: null, loaded: false };
 
 const NO_IPC = /Tauri IPC is unavailable/;
 
 /** The registry after a failed read: the last good list stays, the error is named (browser mode says nothing). */
-function afterFailedRead(previous: ManagerRegistry, failure: unknown): ManagerRegistry {
+function afterFailedRead(previous: ProjectManagersState, failure: unknown): ProjectManagersState {
   const message = failure instanceof Error ? failure.message : String(failure);
   if (NO_IPC.test(message)) return previous;
-  return { managers: previous.managers, error: `The managers could not be read: ${message}` };
+  return {
+    managers: previous.managers,
+    error: `The managers could not be read: ${message}`,
+    loaded: true,
+  };
 }
 
 /** A re-read that found the same content keeps the old object, so nothing downstream re-syncs. */
-const sameContent = (a: ManagerRegistry, b: ManagerRegistry) =>
+const sameContent = (a: ProjectManagersState, b: ProjectManagersState) =>
   JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -30,13 +37,16 @@ const sameContent = (a: ManagerRegistry, b: ManagerRegistry) =>
  * A read that fails keeps the last good list; a read that is overtaken by a
  * newer one is dropped.
  */
-export function useProjectManagers(): ManagerRegistry {
+export function useProjectManagers(): ProjectManagersState {
   const [registry, setRegistry] = useState(NO_MANAGERS);
 
   useEffect(() => {
     let alive = true;
     let latestRead = 0;
-    const settle = (read: number, next: (previous: ManagerRegistry) => ManagerRegistry) => {
+    const settle = (
+      read: number,
+      next: (previous: ProjectManagersState) => ProjectManagersState
+    ) => {
       if (!alive || read !== latestRead) return;
       setRegistry((previous) => {
         const updated = next(previous);
@@ -48,7 +58,7 @@ export function useProjectManagers(): ManagerRegistry {
       const mine = latestRead;
       managerRegistry().then(
         (next) => {
-          settle(mine, () => next);
+          settle(mine, () => ({ ...next, loaded: true }));
           if (alive && mine === latestRead && next.error === null) {
             forgetRemovedManagers(next.managers.map((manager) => manager.key));
           }

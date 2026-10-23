@@ -122,6 +122,23 @@ export type NotificationAction =
   | {
       id: string;
       label: string;
+      /**
+       * Opens a Project Manager, with a task when the reminder has one
+       * (`docs/design-project-manager.md`, "The working loop"). The task is
+       * honoured only for a user-authored payload — see `trust.ts` — and the
+       * kind is not in the MCP vocabulary at all.
+       */
+      kind: 'open-manager';
+      managerKey: string;
+      /** Snapshot for the row; the key decides who is opened. */
+      managerName: string;
+      task?: string;
+      /** `auto` starts on arrival, as for `run-skill`; absent and `direct` start on the click. */
+      launch?: ManagerLaunch;
+    }
+  | {
+      id: string;
+      label: string;
       kind: 'run-combo';
       comboId: string;
       comboLabel: string;
@@ -207,6 +224,9 @@ export type NotificationLaunch = 'auto' | 'direct' | 'dialog';
 
 export type ConductorLaunch = NotificationLaunch;
 
+/** A manager has no spawn dialog to stop at, so `dialog` is not a launch mode for it. */
+export type ManagerLaunch = Exclude<NotificationLaunch, 'dialog'>;
+
 export type NotificationOpenTarget =
   | { type: 'file'; path: string; line?: number }
   | { type: 'ticket'; ticketId: string }
@@ -281,6 +301,14 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     invocation: z.string().optional(),
     launch: z.enum(['auto', 'direct', 'dialog']).optional(),
     headless: z.boolean().optional(),
+  }),
+  z.object({
+    ...identity,
+    kind: z.literal('open-manager'),
+    managerKey: nonEmpty,
+    managerName: nonEmpty,
+    task: z.string().optional(),
+    launch: z.enum(['auto', 'direct']).optional(),
   }),
   z.object({
     ...identity,

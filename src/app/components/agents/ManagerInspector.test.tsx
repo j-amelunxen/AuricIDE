@@ -64,12 +64,22 @@ const memory = (over: Partial<ManagerMemorySummary> = {}): ManagerMemorySummary 
   findings: [],
   okf: 'ok',
   checkedAt: '2026-10-22T11:00:00Z',
+  lastSession: null,
   ...over,
 });
+
+const SESSION = {
+  title: 'Release 4.2 planning',
+  description: 'Agreed the cut-off and parked the migration.',
+  atMs: Date.now() - 3 * 3600_000,
+  path: 'sessions/release-42.md',
+};
 
 function show(props: Partial<React.ComponentProps<typeof ManagerInspector>> = {}) {
   const handlers = {
     onOpen: vi.fn(),
+    onAsk: vi.fn(),
+    onOpenFile: vi.fn(),
     onEditInstructions: vi.fn(),
     onRestart: vi.fn(),
     onToggleFolder: vi.fn(),
@@ -173,6 +183,8 @@ describe('ManagerInspector', () => {
         folderOpen={false}
         reloadToken={0}
         onOpen={vi.fn()}
+        onAsk={vi.fn()}
+        onOpenFile={vi.fn()}
         onEditInstructions={vi.fn()}
         onRestart={vi.fn()}
         onToggleFolder={vi.fn()}
@@ -311,6 +323,8 @@ describe('ManagerInspector', () => {
         folderOpen={false}
         reloadToken={0}
         onOpen={vi.fn()}
+        onAsk={vi.fn()}
+        onOpenFile={vi.fn()}
         onEditInstructions={vi.fn()}
         onRestart={vi.fn()}
         onToggleFolder={vi.fn()}
@@ -326,11 +340,67 @@ describe('ManagerInspector', () => {
         folderOpen={false}
         reloadToken={1}
         onOpen={vi.fn()}
+        onAsk={vi.fn()}
+        onOpenFile={vi.fn()}
         onEditInstructions={vi.fn()}
         onRestart={vi.fn()}
         onToggleFolder={vi.fn()}
       />
     );
     expect(await screen.findByText('1 concept · checked with okf')).toBeInTheDocument();
+  });
+
+  describe('last session', () => {
+    it('says there is no session note yet when the manager wrote none', async () => {
+      show();
+      expect(await screen.findByText('No session note yet')).toBeInTheDocument();
+    });
+
+    it("shows the manager's own description and how long ago, with the full text on hover", async () => {
+      managerMemory.mockResolvedValue(memory({ lastSession: SESSION }));
+      show();
+      const description = await screen.findByText(SESSION.description);
+      expect(description).toHaveAttribute('title', SESSION.description);
+      expect(screen.getByText('3h ago')).toBeInTheDocument();
+    });
+
+    it('opens the session note from the memory bundle', async () => {
+      managerMemory.mockResolvedValue(memory({ lastSession: SESSION }));
+      const { onOpenFile } = show();
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(SESSION.description) }));
+      expect(onOpenFile).toHaveBeenCalledWith(`${RUN.path}/knowledge/sessions/release-42.md`);
+    });
+
+    it('picks up a session that was written after the inspector was mounted', async () => {
+      const handlers = { onOpen: vi.fn(), onAsk: vi.fn(), onOpenFile: vi.fn() };
+      const props = {
+        manager: MANAGER,
+        run: RUN,
+        liveSupervisor: undefined,
+        folderOpen: false,
+        onEditInstructions: vi.fn(),
+        onRestart: vi.fn(),
+        onToggleFolder: vi.fn(),
+        ...handlers,
+      };
+      const { rerender } = render(<ManagerInspector {...props} reloadToken={0} />);
+      await screen.findByText('No session note yet');
+      managerMemory.mockResolvedValue(memory({ lastSession: SESSION }));
+      rerender(<ManagerInspector {...props} reloadToken={1} />);
+      expect(await screen.findByText(SESSION.description)).toBeInTheDocument();
+      expect(screen.queryByText('No session note yet')).toBeNull();
+    });
+  });
+
+  it('opens the memory index from the memory line', async () => {
+    const { onOpenFile } = show();
+    fireEvent.click(await screen.findByRole('button', { name: /48 concepts/ }));
+    expect(onOpenFile).toHaveBeenCalledWith(`${RUN.path}/knowledge/index.md`);
+  });
+
+  it('offers Ask next to Open', () => {
+    const { onAsk } = show();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Release Desk…' }));
+    expect(onAsk).toHaveBeenCalledTimes(1);
   });
 });

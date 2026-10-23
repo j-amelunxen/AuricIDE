@@ -12,10 +12,20 @@ export interface ManagerPresentation {
   menuBar: boolean;
   /** An accelerator such as `Control+Alt+KeyR`, answered while another app is in front. */
   shortcut: string | null;
+  /**
+   * A launch option like the Supervisor tile's, never a grant. Null means the
+   * supervisor default; a model the provider no longer offers is dropped at launch.
+   */
+  model: string | null;
 }
 
 /** What is stored: only what the human changed, so a new field never re-arms an old choice. */
-type StoredPresentation = Partial<Omit<ManagerPresentation, 'shortcut'>> & { shortcut?: string };
+type StoredPresentation = Partial<Omit<ManagerPresentation, 'shortcut' | 'model'>> & {
+  shortcut?: string;
+  model?: string;
+};
+
+const TEXT_FIELDS = ['shortcut', 'model'] as const;
 
 export type ManagerPresentations = Record<string, StoredPresentation>;
 
@@ -27,8 +37,9 @@ function parseStored(value: unknown): StoredPresentation {
   const stored: StoredPresentation = {};
   if (typeof value.quickAccess === 'boolean') stored.quickAccess = value.quickAccess;
   if (typeof value.menuBar === 'boolean') stored.menuBar = value.menuBar;
-  if (typeof value.shortcut === 'string' && value.shortcut.trim() !== '') {
-    stored.shortcut = value.shortcut.trim();
+  for (const field of TEXT_FIELDS) {
+    const text = value[field];
+    if (typeof text === 'string' && text.trim() !== '') stored[field] = text.trim();
   }
   return stored;
 }
@@ -58,15 +69,21 @@ export function presentationOf(all: ManagerPresentations, key: string): ManagerP
     quickAccess: stored.quickAccess ?? true,
     menuBar: stored.menuBar ?? true,
     shortcut: stored.shortcut ?? null,
+    model: stored.model ?? null,
   };
 }
 
 export function updateManagerPresentation(key: string, patch: Partial<ManagerPresentation>): void {
   const all = readManagerPresentations();
-  const { shortcut, ...flags } = patch;
+  const { shortcut, model, ...flags } = patch;
   const next: StoredPresentation = { ...all[key], ...flags };
-  if (shortcut === null) delete next.shortcut;
-  else if (shortcut !== undefined) next.shortcut = shortcut;
+  for (const [field, value] of [
+    ['shortcut', shortcut],
+    ['model', model],
+  ] as const) {
+    if (value === null) delete next[field];
+    else if (value !== undefined) next[field] = value;
+  }
   writeAppPref(APP_CONFIG_KEYS.supervisorManagers, JSON.stringify({ ...all, [key]: next }));
 }
 
@@ -88,8 +105,11 @@ const listed = (
   surface: 'quickAccess' | 'menuBar'
 ) => managers.filter((m) => m.archivedAt === null && presentationOf(all, m.key)[surface]);
 
+const hasRunFolder = (manager: SupervisorManager) => manager.runMissing !== true;
+
 export const managersForQuickAccess = (managers: SupervisorManager[], all: ManagerPresentations) =>
   listed(managers, all, 'quickAccess');
 
 export const managersForMenuBar = (managers: SupervisorManager[], all: ManagerPresentations) =>
-  listed(managers, all, 'menuBar');
+  // An entry whose folder is gone could only fail when picked; the tile says "Folder missing".
+  listed(managers, all, 'menuBar').filter(hasRunFolder);

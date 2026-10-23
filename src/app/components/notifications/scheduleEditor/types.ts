@@ -85,11 +85,34 @@ export const DEFAULT_CONDUCTOR_DRAFT: ConductorActionDraft = {
   launch: 'auto',
 };
 
+/**
+ * Opening a Project Manager. It names an app-wide thing, so unlike a skill,
+ * combo or conductor run it needs no project. Nothing here is a snapshot of
+ * something that can drift: the key is the identity, the name is for display.
+ */
+export type ManagerActionDraft = {
+  choice: 'manager';
+  managerKey: string;
+  managerName: string;
+  /** Blank means "just open it". */
+  task: string;
+  launch: 'auto' | 'direct';
+};
+
+export const DEFAULT_MANAGER_DRAFT: ManagerActionDraft = {
+  choice: 'manager',
+  managerKey: '',
+  managerName: '',
+  task: '',
+  launch: 'direct',
+};
+
 export type ActionDraft =
   | { choice: 'none' }
   | ({ choice: 'task'; task: string } & TaskLaunchDraft)
   | { choice: 'skill'; snapshot?: RunSkillAction }
   | { choice: 'combo'; snapshot?: RunComboAction }
-  | ConductorActionDraft;
+  | ConductorActionDraft
+  | ManagerActionDraft;
 
 export const DISCOVERED_PREFIX = 'discovered:';

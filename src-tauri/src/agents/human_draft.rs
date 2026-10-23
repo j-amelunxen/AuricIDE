@@ -1,10 +1,13 @@
 //! Whether a person is halfway through a message in an agent's console.
 //!
-//! The IDE types into an agent's input box on its own in one place: the
-//! supervisor pingback (`control_socket/pingback.rs`). Typed while the human
-//! has a draft there, the notice joins the draft and the Enter submits both.
-//! So every keystroke the human sends (`shell_write`, `agent_send_message`) is
-//! observed here, and the pingback holds back while a draft is open.
+//! The IDE types into an agent's input box on its own in two places: the
+//! supervisor pingback (`control_socket/pingback.rs`) and an automatic message
+//! (`agent_send_message` with `automatic`, e.g. a task from a reminder that
+//! started without a click). Typed while the human has a draft there, the text
+//! joins the draft and the Enter submits both. So every keystroke the human
+//! sends (`shell_write`, `agent_send_message`) is observed here, both hold
+//! back while a draft is open, and automatic text is never observed: it is
+//! not the human's.
 //!
 //! "Open" is read from the keystrokes alone, not from the screen: printable
 //! text opens a draft, Enter or Ctrl-C closes it. Clearing a draft by other

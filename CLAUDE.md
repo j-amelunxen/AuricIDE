@@ -699,6 +699,22 @@ or `ProjectManager*`: both already mean the tickets.
   said at app start; one inbox note only when okf worked and then broke
   (`machine:okf:<state>`). Without okf a manager works as before and loses
   only the okf half of the check.
+- **The working loop: Ask, hear back, see where it stands.** "Ask <name>…"
+  hands a manager work: a running one gets it as one message
+  (`sendAgentInput`), a stopped one is resumed with it as the first task.
+  `openManager` serialises per key, so every door (tile, rail, menu bar,
+  notification, Ask) ends in one start and no task is dropped. A schedule
+  action `open-manager` does the same on a timer, trust and freshness as
+  `run-skill`; MCP `notify` rejects it. Automatic delivery sends with
+  `automatic: true` and Rust refuses it while the human has unsent text in
+  that terminal (`human_drafting`): the notification then stays a button.
+  Every ended session drops one inbox note with the manager's own newest
+  session concept (`lastSession`, decided by file time, never by
+  `generated.at`); quit, crash and power loss are caught up on the next start
+  through the registry's `session { startedAt, notedAt }`.
+  `manager_create` makes a manager without an earlier run. Fixture blocks
+  `ask`, `openManagerAction`, `sessionEnd`, `lastSession`, `create`,
+  `runMissing`, `presentation`.
 - **Presentation is an app pref, identity is Rust's.**
   `auric.supervisor.managers` (Quick Access, menu bar, shortcut) is keyed by
   manager key; a key the registry no longer has is ignored.

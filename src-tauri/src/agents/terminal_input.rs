@@ -82,26 +82,138 @@ impl BracketedPasteTracker {
     }
 }
 
+/// Fixture `refusals.human_drafting`: an automatic message waits for a person
+/// who is halfway through their own.
+pub const HUMAN_DRAFTING: &str = "The human is typing in this terminal; the message was not sent.";
+
+/// What to write for a message, or why nothing is. An automatic message (one
+/// nobody clicked) is refused while the human has unsent text in the console,
+/// and is never booked as the human's keystrokes: it would otherwise count as
+/// a draft of theirs.
+fn message_to_write(
+    drafts: &super::human_draft::HumanDrafts,
+    agent_id: &str,
+    text: &str,
+    enter: bool,
+    bracketed_paste: bool,
+    automatic: bool,
+    now: std::time::Instant,
+) -> Result<String, String> {
+    if automatic && drafts.drafting(agent_id, now) {
+        return Err(HUMAN_DRAFTING.to_string());
+    }
+    let data = compose_message(text, enter, bracketed_paste);
+    if !automatic {
+        drafts.observe(agent_id, &data, now);
+    }
+    Ok(data)
+}
+
 /// A message from the IDE's own composers, written the way `send_input` on
-/// the control socket writes it, so both reach the agent alike.
+/// the control socket writes it, so both reach the agent alike. `automatic`
+/// marks a message nobody just sent by hand; absent means a person did.
 #[tauri::command]
-// code-gate: complexity-parameter-count - Tauri injects the State parameters; callers pass three
+// code-gate: complexity-parameter-count - Tauri injects the State parameters; callers pass four
 pub async fn agent_send_message(
     agent_id: String,
     text: String,
     enter: bool,
+    automatic: Option<bool>,
     terminals: tauri::State<'_, crate::commands::TerminalState>,
     buffers: tauri::State<'_, super::output_buffer::OutputBuffersState>,
     drafts: tauri::State<'_, super::human_draft::HumanDraftsState>,
 ) -> Result<(), String> {
-    let data = compose_message(&text, enter, buffers.bracketed_paste(&agent_id));
-    drafts.observe(&agent_id, &data, std::time::Instant::now());
+    let data = message_to_write(
+        &drafts,
+        &agent_id,
+        &text,
+        enter,
+        buffers.bracketed_paste(&agent_id),
+        automatic.unwrap_or(false),
+        std::time::Instant::now(),
+    )?;
     crate::commands::write_to_session(&terminals, &format!("agent-{agent_id}"), &data).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deliver(
+        drafts: &super::super::human_draft::HumanDrafts,
+        text: &str,
+        automatic: bool,
+    ) -> Result<String, String> {
+        message_to_write(
+            drafts,
+            "a",
+            text,
+            true,
+            true,
+            automatic,
+            std::time::Instant::now(),
+        )
+    }
+
+    #[test]
+    fn an_automatic_message_is_refused_while_the_human_has_a_draft_and_nothing_is_written() {
+        let drafts = super::super::human_draft::HumanDrafts::default();
+        drafts.observe("a", "half a thou", std::time::Instant::now());
+        let refused = deliver(&drafts, "do the thing", true).unwrap_err();
+        assert_eq!(refused, HUMAN_DRAFTING);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../src/lib/agents/supervisorManagers.fixtures.json"
+        ))
+        .unwrap();
+        let pattern = fixture["refusals"]["human_drafting"].as_str().unwrap();
+        assert!(regex::Regex::new(pattern).unwrap().is_match(&refused));
+    }
+
+    #[test]
+    fn an_automatic_message_is_sent_when_nobody_is_typing_and_is_no_draft_afterwards() {
+        let drafts = super::super::human_draft::HumanDrafts::default();
+        let sent = deliver(&drafts, "do the thing", true).unwrap();
+        assert_eq!(sent, "do the thing\r");
+        assert!(!drafts.drafting("a", std::time::Instant::now()));
+        let without_enter = message_to_write(
+            &drafts,
+            "a",
+            "no enter yet",
+            false,
+            false,
+            true,
+            std::time::Instant::now(),
+        );
+        assert!(without_enter.is_ok());
+        assert!(
+            !drafts.drafting("a", std::time::Instant::now()),
+            "text left unsubmitted by an automatic message is not the human's draft"
+        );
+    }
+
+    #[test]
+    fn a_message_without_the_flag_is_never_refused_and_is_observed_as_before() {
+        let drafts = super::super::human_draft::HumanDrafts::default();
+        drafts.observe("a", "half a thou", std::time::Instant::now());
+        let sent = deliver(&drafts, "my answer", false).unwrap();
+        assert_eq!(sent, compose_message("my answer", true, true));
+        assert!(
+            !drafts.drafting("a", std::time::Instant::now()),
+            "its Enter closed the draft"
+        );
+        let open = message_to_write(
+            &drafts,
+            "a",
+            "typing",
+            false,
+            false,
+            false,
+            std::time::Instant::now(),
+        )
+        .unwrap();
+        assert_eq!(open, "typing");
+        assert!(drafts.drafting("a", std::time::Instant::now()));
+    }
 
     #[test]
     fn a_short_answer_stays_keystrokes_even_with_bracketed_paste_on() {

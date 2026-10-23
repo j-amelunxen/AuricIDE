@@ -42,19 +42,42 @@ describe('parseManagerPresentations', () => {
   });
 });
 
+describe("a manager's model", () => {
+  beforeEach(() => localStorage.clear());
+
+  it('is read as a trimmed string and ignored when blank or not a string', () => {
+    const raw = JSON.stringify({ a: { model: ' haiku ' }, b: { model: '  ' }, c: { model: 3 } });
+    expect(parseManagerPresentations(raw)).toEqual({ a: { model: 'haiku' }, b: {}, c: {} });
+  });
+
+  it('defaults to none, meaning the supervisor default', () => {
+    expect(presentationOf({}, 'a').model).toBeNull();
+    expect(presentationOf({ a: { model: 'haiku' } }, 'a').model).toBe('haiku');
+  });
+
+  it('is stored next to the other choices and dropped when cleared', () => {
+    updateManagerPresentation('a', { shortcut: 'F5' });
+    updateManagerPresentation('a', { model: 'haiku' });
+    expect(readManagerPresentations()).toEqual({ a: { shortcut: 'F5', model: 'haiku' } });
+    updateManagerPresentation('a', { model: null });
+    expect(readManagerPresentations()).toEqual({ a: { shortcut: 'F5' } });
+  });
+});
+
 describe('presentationOf', () => {
   it('shows a manager in both places, without a shortcut, until told otherwise', () => {
     expect(presentationOf({}, 'release-desk')).toEqual({
       quickAccess: true,
       menuBar: true,
       shortcut: null,
+      model: null,
     });
   });
 
   it('applies what was stored for that key only', () => {
     const all = { a: { quickAccess: false, shortcut: 'F5' }, b: { menuBar: false } };
-    expect(presentationOf(all, 'a')).toEqual({ quickAccess: false, menuBar: true, shortcut: 'F5' });
-    expect(presentationOf(all, 'b')).toEqual({ quickAccess: true, menuBar: false, shortcut: null });
+    expect(presentationOf(all, 'a')).toMatchObject({ quickAccess: false, shortcut: 'F5' });
+    expect(presentationOf(all, 'b')).toMatchObject({ menuBar: false, shortcut: null });
   });
 });
 
@@ -117,5 +140,17 @@ describe('forgetRemovedManagers', () => {
     forgetRemovedManagers(['kept', 'other']);
     window.removeEventListener(APP_CONFIG_CHANGED_EVENT, changed);
     expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe('managersForMenuBar and a missing run folder', () => {
+  it('leaves out a manager whose folder is gone: the menu bar entry would only fail', () => {
+    const gone = { ...manager('gone'), runMissing: true };
+    expect(managersForMenuBar([manager('here'), gone], {}).map((m) => m.key)).toEqual(['here']);
+  });
+
+  it('keeps it in Quick Access, where the tile can say "Folder missing"', () => {
+    const gone = { ...manager('gone'), runMissing: true };
+    expect(managersForQuickAccess([gone], {}).map((m) => m.key)).toEqual(['gone']);
   });
 });

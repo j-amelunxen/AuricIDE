@@ -83,6 +83,11 @@ export interface SupervisorSkillLaunch {
   managerKey?: string;
   /** Start a new supervisor even without a task, rather than open the running one. */
   forceNew?: boolean;
+  /**
+   * Nobody clicked: a launch that would need a dialog (the provider choice)
+   * answers `cancelled` instead of opening it.
+   */
+  automatic?: boolean;
 }
 
 /** `supervisors.spawn` over the supervisor link (`docs/design-supervisor-link.md`). */
@@ -250,7 +255,11 @@ export interface AgentSlice {
    * stdin. Used for human interaction from the feed composer in the Agent
    * Console. The caller decides the exact bytes; this is only the wire.
    */
-  sendAgentInput: (agentId: string, text: string) => Promise<void>;
+  sendAgentInput: (
+    agentId: string,
+    text: string,
+    options?: { automatic?: boolean }
+  ) => Promise<void>;
   /**
    * The bookkeeping half of `sendAgentInput`: records what was typed in the
    * feed without writing it. For input that already reached the PTY another

@@ -153,11 +153,11 @@ export function SupervisorTile({
     onActivity: (active) => onWheelActivity?.(active),
   });
 
-  // Every non-archived manager is reachable from here, whether or not it has a tile.
+  // Every non-archived manager with a folder is reachable from here, whether or not it has a tile.
   const projectManagers = useMemo(
     () =>
       managers
-        .filter((manager) => manager.archivedAt === null)
+        .filter((manager) => manager.archivedAt === null && manager.runMissing !== true)
         .sort((a, b) => a.name.localeCompare(b.name)),
     [managers]
   );

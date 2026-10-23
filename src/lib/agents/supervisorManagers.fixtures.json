@@ -182,7 +182,9 @@
     "manager_not_found": "^No Project Manager has the key '.+'\\.$",
     "manager_not_archived": "^The Project Manager '.+' must be archived before it is removed\\.$",
     "instructions_too_large": "^INSTRUCTIONS\\.md of '.+' is \\d+ bytes; the limit is 16384\\.$",
-    "registry_unreadable": "^supervisor-managers\\.json could not be read: .+ It was left as it is\\.$"
+    "registry_unreadable": "^supervisor-managers\\.json could not be read: .+ It was left as it is\\.$",
+    "manager_create_failed": "^Could not create a run folder for '.+': .+$",
+    "human_drafting": "^The human is typing in this terminal; the message was not sent\\.$"
   },
   "instructions": {
     "fileName": "INSTRUCTIONS.md",
@@ -263,5 +265,207 @@
       "versionPattern": "^go version go(\\d+)\\.(\\d+)(?:\\.(\\d+))?",
       "fix": "brew install go"
     }
+  },
+  "create": {
+    "$comment": "manager_create { name }: a Project Manager without an earlier run. Rust creates a fresh run folder under the runs root exactly as a new supervisor launch names it, then runs promotion steps 3-6 on it (name rules, key from the name, INSTRUCTIONS.md and knowledge/ templates, append). If a promotion step refuses, the empty folder is removed again, so a refused name leaves nothing behind. A folder that cannot be created is manager_create_failed.",
+    "keyFrom": "name"
+  },
+  "runMissing": {
+    "$comment": "A manager whose runDir no longer resolves under the runs root stays in manager_list with runMissing: true instead of disappearing. The UI says 'Folder missing', offers no Open, Ask or Edit Instructions, and offers Archive (active) or Remove (archived). Open by key answers manager_run_missing.",
+    "field": "runMissing"
+  },
+  "lastSession": {
+    "$comment": "Where a manager stands, without reading its terminal: the newest non-deprecated concept in knowledge/sessions/, as the manager wrote it. Newest by generated.at (RFC 3339) when it parses and is not later than the file's modification time plus one day, else by the modification time, so a model-written future date cannot pin an old note. index.md is not a concept; a file with missing or broken front matter is not a session. Part of manager_memory's summary as lastSession: { title, description, atMs, path } or null.",
+    "section": "sessions",
+    "cases": [
+      {
+        "name": "none",
+        "files": [],
+        "picks": null
+      },
+      {
+        "name": "generated wins over mtime",
+        "files": [
+          {
+            "file": "a.md",
+            "status": "stable",
+            "generatedAt": "2026-10-20T09:00:00Z",
+            "mtimeMs": 1792700000000
+          },
+          {
+            "file": "b.md",
+            "status": "stable",
+            "generatedAt": "2026-10-22T09:00:00Z",
+            "mtimeMs": 1792663200000
+          }
+        ],
+        "picks": "b.md"
+      },
+      {
+        "name": "a model-written future date cannot pin an old note",
+        "files": [
+          {
+            "file": "a.md",
+            "status": "stable",
+            "generatedAt": "2099-01-01T00:00:00Z",
+            "mtimeMs": 1761300000000
+          },
+          {
+            "file": "b.md",
+            "status": "stable",
+            "generatedAt": null,
+            "mtimeMs": 1761400000000
+          }
+        ],
+        "picks": "b.md"
+      },
+      {
+        "name": "a time zone offset is compared as the instant it is",
+        "files": [
+          {
+            "file": "a.md",
+            "status": "stable",
+            "generatedAt": "2026-10-22T11:00:00+02:00",
+            "mtimeMs": 1792700000000
+          },
+          {
+            "file": "b.md",
+            "status": "stable",
+            "generatedAt": "2026-10-22T09:30:00Z",
+            "mtimeMs": 1792700000000
+          }
+        ],
+        "picks": "b.md"
+      },
+      {
+        "name": "deprecated skipped",
+        "files": [
+          {
+            "file": "a.md",
+            "status": "stable",
+            "generatedAt": "2026-10-20T09:00:00Z",
+            "mtimeMs": 0
+          },
+          {
+            "file": "b.md",
+            "status": "deprecated",
+            "generatedAt": "2026-10-22T09:00:00Z",
+            "mtimeMs": 0
+          }
+        ],
+        "picks": "a.md"
+      },
+      {
+        "name": "mtime when generated is absent or unreadable",
+        "files": [
+          {
+            "file": "a.md",
+            "status": "stable",
+            "generatedAt": "not a date",
+            "mtimeMs": 1761400000000
+          },
+          {
+            "file": "b.md",
+            "status": "stable",
+            "generatedAt": null,
+            "mtimeMs": 1761300000000
+          }
+        ],
+        "picks": "a.md"
+      },
+      {
+        "name": "broken front matter is not a session",
+        "files": [
+          {
+            "file": "a.md",
+            "status": null,
+            "generatedAt": null,
+            "mtimeMs": 1761400000000,
+            "brokenFrontMatter": true
+          },
+          {
+            "file": "b.md",
+            "status": "draft",
+            "generatedAt": null,
+            "mtimeMs": 1761300000000
+          }
+        ],
+        "picks": "b.md"
+      }
+    ]
+  },
+  "sessionEnd": {
+    "$comment": "One inbox notification per ended manager session, after that session's memory check. A session is identified by its start, the registry field session.startedAt, booked on every manager start including a restore after an app restart (lastLaunch is not it: it stays the hash of the injected prompt and a restore books none). Exit and kill note it when they happen and set session.notedAt = startedAt; a session that ended with an app quit, a crash or power loss is caught up on the next app start: any non-archived manager whose session.startedAt is set and whose notedAt differs from it. An entry without the field is not caught up. The dedupe key uses the start, the one thing both paths know. Never a toast: a finished session is not an alarm. 'Wrote a note' is decided by file time, never by a model-written timestamp: the newest session concept whose modification time is >= the session start floored to the whole second. Its description (else its title) is the body, cleaned of control characters and cut to bodyMaxChars; with no such note the body says so plainly. The problem count is the full count before the prompt cap, scan_truncated not counted; a truncated scan says 'at least'. The action opens the manager on a click; it carries no task and no launch.",
+    "level": "info",
+    "dispatcher": "system",
+    "dedupeKey": "manager-session:<key>:<startedAtMs>",
+    "bodyMaxChars": 280,
+    "title": "<name> finished a session",
+    "bodyWithNote": "<description>",
+    "bodyWithoutNote": "<name> ended this session without writing a session note.",
+    "bodyMemoryProblems": " The memory check found <n> problem(s).",
+    "action": {
+      "kind": "open-manager",
+      "label": "Open <name>"
+    }
+  },
+  "openManagerAction": {
+    "$comment": "Notification and schedule action that opens a Project Manager, optionally with a task. A task goes to a running manager as one message (sendAgentInput: bracketed paste + Enter), to a stopped one as the first task of the resume. launch 'auto' starts on arrival only for a user-authored payload (dispatcher system or ui) whose occurrence is fresh (isFreshOccurrence), exactly as run-skill, and never switches the open project. The MCP notify vocabulary does not accept open-manager at all: a model must not hand another long-lived agent a task, not even behind a click.",
+    "kind": "open-manager",
+    "autoDelivery": {
+      "$comment": "A task delivered without a click (launch auto) to a running manager is sent with automatic: true. Rust refuses it with human_drafting while the human has unsent text in that terminal (the same HumanDrafts the pingback respects), and never books automatic text as human keystrokes. On that refusal, and whenever an automatic start would need a dialog (provider choice), nothing happens: the notification stays unread with its button. A click is never refused this way.",
+      "refusal": "human_drafting"
+    },
+    "fields": {
+      "required": ["id", "label", "managerKey", "managerName"],
+      "optional": ["task", "launch"]
+    },
+    "launchValues": ["auto", "direct"],
+    "cases": [
+      {
+        "dispatcher": "system",
+        "launch": "auto",
+        "fresh": true,
+        "result": "auto"
+      },
+      {
+        "dispatcher": "system",
+        "launch": "auto",
+        "fresh": false,
+        "result": "button"
+      },
+      {
+        "dispatcher": "ui",
+        "launch": "auto",
+        "fresh": true,
+        "result": "auto"
+      },
+      {
+        "dispatcher": "system",
+        "launch": null,
+        "fresh": true,
+        "result": "button"
+      },
+      {
+        "dispatcher": "agent",
+        "launch": "auto",
+        "fresh": true,
+        "result": "button"
+      },
+      {
+        "dispatcher": "mcp",
+        "launch": "auto",
+        "fresh": true,
+        "result": "rejected"
+      }
+    ]
+  },
+  "ask": {
+    "$comment": "'Ask <name>…' is the one way to hand a manager work from a tile, the rail or Settings. Same delivery as openManagerAction's task. With a task the start prompt still has the manager read its memory first, then work on that task without waiting for a go-ahead for it; anything beyond the task still waits. Empty or whitespace-only text is no task: Send stays disabled with a reason.",
+    "pickUpWithTask": "no-wait-for-this-task"
+  },
+  "presentation": {
+    "$comment": "App pref auric.supervisor.managers, keyed by manager key. model is optional: absent means the supervisor default (Rust's smallest ranked allowed model). A model is a launch option, never a grant: rank and modelReason rules apply unchanged; a model the provider no longer offers is dropped and the default used.",
+    "fields": ["showInQuickAccess", "showInMenuBar", "shortcut", "model"]
   }
 }

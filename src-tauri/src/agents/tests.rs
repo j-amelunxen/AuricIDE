@@ -1506,6 +1506,83 @@ fn a_manager_runs_under_its_name_and_a_plain_supervisor_keeps_its_own() {
 }
 
 #[test]
+fn opening_a_manager_by_key_whose_folder_is_gone_answers_manager_run_missing() {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    std::fs::remove_dir_all(world.run("2026-10-21_090000")).unwrap();
+
+    let refused = world.admit(None, Some("release-desk"), &[]).unwrap_err();
+
+    let fixture = managers_fixture();
+    let pattern = fixture["refusals"]["manager_run_missing"].as_str().unwrap();
+    assert!(
+        regex::Regex::new(pattern).unwrap().is_match(&refused),
+        "{refused}"
+    );
+    assert!(
+        refused.contains("'2026-10-21_090000'"),
+        "the folder name, not a path: {refused}"
+    );
+}
+
+fn manager_world_with_folder_gone() -> ManagerWorld {
+    let world = ManagerWorld::with_managers(
+        managers_fixture()["launchKey"]["managers"]
+            .as_array()
+            .unwrap(),
+    );
+    std::fs::remove_dir_all(world.run("2026-10-21_090000")).unwrap();
+    world
+}
+
+fn assert_run_missing_by_folder_name(refused: &str) {
+    let fixture = managers_fixture();
+    let pattern = fixture["refusals"]["manager_run_missing"].as_str().unwrap();
+    assert!(
+        regex::Regex::new(pattern).unwrap().is_match(refused),
+        "{refused}"
+    );
+    assert!(refused.contains("'2026-10-21_090000'"), "{refused}");
+}
+
+fn resume_by_path(world: &ManagerWorld, folder: &str) -> Result<AgentConfig, String> {
+    let path = crate::supervisor::supervisor_runs_root(world.home.path()).join(folder);
+    world.admit_config(
+        supervisor_test_config(serde_json::json!({
+            "role": "supervisor", "resumeRunDir": path.to_string_lossy()
+        })),
+        &[],
+    )
+}
+
+#[test]
+fn resuming_a_gone_manager_folder_by_path_names_the_folder_not_the_path() {
+    let world = manager_world_with_folder_gone();
+    assert_run_missing_by_folder_name(&resume_by_path(&world, "2026-10-21_090000").unwrap_err());
+}
+
+#[test]
+fn a_gone_runs_root_is_manager_run_missing_by_path_and_by_key() {
+    let world = manager_world_with_folder_gone();
+    std::fs::remove_dir_all(crate::supervisor::supervisor_runs_root(world.home.path())).unwrap();
+    assert_run_missing_by_folder_name(&resume_by_path(&world, "2026-10-21_090000").unwrap_err());
+    assert_run_missing_by_folder_name(&world.admit(None, Some("release-desk"), &[]).unwrap_err());
+}
+
+#[test]
+fn a_manager_folder_that_is_a_link_to_a_sibling_run_counts_as_missing() {
+    let world = manager_world_with_folder_gone();
+    let runs = crate::supervisor::supervisor_runs_root(world.home.path());
+    let sibling = world.run("2026-09-01_090000");
+    std::os::unix::fs::symlink(&sibling, runs.join("2026-10-21_090000")).unwrap();
+
+    assert_run_missing_by_folder_name(&world.admit(None, Some("release-desk"), &[]).unwrap_err());
+}
+
+#[test]
 fn resuming_a_folder_that_is_no_manager_behaves_as_before_even_with_managers_around() {
     let world = ManagerWorld::with_managers(
         managers_fixture()["launchKey"]["managers"]
@@ -1586,10 +1663,21 @@ fn a_manager_launch_is_booked_only_once_the_spawn_goes_ahead_and_never_on_a_rest
     restored.replaces_agent_id = Some("agent-1".into());
     let restored = world.admit_config(restored, &[]).unwrap();
     assert_eq!(restored.name, "Release Desk");
-    assert!(
-        restored.launch_to_book.is_none(),
+    let booking = restored
+        .launch_to_book
+        .expect("a restore is a session of its own");
+    assert!(booking.restored);
+    let registry = world.app_data.path().join("supervisor-managers.json");
+
+    super::manager::apply_booking(&registry, &booking).unwrap();
+
+    let manager = &world.registry()["managers"][0];
+    assert_eq!(
+        manager["lastLaunch"], no_launch,
         "a restored session replays its old prompt, so it launched with no new instructions"
     );
+    assert!(manager["session"]["startedAt"].is_string());
+    assert_eq!(manager["session"]["notedAt"], serde_json::Value::Null);
 }
 
 #[test]

@@ -25,9 +25,11 @@ import {
 } from './helpers';
 import {
   DEFAULT_CONDUCTOR_DRAFT,
+  DEFAULT_MANAGER_DRAFT,
   DISCOVERED_PREFIX,
   type ActionDraft,
   type ConductorActionDraft,
+  type ManagerActionDraft,
   type RhythmChoice,
   type RunSkillAction,
   type ScheduleEditorProps,
@@ -248,6 +250,7 @@ export function useScheduleEditorDraft({
       if (choice === 'none') return { choice: 'none' };
       if (choice === 'task') return { choice: 'task', task: '' };
       if (choice === 'conductor') return { ...DEFAULT_CONDUCTOR_DRAFT };
+      if (choice === 'manager') return { ...DEFAULT_MANAGER_DRAFT };
       return { choice };
     });
   };
@@ -255,6 +258,11 @@ export function useScheduleEditorDraft({
   const setConductorDraft = (patch: Partial<ConductorActionDraft>) =>
     setActionDraft((current) =>
       current.choice === 'conductor' ? { ...current, ...patch } : current
+    );
+
+  const setManagerDraft = (patch: Partial<ManagerActionDraft>) =>
+    setActionDraft((current) =>
+      current.choice === 'manager' ? { ...current, ...patch } : current
     );
 
   const selectConductorGoal = (value: string) => {
@@ -437,6 +445,7 @@ export function useScheduleEditorDraft({
     chooseProject,
     chooseAction,
     setConductorDraft,
+    setManagerDraft,
     selectConductorGoal,
     selectSkill,
     setSkillLaunch,

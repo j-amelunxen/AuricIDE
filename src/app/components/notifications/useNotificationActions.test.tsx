@@ -70,6 +70,21 @@ vi.mock('@/lib/tauri/notifications', () => ({
   notificationsClear: vi.fn(async () => undefined),
 }));
 
+const { managerRegistry, openManagerMock } = vi.hoisted(() => ({
+  managerRegistry: vi.fn(async () => ({ managers: [] as unknown[], error: null })),
+  openManagerMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('@/lib/tauri/supervisorManagers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/tauri/supervisorManagers')>()),
+  managerRegistry,
+}));
+
+vi.mock('@/lib/agents/openSupervisor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/agents/openSupervisor')>()),
+  openManager: openManagerMock,
+}));
+
 const NOW = Date.parse('2026-08-17T12:00:00Z');
 
 const REPO_PATH = '/repo/alpha';
@@ -466,9 +481,113 @@ describe('useNotificationActions — probing the folder a payload names', () => 
     render(<Harness notifications={[notification]} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
-    await waitFor(() => expect(button).toBeDisabled());
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
     expect(button).toHaveAttribute('title', 'Project folder not found');
     expect(spawnAgentMock).not.toHaveBeenCalled();
+  });
+});
+
+const managerRecord = (key: string, over: Record<string, unknown> = {}) => ({
+  key,
+  name: key,
+  runDir: `2026-10-21_${key}`,
+  promotedAt: '2026-10-21T09:00:00Z',
+  archivedAt: null,
+  lastLaunch: null,
+  ...over,
+});
+
+const openDeskAction = {
+  id: 'open',
+  label: 'Open Release Desk',
+  kind: 'open-manager' as const,
+  managerKey: 'release-desk',
+  managerName: 'Release Desk',
+  task: 'Summarise the week.',
+};
+
+describe('useNotificationActions — an Open Project Manager button', () => {
+  const buttonFor = (notification: Notification) =>
+    screen.findByTestId(`notification-action-${notification.uid}-open`);
+
+  async function renderWith(registry: unknown[], overrides: Partial<Notification> = {}) {
+    managerRegistry.mockResolvedValue({ managers: registry, error: null });
+    const notification = makeNotification({
+      source: 'system',
+      actions: [openDeskAction],
+      ...overrides,
+    });
+    useStore.setState({ notifications: [notification] } as never);
+    render(<Harness notifications={[notification]} />);
+    return notification;
+  }
+
+  it('opens the manager on the click, with the task a schedule wrote, and shows its terminal', async () => {
+    const user = userEvent.setup();
+    const notification = await renderWith([managerRecord('release-desk')]);
+    await user.click(await buttonFor(notification));
+
+    await waitFor(() => expect(openManagerMock).toHaveBeenCalledTimes(1));
+    const [, key, hooks, options] = openManagerMock.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { onShow: (id: string) => void },
+      { task?: string },
+    ];
+    expect(key).toBe('release-desk');
+    expect(options).toMatchObject({ task: 'Summarise the week.' });
+    hooks.onShow('agent-9');
+    expect(useStore.getState().selectedAgentId).toBe('agent-9');
+  });
+
+  it('opens it without the task when an agent wrote the payload', async () => {
+    const user = userEvent.setup();
+    const notification = await renderWith([managerRecord('release-desk')], { source: 'agent' });
+    await user.click(await buttonFor(notification));
+    await waitFor(() => expect(openManagerMock).toHaveBeenCalledTimes(1));
+    expect((openManagerMock.mock.calls[0] as unknown[])[3]).not.toHaveProperty('task');
+  });
+
+  it('is disabled with the reason once the manager is archived', async () => {
+    const notification = await renderWith([
+      managerRecord('release-desk', { archivedAt: '2026-10-22T00:00:00Z' }),
+    ]);
+    const button = await buttonFor(notification);
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+    expect(button).toHaveAttribute('title', 'Project Manager is archived');
+  });
+
+  it("is disabled with the reason when the manager's folder is missing", async () => {
+    const notification = await renderWith([managerRecord('release-desk', { runMissing: true })]);
+    const button = await buttonFor(notification);
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+    expect(button).toHaveAttribute('title', 'Project Manager folder missing');
+  });
+
+  it('is disabled with the reason when the manager is gone from the registry', async () => {
+    const notification = await renderWith([managerRecord('someone-else')]);
+    const button = await buttonFor(notification);
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+    expect(button).toHaveAttribute('title', 'Project Manager not found');
+  });
+
+  it('is disabled as not found when the registry is loaded and empty', async () => {
+    const notification = await renderWith([]);
+    const button = await buttonFor(notification);
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+    expect(button).toHaveAttribute('title', 'Project Manager not found');
+  });
+
+  it('stays enabled while the registry has not answered yet, and disables once it has', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    managerRegistry.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    const notification = makeNotification({ source: 'system', actions: [openDeskAction] });
+    useStore.setState({ notifications: [notification] } as never);
+    render(<Harness notifications={[notification]} />);
+    const button = await buttonFor(notification);
+    expect(button).toBeEnabled();
+    answer({ managers: [], error: null });
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
   });
 });
 

@@ -68,6 +68,20 @@ export function offeredModelsOf(providers: ProviderInfo[]): OfferedModels {
 }
 
 /**
+ * A manager's own model, or undefined when its provider stopped offering it
+ * (the launch then uses the supervisor default). A provider that lists no
+ * models leaves the name unchecked, as the notification launch does.
+ */
+function modelStillOffered(model: string | undefined, provider: ProviderInfo | undefined) {
+  if (!provider) return model;
+  return !model
+    ? undefined
+    : provider.models.length === 0 || provider.models.some((m) => m.value === model)
+      ? model
+      : undefined;
+}
+
+/**
  * The provider policy of each project, read off disk by Rust whether the
  * project is open or not. A project whose read fails (no backend) is left out
  * and counts as the open default — what Rust itself does with an unreadable
@@ -136,11 +150,12 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
   const provider = input.providers.find((p) => p.id === providerId);
   const instructions = input.instructions ?? readSupervisorInstructions(providerId);
   const { manager } = input;
+  const model = manager ? modelStillOffered(input.model, provider) : input.model;
   return {
     name: manager?.record.name ?? 'Supervisor',
     role: 'supervisor',
     provider: providerId,
-    model: input.model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
+    model: model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
     task: buildSupervisorLaunchPrompt(
       supervisorPromptProjects(
         visible,

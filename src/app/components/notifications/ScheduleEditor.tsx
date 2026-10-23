@@ -9,6 +9,7 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import type { ScheduleCatchUp } from '@/lib/tauri/schedules';
 import { ComboActionSection } from './scheduleEditor/ComboActionSection';
 import { ConductorActionSection } from './scheduleEditor/ConductorActionSection';
+import { ManagerActionSection } from './scheduleEditor/ManagerActionSection';
 import { PROJECT_GROUPS, saveBlocked } from './scheduleEditor/helpers';
 import { RhythmSection } from './scheduleEditor/RhythmSection';
 import { SkillActionSection } from './scheduleEditor/SkillActionSection';
@@ -69,6 +70,7 @@ export function ScheduleEditor(props: ScheduleEditorProps) {
     chooseProject,
     chooseAction,
     setConductorDraft,
+    setManagerDraft,
     selectConductorGoal,
     selectSkill,
     setSkillLaunch,
@@ -196,6 +198,12 @@ export function ScheduleEditor(props: ScheduleEditorProps) {
               onSelect={() => chooseAction('conductor')}
             />
             <Choice
+              testId="schedule-action-manager"
+              label="Open Project Manager"
+              checked={actionDraft.choice === 'manager'}
+              onSelect={() => chooseAction('manager')}
+            />
+            <Choice
               testId="schedule-action-task"
               label="Custom agent"
               checked={actionDraft.choice === 'task'}
@@ -214,10 +222,15 @@ export function ScheduleEditor(props: ScheduleEditorProps) {
             {actionDraft.choice === 'conductor' && actionDraft.launch === 'auto'
               ? 'Starts on its own when the IDE is unattended — see the hint above.'
               : (actionDraft.choice === 'task' && actionDraft.launch === 'auto') ||
+                  (actionDraft.choice === 'manager' && actionDraft.launch === 'auto') ||
                   (actionDraft.choice === 'skill' && actionDraft.snapshot?.launch === 'auto')
                 ? 'Starts on its own in the background — no click, no project switch.'
                 : 'Offered as a button. Nothing runs without your click.'}
           </p>
+
+          {actionDraft.choice === 'manager' && (
+            <ManagerActionSection draft={actionDraft} onSetManagerDraft={setManagerDraft} />
+          )}
 
           {actionDraft.choice === 'task' && (
             <TaskActionSection

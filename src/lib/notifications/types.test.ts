@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import managerFixtures from '@/lib/agents/supervisorManagers.fixtures.json';
 import linkFixtures from '@/lib/agents/supervisorLink.fixtures.json';
 import {
   isAnsweredNotification,
@@ -143,6 +144,65 @@ describe('parseNotificationActions', () => {
         permissionMode: 'yolo',
       };
       expect(parse([action])).toEqual([action]);
+    });
+
+    it('parses an open-manager action with only the required fields', () => {
+      const action = {
+        id: 'open',
+        label: 'Open Release Desk',
+        kind: 'open-manager',
+        managerKey: 'release-desk',
+        managerName: 'Release Desk',
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
+    it.each(managerFixtures.openManagerAction.launchValues)(
+      'keeps an open-manager task with launch %s',
+      (launch) => {
+        const action = {
+          id: 'open',
+          label: 'Open Release Desk',
+          kind: 'open-manager',
+          managerKey: 'release-desk',
+          managerName: 'Release Desk',
+          task: 'Check the open release tickets',
+          launch,
+        };
+        expect(parse([action])).toEqual([action]);
+      }
+    );
+
+    it.each([
+      ['a dialog launch, which a manager never has', { launch: 'dialog' }],
+      ['a blank key', { managerKey: '  ' }],
+      ['a missing name', { managerName: undefined }],
+      ['a non-string task', { task: 7 }],
+    ])('drops an open-manager action with %s', (_reason, override) => {
+      const action = {
+        id: 'open',
+        label: 'Open Release Desk',
+        kind: 'open-manager',
+        managerKey: 'release-desk',
+        managerName: 'Release Desk',
+        ...override,
+      };
+      expect(parse([action])).toEqual([]);
+    });
+
+    it('requires exactly the fields the contract names', () => {
+      const { required } = managerFixtures.openManagerAction.fields;
+      const action: Record<string, unknown> = {
+        id: 'open',
+        label: 'Open',
+        kind: 'open-manager',
+        managerKey: 'k',
+        managerName: 'K',
+      };
+      for (const field of required) {
+        const { [field]: _removed, ...without } = action;
+        expect(parse([without])).toEqual([]);
+      }
     });
 
     it('parses a run-conductor action with only the required fields', () => {

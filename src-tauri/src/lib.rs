@@ -335,6 +335,7 @@ pub fn run() {
             supervisor::runs::supervisor_run_files,
             supervisor::managers::manager_list,
             supervisor::managers::manager_promote,
+            supervisor::managers::manager_create,
             supervisor::managers::manager_rename,
             supervisor::managers::manager_archive,
             supervisor::managers::manager_restore,
