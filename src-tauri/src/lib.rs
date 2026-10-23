@@ -25,6 +25,7 @@ mod memory_report;
 mod menu;
 mod menu_bar;
 mod missions;
+mod node_runtime;
 mod notifications;
 mod project_icons;
 mod project_skills;

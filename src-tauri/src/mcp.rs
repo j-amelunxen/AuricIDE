@@ -119,6 +119,7 @@ pub fn ensure_agent_mcp_config(
     project_root: &Path,
     env: &BTreeMap<String, String>,
     connectors: &[crate::connectors::ResolvedConnector],
+    node: &str,
 ) -> Result<AgentMcpConfigs, String> {
     let runtime = runtime_entrypoint(app)?;
     let app_data = app
@@ -134,7 +135,14 @@ pub fn ensure_agent_mcp_config(
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
             .map_err(|error| format!("Could not secure agent MCP config directory: {error}"))?;
     }
-    write_agent_mcp_configs_with_connectors(&directory, &runtime, project_root, env, connectors)
+    write_agent_mcp_configs_with_connectors(
+        &directory,
+        &runtime,
+        node,
+        project_root,
+        env,
+        connectors,
+    )
 }
 
 #[cfg(test)]
@@ -144,7 +152,7 @@ pub(crate) fn write_agent_mcp_configs(
     project_root: &Path,
     env: &BTreeMap<String, String>,
 ) -> Result<AgentMcpConfigs, String> {
-    write_agent_mcp_configs_with_connectors(directory, runtime, project_root, env, &[])
+    write_agent_mcp_configs_with_connectors(directory, runtime, "node", project_root, env, &[])
 }
 
 /// The standard (`mcpServers`) and the Crush (`mcp`) config for one agent,
@@ -152,6 +160,7 @@ pub(crate) fn write_agent_mcp_configs(
 pub(crate) fn write_agent_mcp_configs_with_connectors(
     directory: &Path,
     runtime: &Path,
+    node: &str,
     project_root: &Path,
     env: &BTreeMap<String, String>,
     connectors: &[crate::connectors::ResolvedConnector],
@@ -171,7 +180,7 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
     let standard_path = directory.join(format!("project-{identity:016x}.mcp.json"));
     let crush_path = directory.join(format!("project-{identity:016x}.crush.json"));
     let server = serde_json::json!({
-        "command": "node",
+        "command": node,
         "args": [runtime, "--project-root", project_root],
         "env": env,
     });
@@ -228,6 +237,7 @@ pub fn ensure_supervisor_mcp_config(
     runtime: &Path,
     pm: &[(String, String)],
     env: &BTreeMap<String, String>,
+    node: &str,
 ) -> Result<PathBuf, String> {
     let directory = app_data.join("agent-bindings");
     std::fs::create_dir_all(&directory)
@@ -244,6 +254,7 @@ pub fn ensure_supervisor_mcp_config(
         &crate::control_socket::socket_path_in(app_data),
         pm,
         env,
+        node,
     )
 }
 
@@ -253,6 +264,7 @@ pub(crate) fn write_supervisor_mcp_config(
     socket: &Path,
     pm: &[(String, String)],
     env: &BTreeMap<String, String>,
+    node: &str,
 ) -> Result<PathBuf, String> {
     let mut hasher = DefaultHasher::new();
     socket.hash(&mut hasher);
@@ -270,7 +282,7 @@ pub(crate) fn write_supervisor_mcp_config(
     servers.insert(
         crate::agents::SUPERVISOR_MCP_SERVER.to_string(),
         serde_json::json!({
-            "command": "node",
+            "command": node,
             "args": [runtime, "--supervisor"],
             "env": { "AURIC_CONTROL_SOCKET": socket },
         }),
@@ -279,7 +291,7 @@ pub(crate) fn write_supervisor_mcp_config(
         servers.insert(
             name.clone(),
             serde_json::json!({
-                "command": "node",
+                "command": node,
                 "args": [runtime, "--project-root", project_root],
                 "env": env,
             }),
@@ -526,11 +538,24 @@ pub fn start_packaged_mcp_server(
     project_root: &Path,
     env: &[(String, String)],
 ) -> Result<Child, String> {
-    let node = env
+    let path_var = env
         .iter()
         .find(|(key, _)| key == "PATH")
-        .and_then(|(_, path)| find_in_path("node", path))
+        .map(|(_, path)| path.as_str())
         .ok_or_else(|| "Could not find Node.js in the login-shell PATH".to_string())?;
+    // A bundle from before the manifest recorded its ABI keeps the old
+    // behaviour (first node on PATH); any other problem is an error here, so
+    // it reaches the MCP status instead of a server that dies on load.
+    let node = if crate::node_runtime::read_bundle_abi(runtime).is_none() {
+        find_in_path("node", path_var)
+    } else {
+        let choice = crate::node_runtime::node_choice(runtime, path_var);
+        if let Some(problem) = choice.problem {
+            return Err(problem);
+        }
+        Some(PathBuf::from(choice.command))
+    }
+    .ok_or_else(|| "Could not find Node.js in the login-shell PATH".to_string())?;
     let mut command = Command::new(node);
     command
         .arg(runtime)
@@ -581,7 +606,7 @@ pub(crate) fn find_in_path(cmd: &str, path_var: &str) -> Option<PathBuf> {
 }
 
 #[cfg(unix)]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     path.metadata()
         .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
@@ -589,7 +614,7 @@ fn is_executable_file(path: &Path) -> bool {
 }
 
 #[cfg(not(unix))]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
