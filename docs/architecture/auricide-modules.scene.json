@@ -1,0 +1,460 @@
+{
+  "formatVersion": 1,
+  "id": "auricide-modules",
+  "title": "AuricIDE architecture: modules",
+  "description": "Module overview of AuricIDE, a Tauri desktop IDE that orchestrates coding agents: frontend, Rust backend, agent runtime, supervisor and Supervisor Link, MCP runtime, storage and the agent CLIs it runs. Dependencies come from imports in the code. Architecture, modules, infrastructure.",
+  "nodes": [
+    {
+      "id": "ui",
+      "label": "Next.js UI shell",
+      "preset": "rings",
+      "group": "frontend",
+      "level": 0,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "non-test files in src/app",
+          "value": "439"
+        }
+      ],
+      "detail": "./ui.scene.json",
+      "position": [-3.6, 0, 0]
+    },
+    {
+      "id": "outside",
+      "label": "Outside clients",
+      "preset": "sphere",
+      "group": "external",
+      "level": 0,
+      "weight": 0.4,
+      "position": [3.6, 0, 0]
+    },
+    {
+      "id": "store",
+      "label": "Zustand store",
+      "preset": "stack",
+      "params": {
+        "layers": 4
+      },
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "slices",
+          "value": "36"
+        }
+      ],
+      "detail": "./store.scene.json",
+      "position": [-4.15, -5.5, 0]
+    },
+    {
+      "id": "conductor",
+      "label": "Goals and conductor",
+      "preset": "rings",
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.6,
+      "detail": "./conductor.scene.json",
+      "position": [4.15, -5.5, 0]
+    },
+    {
+      "id": "ipc",
+      "label": "IPC wrappers",
+      "preset": "box",
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "wrapper files",
+          "value": "50"
+        }
+      ],
+      "position": [0.05, -5.5, 0]
+    },
+    {
+      "id": "commands",
+      "label": "Command layer (lib.rs)",
+      "preset": "core",
+      "group": "backend",
+      "level": 2,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "tauri commands",
+          "value": "about 220"
+        }
+      ],
+      "detail": "./backend.scene.json",
+      "position": [0, -11.2, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent runtime",
+      "preset": "core",
+      "group": "fleet",
+      "level": 3,
+      "weight": 0.9,
+      "accent": true,
+      "detail": "./agents.scene.json",
+      "position": [-2.4, -17.1, 0]
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "rings",
+      "group": "fleet",
+      "level": 3,
+      "weight": 0.6,
+      "detail": "./control-socket.scene.json",
+      "position": [2.1, -17.1, 0]
+    },
+    {
+      "id": "supervisorLink",
+      "label": "Supervisor link",
+      "preset": "rings",
+      "group": "fleet",
+      "level": 3,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "methods",
+          "value": "18"
+        }
+      ],
+      "detail": "./supervisor-link.scene.json",
+      "position": [6.4, -17.1, 0]
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor and managers",
+      "preset": "box",
+      "group": "fleet",
+      "level": 4,
+      "weight": 0.5,
+      "position": [3.55, -22.6, 0]
+    },
+    {
+      "id": "mcp",
+      "label": "MCP runtime (auric-mcp)",
+      "preset": "exploded-stack",
+      "group": "mcp",
+      "level": 3,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "modes",
+          "value": "3"
+        }
+      ],
+      "detail": "./mcp.scene.json",
+      "position": [13.8, -17.1, 0]
+    },
+    {
+      "id": "git",
+      "label": "Git (git2)",
+      "preset": "rings",
+      "group": "backend",
+      "level": 3,
+      "weight": 0.5,
+      "detail": "./git.scene.json",
+      "position": [-13.8, -17.1, 0]
+    },
+    {
+      "id": "notify",
+      "label": "Notifications and schedules",
+      "preset": "rings",
+      "group": "backend",
+      "level": 3,
+      "weight": 0.5,
+      "detail": "./notify.scene.json",
+      "position": [-9.8, -17.1, 0]
+    },
+    {
+      "id": "usage",
+      "label": "Usage and cost",
+      "preset": "rings",
+      "group": "backend",
+      "level": 4,
+      "weight": 0.4,
+      "detail": "./usage.scene.json",
+      "position": [-6.95, -22.6, 0]
+    },
+    {
+      "id": "imports",
+      "label": "Imports and machine tools",
+      "preset": "box",
+      "group": "backend",
+      "level": 4,
+      "weight": 0.3,
+      "position": [-10.65, -22.6, 0]
+    },
+    {
+      "id": "platform",
+      "label": "Platform shell (menu, watchdog)",
+      "preset": "box",
+      "group": "backend",
+      "level": 4,
+      "weight": 0.3,
+      "position": [-3.25, -22.6, 0]
+    },
+    {
+      "id": "projectDb",
+      "label": "Project DB (.auric)",
+      "preset": "cylinder",
+      "group": "storage",
+      "level": 5,
+      "weight": 0.7,
+      "position": [-2.15, -27.9, 0]
+    },
+    {
+      "id": "appData",
+      "label": "App data (JSON, DBs, sockets)",
+      "preset": "cylinder",
+      "group": "storage",
+      "level": 5,
+      "weight": 0.6,
+      "position": [2.15, -27.9, 0]
+    },
+    {
+      "id": "agentClis",
+      "label": "Agent CLIs (PTY)",
+      "preset": "particle-shell",
+      "group": "external",
+      "level": 4,
+      "weight": 0.6,
+      "position": [10.65, -22.6, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "ui",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "store",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "ipc",
+      "to": "commands",
+      "kind": "calls",
+      "label": "invoke"
+    },
+    {
+      "from": "commands",
+      "to": "agents",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "git",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "notify",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "usage",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "imports",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "platform",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "projectDb",
+      "kind": "dataflow"
+    },
+    {
+      "from": "commands",
+      "to": "appData",
+      "kind": "dataflow"
+    },
+    {
+      "from": "agents",
+      "to": "agentClis",
+      "kind": "calls",
+      "label": "spawns PTY"
+    },
+    {
+      "from": "agents",
+      "to": "notify",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "usage",
+      "kind": "dependency",
+      "label": "books cost"
+    },
+    {
+      "from": "agents",
+      "to": "supervisor",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "mcp",
+      "kind": "dependency",
+      "label": "writes MCP config"
+    },
+    {
+      "from": "supervisor",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisor",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "policy files"
+    },
+    {
+      "from": "controlSocket",
+      "to": "agents",
+      "kind": "calls",
+      "label": "dispatcher"
+    },
+    {
+      "from": "controlSocket",
+      "to": "supervisor",
+      "kind": "dependency"
+    },
+    {
+      "from": "controlSocket",
+      "to": "supervisorLink",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "shared dispatcher"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "supervisor",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "link policy"
+    },
+    {
+      "from": "outside",
+      "to": "supervisorLink",
+      "kind": "calls",
+      "label": "WebSocket"
+    },
+    {
+      "from": "outside",
+      "to": "mcp",
+      "kind": "calls",
+      "label": "stdio"
+    },
+    {
+      "from": "mcp",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "control mode"
+    },
+    {
+      "from": "mcp",
+      "to": "projectDb",
+      "kind": "dataflow"
+    },
+    {
+      "from": "mcp",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "notifications.db"
+    },
+    {
+      "from": "notify",
+      "to": "appData",
+      "kind": "dataflow"
+    },
+    {
+      "from": "agentClis",
+      "to": "usage",
+      "kind": "dataflow",
+      "label": "transcripts"
+    },
+    {
+      "from": "agentClis",
+      "to": "mcp",
+      "kind": "calls",
+      "label": "auric-pm"
+    }
+  ],
+  "tour": [
+    "ui",
+    "commands",
+    "agents",
+    "supervisor",
+    "supervisorLink",
+    "mcp",
+    "projectDb",
+    "agentClis"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "text": "Modules at a glance",
+      "preset": "hud-panel",
+      "rows": [
+        {
+          "label": "store slices",
+          "value": "36"
+        },
+        {
+          "label": "Rust files (non-test)",
+          "value": "189"
+        },
+        {
+          "label": "MCP tool files",
+          "value": "25"
+        },
+        {
+          "label": "link methods",
+          "value": "18"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

@@ -1,0 +1,387 @@
+{
+  "formatVersion": 1,
+  "id": "auricide-interfaces",
+  "title": "AuricIDE interfaces and docking points",
+  "description": "Every place where something from outside can dock onto AuricIDE: Tauri IPC, three MCP server modes, the control socket, the Supervisor Link WebSocket with its policy, provider configs, file contracts, menu automation, hooks and outbound calls. Integration and interfaces view.",
+  "nodes": [
+    {
+      "id": "ide",
+      "label": "AuricIDE core",
+      "preset": "core",
+      "group": "core",
+      "level": 1,
+      "weight": 1,
+      "accent": true,
+      "detail": "./backend.scene.json",
+      "position": [-3.8, -5.4, 0]
+    },
+    {
+      "id": "webview",
+      "label": "Webview (main, agent window)",
+      "preset": "box",
+      "group": "inside",
+      "level": 0,
+      "weight": 0.4,
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "tauriIpc",
+      "label": "Tauri IPC and events",
+      "preset": "rings",
+      "group": "docking",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "about 220"
+        }
+      ],
+      "position": [3.8, -5.4, 0]
+    },
+    {
+      "id": "mcpPm",
+      "label": "MCP auric-pm (per project)",
+      "preset": "rings",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "tools",
+          "value": "about 75"
+        }
+      ],
+      "detail": "./mcp.scene.json",
+      "position": [-12.35, -11.3, 0]
+    },
+    {
+      "id": "mcpControl",
+      "label": "MCP auric-control",
+      "preset": "rings",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-8.25, -11.3, 0]
+    },
+    {
+      "id": "mcpSupervisor",
+      "label": "MCP auric-supervisor",
+      "preset": "rings",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.5,
+      "position": [8.15, -11.3, 0]
+    },
+    {
+      "id": "controlSock",
+      "label": "control.sock (NDJSON)",
+      "preset": "rings",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.7,
+      "detail": "./control-socket.scene.json",
+      "position": [12.35, -11.3, 0]
+    },
+    {
+      "id": "linkSock",
+      "label": "Supervisor Link (WebSocket)",
+      "preset": "rings",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.9,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "protocol",
+          "value": "1"
+        },
+        {
+          "label": "methods",
+          "value": "18"
+        }
+      ],
+      "detail": "./supervisor-link.scene.json",
+      "position": [3.75, -11.3, 0]
+    },
+    {
+      "id": "providers",
+      "label": "Provider configs (JSON)",
+      "preset": "box",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-4.25, -11.3, 0]
+    },
+    {
+      "id": "files",
+      "label": "File contracts (.auric, app data)",
+      "preset": "stack",
+      "params": {
+        "layers": 3
+      },
+      "group": "docking",
+      "level": 3,
+      "weight": 0.6,
+      "position": [-5.4, -16.9, -2.2]
+    },
+    {
+      "id": "menu",
+      "label": "Native menu automation",
+      "preset": "box",
+      "group": "docking",
+      "level": 2,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "46"
+        }
+      ],
+      "position": [-0.45, -11.3, 0]
+    },
+    {
+      "id": "hooks",
+      "label": "Hooks, sidecars, env vars",
+      "preset": "box",
+      "group": "docking",
+      "level": 3,
+      "weight": 0.4,
+      "position": [-9.4, -16.9, -2.2]
+    },
+    {
+      "id": "linkPolicy",
+      "label": "supervisor-link.json (policy)",
+      "preset": "cylinder",
+      "group": "policy",
+      "level": 3,
+      "weight": 0.6,
+      "position": [9.55, -16.9, 2.2]
+    },
+    {
+      "id": "supPolicy",
+      "label": "supervisor-policy.json",
+      "preset": "cylinder",
+      "group": "policy",
+      "level": 3,
+      "weight": 0.5,
+      "position": [5.45, -16.9, 2.2]
+    },
+    {
+      "id": "companion",
+      "label": "Companion app (client)",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.7,
+      "position": [-5.55, -16.9, 2.2]
+    },
+    {
+      "id": "mcpHost",
+      "label": "Outside MCP host",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.4,
+      "position": [1.6, -16.9, -2.2]
+    },
+    {
+      "id": "axbridge",
+      "label": "UI automation (axbridge)",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.2,
+      "position": [9.4, -16.9, -2.2]
+    },
+    {
+      "id": "agentClis",
+      "label": "Agent CLIs",
+      "preset": "particle-shell",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.6,
+      "position": [5.6, -16.9, -2.2]
+    },
+    {
+      "id": "supervisorAgent",
+      "label": "Supervisor agent",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.4,
+      "position": [-1.45, -16.9, 2.2]
+    },
+    {
+      "id": "outbound",
+      "label": "Outbound HTTP and tools",
+      "preset": "box",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-9.55, -16.9, 2.2]
+    }
+  ],
+  "edges": [
+    {
+      "from": "webview",
+      "to": "tauriIpc",
+      "kind": "calls",
+      "label": "invoke"
+    },
+    {
+      "from": "tauriIpc",
+      "to": "ide",
+      "kind": "calls"
+    },
+    {
+      "from": "ide",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "providers",
+      "to": "agentClis",
+      "kind": "calls",
+      "label": "spawns PTY"
+    },
+    {
+      "from": "agentClis",
+      "to": "mcpPm",
+      "kind": "calls",
+      "label": "stdio"
+    },
+    {
+      "from": "mcpPm",
+      "to": "files",
+      "kind": "dataflow",
+      "label": "project.db"
+    },
+    {
+      "from": "mcpHost",
+      "to": "mcpControl",
+      "kind": "calls",
+      "label": "stdio"
+    },
+    {
+      "from": "mcpControl",
+      "to": "controlSock",
+      "kind": "calls"
+    },
+    {
+      "from": "ide",
+      "to": "supervisorAgent",
+      "kind": "calls",
+      "label": "spawns"
+    },
+    {
+      "from": "supervisorAgent",
+      "to": "mcpSupervisor",
+      "kind": "calls",
+      "label": "stdio"
+    },
+    {
+      "from": "mcpSupervisor",
+      "to": "controlSock",
+      "kind": "calls"
+    },
+    {
+      "from": "controlSock",
+      "to": "ide",
+      "kind": "calls"
+    },
+    {
+      "from": "controlSock",
+      "to": "supPolicy",
+      "kind": "dependency"
+    },
+    {
+      "from": "companion",
+      "to": "linkSock",
+      "kind": "calls",
+      "label": "WebSocket /v1"
+    },
+    {
+      "from": "linkSock",
+      "to": "controlSock",
+      "kind": "calls",
+      "label": "shared dispatcher"
+    },
+    {
+      "from": "linkSock",
+      "to": "linkPolicy",
+      "kind": "dependency",
+      "label": "fails closed"
+    },
+    {
+      "from": "linkSock",
+      "to": "files",
+      "kind": "dataflow",
+      "label": "documents, branches"
+    },
+    {
+      "from": "axbridge",
+      "to": "menu",
+      "kind": "calls"
+    },
+    {
+      "from": "menu",
+      "to": "ide",
+      "kind": "event"
+    },
+    {
+      "from": "agentClis",
+      "to": "hooks",
+      "kind": "event",
+      "label": "statusLine, env"
+    },
+    {
+      "from": "hooks",
+      "to": "ide",
+      "kind": "event"
+    },
+    {
+      "from": "ide",
+      "to": "outbound",
+      "kind": "calls"
+    }
+  ],
+  "tour": [
+    "linkSock",
+    "linkPolicy",
+    "controlSock",
+    "mcpControl",
+    "mcpPm",
+    "tauriIpc",
+    "files",
+    "providers"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "text": "Docking points",
+      "preset": "hud-panel",
+      "rows": [
+        {
+          "label": "doors for outside programs",
+          "value": "3"
+        },
+        {
+          "label": "link methods",
+          "value": "18"
+        },
+        {
+          "label": "link error codes",
+          "value": "31"
+        },
+        {
+          "label": "MCP modes",
+          "value": "3"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

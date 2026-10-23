@@ -1,0 +1,342 @@
+{
+  "formatVersion": 1,
+  "id": "auricide-runtime-flow",
+  "title": "AuricIDE runtime flow: client to branch",
+  "description": "How a request from a local client travels through AuricIDE: Supervisor Link, peer check, shared dispatcher, policies, agent manager, supervisor and child agents, jobs in a worktree, documents proposed as git branches and the human merge. Architecture and integration flow.",
+  "nodes": [
+    {
+      "id": "companion",
+      "label": "Client request",
+      "preset": "sphere",
+      "group": "client",
+      "level": 0,
+      "weight": 0.6,
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "linkSock",
+      "label": "Supervisor Link",
+      "preset": "rings",
+      "group": "door",
+      "level": 1,
+      "weight": 0.8,
+      "detail": "./supervisor-link.scene.json",
+      "position": [-2.15, -5.4, 0]
+    },
+    {
+      "id": "peerCheck",
+      "label": "Peer check (no IDE agent)",
+      "preset": "box",
+      "group": "door",
+      "level": 1,
+      "weight": 0.5,
+      "position": [2.15, -5.4, 0]
+    },
+    {
+      "id": "dispatcher",
+      "label": "Control dispatcher",
+      "preset": "core",
+      "group": "runtime",
+      "level": 2,
+      "weight": 0.9,
+      "accent": true,
+      "detail": "./control-socket.scene.json",
+      "position": [1.4, -11.1, 0]
+    },
+    {
+      "id": "policyGate",
+      "label": "Policies and provider rules",
+      "preset": "box",
+      "group": "runtime",
+      "level": 2,
+      "weight": 0.6,
+      "position": [5.9, -11.1, 0]
+    },
+    {
+      "id": "bridge",
+      "label": "Frontend control bridge",
+      "preset": "rings",
+      "group": "runtime",
+      "level": 3,
+      "weight": 0.5,
+      "position": [-8.05, -16.9, 0]
+    },
+    {
+      "id": "agentMgr",
+      "label": "Agent manager (spawn)",
+      "preset": "core",
+      "group": "runtime",
+      "level": 3,
+      "weight": 0.9,
+      "accent": true,
+      "detail": "./agents.scene.json",
+      "position": [-3.65, -16.9, 0]
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor agent",
+      "preset": "rings",
+      "group": "agents",
+      "level": 4,
+      "weight": 0.7,
+      "position": [-2.15, -22.5, 0]
+    },
+    {
+      "id": "children",
+      "label": "Child agents",
+      "preset": "particle-shell",
+      "group": "agents",
+      "level": 4,
+      "weight": 0.6,
+      "position": [2.15, -22.5, 0]
+    },
+    {
+      "id": "pmMcp",
+      "label": "auric-pm MCP",
+      "preset": "exploded-stack",
+      "group": "agents",
+      "level": 5,
+      "weight": 0.4,
+      "detail": "./mcp.scene.json",
+      "position": [-2.05, -27.8, 0]
+    },
+    {
+      "id": "jobRunner",
+      "label": "Job runner",
+      "preset": "rings",
+      "group": "jobs",
+      "level": 3,
+      "weight": 0.6,
+      "position": [3.85, -16.9, 0]
+    },
+    {
+      "id": "documents",
+      "label": "Documents",
+      "preset": "stack",
+      "params": {
+        "layers": 3
+      },
+      "group": "jobs",
+      "level": 3,
+      "weight": 0.6,
+      "position": [8.05, -16.9, 0]
+    },
+    {
+      "id": "worktree",
+      "label": "Worktree and branch",
+      "preset": "cylinder",
+      "group": "git",
+      "level": 5,
+      "weight": 0.6,
+      "detail": "./git.scene.json",
+      "position": [4.95, -27.8, 0]
+    },
+    {
+      "id": "outputBuf",
+      "label": "Output buffers",
+      "preset": "cylinder",
+      "group": "runtime",
+      "level": 5,
+      "weight": 0.4,
+      "position": [-8.85, -27.8, 0]
+    },
+    {
+      "id": "events",
+      "label": "Event pump (250 ms)",
+      "preset": "particle-shell",
+      "group": "door",
+      "level": 2,
+      "weight": 0.4,
+      "position": [-5.9, -11.1, 0]
+    },
+    {
+      "id": "inbox",
+      "label": "Inbox note",
+      "preset": "box",
+      "group": "git",
+      "level": 5,
+      "weight": 0.3,
+      "position": [8.85, -27.8, 0]
+    },
+    {
+      "id": "human",
+      "label": "Human reviews and merges",
+      "preset": "sphere",
+      "group": "client",
+      "level": 6,
+      "weight": 0.6,
+      "position": [0, -33, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "companion",
+      "to": "linkSock",
+      "kind": "calls",
+      "label": "supervisors.spawn, jobs.create"
+    },
+    {
+      "from": "linkSock",
+      "to": "peerCheck",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkSock",
+      "to": "dispatcher",
+      "kind": "calls"
+    },
+    {
+      "from": "dispatcher",
+      "to": "policyGate",
+      "kind": "dependency"
+    },
+    {
+      "from": "dispatcher",
+      "to": "bridge",
+      "kind": "calls",
+      "label": "spawn_supervisor"
+    },
+    {
+      "from": "bridge",
+      "to": "agentMgr",
+      "kind": "calls"
+    },
+    {
+      "from": "dispatcher",
+      "to": "agentMgr",
+      "kind": "calls"
+    },
+    {
+      "from": "agentMgr",
+      "to": "supervisor",
+      "kind": "calls",
+      "label": "starts"
+    },
+    {
+      "from": "supervisor",
+      "to": "dispatcher",
+      "kind": "calls",
+      "label": "auric-supervisor MCP"
+    },
+    {
+      "from": "agentMgr",
+      "to": "children",
+      "kind": "calls"
+    },
+    {
+      "from": "children",
+      "to": "pmMcp",
+      "kind": "calls"
+    },
+    {
+      "from": "children",
+      "to": "worktree",
+      "kind": "dataflow",
+      "label": "commits"
+    },
+    {
+      "from": "agentMgr",
+      "to": "outputBuf",
+      "kind": "dataflow"
+    },
+    {
+      "from": "outputBuf",
+      "to": "events",
+      "kind": "dataflow"
+    },
+    {
+      "from": "events",
+      "to": "companion",
+      "kind": "event",
+      "label": "agent.*, job.*"
+    },
+    {
+      "from": "linkSock",
+      "to": "jobRunner",
+      "kind": "calls",
+      "label": "jobs.create"
+    },
+    {
+      "from": "jobRunner",
+      "to": "policyGate",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobRunner",
+      "to": "agentMgr",
+      "kind": "calls",
+      "label": "headless agent"
+    },
+    {
+      "from": "jobRunner",
+      "to": "worktree",
+      "kind": "dataflow"
+    },
+    {
+      "from": "linkSock",
+      "to": "documents",
+      "kind": "calls",
+      "label": "documents.*"
+    },
+    {
+      "from": "documents",
+      "to": "worktree",
+      "kind": "dataflow",
+      "label": "proposal branch"
+    },
+    {
+      "from": "documents",
+      "to": "inbox",
+      "kind": "dataflow"
+    },
+    {
+      "from": "inbox",
+      "to": "human",
+      "kind": "event"
+    },
+    {
+      "from": "worktree",
+      "to": "human",
+      "kind": "dataflow",
+      "label": "merge"
+    }
+  ],
+  "tour": [
+    "companion",
+    "linkSock",
+    "peerCheck",
+    "dispatcher",
+    "policyGate",
+    "agentMgr",
+    "jobRunner",
+    "human"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "text": "Flow facts",
+      "preset": "hud-panel",
+      "rows": [
+        {
+          "label": "pipeline stages",
+          "value": "6"
+        },
+        {
+          "label": "event poll",
+          "value": "250 ms"
+        },
+        {
+          "label": "job counter default",
+          "value": "20 per 24 h"
+        },
+        {
+          "label": "merge",
+          "value": "always human"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

@@ -4,6 +4,10 @@ One screen of how AuricIDE fits together. For the working rules that go with it 
 state slices, the goal/conductor loop, the agent-fleet invariants — see
 [`CLAUDE.md`](../CLAUDE.md).
 
+For the module list, the dependency overview and every external docking point (MCP,
+sockets, Supervisor Link, file contracts) see [`architecture/`](architecture/README.md) and
+[`architecture/interfaces.md`](architecture/interfaces.md).
+
 ```mermaid
 flowchart TD
     subgraph Frontend["Frontend — Next.js 16 / React 19"]
