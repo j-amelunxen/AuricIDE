@@ -225,6 +225,12 @@ export interface AgentSlice {
    * window derived it. The full log it is read from exists only over there.
    */
   agentWindowErrorDigests: Record<string, string>;
+  /**
+   * Slim copies of agents that left `agents` (dismiss, kill, finished-agent
+   * cap). The Agents timeline merges this with the live list so a finished
+   * bar stays visible for Last 24h. Logs and spawn configs are not kept here.
+   */
+  agentTimelineHistory: AgentInfo[];
 
   setAgentColor: (agentId: string, color: AgentColor | null) => void;
   toggleAgentMuted: (agentId: string) => void;

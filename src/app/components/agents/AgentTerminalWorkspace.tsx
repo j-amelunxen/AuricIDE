@@ -28,6 +28,7 @@ import {
 import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { supervisorFamilyRoots } from '@/lib/agents/supervisorFamily';
 import { buildSupervisorTimeline, type TimelineRangeId } from '@/lib/agents/supervisorTimeline';
+import { mergeTimelineFleet } from '@/lib/agents/timelineHistory';
 import { groupAgentTabs, type AgentTabGroup } from '@/lib/agents/tabGroups';
 import {
   autoPlace,
@@ -502,13 +503,15 @@ export function AgentTerminalWorkspace({
 
   const now = useNow();
   const state = agentState(agent, now);
-  // The chart reads the whole fleet, headless runs included. The tab strip
-  // hides those on purpose; they are still agents this supervisor started.
+  const timelineHistory = useStore((s) => s.agentTimelineHistory);
+  // The chart reads the whole fleet, headless runs included, plus agents that
+  // already left the live list (dismiss, kill, the finished-agent cap). The
+  // tab strip still hides those; they are history, not tabs.
   const timeline = useMemo(() => {
-    const fleet = allAgents ?? [agent];
+    const fleet = mergeTimelineFleet(allAgents ?? [agent], timelineHistory);
     const root = supervisorFamilyRoots(fleet).get(agent.id);
     return root ? buildSupervisorTimeline(fleet, root, now, timelineRange) : null;
-  }, [agent, allAgents, now, timelineRange]);
+  }, [agent, allAgents, now, timelineRange, timelineHistory]);
 
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);

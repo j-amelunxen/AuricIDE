@@ -15,6 +15,7 @@ import {
 } from '@/lib/agents/events/registry';
 import { appendStreamLines } from '@/lib/agents/events/streamCapture';
 import { AGENT_ACTIVITY_BUMP_MS } from '@/lib/agents/liveness';
+import { stampTimelineEnded, upsertTimelineHistory } from '@/lib/agents/timelineHistory';
 import { loadAppConfig } from '@/lib/config/appConfig';
 import { agentLogLoad } from '@/lib/tauri/agentLog';
 import {
@@ -211,13 +212,24 @@ export function handleApplyAgentRoster(
   // Left the roster, as opposed to not on it yet: a new agent's first output
   // can get here before the roster that introduces it, and its log must not
   // be swept away as a leftover.
-  const left = new Set(state.agents.filter((a) => !onRoster.has(a.id)).map((a) => a.id));
+  const leftAgents = state.agents.filter((a) => !onRoster.has(a.id));
+  const left = new Set(leftAgents.map((a) => a.id));
   const gone = (agentId: string) => left.has(agentId);
   const logsOutlived = Object.keys(state.agentLogMeta).some(gone);
   const shown = state.agentWindowActiveAgentId;
+  const now = Date.now();
 
   set({
     agents: roster.agents,
+    ...(leftAgents.length > 0
+      ? {
+          agentTimelineHistory: upsertTimelineHistory(
+            state.agentTimelineHistory,
+            leftAgents.map((a) => stampTimelineEnded(a, now)),
+            now
+          ),
+        }
+      : {}),
     ...(sameDigests(state.agentWindowErrorDigests, roster.errorDigests)
       ? {}
       : { agentWindowErrorDigests: roster.errorDigests }),

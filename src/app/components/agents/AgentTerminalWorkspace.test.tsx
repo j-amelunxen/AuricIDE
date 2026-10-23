@@ -54,10 +54,14 @@ function renderWorkspace(props: Partial<WorkspaceProps> = {}) {
 
 describe('AgentTerminalWorkspace – outside the modal', () => {
   beforeEach(() => {
-    useStore.setState({ terminalGridCells: null });
+    useStore.setState({ terminalGridCells: null, agentTimelineHistory: [] });
   });
   afterEach(() => {
-    useStore.setState({ terminalGridCells: null, overlayStack: { layers: [] } });
+    useStore.setState({
+      terminalGridCells: null,
+      overlayStack: { layers: [] },
+      agentTimelineHistory: [],
+    });
   });
 
   it('a layout button puts the first tabs into the panes and focuses the first one', async () => {
@@ -294,11 +298,16 @@ describe('AgentTerminalWorkspace – supervisor families', () => {
     });
 
   beforeEach(() => {
-    useStore.setState({ terminalGridCells: null, agentColors: {} });
+    useStore.setState({ terminalGridCells: null, agentColors: {}, agentTimelineHistory: [] });
   });
   afterEach(() => {
     setAlt(false);
-    useStore.setState({ terminalGridCells: null, overlayStack: { layers: [] }, agentColors: {} });
+    useStore.setState({
+      terminalGridCells: null,
+      overlayStack: { layers: [] },
+      agentColors: {},
+      agentTimelineHistory: [],
+    });
   });
 
   it('groups each family under its key or name, the supervisor first, whatever the repo', () => {
@@ -386,6 +395,34 @@ describe('AgentTerminalWorkspace – supervisor families', () => {
 
     await user.click(screen.getByRole('button', { name: 'Hide agent timeline' }));
     expect(screen.queryByTestId('supervisor-timeline')).not.toBeInTheDocument();
+  });
+
+  it('keeps a dismissed child in the timeline after it left the live list', async () => {
+    const user = userEvent.setup();
+    const started = Date.now();
+    const sup: AgentInfo = {
+      ...mail,
+      startedAt: started - 60_000,
+      lastActivityAt: started,
+    };
+    const child: AgentInfo = {
+      ...base,
+      id: 'kid',
+      name: 'Diagnose auric-p',
+      model: 'grok-4.6',
+      status: 'idle',
+      spawnedByAgentId: 'sup-mail',
+      startedAt: started - 30_000,
+      finishedAt: started - 5_000,
+      currentTask: 'Diagnose the hanging probe',
+    };
+    useStore.setState({ agentTimelineHistory: [child] });
+    renderWorkspace({ agent: sup, agents: [sup] });
+
+    await user.click(screen.getByRole('button', { name: 'Show agent timeline' }));
+    const panel = screen.getByTestId('supervisor-timeline');
+    expect(panel).toHaveTextContent('Diagnose auric-p');
+    expect(panel).toHaveTextContent('Diagnose the hanging probe');
   });
 
   it('offers the same timeline from a child of the supervisor', () => {

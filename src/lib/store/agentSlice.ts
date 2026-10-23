@@ -69,6 +69,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agentWindowOpen: false,
   agentWindowActiveAgentId: null,
   agentWindowErrorDigests: {},
+  agentTimelineHistory: [],
 
   setAgentColor: (agentId, color) => {
     const { [agentId]: _cleared, ...rest } = get().agentColors;

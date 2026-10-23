@@ -29,7 +29,7 @@ describe('installSupervisorAdoption', () => {
     let agents = [agent('child', 'sup-old'), agent('other', 'sup-x')];
     const store = {
       getState: () => ({ agents }),
-      setState: vi.fn((patch: { agents: AgentInfo[] }) => {
+      setState: vi.fn((patch: { agents: AgentInfo[]; agentTimelineHistory?: AgentInfo[] }) => {
         agents = patch.agents;
       }),
     };
@@ -42,6 +42,24 @@ describe('installSupervisorAdoption', () => {
     expect(agents.map((a) => a.spawnedByAgentId)).toEqual([payload.toId, 'sup-x']);
     stop();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it('rewrites dismissed children in timeline history too', () => {
+    const { name, payload } = fixtures.supervisors.adoptedEvent;
+    let agents = [agent('live', payload.fromIds[0])];
+    let agentTimelineHistory = [agent('gone', payload.fromIds[0])];
+    const store = {
+      getState: () => ({ agents, agentTimelineHistory }),
+      setState: vi.fn((patch: { agents?: AgentInfo[]; agentTimelineHistory?: AgentInfo[] }) => {
+        if (patch.agents) agents = patch.agents;
+        if (patch.agentTimelineHistory) agentTimelineHistory = patch.agentTimelineHistory;
+      }),
+    };
+    installSupervisorAdoption(store);
+    listeners.get(name)?.(payload);
+
+    expect(agents[0].spawnedByAgentId).toBe(payload.toId);
+    expect(agentTimelineHistory[0].spawnedByAgentId).toBe(payload.toId);
   });
 
   it('writes nothing when no listed agent was a child of those supervisors', () => {

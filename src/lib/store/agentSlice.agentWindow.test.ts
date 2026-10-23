@@ -174,6 +174,32 @@ describe('applyAgentRoster — an empty window fills up again', () => {
     expect(store.getState().agentWindowActiveAgentId).toBe('a1');
   });
 
+  it('keeps a finished agent that left the roster in timeline history', () => {
+    const child = agent('kid', {
+      status: 'idle',
+      spawnedByAgentId: 'sup',
+      startedAt: Date.now() - 60_000,
+      finishedAt: Date.now() - 10_000,
+      currentTask: 'Diagnose',
+    });
+    store.getState().applyAgentRoster({
+      agents: [agent('sup', { role: 'supervisor' }), child],
+      errorDigests: {},
+    });
+
+    store.getState().applyAgentRoster({
+      agents: [agent('sup', { role: 'supervisor' })],
+      errorDigests: {},
+    });
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['sup']);
+    expect(store.getState().agentTimelineHistory.find((a) => a.id === 'kid')).toMatchObject({
+      spawnedByAgentId: 'sup',
+      status: 'idle',
+      currentTask: 'Diagnose',
+    });
+  });
+
   it('shows a new agent after the last one was dismissed', () => {
     store.getState().applyAgentRoster({ agents: [agent('a1')], errorDigests: {} });
     store.getState().applyAgentRoster({ agents: [], errorDigests: {} });

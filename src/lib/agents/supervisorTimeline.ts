@@ -4,9 +4,10 @@ import { supervisorFamilyRoots } from './supervisorFamily';
 /**
  * One supervisor family drawn as a time chart.
  *
- * Each agent still in the fleet is one bar: the run the IDE already booked
- * (when it started, when it stopped, how it ended). A bar is not a task list.
- * Nothing in the agent record distinguishes one chore from the next, so
+ * Each agent in the fleet is one bar: the run the IDE already booked
+ * (when it started, when it stopped, how it ended). Finished and dismissed
+ * agents stay in that fleet via `agentTimelineHistory`; a bar is not a task
+ * list. Nothing in the agent record distinguishes one chore from the next, so
  * inventing several bars would draw work that did not happen.
  *
  * A dotted hand-off is the spawn itself. It leaves the parent that was alive

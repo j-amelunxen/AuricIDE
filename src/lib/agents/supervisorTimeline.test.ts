@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../tauri/agents';
 import { buildSupervisorTimeline, timelineBarLabel } from './supervisorTimeline';
+import { mergeTimelineFleet } from './timelineHistory';
 
 const NOW = 1_000_000_000_000;
 const MIN = 60_000;
@@ -184,6 +185,23 @@ describe('buildSupervisorTimeline', () => {
   it('returns nothing for an agent that is not a supervisor', () => {
     expect(buildSupervisorTimeline(fleet, 'plain', NOW, '30m')).toBeNull();
     expect(buildSupervisorTimeline(fleet, 'missing', NOW, '30m')).toBeNull();
+  });
+
+  it('still draws a finished child that is only in the merged history', () => {
+    const live = [supervisor, runningChild, grandchild, queuedChild];
+    const history = [failedChild];
+    const model = buildSupervisorTimeline(mergeTimelineFleet(live, history), 'sup', NOW, '30m')!;
+    expect(model.rows.map((row) => row.agent.id)).toEqual([
+      'sup',
+      'failed',
+      'child',
+      'grand',
+      'queued',
+    ]);
+    expect(model.rows.find((row) => row.agent.id === 'failed')?.bar?.tone).toBe('error');
+    expect(model.handoffs.some((link) => link.fromId === 'sup' && link.toId === 'failed')).toBe(
+      true
+    );
   });
 });
 

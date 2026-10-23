@@ -12,8 +12,8 @@ interface ChildrenAdoptedEvent {
 }
 
 interface AgentListStore {
-  getState: () => { agents: AgentInfo[] };
-  setState: (patch: { agents: AgentInfo[] }) => void;
+  getState: () => { agents: AgentInfo[]; agentTimelineHistory?: AgentInfo[] };
+  setState: (patch: { agents: AgentInfo[]; agentTimelineHistory?: AgentInfo[] }) => void;
 }
 
 /**
@@ -26,9 +26,16 @@ export function installSupervisorAdoption(store: AgentListStore): () => void {
   return subscribeToTauriEvent<ChildrenAdoptedEvent>(
     SUPERVISOR_CHILDREN_ADOPTED_EVENT,
     ({ toId, fromIds }) => {
-      const { agents } = store.getState();
+      const { agents, agentTimelineHistory = [] } = store.getState();
       const adopted = adoptSupervisorChildren(agents, toId, fromIds);
-      if (adopted !== agents) store.setState({ agents: adopted });
+      const adoptedHistory = adoptSupervisorChildren(agentTimelineHistory, toId, fromIds);
+      if (adopted === agents && adoptedHistory === agentTimelineHistory) return;
+      store.setState({
+        agents: adopted,
+        ...(adoptedHistory !== agentTimelineHistory
+          ? { agentTimelineHistory: adoptedHistory }
+          : {}),
+      });
     },
     '[Browser mode] Supervisor adoption listener not available'
   );

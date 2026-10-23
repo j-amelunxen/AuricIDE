@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import type { AgentInfo } from '../tauri/agents';
 import type { AgentSlice } from './agentSlice';
 import { agentLogAppend, agentLogLoad, agentLogPrune } from '../tauri/agentLog';
 import { APP_CONFIG_KEYS } from '../config/appConfig';
@@ -2701,5 +2702,76 @@ describe('agentSlice – on-disk history', () => {
     store.getState().updateAgentStatus('hist-off-finish', 'idle');
 
     expect(agentLogAppend).not.toHaveBeenCalled();
+  });
+});
+
+describe('agentSlice – timeline history', () => {
+  let store: StoreApi<AgentSlice>;
+  const now = Date.now();
+
+  const row = (id: string, extra: Partial<AgentInfo> = {}): AgentInfo => ({
+    id,
+    name: id,
+    model: 'opus',
+    provider: 'claude',
+    status: 'idle',
+    startedAt: now - 60_000,
+    finishedAt: now - 10_000,
+    ...extra,
+  });
+
+  beforeEach(() => {
+    resetRemovedAgents();
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('keeps a dismissed agent in timeline history and off the live list', () => {
+    const child = row('kid', { spawnedByAgentId: 'sup', currentTask: 'Diagnose' });
+    store.setState({
+      agents: [row('sup', { role: 'supervisor', status: 'running', finishedAt: undefined }), child],
+    });
+
+    store.getState().dismissFinishedAgent('kid');
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['sup']);
+    expect(store.getState().agentTimelineHistory.map((a) => a.id)).toContain('kid');
+    expect(store.getState().agentTimelineHistory.find((a) => a.id === 'kid')).toMatchObject({
+      spawnedByAgentId: 'sup',
+      status: 'idle',
+      finishedAt: now - 10_000,
+      currentTask: 'Diagnose',
+    });
+  });
+
+  it('keeps a killed agent in timeline history as finished', async () => {
+    store.setState({
+      agents: [row('kid', { status: 'running', finishedAt: undefined, spawnedByAgentId: 'sup' })],
+    });
+
+    await store.getState().killRunningAgent('kid');
+
+    expect(store.getState().agents).toEqual([]);
+    const remembered = store.getState().agentTimelineHistory.find((a) => a.id === 'kid');
+    expect(remembered?.status).toBe('idle');
+    expect(remembered?.finishedAt).toEqual(expect.any(Number));
+    expect(remembered?.spawnedByAgentId).toBe('sup');
+  });
+
+  it('keeps an evicted finished agent in timeline history', () => {
+    const finished = Array.from({ length: MAX_FINISHED_AGENTS }, (_, i) =>
+      row(`agent-${i}`, { startedAt: now - 60_000 + i, finishedAt: now - 30_000 + i })
+    );
+    store.setState({
+      agents: [
+        ...finished,
+        row('agent-new', { status: 'running', finishedAt: undefined, startedAt: now }),
+      ],
+    });
+
+    store.getState().updateAgentStatus('agent-new', 'idle');
+
+    expect(store.getState().agents.find((a) => a.id === 'agent-0')).toBeUndefined();
+    expect(store.getState().agentTimelineHistory.map((a) => a.id)).toContain('agent-0');
   });
 });

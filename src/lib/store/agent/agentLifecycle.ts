@@ -3,6 +3,7 @@ import { pushHeartbeat } from '@/lib/agents/events/heartbeat';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
+import { stampTimelineEnded, upsertTimelineHistory } from '@/lib/agents/timelineHistory';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
 import { uniqueAgentName } from '@/lib/agents/naming';
 import {
@@ -62,6 +63,10 @@ import {
   type SupervisorSkillLaunch,
 } from './agentTypes';
 import { markAgentsRemoved } from './removedAgents';
+
+function rememberTimeline(get: () => AgentSlice, agents: readonly AgentInfo[]): AgentInfo[] {
+  return upsertTimelineHistory(get().agentTimelineHistory, agents, Date.now());
+}
 
 export async function handleSpawnNewAgent(
   config: AgentConfig,
@@ -435,7 +440,9 @@ export async function handleKillRunningAgent(
 
   const remainingAgents = get().agents.filter((a) => a.id !== agentId);
   markAgentsRemoved([agentId]);
+  const ended = agent ? [stampTimelineEnded(agent, Date.now())] : [];
   set({
+    agentTimelineHistory: rememberTimeline(get, ended),
     agents: remainingAgents,
     ...withoutAgentRecords(get(), agentId),
     ...reconcileAgentRuntimeState(
@@ -487,6 +494,7 @@ export function handleDismissFinishedAgent(
   markAgentsRemoved([agentId]);
   forgetRunResultsOf([agent]);
   set({
+    agentTimelineHistory: rememberTimeline(get, [agent]),
     agentSpawnConfigs: remainingConfigs,
     agents: remainingAgents,
     ...withoutAgentRecords(get(), agentId),
@@ -649,8 +657,9 @@ export function handleUpdateAgentStatus(
 
   const finished = updatedAgents.filter((a) => a.status === 'idle' || a.status === 'error');
   const excess = finished.length - MAX_FINISHED_AGENTS;
+  const timelineHistory = rememberTimeline(get, finished);
   if (excess <= 0) {
-    set({ agents: updatedAgents });
+    set({ agents: updatedAgents, agentTimelineHistory: timelineHistory });
     return;
   }
 
@@ -661,6 +670,7 @@ export function handleUpdateAgentStatus(
   forgetRunResultsOf(finished.filter((a) => evictedIds.has(a.id)));
 
   set({
+    agentTimelineHistory: timelineHistory,
     agents: remainingAgents,
     agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !evictedIds.has(id))),
     agentLogMeta: Object.fromEntries(
@@ -707,7 +717,12 @@ export async function handleKillAgentsForRepoPath(
   combo.cancelSkillCombosForAgents?.([...killedIds]);
   const remainingAgents = agents.filter((a) => !killedIds.has(a.id));
   markAgentsRemoved(killedIds);
+  const now = Date.now();
   set({
+    agentTimelineHistory: rememberTimeline(
+      get,
+      agents.filter(belongs).map((a) => stampTimelineEnded(a, now))
+    ),
     agents: remainingAgents,
     agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),
     agentLogMeta: Object.fromEntries(
