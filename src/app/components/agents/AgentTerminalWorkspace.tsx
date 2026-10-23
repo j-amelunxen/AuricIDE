@@ -18,8 +18,10 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
-import { isFinishedAgent, splitTerminalAgents } from '@/lib/agents/fleet';
+import { hasTerminal, isFinishedAgent, splitTerminalAgents } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
+import { supervisorFamilyRoots } from '@/lib/agents/supervisorFamily';
+import { buildSupervisorTimeline, type TimelineRangeId } from '@/lib/agents/supervisorTimeline';
 import { groupAgentTabs, type AgentTabGroup } from '@/lib/agents/tabGroups';
 import {
   autoPlace,
@@ -38,6 +40,7 @@ import {
 } from '@/lib/agents/terminalGrid';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
+import { SupervisorTimelinePanel, SupervisorTimelineToggle } from './SupervisorTimeline';
 import { AgentTab } from './AgentTab';
 import type { AgentXtermHandle } from './AgentXterm';
 import { TerminalGrid } from './TerminalGrid';
@@ -328,6 +331,8 @@ export function AgentTerminalWorkspace({
   // View state only: which pane is laid over the split for a closer look.
   // It lapses by itself once that pane is no longer part of a split.
   const [maximizedPick, setMaximizedPick] = useState<string | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelineRange, setTimelineRange] = useState<TimelineRangeId>('30m');
   const { place } = grid;
   const dropOnGrid = useCallback(
     (agentId: string, zone: DropZone) => {
@@ -453,8 +458,23 @@ export function AgentTerminalWorkspace({
     });
   }, [agent.id, agent.name, onSaveScreen]);
 
+  const openTimelineAgent = useCallback(
+    (target: AgentInfo) => {
+      if (!hasTerminal(target) || target.id === agent.id) return;
+      onSwitchAgent?.(target);
+    },
+    [agent.id, onSwitchAgent]
+  );
+
   const now = useNow();
   const state = agentState(agent, now);
+  // The chart reads the whole fleet, headless runs included. The tab strip
+  // hides those on purpose; they are still agents this supervisor started.
+  const timeline = useMemo(() => {
+    const fleet = allAgents ?? [agent];
+    const root = supervisorFamilyRoots(fleet).get(agent.id);
+    return root ? buildSupervisorTimeline(fleet, root, now, timelineRange) : null;
+  }, [agent, allAgents, now, timelineRange]);
 
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -467,9 +487,9 @@ export function AgentTerminalWorkspace({
       {/* Header */}
       <div
         {...headerProps}
-        className={`flex items-center justify-between px-5 py-3 border-b border-white/10 glass flex-shrink-0 ${headerProps?.className ?? ''}`.trimEnd()}
+        className={`flex items-center gap-3 px-5 py-3 border-b border-white/10 glass flex-shrink-0 ${headerProps?.className ?? ''}`.trimEnd()}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div
             className={`relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${isRunning ? 'from-primary/20 to-transparent' : 'from-white/5 to-transparent'}`}
           >
@@ -506,7 +526,17 @@ export function AgentTerminalWorkspace({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {timeline && (
+          <div className="flex min-w-0 flex-1 items-center justify-end">
+            <SupervisorTimelineToggle
+              open={timelineOpen}
+              runningCount={timeline.runningCount}
+              onToggle={() => setTimelineOpen((open) => !open)}
+            />
+          </div>
+        )}
+
+        <div className={`flex shrink-0 items-center gap-2 ${timeline ? '' : 'ml-auto'}`}>
           {headlessRunning.length > 0 && <HeadlessMarker agents={headlessRunning} />}
           {(agents?.length ?? 0) > 1 && (
             <LayoutPresets
@@ -533,6 +563,17 @@ export function AgentTerminalWorkspace({
           )}
         </div>
       </div>
+
+      {timelineOpen && timeline && (
+        <SupervisorTimelinePanel
+          model={timeline}
+          range={timelineRange}
+          onRange={setTimelineRange}
+          now={now}
+          currentAgentId={agent.id}
+          onOpenAgent={openTimelineAgent}
+        />
+      )}
 
       {errorDigest && (
         <div

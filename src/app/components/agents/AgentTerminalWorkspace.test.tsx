@@ -82,6 +82,11 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
     ).toBeDisabled();
   });
 
+  it('offers no timeline for an agent outside a supervisor family', () => {
+    renderWorkspace();
+    expect(screen.queryByRole('button', { name: 'Show agent timeline' })).not.toBeInTheDocument();
+  });
+
   it('shows no layout buttons for a single agent', () => {
     renderWorkspace({ agents: [running] });
     expect(screen.queryByRole('group', { name: 'Terminal layout' })).not.toBeInTheDocument();
@@ -334,6 +339,54 @@ describe('AgentTerminalWorkspace – supervisor families', () => {
 
     await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(active));
     expect(onSwitchAgent).toHaveBeenCalledWith(expect.objectContaining({ id: expected }));
+  });
+
+  it('folds a timeline of this supervisor’s agents down from the header', async () => {
+    const user = userEvent.setup();
+    const started = Date.now();
+    const sup: AgentInfo = {
+      ...mail,
+      startedAt: started - 60_000,
+      lastActivityAt: started,
+    };
+    const child: AgentInfo = {
+      ...base,
+      id: 'kid',
+      name: 'Writer',
+      model: 'sonnet',
+      spawnedByAgentId: 'sup-mail',
+      startedAt: started - 30_000,
+      lastActivityAt: started,
+      currentTask: 'Draft the pricing page',
+    };
+    const { onSwitchAgent } = renderWorkspace({ agent: sup, agents: [sup, child] });
+
+    expect(screen.queryByTestId('supervisor-timeline')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show agent timeline' }));
+
+    const panel = screen.getByTestId('supervisor-timeline');
+    expect(panel).toHaveTextContent('Writer');
+    expect(panel).toHaveTextContent('Draft the pricing page');
+    await user.click(within(panel).getByRole('button', { name: 'Show Writer' }));
+    expect(onSwitchAgent).toHaveBeenCalledWith(expect.objectContaining({ id: 'kid' }));
+
+    await user.click(screen.getByRole('button', { name: 'Hide agent timeline' }));
+    expect(screen.queryByTestId('supervisor-timeline')).not.toBeInTheDocument();
+  });
+
+  it('offers the same timeline from a child of the supervisor', () => {
+    const started = Date.now();
+    const sup: AgentInfo = { ...mail, startedAt: started, lastActivityAt: started };
+    const child: AgentInfo = {
+      ...base,
+      id: 'kid',
+      name: 'Writer',
+      spawnedByAgentId: 'sup-mail',
+      startedAt: started,
+      lastActivityAt: started,
+    };
+    renderWorkspace({ agent: child, agents: [sup, child] });
+    expect(screen.getByRole('button', { name: 'Show agent timeline' })).toBeInTheDocument();
   });
 
   it('a family pane keeps the project it works in', () => {
