@@ -410,9 +410,10 @@ half is `supervisors` in `agentControl.fixtures.json`
   Without `provider`, the project's `balancing.next` is taken, else the
   supervisor's own provider when the project allows it, else the first one it
   allows (`Dispatcher::preferred_provider`, shared with link jobs). Without
-  `model`, the allowed model with the smallest `rank` is taken, the first in
-  the provider's order on a tie; unranked models are never picked, and none
-  ranked is `supervisor_denied` with `no_ranked_model`
+  `model`, the allowed model with the smallest `rank` is taken; a same-rank
+  tie prefers a non-fast model (id or label contains "fast") over a fast one,
+  else the first in the provider's order; unranked models are never picked,
+  and none ranked is `supervisor_denied` with `no_ranked_model`
   (`policy::smallest_ranked_model`, also what a link job runs).
 - **A large model needs a stated reason.** A resolved model of rank 3 or more
   (`reasonRequiredFromRank`) without a non-blank `modelReason` is

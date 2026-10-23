@@ -316,6 +316,8 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(prompt).toContain('modelReason');
     expect(prompt).toMatch(/rank 2 is the default: driving a browser, reading text/i);
     expect(prompt).toContain('Publicly visible work or a matter of taste is no reason');
+    expect(prompt).toContain('Among models of the same rank, take a non-fast one');
+    expect(prompt).toContain('a fast variant only when the human asked for speed');
   });
 
   it('states a load-balancing ratio only for a project that has one, unnamed providers at 0', () => {

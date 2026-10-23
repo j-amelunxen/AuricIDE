@@ -1096,8 +1096,25 @@ fn allowed_offers<'o>(
         .filter(move |option| allowed.contains(&option.value))
 }
 
-/// The allowed model with the smallest rank, the first in the provider's
-/// order on a tie. Unranked models are never picked.
+/// A speed variant: id or label contains "fast" (`modelChoiceRules`).
+fn is_fast_model(option: &ModelOption) -> bool {
+    option.value.to_ascii_lowercase().contains("fast")
+        || option.label.to_ascii_lowercase().contains("fast")
+}
+
+/// Smaller rank wins; a non-fast model beats a fast one of the same rank;
+/// otherwise the first in the provider's order.
+fn prefer_over(option: &ModelOption, best: &ModelOption) -> bool {
+    match option.rank.cmp(&best.rank) {
+        std::cmp::Ordering::Less => true,
+        std::cmp::Ordering::Greater => false,
+        std::cmp::Ordering::Equal => is_fast_model(best) && !is_fast_model(option),
+    }
+}
+
+/// The allowed model with the smallest rank. A same-rank tie prefers a
+/// non-fast model, else the first in the provider's order. Unranked models
+/// are never picked.
 pub fn smallest_ranked_model<'o>(
     offered: &'o [ModelOption],
     allowed: &'o [String],
@@ -1105,7 +1122,7 @@ pub fn smallest_ranked_model<'o>(
     allowed_offers(offered, allowed)
         .filter(|option| option.rank.is_some())
         .fold(None, |best: Option<&ModelOption>, option| match best {
-            Some(best) if best.rank <= option.rank => Some(best),
+            Some(best) if !prefer_over(option, best) => Some(best),
             _ => Some(option),
         })
 }

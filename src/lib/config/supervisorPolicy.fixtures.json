@@ -3821,8 +3821,9 @@
   "modelChoiceRules": [
     "Which model a supervisor's spawn runs, decided before checkSpawn. offered is what the provider offers (value, rank),",
     "allowed the models the policy leaves for it in that project (visibleProjects' models). request.model null means",
-    "the server picks: the allowed model with the smallest rank; unranked models are never picked; a tie goes to the",
-    "first in the provider's order. Nothing ranked: no_ranked_model. Then the size gate: if the resolved model is",
+    "the server picks: the allowed model with the smallest rank; unranked models are never picked; a same-rank tie",
+    "goes to a non-fast model (id or label contains \"fast\") over a fast one, else the first in the provider's order.",
+    "Nothing ranked: no_ranked_model. Then the size gate: if the resolved model is",
     "allowed, offered and its rank is >= reasonRequiredFromRank, a modelReason that is missing or blank is",
     "model_reason_required (the human-facing message names the smaller allowed models). A model outside allowed or",
     "offered passes here untouched: checkSpawn refuses it with its own reason. picked says whether the server chose."
@@ -3942,6 +3943,81 @@
       "expected": {
         "ok": true,
         "model": "sonnet",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model: a fast variant loses a same-rank tie even when listed first",
+      "offered": [
+        {
+          "value": "grok-4.7-build-fast",
+          "label": "Grok 4.7 Build Fast",
+          "rank": 2
+        },
+        {
+          "value": "grok-4.6",
+          "label": "Grok 4.6",
+          "rank": 2
+        }
+      ],
+      "allowed": ["grok-4.7-build-fast", "grok-4.6"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "grok-4.6",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model: a Fast label loses a same-rank tie",
+      "offered": [
+        {
+          "value": "grok-4.7",
+          "label": "Grok 4.7 Fast",
+          "rank": 2
+        },
+        {
+          "value": "grok-4.6",
+          "label": "Grok 4.6",
+          "rank": 2
+        }
+      ],
+      "allowed": ["grok-4.7", "grok-4.6"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "grok-4.6",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model: a fast variant is picked when it is the only smallest rank",
+      "offered": [
+        {
+          "value": "grok-4.7-build-fast",
+          "label": "Grok 4.7 Build Fast",
+          "rank": 1
+        },
+        {
+          "value": "grok-4.6",
+          "label": "Grok 4.6",
+          "rank": 2
+        }
+      ],
+      "allowed": ["grok-4.7-build-fast", "grok-4.6"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "grok-4.7-build-fast",
         "picked": true
       }
     },

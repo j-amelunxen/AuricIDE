@@ -254,7 +254,8 @@ const SPAWN_RULES = [
     'From rank 3 on, pass `modelReason` (one sentence on why a smaller model will not ' +
     'do), or the spawn is refused. Publicly visible work or a matter of taste is no reason for ' +
     'a bigger model when a human approves the result anyway. Never pick a model of unknown ' +
-    'size unless nothing else is allowed.',
+    'size unless nothing else is allowed. Among models of the same rank, take a non-fast one; ' +
+    'a fast variant only when the human asked for speed.',
   '- **Worktree: for code changes, not for questions.** Pass `worktree: true` when the agent ' +
     'changes code in a repository where the human or another agent may work at the same time; ' +
     'it then works on its own branch in its own folder. Leave it out for questions, checks and ' +
