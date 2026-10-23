@@ -12,7 +12,7 @@ export interface SupervisorRun {
   /** Rust stopped counting; `fileCount` is a floor. */
   truncated: boolean;
   /**
-   * The Project Manager that owns this folder (`docs/design-project-manager.md`).
+   * The Project Manager that owns this folder.
    * Absent or null for an ordinary run.
    */
   manager?: Pick<SupervisorManager, 'key' | 'name' | 'archivedAt'> | null;

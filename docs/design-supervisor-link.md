@@ -315,7 +315,7 @@ refused. The IDE never opens its provider picker for a link spawn.
   key to another client gets the winner: Rust refuses its launch with the
   `supervisor_key_in_use` sentence, the bridge maps it to that code
   (`spawnRefusals`), and the link then answers the supervisor that won.
-- `key` naming a **Project Manager** (`docs/design-project-manager.md`): the
+- `key` naming a **Project Manager**: the
   key belongs to that manager's run folder. Without a live one, Rust turns the
   launch into a resume of the manager's folder, so the client gets the
   manager with its instructions and memory, never a new supervisor under its

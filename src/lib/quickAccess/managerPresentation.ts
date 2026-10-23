@@ -2,8 +2,8 @@ import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConf
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 
 /**
- * How a Project Manager is shown, by its key (`docs/design-project-manager.md`,
- * "Settings → Supervisor → Project Managers"). Presentation is an application
+ * How a Project Manager is shown, by its key
+ * (Settings → Supervisor → Project Managers). Presentation is an application
  * preference; identity stays in Rust. A stored key the registry no longer has
  * is never read, so nothing here has to clean up after a removal.
  */

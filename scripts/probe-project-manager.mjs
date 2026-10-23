@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Real-lane probe for Project Managers (docs/design-project-manager.md). The
+// Real-lane probe for Project Managers. The
 // Rust and Vitest suites check the registry, the launch rules and the prompt
 // against their fixtures; only this checks a running app: a run promoted on
 // disk, opened by its key over control.sock and the supervisor link, refused

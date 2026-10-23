@@ -76,7 +76,7 @@ export interface SupervisorSkillLaunch {
    */
   resumeRunDir?: string;
   /**
-   * Open this Project Manager (`docs/design-project-manager.md`): its live
+   * Open this Project Manager: its live
    * supervisor when there is one, else a resume of its folder. Refused for a key
    * the registry does not know or one that is archived.
    */

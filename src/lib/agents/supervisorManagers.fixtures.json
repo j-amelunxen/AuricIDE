@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-checkable half of docs/design-project-manager.md (Project Managers: supervisors with a name and a memory). Rust reads it in supervisor::managers, supervisor::memory and machine tests (include_str!), TypeScript in src/lib/agents/supervisorManagers.ts. Change this first, then the doc, then both sides.",
+  "$comment": "Project Managers: supervisors with a name and a memory. Rust reads it in supervisor::managers, supervisor::memory and machine tests (include_str!), TypeScript in src/lib/agents/supervisorManagers.ts. Change this first, then both sides.",
   "version": 1,
   "registryFileName": "supervisor-managers.json",
   "registryVersion": 1,

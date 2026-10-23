@@ -6,7 +6,7 @@
 //! draws the menu, registers the shortcuts, and hands every pick back to the
 //! main window as `menu-bar-launch` — the same launch path the tile uses, so a
 //! skill started from the menu bar runs exactly like one clicked in the app.
-//! Project Managers (`docs/design-project-manager.md`) ride along the same way:
+//! Project Managers ride along the same way:
 //! a section of the menu and shortcuts of their own, answered with their key.
 
 use std::str::FromStr;

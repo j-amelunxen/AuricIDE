@@ -469,7 +469,7 @@ function ManagersHeader({
  * first; a run unfolds into its files, newest on top, and can be resumed —
  * a new supervisor in that folder, told to catch up before it acts.
  *
- * Runs a human chose to keep are Project Managers (`docs/design-project-manager.md`):
+ * Runs a human chose to keep are Project Managers:
  * pinned above the runs by name, each with an inspector, an archive and a menu.
  *
  * Nothing watches the folder, so the list reads on mount, on refresh, when

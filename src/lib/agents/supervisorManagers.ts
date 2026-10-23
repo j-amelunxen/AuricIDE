@@ -7,9 +7,9 @@ import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import fixtures from './supervisorManagers.fixtures.json';
 
 /**
- * The TypeScript half of `docs/design-project-manager.md`. Name rules, the key
- * derivation and the refusal sentences are twins of `supervisor/managers.rs`;
- * both run `supervisorManagers.fixtures.json`, so change the fixtures first.
+ * Name rules, the key derivation and the refusal sentences are twins of
+ * `supervisor/managers.rs`; both run `supervisorManagers.fixtures.json`, so
+ * change the fixtures first.
  */
 
 export const MANAGER_NAME_MAX_LENGTH = fixtures.names.maxLength;

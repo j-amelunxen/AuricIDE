@@ -1,5 +1,4 @@
-//! Project Managers: supervisor runs the human chose to keep, with a name
-//! (`docs/design-project-manager.md`).
+//! Project Managers: supervisor runs the human chose to keep, with a name.
 //!
 //! Identity lives in `<app_data_dir>/supervisor-managers.json`, owned by Rust,
 //! not in the run folder, because the manager's own file tools reach that whole

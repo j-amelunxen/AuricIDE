@@ -1,9 +1,8 @@
 //! `okf validate` for a manager's bundle: find it through `machine/`, run it
 //! with a timeout, read what it says defensively.
 //!
-//! The parsing order and its reasons are in `docs/design-project-manager.md`
-//! ("Version drift and parsing"); the captures in
-//! `machine/testdata/okf-validate-*.txt` are its source of truth. Tool output
+//! The captures in
+//! `machine/testdata/okf-validate-*.txt` are the source of truth. Tool output
 //! never becomes a message here: the sentences are ours, only a file path is
 //! taken from what okf printed.
 

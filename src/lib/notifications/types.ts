@@ -123,8 +123,8 @@ export type NotificationAction =
       id: string;
       label: string;
       /**
-       * Opens a Project Manager, with a task when the reminder has one
-       * (`docs/design-project-manager.md`, "The working loop"). The task is
+       * Opens a Project Manager, with a task when the reminder has one.
+       * The task is
        * honoured only for a user-authored payload — see `trust.ts` — and the
        * kind is not in the MCP vocabulary at all.
        */

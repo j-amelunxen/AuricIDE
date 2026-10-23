@@ -1,5 +1,5 @@
 //! The Project Manager deny rule in the interactive TUI, against the real
-//! Claude CLI (docs/design-project-manager.md, "Instructions").
+//! Claude CLI.
 //!
 //! Slice 0 checked `--disallowedTools "Edit(./INSTRUCTIONS.md)"
 //! "Write(./INSTRUCTIONS.md)"` in print mode only. A manager runs in the TUI,

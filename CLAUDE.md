@@ -635,8 +635,8 @@ A supervisor run the human chose to keep: "Promote to Project Manager…" on a
 row of the Supervisor Runs rail gives it a name, a pinned place in the rail,
 a Quick Access tile, a menu-bar entry, an `INSTRUCTIONS.md` and an organised
 memory in its folder. Underneath it is still a supervisor: same scope, same
-policy, same socket. The contract is `docs/design-project-manager.md`, the
-machine-checkable half `src/lib/agents/supervisorManagers.fixtures.json` (read
+policy, same socket. The contract is
+`src/lib/agents/supervisorManagers.fixtures.json` (read
 by Rust and TS — change it first). In code it is **manager**
 (`supervisor/managers.rs`, `supervisorManagers.ts`, `managerKey`), never `pm`
 or `ProjectManager*`: both already mean the tickets.

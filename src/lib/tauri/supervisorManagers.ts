@@ -2,7 +2,7 @@ import { invoke } from './invoke';
 
 /**
  * One Project Manager: a supervisor run the human chose to keep
- * (`supervisor/managers.rs`, `docs/design-project-manager.md`). The registry in
+ * (`supervisor/managers.rs`). The registry in
  * `<app_data_dir>/supervisor-managers.json` is the truth, never the run folder.
  */
 export interface SupervisorManager {

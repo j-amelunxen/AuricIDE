@@ -117,7 +117,7 @@ export interface SupervisorSpawnInput {
   instructions?: string;
   /** An earlier run's folder to work in again; Rust checks it is one. */
   resumeRunDir?: string;
-  /** Set when the launch is a Project Manager's (`docs/design-project-manager.md`). */
+  /** Set when the launch is a Project Manager's. */
   manager?: SupervisorManagerLaunch;
 }
 

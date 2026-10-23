@@ -1,6 +1,5 @@
 //! A Project Manager's memory as the IDE sees it: what is in `knowledge/`,
-//! which rules of our layout it breaks, and what `okf validate` makes of it
-//! (`docs/design-project-manager.md`, "Validation and what the IDE shows").
+//! which rules of our layout it breaks, and what `okf validate` makes of it.
 //!
 //! Two checks, two owners. The layout check (`layout.rs`) is ours and needs no
 //! tool. The okf check (`okf.rs`) runs when okf is on the machine. Rust runs

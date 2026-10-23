@@ -360,7 +360,7 @@ export interface SupervisorPromptOptions {
   instructions?: string;
   /** The folder name of an earlier run this supervisor works in again. */
   resumedRun?: string;
-  /** Set for a Project Manager (`docs/design-project-manager.md`); absent for a plain supervisor. */
+  /** Set for a Project Manager; absent for a plain supervisor. */
   manager?: SupervisorPromptManager;
 }
 
