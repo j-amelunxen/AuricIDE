@@ -14,7 +14,7 @@
       "metrics": [
         {
           "label": "files in src/app",
-          "value": "396"
+          "value": "439"
         }
       ],
       "position": [-3.55, 0, 0],
@@ -42,7 +42,7 @@
       "metrics": [
         {
           "label": "slices",
-          "value": "35"
+          "value": "36"
         }
       ],
       "position": [-4.2, -5.5, 0],
@@ -68,7 +68,7 @@
       "metrics": [
         {
           "label": "wrapper files",
-          "value": "46"
+          "value": "50"
         }
       ],
       "position": [4.2, -5.5, 0]
@@ -84,7 +84,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "175"
+          "value": "189"
         }
       ],
       "position": [3.75, -11.2, 0],
@@ -101,7 +101,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "15"
+          "value": "17"
         }
       ],
       "position": [-8.9, -17.1, 0],
@@ -117,7 +117,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "8"
+          "value": "13"
         }
       ],
       "position": [-13.4, -17.1, 0],
@@ -133,7 +133,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "14"
+          "value": "15"
         }
       ],
       "position": [-3.75, -11.2, 0],
@@ -168,7 +168,7 @@
       "metrics": [
         {
           "label": "rust files",
-          "value": "15"
+          "value": "17"
         }
       ],
       "position": [2.5, -17.1, 0],
@@ -443,15 +443,15 @@
       "rows": [
         {
           "label": "store slices",
-          "value": "35"
+          "value": "36"
         },
         {
           "label": "IPC wrapper files",
-          "value": "46"
+          "value": "50"
         },
         {
           "label": "rust files",
-          "value": "175"
+          "value": "189"
         },
         {
           "label": "MCP tool files",
