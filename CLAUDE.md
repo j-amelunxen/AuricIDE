@@ -94,6 +94,28 @@ forget they can fail on their own: `automation-surface:check` (regenerates
 (copy-paste detection) and `tauri:machete` (unused Rust deps) — alongside
 `tauri:versions:check`, lint, format, TS tests, cargo test, clippy and rustfmt.
 
+### Architecture docs and scenes (`docs/architecture/`)
+
+`docs/architecture/` holds `README.md` (modules, dependencies, gap list),
+`interfaces.md` (external docking points) and the 3D scenes `*.scene.json`
+(`auricide-modules`, `auricide-interfaces`, `auricide-runtime-flow`, `system` and the
+per-module scenes). The scenes are served to external clients through the Supervisor
+Link, so stale scenes show wrong architecture to users.
+
+- **What counts as architectural impact:** new, removed or renamed modules or Rust/TS
+  top-level areas; changed dependencies between modules; new, changed or removed
+  external interfaces (Tauri commands/events, MCP servers/tools, Supervisor Link
+  methods, policy fields, file contracts, hooks, `AURIC_*` env vars); or changed
+  runtime flows (supervisor, agent or job lifecycle).
+- **Before finishing:** update the affected `docs/architecture/*.md` and
+  `*.scene.json` files (including any file/slice/tool/command counts that would drift),
+  run `scene validate docs/architecture --root . --strict` with the `scene` CLI from
+  the `3d-architecture` project (`@archscene/core`) — and `scene layout <file> --check`
+  when a scene's graph changed — and note the update in the commit or PR. If nothing
+  architectural changed, no update is needed.
+- **Reviews and checks** must verify that changes with architectural impact include the
+  corresponding `docs/architecture/` updates and pass strict scene validation.
+
 ---
 
 ## Architecture Overview
