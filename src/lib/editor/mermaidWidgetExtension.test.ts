@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import mermaid from 'mermaid';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import {
@@ -61,6 +62,13 @@ describe('mermaidWidgetExtension', () => {
     const doc = '# Title\n\nJust regular markdown.\n```js\nconst x = 1;\n```\n';
     const view = createView(doc);
     expect(view).toBeDefined();
+    view.destroy();
+  });
+
+  it('draws flowcharts with the real mermaid renderer, not the canvas widget', async () => {
+    const view = createView('# Title\n```mermaid\ngraph TD\n  A-->B\n```\n');
+    await vi.waitFor(() => expect(mermaid.render).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(mermaid.render).mock.calls[0][1]).toBe('graph TD\n  A-->B');
     view.destroy();
   });
 

@@ -9,7 +9,6 @@ import {
 import { Annotation, StateEffect, StateField } from '@codemirror/state';
 import { extractMermaidBlocks } from './mermaidBlocks';
 import {
-  isMermaidFlowchart,
   parseMermaidFlowchart,
   serializeMermaidFlowchart,
 } from '@/lib/mermaid/mermaidFlowchartParser';
@@ -220,17 +219,8 @@ class MermaidWidgetPlugin {
         const code = block.code.trim();
         if (!code) continue;
 
-        // Route flowcharts to the interactive React Flow widget
-        if (isMermaidFlowchart(code)) {
-          const widget = Decoration.widget({
-            widget: new MermaidFlowchartWidget(code, block.from, block.to),
-            block: true,
-          });
-          ranges.push({ pos: block.to, widget });
-          continue;
-        }
-
-        // Non-flowchart: render as SVG via mermaid library (lazy-loaded)
+        // Every diagram type, flowcharts included, is drawn by mermaid itself so the
+        // layout matches mermaid.live; the React Flow canvas is no longer routed here.
         if (!this.cache.has(code)) {
           needsUpdate = true;
           try {
