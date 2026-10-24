@@ -63,3 +63,10 @@ tauri-plugin-global-shortcut = "2"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time"] }
+
+# Dependencies carry no debug info in dev builds. Their full DWARF made up most of
+# target/debug (one objc2-app-kit rlib alone was 150 MB), and stepping into a
+# dependency is rare enough that a release-style backtrace there is fine.
+# Our own crate keeps full debug info.
+[profile.dev.package."*"]
+debug = false
