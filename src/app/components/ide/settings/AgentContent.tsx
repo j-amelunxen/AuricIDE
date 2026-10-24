@@ -64,6 +64,14 @@ export function AgentContent() {
     setAgentTerminalAutoArrange(checked);
   };
 
+  const [agentTerminalFocusMode, setAgentTerminalFocusMode] = useState(
+    () => loadAppConfig().agentTerminalFocusMode
+  );
+  const handleAgentTerminalFocusModeChange = (checked: boolean) => {
+    setAppConfigValue('agentTerminalFocusMode', checked);
+    setAgentTerminalFocusMode(checked);
+  };
+
   const handleAgentConsoleAutoOpenChange = (checked: boolean) => {
     setAppConfigValue('agentConsoleAutoOpen', checked);
     setAgentConsoleAutoOpen(checked);
@@ -168,6 +176,15 @@ export function AgentContent() {
           testId="agent-terminal-auto-arrange-toggle"
           checked={agentTerminalAutoArrange}
           onChange={handleAgentTerminalAutoArrangeChange}
+        />
+
+        <SettingsToggle
+          label="Focus mode by default (supervisors only)"
+          description="Start the terminal view with non-supervisor tabs and grid panes hidden. The header toggle switches it at any time."
+          tooltip={GUIDANCE.settings.agentTerminalFocusMode}
+          testId="agent-terminal-focus-mode-toggle"
+          checked={agentTerminalFocusMode}
+          onChange={handleAgentTerminalFocusModeChange}
         />
 
         <SettingsToggle

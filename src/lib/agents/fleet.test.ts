@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../tauri/agents';
-import { isFinishedAgent, splitFleet, supervisorChildSummary } from './fleet';
+import {
+  filterFocusTerminalAgents,
+  isFinishedAgent,
+  isSupervisorAgent,
+  splitFleet,
+  supervisorChildSummary,
+} from './fleet';
 
 const agent = (
   id: string,
@@ -186,5 +192,33 @@ describe('supervisorChildSummary', () => {
     expect(supervisorChildSummary(agents, 's')).toBe('2 children · 1 running');
     expect(supervisorChildSummary(agents, 'other')).toBe('1 child · 1 running');
     expect(supervisorChildSummary(agents, 'none')).toBe('No children yet');
+  });
+});
+
+describe('filterFocusTerminalAgents', () => {
+  const sup1 = agent('s1', 'running', 1, { role: 'supervisor' });
+  const sup2 = agent('s2', 'running', 2, { role: 'supervisor' });
+  const child = agent('c1', 'running', 3, { role: 'worker', spawnedByAgentId: 's1' });
+  const plain = agent('w1', 'running', 4);
+
+  it('identifies only supervisor-role agents as supervisors', () => {
+    expect(isSupervisorAgent(sup1)).toBe(true);
+    expect(isSupervisorAgent(child)).toBe(false);
+    expect(isSupervisorAgent(plain)).toBe(false);
+  });
+
+  it('keeps the full list when focus mode is off', () => {
+    const fleet = [sup1, child, sup2, plain];
+    expect(filterFocusTerminalAgents(fleet, false)).toBe(fleet);
+  });
+
+  it('keeps only supervisors in order when focus mode is on', () => {
+    const fleet = [sup1, child, sup2, plain];
+    expect(filterFocusTerminalAgents(fleet, true)).toEqual([sup1, sup2]);
+  });
+
+  it('leaves the original list intact when focus mode is on but no supervisor exists', () => {
+    const workers = [child, plain];
+    expect(filterFocusTerminalAgents(workers, true)).toBe(workers);
   });
 });

@@ -116,3 +116,22 @@ export function splitTerminalAgents(agents: AgentInfo[]): TerminalSplit {
   }
   return { withTerminal, headlessRunning };
 }
+
+/** True when the agent was started as an AuricIDE supervisor (`role === 'supervisor'`). */
+export function isSupervisorAgent(agent: Pick<AgentInfo, 'role'>): boolean {
+  return agent.role === 'supervisor';
+}
+
+/**
+ * Focus mode filter for the terminal tab strip and grid: when enabled and at
+ * least one supervisor is present, keeps only supervisors. Purely a view
+ * filter — hidden agents continue running and remain in the timeline.
+ */
+export function filterFocusTerminalAgents<T extends Pick<AgentInfo, 'role'>>(
+  agents: T[],
+  focusMode: boolean
+): T[] {
+  if (!focusMode) return agents;
+  const supervisors = agents.filter(isSupervisorAgent);
+  return supervisors.length > 0 ? supervisors : agents;
+}

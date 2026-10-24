@@ -18,7 +18,13 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
-import { hasTerminal, isFinishedAgent, splitTerminalAgents } from '@/lib/agents/fleet';
+import {
+  filterFocusTerminalAgents,
+  hasTerminal,
+  isFinishedAgent,
+  isSupervisorAgent,
+  splitTerminalAgents,
+} from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { supervisorFamilyRoots } from '@/lib/agents/supervisorFamily';
 import { buildSupervisorTimeline, type TimelineRangeId } from '@/lib/agents/supervisorTimeline';
@@ -320,8 +326,34 @@ export function AgentTerminalWorkspace({
     () => (allAgents ? splitTerminalAgents(allAgents) : null),
     [allAgents]
   );
-  const agents = terminalSplit?.withTerminal;
+  const allTerminalAgents = terminalSplit?.withTerminal;
   const headlessRunning = terminalSplit?.headlessRunning ?? [];
+  const [focusMode, setFocusMode] = useState(() => loadAppConfig().agentTerminalFocusMode);
+  const hasSupervisor = useMemo(
+    () => (allTerminalAgents ?? []).some(isSupervisorAgent),
+    [allTerminalAgents]
+  );
+  const agents = useMemo(
+    () => (allTerminalAgents ? filterFocusTerminalAgents(allTerminalAgents, focusMode) : undefined),
+    [allTerminalAgents, focusMode]
+  );
+  const switchNonSupervisorToSupervisor = useCallback(() => {
+    if (!allTerminalAgents || !hasSupervisor || isSupervisorAgent(agent)) return;
+    const roots = supervisorFamilyRoots(allAgents ?? allTerminalAgents);
+    const rootId = roots.get(agent.id);
+    const fallback =
+      (rootId ? allTerminalAgents.find((a) => a.id === rootId) : undefined) ??
+      allTerminalAgents.find(isSupervisorAgent);
+    if (fallback && fallback.id !== agent.id) {
+      onSwitchAgent?.(fallback);
+    }
+  }, [agent, allAgents, allTerminalAgents, hasSupervisor, onSwitchAgent]);
+  useEffect(() => {
+    if (focusMode) switchNonSupervisorToSupervisor();
+  }, [focusMode, switchNonSupervisorToSupervisor]);
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((current) => !current);
+  }, []);
   const terminals = useRef(new Map<string, AgentXtermHandle>());
   const registerTerminal = useCallback((agentId: string, handle: AgentXtermHandle | null) => {
     if (handle) terminals.current.set(agentId, handle);
@@ -462,9 +494,10 @@ export function AgentTerminalWorkspace({
   const openTimelineAgent = useCallback(
     (target: AgentInfo) => {
       if (!hasTerminal(target) || target.id === agent.id) return;
+      if (focusMode && !isSupervisorAgent(target)) setFocusMode(false);
       onSwitchAgent?.(target);
     },
-    [agent.id, onSwitchAgent]
+    [agent.id, focusMode, onSwitchAgent]
   );
 
   const now = useNow();
@@ -539,6 +572,31 @@ export function AgentTerminalWorkspace({
 
         <div className={`flex shrink-0 items-center gap-2 ${timeline ? '' : 'ml-auto'}`}>
           {headlessRunning.length > 0 && <HeadlessMarker agents={headlessRunning} />}
+          {(hasSupervisor || focusMode) && (
+            <button
+              type="button"
+              data-testid="supervisor-focus-mode-toggle"
+              aria-pressed={focusMode}
+              aria-label={
+                focusMode
+                  ? 'Exit focus mode (show all agent tabs)'
+                  : 'Focus mode (show only supervisor tabs)'
+              }
+              title={
+                focusMode
+                  ? 'Focus mode: showing only supervisors — click to show all agents'
+                  : 'Focus mode: hide non-supervisor tabs and panes'
+              }
+              onClick={toggleFocusMode}
+              className={`rounded-lg border p-1.5 transition-all ${
+                focusMode
+                  ? 'border-primary/40 bg-primary/15 text-primary-light'
+                  : 'border-white/10 text-foreground-muted hover:bg-white/10 hover:text-foreground'
+              }`}
+            >
+              <AuricIcon name="filter_alt" aria-hidden="true" className="text-sm" />
+            </button>
+          )}
           {(agents?.length ?? 0) > 1 && (
             <LayoutPresets
               agentCount={agents?.length ?? 0}

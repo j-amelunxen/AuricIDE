@@ -43,5 +43,7 @@ export const GUIDANCE = {
       'When no project is open and agents are running, shows the Agent Console instead of the start screen.',
     agentTerminalAutoArrange:
       'A new agent takes a free spot in the terminal grid by itself, up to four side by side. Turn it off to arrange them by dragging tabs.',
+    agentTerminalFocusMode:
+      'Starts the terminal view in focus mode so only supervisor agents appear in the tab strip and terminal grid. Non-supervisor agents keep running and remain visible in the timeline.',
   },
 };

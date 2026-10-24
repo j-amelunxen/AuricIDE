@@ -44,6 +44,7 @@ export const APP_CONFIG_KEYS = {
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
   agentConsoleAutoOpen: 'auric.agent-console-auto-open',
   agentTerminalAutoArrange: 'auric.agent-terminal.auto-arrange',
+  agentTerminalFocusMode: 'auric.agent-terminal.focus-mode',
   agentConsoleFeedHeight: 'auric.agent-console.feed-height',
   agentConsoleProjectsCollapsed: 'auric.agent-console.projects-collapsed',
   agentLogPersist: 'auric.agent-log.persist',
@@ -125,6 +126,12 @@ export interface AppConfig {
    */
   agentTerminalAutoArrange: boolean;
   /**
+   * Default state of the terminal header's focus-mode toggle. When on, non-supervisor
+   * agents are hidden from the tab strip and terminal grid while keeping the
+   * timeline intact. Off by default.
+   */
+  agentTerminalFocusMode: boolean;
+  /**
    * Keep the Agent Console's activity feed on disk instead of in memory only.
    * Off by default: writing a record of what agents did to the user's machine
    * is a choice they make, never one an install makes for them.
@@ -153,6 +160,7 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   agentTerminalFontSize: 14,
   agentConsoleAutoOpen: false,
   agentTerminalAutoArrange: true,
+  agentTerminalFocusMode: false,
   agentLogPersist: false,
   agentLogRetentionDays: 2,
   taskLogEnabled: false,
@@ -242,6 +250,10 @@ export function loadAppConfig(): AppConfig {
     agentTerminalAutoArrange: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.agentTerminalAutoArrange),
       APP_CONFIG_DEFAULTS.agentTerminalAutoArrange
+    ),
+    agentTerminalFocusMode: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.agentTerminalFocusMode),
+      APP_CONFIG_DEFAULTS.agentTerminalFocusMode
     ),
     agentLogPersist: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.agentLogPersist),

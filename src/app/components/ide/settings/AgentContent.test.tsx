@@ -123,6 +123,29 @@ describe('AgentContent — Agent Console auto-open', () => {
   });
 });
 
+describe('AgentContent — terminal focus mode default', () => {
+  it('defaults to off and persists a change', async () => {
+    const user = userEvent.setup();
+    render(<AgentContent />);
+
+    const toggle = screen.getByTestId('agent-terminal-focus-mode-toggle');
+    expect(toggle).not.toBeChecked();
+
+    await user.click(toggle);
+
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem('auric.agent-terminal.focus-mode')).toBe('true');
+  });
+
+  it('reads a previously persisted value on mount', () => {
+    localStorage.setItem('auric.agent-terminal.focus-mode', 'true');
+
+    render(<AgentContent />);
+
+    expect(screen.getByTestId('agent-terminal-focus-mode-toggle')).toBeChecked();
+  });
+});
+
 describe('AgentContent — agent activity history', () => {
   const persistOn = () => localStorage.setItem('auric.agent-log.persist', 'true');
 

@@ -1,9 +1,10 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { AgentTerminalWorkspace } from './AgentTerminalWorkspace';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { setAppConfigValue } from '@/lib/config/appConfig';
 import { useStore } from '@/lib/store';
 
 vi.mock('./AgentXterm', async () => {
@@ -407,5 +408,109 @@ describe('AgentTerminalWorkspace – supervisor families', () => {
     renderWorkspace({ agent: mail, agents: fleet });
     expect(screen.getByTestId('terminal-pane-project-m2')).toHaveTextContent('repo-b');
     expect(screen.getByTestId('terminal-pane-m2').dataset.accent).toBe(accentOf('sup-mail'));
+  });
+
+  it('focus mode hides non-supervisor tabs and panes while keeping the timeline intact, and restores them when turned off', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    useStore.setState({ terminalGridCells: ['sup-mail', 'm1', 'sup-research', 'r1'] });
+
+    function StatefulWorkspace() {
+      const [active, setActive] = useState<AgentInfo>(fleet[1]); // m1 (a child)
+      return (
+        <AgentTerminalWorkspace
+          agent={active}
+          agents={fleet}
+          onSwitchAgent={setActive}
+          onClose={() => {}}
+          confirm={async () => true}
+        />
+      );
+    }
+
+    render(<StatefulWorkspace />);
+
+    // Before focus mode: all 7 tabs and 4 panes are visible
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    expect(screen.getByTestId('terminal-pane-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-r1')).toBeInTheDocument();
+
+    const toggle = screen.getByTestId('supervisor-focus-mode-toggle');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    // Turn focus mode ON
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    // Only supervisor tabs remain in the strip
+    const tabsOn = screen.getAllByRole('tab');
+    expect(tabsOn).toHaveLength(2);
+    expect(screen.getByTestId('agent-tab-sup-mail')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-tab-sup-research')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-tab-m1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-tab-plain')).not.toBeInTheDocument();
+
+    // Active agent was child m1 -> switches to its root supervisor (sup-mail)
+    expect(screen.getByRole('heading', { name: 'Supervisor' })).toBeInTheDocument();
+
+    // Terminal grid shows only the supervisors, without overwriting the stored 4-pane grid
+    expect(screen.getByTestId('terminal-pane-sup-mail')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-sup-research')).toBeInTheDocument();
+    expect(screen.queryByTestId('terminal-pane-m1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('terminal-pane-r1')).not.toBeInTheDocument();
+    expect(useStore.getState().terminalGridCells).toEqual(['sup-mail', 'm1', 'sup-research', 'r1']);
+
+    // Timeline still shows all family members including hidden children
+    await user.click(screen.getByRole('button', { name: 'Show agent timeline' }));
+    const timeline = screen.getByTestId('supervisor-timeline');
+    expect(timeline).toHaveTextContent('Child m1');
+    expect(timeline).toHaveTextContent('Child m2');
+
+    // Turn focus mode OFF -> restores all tabs and the original 4-pane grid placement
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    expect(screen.getByTestId('terminal-pane-sup-mail')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-sup-research')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-r1')).toBeInTheDocument();
+  });
+
+  it('starts in focus mode when the application setting is enabled and switches active child to its supervisor', () => {
+    setAppConfigValue('agentTerminalFocusMode', true);
+    const { onSwitchAgent } = renderWorkspace({ agent: fleet[1], agents: fleet });
+
+    const toggle = screen.getByTestId('supervisor-focus-mode-toggle');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.queryByTestId('agent-tab-m1')).not.toBeInTheDocument();
+    expect(onSwitchAgent).toHaveBeenCalledWith(mail);
+    localStorage.clear();
+  });
+
+  it('auto-arrange ignores newly spawned non-supervisor children while focus mode is on', () => {
+    setAppConfigValue('agentTerminalFocusMode', true);
+    const view = render(
+      <AgentTerminalWorkspace
+        agent={mail}
+        agents={[mail]}
+        onSwitchAgent={() => {}}
+        onClose={() => {}}
+        confirm={async () => true}
+      />
+    );
+    expect(useStore.getState().terminalGridCells).toBeNull();
+
+    view.rerender(
+      <AgentTerminalWorkspace
+        agent={mail}
+        agents={[mail, fleet[1]]}
+        onSwitchAgent={() => {}}
+        onClose={() => {}}
+        confirm={async () => true}
+      />
+    );
+    expect(useStore.getState().terminalGridCells).toBeNull();
+    localStorage.clear();
   });
 });

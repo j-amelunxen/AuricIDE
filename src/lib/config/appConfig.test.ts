@@ -29,6 +29,7 @@ describe('app config', () => {
     setAppConfigValue('agentTerminalFontSize', 16);
     setAppConfigValue('agentConsoleAutoOpen', true);
     setAppConfigValue('agentTerminalAutoArrange', false);
+    setAppConfigValue('agentTerminalFocusMode', true);
     setAppConfigValue('agentLogPersist', true);
     setAppConfigValue('agentLogRetentionDays', 7);
     setAppConfigValue('taskLogEnabled', true);
@@ -42,6 +43,7 @@ describe('app config', () => {
       agentTerminalFontSize: 16,
       agentConsoleAutoOpen: true,
       agentTerminalAutoArrange: false,
+      agentTerminalFocusMode: true,
       agentLogPersist: true,
       agentLogRetentionDays: 7,
       taskLogEnabled: true,
@@ -53,6 +55,12 @@ describe('app config', () => {
     expect(APP_CONFIG_DEFAULTS.agentTerminalAutoArrange).toBe(true);
     expect(loadAppConfig().agentTerminalAutoArrange).toBe(true);
     expect(APP_CONFIG_KEYS.agentTerminalAutoArrange).toBe('auric.agent-terminal.auto-arrange');
+  });
+
+  it('keeps terminal focus mode off until asked for', () => {
+    expect(APP_CONFIG_DEFAULTS.agentTerminalFocusMode).toBe(false);
+    expect(loadAppConfig().agentTerminalFocusMode).toBe(false);
+    expect(APP_CONFIG_KEYS.agentTerminalFocusMode).toBe('auric.agent-terminal.focus-mode');
   });
 
   it('keeps the Agent Console closed on launch until asked for', () => {
