@@ -113,6 +113,15 @@ export function AgentCardHeader({
                 {displayName}
               </h3>
               <ComboProgressBadge agentId={agent.id} />
+              {agent.extraMcpServers && agent.extraMcpServers.length > 0 && (
+                <span
+                  data-testid="agent-extra-mcp-badge"
+                  title={`Extra MCP servers: ${agent.extraMcpServers.join(', ')}`}
+                  className="shrink-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] font-medium uppercase tracking-wide text-foreground-muted"
+                >
+                  +{agent.extraMcpServers.length} MCP
+                </span>
+              )}
               {agent.repoPath && isAuricWorktreePath(agent.repoPath) && (
                 <span
                   data-testid="agent-worktree-badge"

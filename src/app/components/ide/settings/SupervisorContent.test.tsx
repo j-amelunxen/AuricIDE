@@ -167,6 +167,7 @@ describe('SupervisorContent', () => {
           providerWeights: {},
           allowInteractive: expect.any(Boolean),
           maxRunning: 3,
+          extraMcpServers: [],
         },
       },
     });
@@ -459,6 +460,7 @@ describe('SupervisorContent — modes that skip permission prompts', () => {
         providerWeights: {},
         allowInteractive: false,
         maxRunning: 2,
+        extraMcpServers: [],
         ...entry,
       },
     });

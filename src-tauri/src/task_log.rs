@@ -246,6 +246,7 @@ mod tests {
             role: AgentRole::Worker,
             spawned_by_agent_id: Some("agent-1".to_string()),
             supervisor_key: None,
+            extra_mcp_servers: Vec::new(),
         }
     }
 

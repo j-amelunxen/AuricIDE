@@ -50,6 +50,20 @@ describe('AgentCard', () => {
     useStore.setState({ comboRuns: [] });
   });
 
+  it('names the extra MCP servers an agent started with, and shows nothing without any', () => {
+    const { rerender } = render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agent-extra-mcp-badge')).toBeNull();
+    rerender(
+      <AgentCard
+        agent={{ ...runningAgent, extraMcpServers: ['motion', 'docs'] }}
+        onKill={vi.fn()}
+      />
+    );
+    const badge = screen.getByTestId('agent-extra-mcp-badge');
+    expect(badge).toHaveTextContent('+2 MCP');
+    expect(badge).toHaveAttribute('title', 'Extra MCP servers: motion, docs');
+  });
+
   it('renders agent name', () => {
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
     expect(screen.getByText('Writer')).toBeInTheDocument();

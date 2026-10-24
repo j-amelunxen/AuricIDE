@@ -119,6 +119,7 @@ pub fn ensure_agent_mcp_config(
     project_root: &Path,
     env: &BTreeMap<String, String>,
     connectors: &[crate::connectors::ResolvedConnector],
+    extras: &[crate::extra_mcp::ExtraMcpServer],
     node: &str,
 ) -> Result<AgentMcpConfigs, String> {
     let runtime = runtime_entrypoint(app)?;
@@ -142,6 +143,7 @@ pub fn ensure_agent_mcp_config(
         project_root,
         env,
         connectors,
+        extras,
     )
 }
 
@@ -152,7 +154,7 @@ pub(crate) fn write_agent_mcp_configs(
     project_root: &Path,
     env: &BTreeMap<String, String>,
 ) -> Result<AgentMcpConfigs, String> {
-    write_agent_mcp_configs_with_connectors(directory, runtime, "node", project_root, env, &[])
+    write_agent_mcp_configs_with_connectors(directory, runtime, "node", project_root, env, &[], &[])
 }
 
 /// The standard (`mcpServers`) and the Crush (`mcp`) config for one agent,
@@ -164,6 +166,7 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
     project_root: &Path,
     env: &BTreeMap<String, String>,
     connectors: &[crate::connectors::ResolvedConnector],
+    extras: &[crate::extra_mcp::ExtraMcpServer],
 ) -> Result<AgentMcpConfigs, String> {
     let mut hasher = DefaultHasher::new();
     project_root.hash(&mut hasher);
@@ -197,6 +200,8 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
             }),
         );
     }
+    // Built-in names (auric-pm, connectors) were inserted first and win.
+    crate::extra_mcp::merge_into(&mut servers, extras);
     let content = serde_json::to_vec_pretty(&serde_json::json!({
         "mcpServers": servers
     }))
@@ -204,7 +209,9 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
     write_new_private_file(&standard_path, &content)?;
     let mut crush_servers = servers.clone();
     for server in crush_servers.values_mut() {
-        server["type"] = serde_json::json!("stdio");
+        if server.get("type").is_none() {
+            server["type"] = serde_json::json!("stdio");
+        }
         if server.get("timeout").is_none() {
             server["timeout"] = serde_json::json!(30);
         }
@@ -930,6 +937,7 @@ mod tests {
             node,
             Path::new("/repo/project"),
             &BTreeMap::new(),
+            &[],
             &[],
         )
         .unwrap();

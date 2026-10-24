@@ -35,6 +35,11 @@ export interface SupervisorProjectPolicy {
   providerWeights: Record<string, number>;
   allowInteractive: boolean;
   maxRunning: number;
+  /**
+   * Names of servers from the project's `.mcp.json` that its agents start with, next to the
+   * built-in ones. Only names are stored; the definitions are read from the file at spawn time.
+   */
+  extraMcpServers: string[];
 }
 
 /**
@@ -155,7 +160,13 @@ export function emptySupervisorPolicy(): SupervisorPolicy {
 
 /** The entry a project gets when it is first switched on in Settings. */
 export function defaultSupervisorProjectPolicy(): SupervisorProjectPolicy {
-  return { ...DEFAULTS.project, models: {}, permissionMode: {}, providerWeights: {} };
+  return {
+    ...DEFAULTS.project,
+    models: {},
+    permissionMode: {},
+    providerWeights: {},
+    extraMcpServers: [],
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -396,6 +407,16 @@ function optionalOf<T>(value: unknown, check: (v: unknown) => v is T, fallback: 
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
 
+/** Trimmed, de-duplicated, in order; the wrong type refuses the entry (Rust: `parse_extra_mcp_servers`). */
+function parseServerNames(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((name) => typeof name !== 'string')) {
+    throw new InvalidEntry('invalid_entry');
+  }
+  const names = value.map((name: string) => name.trim()).filter((name) => name !== '');
+  return [...new Set(names)];
+}
+
 function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
   if (!isObject(value)) throw new InvalidEntry('invalid_entry');
   const entry: SupervisorProjectPolicy = {
@@ -410,6 +431,7 @@ function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
       DEFAULTS.project.allowInteractive
     ),
     maxRunning: optionalOf(value.maxRunning, isLimit, DEFAULTS.project.maxRunning),
+    extraMcpServers: parseServerNames(value.extraMcpServers),
   };
   if (
     Object.values(entry.permissionMode).some((mode) =>
@@ -484,6 +506,8 @@ function stricterEntry(
     providerWeights: sameWeights(a.providerWeights, b.providerWeights) ? a.providerWeights : {},
     allowInteractive: a.allowInteractive && b.allowInteractive,
     maxRunning: Math.min(a.maxRunning, b.maxRunning),
+    // Only what both entries name: an extra server is a grant.
+    extraMcpServers: a.extraMcpServers.filter((name) => b.extraMcpServers.includes(name)),
   };
 }
 

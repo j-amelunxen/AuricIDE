@@ -14,6 +14,7 @@ import { isModelAvailable, type ModelOption, type ProviderInfo } from '@/lib/tau
 import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { DESCRIPTION_MAX_CHARS } from '@/lib/quickAccess/description';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
+import { SupervisorExtraMcp } from './SupervisorExtraMcp';
 
 const DENIED_REASON = "Blocked by this project's own provider settings";
 
@@ -101,6 +102,7 @@ export function SupervisorProjectRow({
               );
             })}
           </fieldset>
+          <SupervisorExtraMcp projectPath={project.path} entry={entry} onChange={onChange} />
           <BalancingSummary
             testId={`supervisor-balancing-${project.path}`}
             providers={providers.filter(

@@ -24,7 +24,8 @@
       "permissionMode": {},
       "providerWeights": {},
       "allowInteractive": false,
-      "maxRunning": 2
+      "maxRunning": 2,
+      "extraMcpServers": []
     }
   },
   "rejectedPermissionModes": ["bypassPermissions"],
@@ -311,7 +312,8 @@
               },
               "providerWeights": {},
               "allowInteractive": true,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -340,7 +342,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -373,7 +376,8 @@
               },
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -402,7 +406,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -431,7 +436,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -462,7 +468,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -491,7 +498,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -520,7 +528,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -554,7 +563,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -588,7 +598,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -646,7 +657,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -680,7 +692,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -759,7 +772,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -788,7 +802,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -848,7 +863,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -877,7 +893,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -1138,7 +1155,8 @@
                 "codex": 1
               },
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -1207,7 +1225,8 @@
               "permissionMode": {},
               "providerWeights": {},
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -1239,7 +1258,8 @@
                 "codex": 1
               },
               "allowInteractive": false,
-              "maxRunning": 2
+              "maxRunning": 2,
+              "extraMcpServers": []
             }
           },
           "tools": {},
@@ -1470,6 +1490,60 @@
           {
             "project": null,
             "reason": "malformed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "extra MCP servers are trimmed and de-duplicated",
+      "raw": "{\"version\": 1, \"projects\": {\"/a\": {\"allowed\": true, \"extraMcpServers\": [\"motion\", \" motion \", \"docs\", \"\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": ["motion", "docs"]
+            }
+          },
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "extra MCP servers of the wrong type refuse that project",
+      "raw": "{\"version\": 1, \"projects\": {\"/a\": {\"allowed\": true, \"extraMcpServers\": \"motion\"}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": "/a",
+            "reason": "invalid_entry"
           }
         ]
       }

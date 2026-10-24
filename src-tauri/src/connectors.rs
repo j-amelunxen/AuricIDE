@@ -318,29 +318,38 @@ pub fn launch_context(task: &str, connectors: &[ResolvedConnector]) -> String {
     context
 }
 
-/// Capability gate shared by spawn and tests. An unbound adapter must never receive even a briefing.
-pub fn for_provider(
-    connectors: Vec<ResolvedConnector>,
+/// Whether the provider reads the per-agent MCP config files (or, for Codex,
+/// the `-c` overrides), so it can carry more servers than `auric-pm`. An
+/// env-only bridge (e.g. `AURIC_MCP_CONFIG`) can serve just Auric PM, so
+/// nonempty launch material alone is not support.
+pub fn provider_consumes_mcp_config(
     provider_id: &str,
     provider: &dyn crate::providers::AgentProvider,
     mut binding: crate::providers::ProviderProjectBinding,
-) -> Result<Vec<ResolvedConnector>, String> {
+) -> Result<bool, String> {
     binding = binding
         .with_mcp_config_path("connector-capability-probe")
         .with_crush_config_path("connector-capability-probe")
         .with_runtime_entrypoint("connector-capability-probe");
     let material = crate::providers::project_binding_material(provider_id, provider, &binding)?;
-    // An env-only bridge can serve just Auric PM (e.g. AURIC_MCP_CONFIG),
-    // so nonempty launch material alone is not connector support.
-    let consumes_config = provider_id == "codex"
+    Ok(provider_id == "codex"
         || material
             .arguments
             .iter()
             .any(|arg| arg.contains("connector-capability-probe"))
         || material.env_vars.iter().any(|(key, value)| {
             key == "CRUSH_GLOBAL_CONFIG" && value == "connector-capability-probe"
-        });
-    if consumes_config {
+        }))
+}
+
+/// Capability gate shared by spawn and tests. An unbound adapter must never receive even a briefing.
+pub fn for_provider(
+    connectors: Vec<ResolvedConnector>,
+    provider_id: &str,
+    provider: &dyn crate::providers::AgentProvider,
+    binding: crate::providers::ProviderProjectBinding,
+) -> Result<Vec<ResolvedConnector>, String> {
+    if provider_consumes_mcp_config(provider_id, provider, binding)? {
         Ok(connectors)
     } else {
         Ok(Vec::new())

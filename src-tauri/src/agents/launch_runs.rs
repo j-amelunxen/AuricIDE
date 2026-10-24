@@ -251,6 +251,7 @@ mod tests {
             role: super::super::types::AgentRole::Worker,
             spawned_by_agent_id: None,
             supervisor_key: None,
+            extra_mcp_servers: Vec::new(),
         }
     }
 

@@ -138,6 +138,12 @@ pub struct AgentInfo {
     pub spawned_by_agent_id: Option<String>,
     /// A supervisor's address (`AgentConfig::supervisor_key`), else `None`.
     pub supervisor_key: Option<String>,
+    /// Names of the project's extra MCP servers (`.mcp.json`) this agent
+    /// started with, besides the built-in ones. Names only, never definitions.
+    /// Left out when empty, so the control-socket contract is unchanged for
+    /// every agent that has none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extra_mcp_servers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

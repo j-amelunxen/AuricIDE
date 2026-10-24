@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { emptySupervisorPolicy, parseSupervisorPolicy } from './supervisorPolicy';
 import {
   offerablePermissionModes,
+  setExtraMcpServer,
   setProjectAllowed,
   setSupervisorPermissionMode,
   setSupervisorProviderWeight,
@@ -115,5 +116,32 @@ describe('unattendedBlockers', () => {
     expect(
       unattendedBlockers(allowed(), [agy], { [PATH]: { allow: null, deny: ['agy'] } })
     ).toEqual([]);
+  });
+});
+
+describe('setExtraMcpServer', () => {
+  const entry = setProjectAllowed(emptySupervisorPolicy(), PATH, true).projects[PATH];
+
+  it('adds a trimmed name once and removes it again', () => {
+    const added = setExtraMcpServer(setExtraMcpServer(entry, ' motion ', true), 'motion', true);
+    expect(added.extraMcpServers).toEqual(['motion']);
+    expect(setExtraMcpServer(added, 'motion', false).extraMcpServers).toEqual([]);
+  });
+
+  it('ignores an empty name', () => {
+    expect(setExtraMcpServer(entry, '  ', true)).toBe(entry);
+  });
+
+  it('survives the policy round trip and drops duplicates a hand edit left in the file', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      projects: { [PATH]: { allowed: true, extraMcpServers: ['a', ' a ', 'b', ''] } },
+    });
+    expect(parseSupervisorPolicy(raw).policy.projects[PATH].extraMcpServers).toEqual(['a', 'b']);
+  });
+
+  it('refuses a project whose extraMcpServers is not a list of strings', () => {
+    const raw = JSON.stringify({ version: 1, projects: { [PATH]: { extraMcpServers: [1] } } });
+    expect(parseSupervisorPolicy(raw).policy.projects[PATH]).toBeUndefined();
   });
 });

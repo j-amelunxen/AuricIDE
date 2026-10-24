@@ -653,6 +653,7 @@ fn agent_info_tells_the_frontend_the_run_is_headless() {
         role: AgentRole::Worker,
         spawned_by_agent_id: None,
         supervisor_key: None,
+        extra_mcp_servers: Vec::new(),
     };
     let json = serde_json::to_value(&info).expect("serializes");
     assert_eq!(json["headless"], serde_json::Value::Bool(true));

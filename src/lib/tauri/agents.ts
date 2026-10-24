@@ -53,6 +53,11 @@ export interface AgentInfo {
    * across a resume of its run. `null`/absent when none was given.
    */
   supervisorKey?: string | null;
+  /**
+   * Names of the project's extra MCP servers (from its `.mcp.json`, picked in Settings →
+   * Supervisor → Projects) this agent started with, besides the built-in ones. Names only.
+   */
+  extraMcpServers?: string[];
 }
 
 /** What an agent is to the control socket (`agentControl.fixtures.json`, `roles`). */

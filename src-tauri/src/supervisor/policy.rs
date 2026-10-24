@@ -95,6 +95,10 @@ pub struct ProjectRules {
     pub provider_weights: BTreeMap<String, u32>,
     pub allow_interactive: bool,
     pub max_running: u32,
+    /// Names of servers from the project's `.mcp.json` that its agents start
+    /// with besides the built-in ones (`crate::extra_mcp`).
+    #[serde(default)]
+    pub extra_mcp_servers: Vec<String>,
 }
 
 impl Default for ProjectRules {
@@ -107,6 +111,7 @@ impl Default for ProjectRules {
             provider_weights: BTreeMap::new(),
             allow_interactive: false,
             max_running: DEFAULT_PROJECT_MAX_RUNNING,
+            extra_mcp_servers: Vec::new(),
         }
     }
 }
@@ -498,6 +503,7 @@ fn parse_project(key: &str, entry: &Value) -> Result<(String, ProjectRules), Par
         allow_interactive: optional(source, "allowInteractive", Value::as_bool)?
             .unwrap_or(defaults.allow_interactive),
         max_running: optional(source, "maxRunning", as_limit)?.unwrap_or(defaults.max_running),
+        extra_mcp_servers: parse_extra_mcp_servers(source.get("extraMcpServers"))?,
     };
     Ok((normalize_project_path(key), rules))
 }
@@ -527,6 +533,21 @@ fn string_list(value: &Value) -> Result<Vec<String>, ParseReason> {
                 .ok_or(ParseReason::InvalidEntry)
         })
         .collect()
+}
+
+/// Server names, trimmed and de-duplicated in order. The names are checked
+/// against `.mcp.json` at spawn time, not here, so a hand-edited file keeps
+/// loading; only the wrong type refuses the entry.
+fn parse_extra_mcp_servers(value: Option<&Value>) -> Result<Vec<String>, ParseReason> {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return Ok(Vec::new());
+    };
+    let mut seen = BTreeSet::new();
+    Ok(string_list(value)?
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty() && seen.insert(name.clone()))
+        .collect())
 }
 
 fn parse_providers(value: Option<&Value>) -> Result<Option<Vec<String>>, ParseReason> {
@@ -674,6 +695,12 @@ fn stricter(a: ProjectRules, b: ProjectRules) -> ProjectRules {
         provider_weights,
         allow_interactive: a.allow_interactive && b.allow_interactive,
         max_running: a.max_running.min(b.max_running),
+        // Only what both entries name: an extra server is a grant.
+        extra_mcp_servers: a
+            .extra_mcp_servers
+            .into_iter()
+            .filter(|name| b.extra_mcp_servers.contains(name))
+            .collect(),
     }
 }
 

@@ -296,7 +296,7 @@ Test and probe switches: `AURIC_EXCALIDRAW_MOCK=1`, `AURIC_DENY_CONTROL`,
 
 LLM HTTP calls (`llm.rs`), Excalidraw+ REST (`excalidraw/`, only `fetch_json` touches
 the network), push delivery (`delivery/`, driven from `app_config.rs`), owner-approved
-stdio connectors (`connectors.rs`), machine tools resolved by absolute path through the
+stdio connectors (`connectors.rs`), the project's own `.mcp.json` (read at spawn by `extra_mcp.rs`; names picked per project in Settings → Supervisor → Projects, definitions passed to the agent's private config only, Tauri command `extra_mcp_inspect` returns names and transports, never values), machine tools resolved by absolute path through the
 login shell (`machine/`: `ffmpeg`, `ffprobe`, `go`, `okf`, plus `uv` and the
 transcription runtime for video import). Third-party drift cannot be ruled out; the
 policy in this repo is a hard check at the boundary (`video_import/failure.rs` never

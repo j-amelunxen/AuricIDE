@@ -942,6 +942,7 @@ mod tests {
             role: AgentRole::Supervisor,
             spawned_by_agent_id: None,
             supervisor_key: key.map(str::to_string),
+            extra_mcp_servers: Vec::new(),
         }
     }
 

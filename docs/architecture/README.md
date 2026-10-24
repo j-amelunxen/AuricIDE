@@ -100,7 +100,7 @@ Uses: nearly everything below. Not used by anything except Tauri.
 **Agent runtime** — `agents/` (20 files: manager, PTY output buffer, awaiting-input
 detection, write sandbox, launch dir, run results, MCP guard), `agent_persistence.rs`,
 `agent_log.rs`, `task_log.rs`, `agent_window.rs`, `providers/` (provider registry, `dynamic-providers/`
-JSON), `provider_policy.rs`, `connectors/`. Purpose: spawn, stream, kill and persist
+JSON), `provider_policy.rs`, `connectors/`, `extra_mcp.rs` (a project's extra MCP servers from its `.mcp.json`, named in the supervisor policy's `extraMcpServers` and merged into each agent's private MCP config). Purpose: spawn, stream, kill and persist
 agent processes. Depends on: providers (35 references), supervisor (32), mcp (9),
 notifications (8), agent_usage (7). It is the most connected module in the backend.
 

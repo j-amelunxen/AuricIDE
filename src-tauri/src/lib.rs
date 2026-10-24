@@ -14,6 +14,7 @@ pub mod crashlog;
 mod database;
 mod delivery;
 mod excalidraw;
+mod extra_mcp;
 mod git;
 mod ignored_repos;
 mod inbox;
@@ -324,6 +325,7 @@ pub fn run() {
             agents::run_results::agent_run_results_forget,
             menu_bar::menu_bar_sync,
             connectors::connector_inspect,
+            extra_mcp::extra_mcp_inspect,
             supervisor::supervisor_policy_get,
             supervisor::supervisor_policy_set,
             supervisor_link::policy::supervisor_link_policy_get,

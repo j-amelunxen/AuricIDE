@@ -82,6 +82,7 @@ fn project_a_gets_connector_and_briefing_b_gets_neither_for_each_adapter() {
             root,
             &BTreeMap::new(),
             &resolved,
+            &[],
         )
         .unwrap();
         for (path, key) in [(&configs.standard, "mcpServers"), (&configs.crush, "mcp")] {
@@ -163,6 +164,7 @@ fn generated_config_launches_real_stdio_fixture_with_host_project_arguments() {
         &a,
         &BTreeMap::new(),
         &connectors,
+        &[],
     )
     .unwrap();
     let config: Value = serde_json::from_slice(&std::fs::read(configs.standard).unwrap()).unwrap();
@@ -227,6 +229,7 @@ fn manifest_startup_timeout_defaults_and_flows_into_stdio_mcp_configurations() {
             &a,
             &BTreeMap::new(),
             &connectors,
+            &[],
         )
         .unwrap();
         for (path, key) in [(&configs.standard, "mcpServers"), (&configs.crush, "mcp")] {

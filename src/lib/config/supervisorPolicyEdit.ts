@@ -102,6 +102,21 @@ export function setSupervisorProviderWeight(
 }
 
 /**
+ * Adds or removes one `.mcp.json` server name from the project's extra servers. The name is
+ * trimmed; an empty one changes nothing. Order is the order they were added.
+ */
+export function setExtraMcpServer(
+  entry: SupervisorProjectPolicy,
+  name: string,
+  on: boolean
+): SupervisorProjectPolicy {
+  const trimmed = name.trim();
+  if (trimmed === '') return entry;
+  const others = entry.extraMcpServers.filter((n) => n !== trimmed);
+  return { ...entry, extraMcpServers: on ? [...others, trimmed] : others };
+}
+
+/**
  * A supervisor's child never runs without asking: the parser refuses
  * `bypassPermissions` by name, the spawn check refuses every mode the provider
  * marks `unattended` — so the form offers neither.

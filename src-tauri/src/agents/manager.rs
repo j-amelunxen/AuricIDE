@@ -143,10 +143,61 @@ async fn resolved_mcp_node(runtime: &std::path::Path) -> String {
     crate::node_runtime::command_for_mcp(runtime, &path_var)
 }
 
+/// The project's extra MCP servers (`extraMcpServers` in its supervisor rules,
+/// definitions from `.mcp.json`) that this provider can carry. Whatever is
+/// left out is reported by name and reason on stderr, never with a value.
+fn resolve_extra_mcp(
+    app: &AppHandle,
+    binding: Option<&super::project_binding::ResolvedProjectBinding>,
+    is_supervisor: bool,
+    provider: (&str, &dyn crate::providers::AgentProvider),
+) -> Result<Vec<crate::extra_mcp::ExtraMcpServer>, String> {
+    let Some(binding) = binding.filter(|_| !is_supervisor) else {
+        return Ok(Vec::new());
+    };
+    let Ok(app_data) = app.path().app_data_dir() else {
+        return Ok(Vec::new());
+    };
+    let (provider_id, provider) = provider;
+    let mut resolved = crate::extra_mcp::resolve(
+        &crate::supervisor::current_policy(&app_data),
+        binding.project_root(),
+    );
+    if !resolved.servers.is_empty()
+        && !crate::connectors::provider_consumes_mcp_config(
+            provider_id,
+            provider,
+            binding.provider_binding(),
+        )?
+    {
+        resolved
+            .skipped
+            .extend(
+                resolved
+                    .servers
+                    .drain(..)
+                    .map(|server| crate::extra_mcp::Skipped {
+                        name: server.name,
+                        reason: format!("provider {provider_id} reads no MCP config file"),
+                    }),
+            );
+    }
+    let resolved = crate::extra_mcp::for_provider(provider_id, resolved);
+    for skipped in &resolved.skipped {
+        eprintln!(
+            "Extra MCP server {} not started for {provider_id}: {}",
+            skipped.name, skipped.reason
+        );
+    }
+    Ok(resolved.servers)
+}
+
 /// Binds a spawn to its project's Auric MCP server: one private config per
 /// agent, the provider's launch material, and the reserved Auric variables.
 /// The server's environment (`crate::mcp::agent_mcp_server_env`) is computed
 /// once and handed to every provider path.
+// code-gate: complexity-parameter-count - the spawn's already-resolved inputs, each a distinct fact
+#[allow(clippy::too_many_arguments)]
 fn bind_to_project_mcp(
     spawn_cmd: crate::providers::SpawnCommand,
     app: &AppHandle,
@@ -154,6 +205,7 @@ fn bind_to_project_mcp(
     provider: (&str, &dyn crate::providers::AgentProvider),
     cwd: Option<&str>,
     connectors: &[crate::connectors::ResolvedConnector],
+    extras: &[crate::extra_mcp::ExtraMcpServer],
     node: &str,
 ) -> Result<crate::providers::SpawnCommand, String> {
     let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
@@ -175,6 +227,7 @@ fn bind_to_project_mcp(
         binding.project_root(),
         &mcp_env,
         connectors,
+        extras,
         node,
     )?;
     let mut provider_binding = binding
@@ -185,6 +238,7 @@ fn bind_to_project_mcp(
         .with_mcp_command(node)
         .with_mcp_env(mcp_env);
     provider_binding.connectors = connectors.to_vec();
+    provider_binding.extra_servers = extras.to_vec();
     let (provider_id, provider) = provider;
     // Spawning honours `allowUnboundMcp`; `list_agent_providers` deliberately
     // does not (see `providers::supports_isolated_mcp_binding`), so agents
@@ -866,6 +920,13 @@ pub async fn spawn_agent_impl(
             binding.provider_binding(),
         )?;
     }
+    let extra_mcp = resolve_extra_mcp(
+        app,
+        project_binding.as_ref(),
+        is_supervisor,
+        (provider_id, provider.as_ref()),
+    )?;
+    let extra_mcp_names: Vec<String> = extra_mcp.iter().map(|s| s.name.clone()).collect();
     let launch_task = crate::connectors::launch_context(&config.task, &connectors);
 
     // Removed with the agent's process entry, or here if the spawn fails.
@@ -897,6 +958,7 @@ pub async fn spawn_agent_impl(
             (provider_id, provider.as_ref()),
             config.cwd.as_deref(),
             &connectors,
+            &extra_mcp,
             &node,
         )?;
         if runs_claude_code(&spawn_cmd) {
@@ -1002,6 +1064,7 @@ pub async fn spawn_agent_impl(
         spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
         spawned_by_goal_id: config.spawned_by_goal_id.clone(),
         headless: config.headless.unwrap_or(false),
+        extra_mcp_servers: extra_mcp_names,
     };
 
     // Recorded here, before the output pump exists and before the spawn

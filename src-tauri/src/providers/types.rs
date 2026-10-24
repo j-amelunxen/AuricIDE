@@ -227,6 +227,9 @@ pub struct ProviderProjectBinding {
     /// command line, gets it as an inline table.
     pub mcp_env: BTreeMap<String, String>,
     pub connectors: Vec<crate::connectors::ResolvedConnector>,
+    /// Servers from the project's `.mcp.json` (`crate::extra_mcp`). Config-file
+    /// providers get them through the file; Codex through `-c` overrides.
+    pub extra_servers: Vec<crate::extra_mcp::ExtraMcpServer>,
 }
 
 impl ProviderProjectBinding {
@@ -240,6 +243,7 @@ impl ProviderProjectBinding {
             mcp_command: None,
             mcp_env: BTreeMap::new(),
             connectors: Vec::new(),
+            extra_servers: Vec::new(),
         }
     }
 
@@ -372,10 +376,57 @@ pub fn codex_project_binding_injection(
             arguments.push(shell_quote_argument(&format!("{prefix}.{key}={value}")));
         }
     }
+    codex_extra_server_arguments(&binding.extra_servers, &mut arguments)?;
     Ok(SpawnInjection {
         arguments,
         env_vars: Vec::new(),
     })
+}
+
+/// `-c mcp_servers.<name>.…` overrides for the project's extra servers. Names
+/// are `[A-Za-z0-9_-]` (`extra_mcp::is_valid_name`), so the TOML key needs no
+/// quoting, and the reserved built-in names never reach here.
+fn codex_extra_server_arguments(
+    servers: &[crate::extra_mcp::ExtraMcpServer],
+    arguments: &mut Vec<String>,
+) -> Result<(), String> {
+    use crate::extra_mcp::ExtraTransport;
+    for server in servers {
+        let prefix = format!("mcp_servers.{}", server.name);
+        let settings: Vec<(&str, String)> = match &server.transport {
+            ExtraTransport::Stdio { command, args, env } => {
+                let mut settings = vec![
+                    (
+                        "command",
+                        serde_json::to_string(command).map_err(|e| e.to_string())?,
+                    ),
+                    (
+                        "args",
+                        serde_json::to_string(args).map_err(|e| e.to_string())?,
+                    ),
+                ];
+                if !env.is_empty() {
+                    settings.push(("env", toml_inline_table(env)?));
+                }
+                settings
+            }
+            ExtraTransport::Remote { url, headers, .. } => {
+                let mut settings = vec![(
+                    "url",
+                    serde_json::to_string(url).map_err(|e| e.to_string())?,
+                )];
+                if !headers.is_empty() {
+                    settings.push(("http_headers", toml_inline_table(headers)?));
+                }
+                settings
+            }
+        };
+        for (key, value) in settings {
+            arguments.push("-c".into());
+            arguments.push(shell_quote_argument(&format!("{prefix}.{key}={value}")));
+        }
+    }
+    Ok(())
 }
 
 /// Claude exposes an inventory denylist, unlike Codex/Crush's per-server allowlist.
