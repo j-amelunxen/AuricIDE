@@ -1,86 +1,14 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MermaidPreview } from './MermaidPreview';
-import { MermaidFlowchartView } from '@/app/components/mermaid/MermaidFlowchartView';
-import {
-  isMermaidFlowchart,
-  parseMermaidFlowchart,
-  serializeMermaidFlowchart,
-  type MermaidFlowchartData,
-} from '@/lib/mermaid/mermaidFlowchartParser';
-import { replaceMermaidBlock } from '@/lib/mermaid/replaceMermaidBlock';
 
 export interface MarkdownPreviewProps {
   content: string;
-  onContentChange?: (content: string) => void;
 }
 
-interface MermaidBlockProps {
-  code: string;
-  canEditAsCanvas: boolean;
-  onFlowchartChange: (oldCode: string, newData: MermaidFlowchartData) => void;
-}
-
-const CANVAS_SWITCH = 'flowchart-expand-btn';
-
-/**
- * Mermaid is rendered by mermaid itself, the same output as mermaid.live. The React Flow
- * canvas re-lays the graph out on its own and is only an explicit opt-in for editing a
- * plain flowchart; it is never the default view.
- */
-function MermaidBlock({ code, canEditAsCanvas, onFlowchartChange }: MermaidBlockProps) {
-  const [canvasMode, setCanvasMode] = useState(false);
-  const editable = canEditAsCanvas && isMermaidFlowchart(code);
-
-  if (editable && canvasMode) {
-    return (
-      <div className="my-4">
-        <div className="mb-2 flex justify-end">
-          <button type="button" className={CANVAS_SWITCH} onClick={() => setCanvasMode(false)}>
-            Back to diagram
-          </button>
-        </div>
-        <div style={{ height: 400 }}>
-          <MermaidFlowchartView
-            data={parseMermaidFlowchart(code)}
-            onDataChange={(newData) => onFlowchartChange(code, newData)}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <MermaidPreview
-      code={code}
-      toolbarExtra={
-        editable ? (
-          <button type="button" className={CANVAS_SWITCH} onClick={() => setCanvasMode(true)}>
-            Edit as canvas
-          </button>
-        ) : undefined
-      }
-    />
-  );
-}
-
-export function MarkdownPreview({
-  content,
-  onContentChange,
-}: MarkdownPreviewProps): React.JSX.Element {
-  const handleFlowchartChange = useCallback(
-    (oldCode: string, newData: MermaidFlowchartData) => {
-      if (!onContentChange) return;
-      const newCode = serializeMermaidFlowchart(newData);
-      const updated = replaceMermaidBlock(content, oldCode, newCode);
-      onContentChange(updated);
-    },
-    [content, onContentChange]
-  );
-
+export function MarkdownPreview({ content }: MarkdownPreviewProps): React.JSX.Element {
   return (
     <div
       data-testid="markdown-preview"
@@ -102,13 +30,7 @@ export function MarkdownPreview({
 
             // Render mermaid diagrams
             if (isBlock && language === 'mermaid') {
-              return (
-                <MermaidBlock
-                  code={codeString}
-                  canEditAsCanvas={Boolean(onContentChange)}
-                  onFlowchartChange={handleFlowchartChange}
-                />
-              );
+              return <MermaidPreview code={codeString} />;
             }
 
             // Regular code blocks

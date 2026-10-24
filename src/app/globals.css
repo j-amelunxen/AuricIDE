@@ -761,114 +761,6 @@ textarea:focus-visible,
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
-/* ─── Flowchart Node Shapes ─── */
-.flowchart-node {
-  background: #16202c;
-  border: 1px solid #2a3b4d;
-  color: #e2e8f0;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-family: var(--font-mono);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-  cursor: pointer;
-  min-width: 60px;
-  text-align: center;
-}
-
-.flowchart-node:hover {
-  border-color: rgba(var(--primary-rgb), 0.4);
-  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.2);
-}
-
-.flowchart-node-rect {
-  border-radius: 6px;
-}
-
-.flowchart-node-round {
-  border-radius: 12px;
-}
-
-.flowchart-node-stadium {
-  border-radius: 999px;
-  padding: 8px 24px;
-}
-
-.flowchart-node-subroutine {
-  border-radius: 6px;
-  border-width: 2px;
-  box-shadow:
-    inset 3px 0 0 #2a3b4d,
-    inset -3px 0 0 #2a3b4d;
-}
-
-.flowchart-node-cylindrical {
-  border-radius: 6px;
-  border-top: 3px solid #2a3b4d;
-  border-bottom: 3px solid #2a3b4d;
-}
-
-.flowchart-node-circle {
-  border-radius: 50%;
-  width: 80px;
-  height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-}
-
-.flowchart-node-asymmetric {
-  clip-path: polygon(0% 0%, 90% 0%, 100% 50%, 90% 100%, 0% 100%);
-  padding: 8px 24px 8px 16px;
-}
-
-.flowchart-node-rhombus {
-  transform: rotate(45deg);
-  width: 80px;
-  height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-}
-
-.flowchart-node-rhombus-inner {
-  transform: rotate(-45deg);
-  white-space: nowrap;
-}
-
-.flowchart-node-hexagon {
-  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-  padding: 8px 32px;
-}
-
-.flowchart-node-double-circle {
-  border-radius: 50%;
-  width: 80px;
-  height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  box-shadow:
-    0 0 0 3px #16202c,
-    0 0 0 5px #2a3b4d;
-}
-
-/* ─── CodeMirror Mermaid Flowchart Widget ─── */
-.cm-mermaid-flowchart-widget {
-  margin: 8px 0;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(12, 18, 25, 0.6);
-  min-height: 200px;
-  /* height is set inline via JS based on dagre bounds */
-  position: relative;
-}
-
 /* Expand / Close Button */
 .flowchart-expand-btn {
   display: flex;
@@ -898,19 +790,6 @@ textarea:focus-visible,
   inset: 0;
   z-index: 9999;
   background: #0c1219;
-}
-
-/* Flowchart edge styles */
-.react-flow .flowchart-edge-dotted path {
-  stroke-dasharray: 5 5;
-}
-
-.react-flow .flowchart-edge-thick path {
-  stroke-width: 3;
-}
-
-.react-flow .flowchart-edge-open path {
-  marker-end: none;
 }
 
 /* ─── CodeMirror Lint Styles ─── */

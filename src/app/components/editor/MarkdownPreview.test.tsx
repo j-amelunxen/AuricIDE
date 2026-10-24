@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MarkdownPreview } from './MarkdownPreview';
 
@@ -7,40 +7,6 @@ vi.mock('mermaid', () => ({
     initialize: vi.fn(),
     render: vi.fn().mockResolvedValue({ svg: '<svg>mock</svg>' }),
   },
-}));
-
-vi.mock('@/lib/mermaid/mermaidFlowchartParser', () => ({
-  isMermaidFlowchart: vi.fn((_code: string) =>
-    /^(graph|flowchart)\s+(TD|TB|LR|BT|RL)/m.test(_code)
-  ),
-  parseMermaidFlowchart: vi.fn((_code: string) => ({
-    direction: 'TD' as const,
-    nodes: [{ id: 'A', label: 'A', shape: 'default' as const, position: { x: 0, y: 0 } }],
-    edges: [],
-    subgraphs: [],
-  })),
-  serializeMermaidFlowchart: vi.fn(() => 'flowchart TD\n  A'),
-}));
-
-vi.mock('@/app/components/mermaid/MermaidFlowchartView', () => ({
-  MermaidFlowchartView: ({
-    data,
-    onDataChange: _onDataChange,
-  }: {
-    data: unknown;
-    onDataChange?: unknown;
-  }) => (
-    <div
-      data-testid="mermaid-flowchart-view"
-      data-direction={(data as { direction: string }).direction}
-    >
-      flowchart-view
-    </div>
-  ),
-}));
-
-vi.mock('@/lib/mermaid/replaceMermaidBlock', () => ({
-  replaceMermaidBlock: vi.fn((_md: string, _old: string, newCode: string) => `replaced:${newCode}`),
 }));
 
 describe('MarkdownPreview', () => {
@@ -72,33 +38,15 @@ describe('MarkdownPreview', () => {
     expect(screen.getByTestId('markdown-preview')).toBeInTheDocument();
   });
 
-  it('renders flowchart mermaid blocks with the real mermaid renderer by default', () => {
-    const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
-    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
-    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
-    expect(screen.queryByTestId('mermaid-flowchart-view')).toBeNull();
-  });
-
-  it('routes non-flowchart mermaid blocks to MermaidPreview', () => {
-    const md = '# Title\n\n```mermaid\nsequenceDiagram\n  A->>B: Hello\n```\n';
-    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
-    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
-    expect(screen.queryByText('Edit as canvas')).toBeNull();
-  });
-
-  it('offers the canvas editor only as an opt-in on editable flowcharts', async () => {
-    const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
-    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
-    fireEvent.click(await screen.findByText('Edit as canvas'));
-    expect(screen.getByTestId('mermaid-flowchart-view')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Back to diagram'));
-    expect(screen.queryByTestId('mermaid-flowchart-view')).toBeNull();
-  });
-
-  it('does not offer the canvas editor on a read-only preview', async () => {
+  it('renders flowchart mermaid blocks with the real mermaid renderer', () => {
     const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
     render(<MarkdownPreview content={md} />);
-    await screen.findByText('Expand');
-    expect(screen.queryByText('Edit as canvas')).toBeNull();
+    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
+  });
+
+  it('renders non-flowchart mermaid blocks with the same renderer', () => {
+    const md = '# Title\n\n```mermaid\nsequenceDiagram\n  A->>B: Hello\n```\n';
+    render(<MarkdownPreview content={md} />);
+    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
   });
 });

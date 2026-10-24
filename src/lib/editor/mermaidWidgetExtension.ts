@@ -6,15 +6,8 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { Annotation, StateEffect, StateField } from '@codemirror/state';
+import { StateEffect, StateField } from '@codemirror/state';
 import { extractMermaidBlocks } from './mermaidBlocks';
-import {
-  parseMermaidFlowchart,
-  serializeMermaidFlowchart,
-} from '@/lib/mermaid/mermaidFlowchartParser';
-
-export const mermaidSelfUpdate = Annotation.define<boolean>();
-
 const DEBOUNCE_MS = 300;
 
 const setMermaidDecorations = StateEffect.define<DecorationSet>();
@@ -97,71 +90,6 @@ export class MermaidWidget extends WidgetType {
   }
 }
 
-export class MermaidFlowchartWidget extends WidgetType {
-  constructor(
-    readonly code: string,
-    readonly from: number,
-    readonly to: number
-  ) {
-    super();
-  }
-
-  toDOM(view?: EditorView): HTMLElement {
-    const container = document.createElement('div');
-    container.classList.add('cm-mermaid-flowchart-widget');
-
-    const data = parseMermaidFlowchart(this.code);
-
-    const MIN_HEIGHT = 200;
-    const MAX_DEFAULT_HEIGHT = 600;
-    const PADDING = 80;
-    const computedHeight = data.bounds
-      ? Math.min(Math.max(data.bounds.height + PADDING, MIN_HEIGHT), MAX_DEFAULT_HEIGHT)
-      : 400;
-    container.style.height = `${computedHeight}px`;
-
-    if (!view) return container;
-
-    const blockFrom = this.from;
-    const blockTo = this.to;
-
-    void Promise.all([
-      import('react-dom/client'),
-      import('react'),
-      import('@/app/components/mermaid/MermaidFlowchartView'),
-    ])
-      .then(([{ createRoot }, React, { MermaidFlowchartView }]) => {
-        const onDataChange = (newData: ReturnType<typeof parseMermaidFlowchart>) => {
-          const newCode = serializeMermaidFlowchart(newData);
-          view.dispatch({
-            changes: {
-              from: blockFrom,
-              to: blockTo,
-              insert: `\`\`\`mermaid\n${newCode}\n\`\`\``,
-            },
-            annotations: mermaidSelfUpdate.of(true),
-          });
-        };
-
-        const root = createRoot(container);
-        root.render(React.createElement(MermaidFlowchartView, { data, onDataChange }));
-      })
-      .catch(() => {
-        container.textContent = 'Failed to render flowchart';
-      });
-
-    return container;
-  }
-
-  eq(other: MermaidFlowchartWidget): boolean {
-    return this.code === other.code && this.from === other.from && this.to === other.to;
-  }
-
-  ignoreEvent(): boolean {
-    return true;
-  }
-}
-
 interface CacheEntry {
   svg: string | null;
   error: string | null;
@@ -178,9 +106,6 @@ class MermaidWidgetPlugin {
 
   update(update: ViewUpdate) {
     if (update.docChanged) {
-      // Skip re-render if the change came from a flowchart widget self-update
-      const isSelfUpdate = update.transactions.some((tr) => tr.annotation(mermaidSelfUpdate));
-      if (isSelfUpdate) return;
       this.scheduleRender();
     }
   }

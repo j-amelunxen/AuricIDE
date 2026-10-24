@@ -365,7 +365,7 @@ export function MarkdownEditor({
         </div>
         {showPreview && (
           <div className="w-1/2 h-full overflow-hidden">
-            <MarkdownPreview content={content} onContentChange={onChange} />
+            <MarkdownPreview content={content} />
           </div>
         )}
       </div>
