@@ -37,8 +37,12 @@ vi.mock('./spawnDefaults', async (original) => ({
   loadSpawnDefaults: (cwd?: string) => loadSpawnDefaultsMock(cwd),
 }));
 
-const { handleControlRequest, installControlBridge, WORKTREE_CHILD_NOTE } =
-  await import('./controlBridge');
+const {
+  handleControlRequest,
+  installControlBridge,
+  SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+  WORKTREE_CHILD_NOTE,
+} = await import('./controlBridge');
 type Host = Parameters<typeof handleControlRequest>[1];
 
 function agent(id: string, extra: Partial<AgentInfo> = {}): AgentInfo {
@@ -267,11 +271,27 @@ describe('control-request spawn', () => {
 });
 
 describe('control-request spawn for a supervisor', () => {
+  const answerInstruction = 'Finish with one line starting with ANSWER: that states the result.';
+  const organizationNote =
+    'You are responsible for this task end to end: analyze it yourself, plan and organize the work ' +
+    'as you see fit, carry it out, and verify the result really fits what was asked before you report ' +
+    'it. Actively split suitable work into clear parts and delegate them to your own subagents. Use ' +
+    'subagents for analysis, independent implementation, and review or verification whenever they help ' +
+    'deliver a stronger result. Keep following every other instruction in this prompt, including its ' +
+    'required final ANSWER line.';
+  const selfOrganizedTask = (task: string, worktree = false) =>
+    [
+      task,
+      SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+      ...(worktree ? [WORKTREE_CHILD_NOTE] : []),
+      answerInstruction,
+    ].join('\n\n');
+
   // What Rust emits for a supervisor's child: the policy already decided
   // provider, model and permission mode.
   const child = {
     projectPath: '/tmp/example-project',
-    prompt: 'check the parser',
+    prompt: `check the parser\n\n${answerInstruction}`,
     provider: 'codex',
     model: 'gpt-6-luna',
     permissionMode: null,
@@ -292,6 +312,10 @@ describe('control-request spawn for a supervisor', () => {
     });
   });
 
+  it('gives every child an active, end-to-end self-organization rule', () => {
+    expect(SUPERVISOR_CHILD_ORGANIZATION_NOTE).toBe(organizationNote);
+  });
+
   it("passes a child's provider, model and permission mode through verbatim", async () => {
     const h = host();
     await handleControlRequest(
@@ -301,7 +325,7 @@ describe('control-request spawn for a supervisor', () => {
 
     const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
     expect(config).toMatchObject({
-      task: 'check the parser',
+      task: selfOrganizedTask('check the parser'),
       cwd: '/tmp/example-project',
       projectPath: '/tmp/example-project',
       provider: 'codex',
@@ -338,7 +362,7 @@ describe('control-request spawn for a supervisor', () => {
     expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
   });
 
-  it('starts a child in a worktree and tells it to commit there', async () => {
+  it('adds the self-organization note once for a headless child in a worktree', async () => {
     const h = host();
     await handleControlRequest(
       { reqId: 's6', method: 'spawn', params: { ...child, worktree: true }, expiresAt: fresh() },
@@ -347,12 +371,14 @@ describe('control-request spawn for a supervisor', () => {
 
     const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
     expect(config.useWorktree).toBe(true);
-    expect(config.task).toBe(`check the parser\n\n${WORKTREE_CHILD_NOTE}`);
+    expect(config.task).toBe(selfOrganizedTask('check the parser', true));
+    expect(config.task.match(new RegExp(SUPERVISOR_CHILD_ORGANIZATION_NOTE, 'g'))).toHaveLength(1);
+    expect(config.task.endsWith(answerInstruction)).toBe(true);
     // Prompt recall keeps what was asked, not the IDE's own addition.
-    expect(config.historyPrompt).toBe('check the parser');
+    expect(config.historyPrompt).toBe(`check the parser\n\n${answerInstruction}`);
   });
 
-  it('leaves a child without worktree in the project folder, task untouched', async () => {
+  it('adds the self-organization note once for a headless child without a worktree', async () => {
     const h = host();
     await handleControlRequest(
       { reqId: 's7', method: 'spawn', params: child, expiresAt: fresh() },
@@ -360,7 +386,52 @@ describe('control-request spawn for a supervisor', () => {
     );
     const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
     expect(config.useWorktree).toBeUndefined();
-    expect(config.task).toBe('check the parser');
+    expect(config.task).toBe(selfOrganizedTask('check the parser'));
+    expect(config.task.match(new RegExp(SUPERVISOR_CHILD_ORGANIZATION_NOTE, 'g'))).toHaveLength(1);
+    expect(config.task.endsWith(answerInstruction)).toBe(true);
+  });
+
+  it('adds the self-organization note once for an interactive child in a worktree', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's9',
+        method: 'spawn',
+        params: {
+          ...child,
+          prompt: `check the parser\n\n${answerInstruction}`,
+          headless: false,
+          worktree: true,
+        },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config.task).toBe(selfOrganizedTask('check the parser', true));
+    expect(config.task.match(new RegExp(SUPERVISOR_CHILD_ORGANIZATION_NOTE, 'g'))).toHaveLength(1);
+    expect(config.task.endsWith(answerInstruction)).toBe(true);
+  });
+
+  it('adds the self-organization note once for an interactive child without a worktree', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's10',
+        method: 'spawn',
+        params: {
+          ...child,
+          prompt: `check the parser\n\n${answerInstruction}`,
+          headless: false,
+        },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config.task).toBe(selfOrganizedTask('check the parser'));
+    expect(config.task.match(new RegExp(SUPERVISOR_CHILD_ORGANIZATION_NOTE, 'g'))).toHaveLength(1);
+    expect(config.task.endsWith(answerInstruction)).toBe(true);
   });
 
   it('keeps the permission mode the policy named', async () => {

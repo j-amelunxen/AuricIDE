@@ -224,6 +224,36 @@ export const WORKTREE_CHILD_NOTE =
   'branch before you finish. Do not merge it and do not remove the worktree: whoever started ' +
   'you takes care of that.';
 
+export const SUPERVISOR_CHILD_ORGANIZATION_NOTE =
+  'You are responsible for this task end to end: analyze it yourself, plan and organize the work ' +
+  'as you see fit, carry it out, and verify the result really fits what was asked before you report ' +
+  'it. Actively split suitable work into clear parts and delegate them to your own subagents. Use ' +
+  'subagents for analysis, independent implementation, and review or verification whenever they help ' +
+  'deliver a stronger result. Keep following every other instruction in this prompt, including its ' +
+  'required final ANSWER line.';
+
+const ANSWER_INSTRUCTION = 'Finish with one line starting with ANSWER: that states the result.';
+
+function withSupervisorChildNotes(config: AgentConfig, worktree: boolean | null): AgentConfig {
+  const task = config.task.trimEnd();
+  const keepsAnswerLast = task.endsWith(ANSWER_INSTRUCTION);
+  const requestedTask = keepsAnswerLast
+    ? task.slice(0, -ANSWER_INSTRUCTION.length).trimEnd()
+    : task;
+  const notes = [
+    requestedTask,
+    SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+    ...(worktree ? [WORKTREE_CHILD_NOTE] : []),
+    ...(keepsAnswerLast ? [ANSWER_INSTRUCTION] : []),
+  ];
+  return {
+    ...config,
+    task: notes.join('\n\n'),
+    historyPrompt: config.historyPrompt ?? config.task,
+    ...(worktree ? { useWorktree: true } : {}),
+  };
+}
+
 function inWorktree(config: AgentConfig, worktree: boolean | null): AgentConfig {
   if (!worktree) return config;
   return {
@@ -306,10 +336,12 @@ async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
     );
   }
   const worker = { ...params, projectPath };
-  const config = inWorktree(
-    isVerbatimSpawn(worker) ? verbatimSpawnConfig(worker) : spawnConfigFor(worker, host.providers),
-    params.worktree
-  );
+  const baseConfig = isVerbatimSpawn(worker)
+    ? verbatimSpawnConfig(worker)
+    : spawnConfigFor(worker, host.providers);
+  const config = params.spawnedByAgentId
+    ? withSupervisorChildNotes(baseConfig, params.worktree)
+    : inWorktree(baseConfig, params.worktree);
   let spawned: AgentInfo;
   try {
     spawned = await host.spawnNewAgent(config);
