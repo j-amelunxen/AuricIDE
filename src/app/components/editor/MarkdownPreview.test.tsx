@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MarkdownPreview } from './MarkdownPreview';
 
@@ -72,22 +72,33 @@ describe('MarkdownPreview', () => {
     expect(screen.getByTestId('markdown-preview')).toBeInTheDocument();
   });
 
-  it('routes flowchart mermaid blocks to MermaidFlowchartView', () => {
+  it('renders flowchart mermaid blocks with the real mermaid renderer by default', () => {
     const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
-    render(<MarkdownPreview content={md} />);
-    expect(screen.getByTestId('mermaid-flowchart-view')).toBeInTheDocument();
-  });
-
-  it('routes non-flowchart mermaid blocks to MermaidPreview (SVG fallback)', () => {
-    const md = '# Title\n\n```mermaid\nsequenceDiagram\n  A->>B: Hello\n```\n';
-    render(<MarkdownPreview content={md} />);
+    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
+    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
     expect(screen.queryByTestId('mermaid-flowchart-view')).toBeNull();
   });
 
-  it('passes onContentChange prop for bidirectional sync', () => {
-    const onContentChange = vi.fn();
+  it('routes non-flowchart mermaid blocks to MermaidPreview', () => {
+    const md = '# Title\n\n```mermaid\nsequenceDiagram\n  A->>B: Hello\n```\n';
+    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
+    expect(screen.getByTestId('mermaid-preview')).toBeInTheDocument();
+    expect(screen.queryByText('Edit as canvas')).toBeNull();
+  });
+
+  it('offers the canvas editor only as an opt-in on editable flowcharts', async () => {
     const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
-    render(<MarkdownPreview content={md} onContentChange={onContentChange} />);
+    render(<MarkdownPreview content={md} onContentChange={vi.fn()} />);
+    fireEvent.click(await screen.findByText('Edit as canvas'));
     expect(screen.getByTestId('mermaid-flowchart-view')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Back to diagram'));
+    expect(screen.queryByTestId('mermaid-flowchart-view')).toBeNull();
+  });
+
+  it('does not offer the canvas editor on a read-only preview', async () => {
+    const md = '# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n';
+    render(<MarkdownPreview content={md} />);
+    await screen.findByText('Expand');
+    expect(screen.queryByText('Edit as canvas')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MermaidPreview } from './MermaidPreview';
@@ -16,6 +16,55 @@ import { replaceMermaidBlock } from '@/lib/mermaid/replaceMermaidBlock';
 export interface MarkdownPreviewProps {
   content: string;
   onContentChange?: (content: string) => void;
+}
+
+interface MermaidBlockProps {
+  code: string;
+  canEditAsCanvas: boolean;
+  onFlowchartChange: (oldCode: string, newData: MermaidFlowchartData) => void;
+}
+
+const CANVAS_SWITCH = 'flowchart-expand-btn';
+
+/**
+ * Mermaid is rendered by mermaid itself, the same output as mermaid.live. The React Flow
+ * canvas re-lays the graph out on its own and is only an explicit opt-in for editing a
+ * plain flowchart; it is never the default view.
+ */
+function MermaidBlock({ code, canEditAsCanvas, onFlowchartChange }: MermaidBlockProps) {
+  const [canvasMode, setCanvasMode] = useState(false);
+  const editable = canEditAsCanvas && isMermaidFlowchart(code);
+
+  if (editable && canvasMode) {
+    return (
+      <div className="my-4">
+        <div className="mb-2 flex justify-end">
+          <button type="button" className={CANVAS_SWITCH} onClick={() => setCanvasMode(false)}>
+            Back to diagram
+          </button>
+        </div>
+        <div style={{ height: 400 }}>
+          <MermaidFlowchartView
+            data={parseMermaidFlowchart(code)}
+            onDataChange={(newData) => onFlowchartChange(code, newData)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <MermaidPreview
+      code={code}
+      toolbarExtra={
+        editable ? (
+          <button type="button" className={CANVAS_SWITCH} onClick={() => setCanvasMode(true)}>
+            Edit as canvas
+          </button>
+        ) : undefined
+      }
+    />
+  );
 }
 
 export function MarkdownPreview({
@@ -53,18 +102,13 @@ export function MarkdownPreview({
 
             // Render mermaid diagrams
             if (isBlock && language === 'mermaid') {
-              if (isMermaidFlowchart(codeString)) {
-                const data = parseMermaidFlowchart(codeString);
-                return (
-                  <div className="my-4" style={{ height: 400 }}>
-                    <MermaidFlowchartView
-                      data={data}
-                      onDataChange={(newData) => handleFlowchartChange(codeString, newData)}
-                    />
-                  </div>
-                );
-              }
-              return <MermaidPreview code={codeString} />;
+              return (
+                <MermaidBlock
+                  code={codeString}
+                  canEditAsCanvas={Boolean(onContentChange)}
+                  onFlowchartChange={handleFlowchartChange}
+                />
+              );
             }
 
             // Regular code blocks

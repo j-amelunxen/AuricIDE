@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MermaidPreview } from './MermaidPreview';
 
@@ -48,8 +48,9 @@ describe('MermaidPreview', () => {
     });
   });
 
-  it('calls mermaid.initialize with dark theme config', () => {
+  it('calls mermaid.initialize with dark theme config', async () => {
     render(<MermaidPreview code="graph TD; A-->B" />);
+    await waitFor(() => expect(mockInitialize).toHaveBeenCalled());
 
     expect(mockInitialize).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -88,5 +89,40 @@ describe('MermaidPreview', () => {
         '<svg>updated diagram</svg>'
       );
     });
+  });
+
+  it('opens and closes a fullscreen view with its own zoom controls', async () => {
+    render(<MermaidPreview code="graph TD; A-->B" />);
+    fireEvent.click(await screen.findByLabelText('Expand'));
+
+    const dialog = screen.getByRole('dialog', { name: 'Diagram fullscreen' });
+    expect(dialog.innerHTML).toContain('<svg>mock diagram</svg>');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('zooms with the buttons and resets with Fit', async () => {
+    render(<MermaidPreview code="graph TD; A-->B" />);
+    await screen.findByLabelText('Zoom in');
+    const content = screen.getByTestId('mermaid-panzoom-content');
+
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    expect(content.style.transform).toContain('scale(1.25)');
+
+    fireEvent.click(screen.getByLabelText('Reset zoom'));
+    expect(content.style.transform).toContain('scale(1)');
+  });
+
+  it('does not hijack the plain wheel inline, only Ctrl/Cmd+wheel zooms', async () => {
+    render(<MermaidPreview code="graph TD; A-->B" />);
+    const frame = await screen.findByTestId('mermaid-panzoom-frame');
+    const content = screen.getByTestId('mermaid-panzoom-content');
+
+    fireEvent.wheel(frame, { deltaY: -200 });
+    expect(content.style.transform).toContain('scale(1)');
+
+    fireEvent.wheel(frame, { deltaY: -200, ctrlKey: true });
+    expect(content.style.transform).not.toContain('scale(1)');
   });
 });
