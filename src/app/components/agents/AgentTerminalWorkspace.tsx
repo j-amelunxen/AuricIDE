@@ -244,7 +244,7 @@ function LayoutPresets({
     <div
       role="group"
       aria-label="Terminal layout"
-      className="flex items-center gap-0.5 rounded-lg border border-white/10 p-0.5"
+      className="flex h-8 items-center gap-0.5 rounded-lg border border-white/10 p-0.5"
     >
       {PRESET_PANES.map((panes) => {
         const label = `Show ${panes} terminals side by side, supervisors first`;
@@ -588,7 +588,7 @@ export function AgentTerminalWorkspace({
                   : 'Focus mode: hide non-supervisor tabs and panes'
               }
               onClick={toggleFocusMode}
-              className={`rounded-lg border p-1.5 transition-all ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-all ${
                 focusMode
                   ? 'border-primary/40 bg-primary/15 text-primary-light'
                   : 'border-white/10 text-foreground-muted hover:bg-white/10 hover:text-foreground'
