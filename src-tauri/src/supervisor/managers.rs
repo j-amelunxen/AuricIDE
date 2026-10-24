@@ -539,6 +539,77 @@ pub fn rename(registry_path: &Path, key: &str, name: &str) -> Result<ManagerReco
     })
 }
 
+/// The generated first line of `INSTRUCTIONS.md` for a manager called `name`.
+fn instructions_heading(name: &str) -> String {
+    format!("# Instructions for {name}")
+}
+
+/// `text` with its generated first line renamed from `old` to `new`, or `None`
+/// when the first line is not exactly that heading (the human changed it, or
+/// there is none). Only that line is touched: its line ending and every byte
+/// after it stay as they were.
+fn rewrite_instructions_heading(text: &str, old: &str, new: &str) -> Option<String> {
+    let line_end = text.find('\n').unwrap_or(text.len());
+    let (line, rest) = text.split_at(line_end);
+    let (heading, ending) = match line.strip_suffix('\r') {
+        Some(heading) => (heading, "\r"),
+        None => (line, ""),
+    };
+    if heading != instructions_heading(old) {
+        return None;
+    }
+    Some(format!("{}{ending}{rest}", instructions_heading(new)))
+}
+
+/// Renames the generated heading in the manager's `INSTRUCTIONS.md`. Returns
+/// whether the file changed. A missing file, a heading the human rewrote, a
+/// symbolic link or a file that is not UTF-8 are left alone.
+fn sync_instructions_heading(run: &Path, old: &str, new: &str) -> Result<bool, String> {
+    let file = run.join(INSTRUCTIONS_FILE_NAME);
+    refuse_symlink(&file)?;
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => return Ok(false),
+        Err(error) => return Err(format!("Could not read {}: {error}", file.display())),
+    };
+    let Some(updated) = rewrite_instructions_heading(&text, old, new) else {
+        return Ok(false);
+    };
+    let temporary = run.join(format!(
+        ".{INSTRUCTIONS_FILE_NAME}.{}.tmp",
+        std::process::id()
+    ));
+    let written = std::fs::write(&temporary, updated.as_bytes())
+        .and_then(|_| std::fs::set_permissions(&temporary, std::fs::metadata(&file)?.permissions()))
+        .and_then(|_| std::fs::rename(&temporary, &file));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(format!("Could not write {}: {error}", file.display()));
+    }
+    Ok(true)
+}
+
+/// `rename`, plus the generated heading of the manager's `INSTRUCTIONS.md`.
+/// The registry is the truth: once it holds the new name the rename stands,
+/// and a heading that could not be updated is reported next to the record
+/// (`Ok((record, Some(reason)))`) rather than undoing it.
+pub fn rename_with_instructions(
+    registry_path: &Path,
+    runs_root: &Path,
+    key: &str,
+    name: &str,
+) -> Result<(ManagerRecord, Option<String>), String> {
+    let old = find_record(registry_path, key)?.name;
+    let record = rename(registry_path, key, name)?;
+    if old == record.name {
+        return Ok((record, None));
+    }
+    let synced = resolve_manager_run(runs_root, &record.run_dir)
+        .and_then(|run| sync_instructions_heading(&run, &old, &record.name));
+    Ok((record, synced.err()))
+}
+
 pub fn archive(registry_path: &Path, key: &str) -> Result<ManagerRecord, String> {
     update_registry(registry_path, |registry| {
         let record = find_mut(registry, key)?;
@@ -771,7 +842,19 @@ pub fn manager_rename(
     key: String,
     name: String,
 ) -> Result<ManagerRecord, String> {
-    rename(&registry_path(&app)?, &key, &name)
+    let (record, heading_problem) = rename_with_instructions(
+        &registry_path(&app)?,
+        &super::runs::runs_root(&app)?,
+        &key,
+        &name,
+    )?;
+    if let Some(problem) = heading_problem {
+        eprintln!(
+            "manager_rename: {} is renamed, its INSTRUCTIONS.md heading is not: {problem}",
+            record.key
+        );
+    }
+    Ok(record)
 }
 
 #[tauri::command(async)]
@@ -1523,6 +1606,132 @@ mod tests {
             ("release-desk", "Ship Room")
         );
         assert_eq!(list(&sandbox.registry).managers, vec![renamed]);
+    }
+
+    #[test]
+    fn rename_rewrites_only_the_generated_heading() {
+        let sandbox = Sandbox::new();
+        let record = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        let file = sandbox
+            .runs
+            .join("2026-10-21_090000")
+            .join(INSTRUCTIONS_FILE_NAME);
+        let original = std::fs::read_to_string(&file).unwrap();
+        let human = format!("{original}\n- Mention Release Desk in every ticket.\r\n");
+        std::fs::write(&file, &human).unwrap();
+
+        let (renamed, problem) =
+            rename_with_instructions(&sandbox.registry, &sandbox.runs, &record.key, "Ship Room")
+                .unwrap();
+
+        assert_eq!(problem, None);
+        assert_eq!(renamed.key, "release-desk");
+        let after = std::fs::read_to_string(&file).unwrap();
+        let (first, rest) = after.split_once('\n').unwrap();
+        assert_eq!(first, "# Instructions for Ship Room");
+        assert_eq!(rest, human.split_once('\n').unwrap().1);
+        assert!(after.contains("Mention Release Desk in every ticket"));
+    }
+
+    #[test]
+    fn rename_keeps_crlf_and_leaves_a_heading_the_human_wrote_alone() {
+        assert_eq!(
+            rewrite_instructions_heading("# Instructions for A\r\nbody\r\n", "A", "B"),
+            Some("# Instructions for B\r\nbody\r\n".to_string())
+        );
+        assert_eq!(
+            rewrite_instructions_heading("# Instructions for A", "A", "B"),
+            Some("# Instructions for B".to_string())
+        );
+        for untouched in [
+            "# My own title\nbody\n",
+            "# Instructions for A and more\n",
+            "\n# Instructions for A\n",
+            "",
+        ] {
+            assert_eq!(rewrite_instructions_heading(untouched, "A", "B"), None);
+        }
+
+        let sandbox = Sandbox::new();
+        let record = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        let file = sandbox
+            .runs
+            .join("2026-10-21_090000")
+            .join(INSTRUCTIONS_FILE_NAME);
+        std::fs::write(&file, "# Our rules\nKeep it short.\n").unwrap();
+        rename_with_instructions(&sandbox.registry, &sandbox.runs, &record.key, "Ship Room")
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "# Our rules\nKeep it short.\n"
+        );
+    }
+
+    #[test]
+    fn a_refused_rename_touches_neither_registry_nor_instructions() {
+        let sandbox = Sandbox::new();
+        let first = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        sandbox.promote("2026-10-22_090000", "Inbox").unwrap();
+        let file = sandbox
+            .runs
+            .join("2026-10-21_090000")
+            .join(INSTRUCTIONS_FILE_NAME);
+        let before = (std::fs::read(&file).unwrap(), sandbox.registry_bytes());
+        for bad in ["inbox", "   ", "two\nlines"] {
+            assert!(
+                rename_with_instructions(&sandbox.registry, &sandbox.runs, &first.key, bad)
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            before,
+            (std::fs::read(&file).unwrap(), sandbox.registry_bytes())
+        );
+    }
+
+    #[test]
+    fn a_missing_instructions_file_or_folder_does_not_undo_the_rename() {
+        let sandbox = Sandbox::new();
+        let record = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        let run = sandbox.runs.join("2026-10-21_090000");
+        std::fs::remove_file(run.join(INSTRUCTIONS_FILE_NAME)).unwrap();
+        let (renamed, problem) =
+            rename_with_instructions(&sandbox.registry, &sandbox.runs, &record.key, "Ship Room")
+                .unwrap();
+        assert_eq!((renamed.name.as_str(), problem), ("Ship Room", None));
+
+        std::fs::remove_dir_all(&run).unwrap();
+        let (renamed, problem) =
+            rename_with_instructions(&sandbox.registry, &sandbox.runs, &record.key, "Dock")
+                .unwrap();
+        assert_eq!(renamed.name, "Dock");
+        assert!(problem.is_some());
+        assert_eq!(list(&sandbox.registry).managers[0].name, "Dock");
+    }
+
+    #[test]
+    fn rename_keeps_folder_memory_and_launch_book() {
+        let sandbox = Sandbox::new();
+        let record = sandbox
+            .promote("2026-10-21_090000", "Release Desk")
+            .unwrap();
+        record_launch(&sandbox.registry, &record.key, Some("text")).unwrap();
+        let memory = sandbox.runs.join("2026-10-21_090000/knowledge/index.md");
+        let memory_before = std::fs::read(&memory).unwrap();
+        let (renamed, _) =
+            rename_with_instructions(&sandbox.registry, &sandbox.runs, &record.key, "Ship Room")
+                .unwrap();
+        assert_eq!(renamed.run_dir, record.run_dir);
+        assert!(renamed.last_launch.is_some());
+        assert_eq!(std::fs::read(&memory).unwrap(), memory_before);
     }
 
     #[test]

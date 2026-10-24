@@ -23,6 +23,7 @@ import {
   managerArchive,
   managerCreate,
   managerRemove,
+  managerRename,
   managerRestore,
   type SupervisorManager,
 } from '@/lib/tauri/supervisorManagers';
@@ -57,6 +58,7 @@ export function SupervisorManagersSettings() {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState<SupervisorManager | null>(null);
   const menuBar = readMenuBarPrefs();
 
   useEffect(() => {
@@ -192,6 +194,7 @@ export function SupervisorManagersSettings() {
                 onChange={(patch) => updateManagerPresentation(manager.key, patch)}
                 onOpen={() => void open(manager.key)}
                 onAsk={() => ask(manager)}
+                onRename={() => setRenaming(manager)}
                 onArchive={() => setConfirmation({ kind: 'archive', manager })}
                 onShowFile={(path) => void openInDefaultApp(path, 'Could not open the file')}
                 onShowInstructions={() =>
@@ -290,6 +293,27 @@ export function SupervisorManagersSettings() {
           <p className="text-xs text-foreground-muted">
             It gets a folder of its own, an instructions file and a memory in knowledge/. Open it to
             put it to work.
+          </p>
+        </ManagerNameSheet>
+      )}
+      {renaming && (
+        <ManagerNameSheet
+          title="Rename Project Manager"
+          confirmLabel="Rename"
+          initialName={renaming.name}
+          addressFor={() => renaming.key}
+          managers={managers}
+          exceptKey={renaming.key}
+          blockedReason={error ?? undefined}
+          onSubmit={async (name) => {
+            await managerRename(renaming.key, name);
+          }}
+          onClose={() => setRenaming(null)}
+        >
+          <p className="text-xs text-foreground-muted">
+            Address, folder, memory and the agents it started stay as they are. The heading of
+            INSTRUCTIONS.md follows; your own text is not touched. A running manager keeps the old
+            name until it restarts.
           </p>
         </ManagerNameSheet>
       )}

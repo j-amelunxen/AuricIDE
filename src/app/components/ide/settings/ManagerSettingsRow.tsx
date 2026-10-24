@@ -27,6 +27,7 @@ interface ManagerSettingsRowProps {
   onChange: (patch: Partial<ManagerPresentation>) => void;
   onOpen: () => void;
   onAsk: () => void;
+  onRename: () => void;
   onArchive: () => void;
   onShowInstructions: () => void;
   /** Settings has no editor: a file of the manager's folder opens in the default app. */
@@ -54,6 +55,7 @@ export function ManagerSettingsRow({
   onChange,
   onOpen,
   onAsk,
+  onRename,
   onArchive,
   onShowInstructions,
   onShowFile,
@@ -101,6 +103,14 @@ export function ManagerSettingsRow({
           <>
             <button type="button" onClick={onOpen} className={ROW_BUTTON}>
               Open
+            </button>
+            <button
+              type="button"
+              onClick={onRename}
+              aria-label={`Rename ${manager.name}…`}
+              className={ROW_BUTTON}
+            >
+              Rename…
             </button>
             <button
               type="button"

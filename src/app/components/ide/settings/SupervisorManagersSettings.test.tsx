@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   managerRegistry: vi.fn(),
   managerCreate: vi.fn(async () => undefined),
   managerArchive: vi.fn(async () => undefined),
+  managerRename: vi.fn(async () => undefined),
   listProviders: vi.fn(async (): Promise<unknown[]> => []),
   supervisorPolicyGet: vi.fn(async () => ({ policy: { supervisor: { provider: 'claude' } } })),
   managerRestore: vi.fn(async () => undefined),
@@ -39,6 +40,7 @@ vi.mock('@/lib/tauri/supervisorManagers', () => ({
   managerRegistry: mocks.managerRegistry,
   managerCreate: mocks.managerCreate,
   managerArchive: mocks.managerArchive,
+  managerRename: mocks.managerRename,
   managerRestore: mocks.managerRestore,
   managerRemove: mocks.managerRemove,
   managerInstructions: mocks.managerInstructions,
@@ -254,6 +256,42 @@ describe('Settings → Supervisor → Project Managers', () => {
         undefined
       )
     );
+  });
+
+  it('renames a manager by its key through the name sheet', async () => {
+    registryWith(null, manager('release-desk', 'Release Desk'), manager('inbox', 'Inbox'));
+    render(<SupervisorManagersSettings />);
+
+    const row = await screen.findByTestId('manager-settings-release-desk');
+    fireEvent.click(within(row).getByRole('button', { name: 'Rename Release Desk…' }));
+    const field = await screen.findByLabelText('Name');
+    expect(field).toHaveValue('Release Desk');
+    expect(screen.getByText('Address: release-desk')).toBeInTheDocument();
+
+    fireEvent.change(field, { target: { value: 'Ship Room' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    await waitFor(() =>
+      expect(mocks.managerRename).toHaveBeenCalledWith('release-desk', 'Ship Room')
+    );
+  });
+
+  it("refuses an empty name and a neighbour's name before asking Rust", async () => {
+    registryWith(null, manager('release-desk', 'Release Desk'), manager('inbox', 'Inbox'));
+    render(<SupervisorManagersSettings />);
+
+    const row = await screen.findByTestId('manager-settings-release-desk');
+    fireEvent.click(within(row).getByRole('button', { name: 'Rename Release Desk…' }));
+    const field = await screen.findByLabelText('Name');
+
+    fireEvent.change(field, { target: { value: '   ' } });
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeDisabled();
+    fireEvent.change(field, { target: { value: 'INBOX' } });
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeDisabled();
+    expect(screen.getByText('A Project Manager with this name exists.')).toBeInTheDocument();
+    expect(mocks.managerRename).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: 'release DESK' } });
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled();
   });
 
   it('keeps archived managers behind a fold, with restore and a confirmed remove', async () => {
