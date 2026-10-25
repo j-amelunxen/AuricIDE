@@ -247,7 +247,7 @@
     },
     {
       "id": "machineTools",
-      "label": "ffmpeg, uv, parakeet",
+      "label": "ffmpeg, uv, parakeet, formatters",
       "preset": "box",
       "group": "external",
       "level": 6,

@@ -184,7 +184,7 @@
     },
     {
       "id": "imports",
-      "label": "Imports and machine tools",
+      "label": "Imports, machine tools, formatters",
       "preset": "box",
       "group": "backend",
       "level": 4,

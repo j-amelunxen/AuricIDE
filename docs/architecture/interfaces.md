@@ -12,18 +12,18 @@ Stability words used below, taken from what the code and docs promise, not from 
 
 ## 0. Overview
 
-| #   | Kind                    | Door                                                             | Who uses it                               | Direction     | Stability                      |
-| --- | ----------------------- | ---------------------------------------------------------------- | ----------------------------------------- | ------------- | ------------------------------ |
-| 1   | Tauri IPC               | `invoke` commands, events                                        | our own webviews (`main`, `agent-window`) | both          | internal                       |
-| 2   | MCP                     | `auric-mcp` in three modes (`project`, `control`, `supervisor`)  | agent CLIs, outside MCP hosts             | client → IDE  | contract (control, supervisor) |
-| 3   | Supervisor Link         | WebSocket over `supervisor-link.sock`, path `/v1`                | a local companion app (its backend)       | client ↔ IDE  | contract, protocol 1           |
-| 4   | Control socket          | NDJSON over `control.sock`                                       | `auric-mcp --control`, supervisor MCP     | client → IDE  | contract                       |
-| 5   | Agent CLIs / providers  | PTY child processes, JSON provider configs, per-agent MCP config | Claude Code, Codex, Gemini CLI, Crush, …  | IDE → CLI     | convention (CLIs change)       |
-| 6   | File contracts          | `.auric/`, app-data JSON, `.commit-guard.json`, scene files      | humans, scripts, clients through the link | both          | mixed                          |
-| 7   | Native menu automation  | macOS menu items, generated list                                 | `axbridge`, UI automation                 | client → IDE  | generated                      |
-| 8   | Hooks and sidecars      | Claude `--settings` statusLine, husky, MCP guard                 | Claude Code, git                          | CLI → IDE     | internal                       |
-| 9   | Environment variables   | `AURIC_*`                                                        | agents, MCP servers, probes               | IDE → child   | mixed                          |
-| 10  | Outbound HTTP and tools | LLM APIs, Excalidraw+, push delivery; `ffmpeg`, `uv`, `okf`      | IDE                                       | IDE → outside | third party                    |
+| #   | Kind                    | Door                                                                    | Who uses it                               | Direction     | Stability                      |
+| --- | ----------------------- | ----------------------------------------------------------------------- | ----------------------------------------- | ------------- | ------------------------------ |
+| 1   | Tauri IPC               | `invoke` commands, events                                               | our own webviews (`main`, `agent-window`) | both          | internal                       |
+| 2   | MCP                     | `auric-mcp` in three modes (`project`, `control`, `supervisor`)         | agent CLIs, outside MCP hosts             | client → IDE  | contract (control, supervisor) |
+| 3   | Supervisor Link         | WebSocket over `supervisor-link.sock`, path `/v1`                       | a local companion app (its backend)       | client ↔ IDE  | contract, protocol 1           |
+| 4   | Control socket          | NDJSON over `control.sock`                                              | `auric-mcp --control`, supervisor MCP     | client → IDE  | contract                       |
+| 5   | Agent CLIs / providers  | PTY child processes, JSON provider configs, per-agent MCP config        | Claude Code, Codex, Gemini CLI, Crush, …  | IDE → CLI     | convention (CLIs change)       |
+| 6   | File contracts          | `.auric/`, app-data JSON, `.commit-guard.json`, scene files             | humans, scripts, clients through the link | both          | mixed                          |
+| 7   | Native menu automation  | macOS menu items, generated list                                        | `axbridge`, UI automation                 | client → IDE  | generated                      |
+| 8   | Hooks and sidecars      | Claude `--settings` statusLine, husky, MCP guard                        | Claude Code, git                          | CLI → IDE     | internal                       |
+| 9   | Environment variables   | `AURIC_*`                                                               | agents, MCP servers, probes               | IDE → child   | mixed                          |
+| 10  | Outbound HTTP and tools | LLM APIs, Excalidraw+, push delivery; `ffmpeg`, `uv`, `okf`, formatters | IDE                                       | IDE → outside | third party                    |
 
 The three ways in for a program **outside** the IDE are 2 (`--control` mode), 3 and 4.
 They differ in power: the control socket can spawn any worker agent in any project the
@@ -34,12 +34,12 @@ The last section compares link and MCP.
 
 - **Direction:** webview calls Rust with `invoke(cmd, args)`; Rust pushes events.
 - **Defined in:** `src-tauri/src/lib.rs:318` (one `generate_handler![…]`, about 220
-  commands; 225 `#[tauri::command]` attributes exist in the tree, a few are helpers or
+  commands; 226 `#[tauri::command]` attributes exist in the tree, a few are helpers or
   test-only). Implementations: `commands/` (fs 17, db 26, app 42, agent 13, inbox 11,
   terminal 3, watcher 2), `git/commands.rs` (44), `recent_projects/commands.rs` (9),
   `supervisor/` (15 incl. managers), `supervisor_link/` (6), `video_import/` (5),
   `webview_prefs.rs`, `app_config.rs`, `agent_window.rs`, `usage_limits/`, `cc_usage/`,
-  `agent_usage/`, `ui_watchdog.rs`, `clipboard.rs`, `machine/`, `menu_bar.rs`.
+  `agent_usage/`, `ui_watchdog.rs`, `clipboard.rs`, `machine/`, `formatter/`, `menu_bar.rs`.
 - **Frontend side:** wrappers in `src/lib/tauri/*.ts` over one helper, `invoke.ts`
   (lazy import, throws `Tauri IPC is unavailable (<cmd>)` instead of calling undefined).
 - **Who may call:** capability files `src-tauri/capabilities/default.json` (window
@@ -298,7 +298,10 @@ LLM HTTP calls (`llm.rs`), Excalidraw+ REST (`excalidraw/`, only `fetch_json` to
 the network), push delivery (`delivery/`, driven from `app_config.rs`), owner-approved
 stdio connectors (`connectors.rs`), the project's own `.mcp.json` (read at spawn by `extra_mcp.rs`; names picked per project in Settings → Supervisor → Projects, definitions passed to the agent's private config only, Tauri command `extra_mcp_inspect` returns names and transports, never values), machine tools resolved by absolute path through the
 login shell (`machine/`: `ffmpeg`, `ffprobe`, `go`, `okf`, plus `uv` and the
-transcription runtime for video import). Third-party drift cannot be ruled out; the
+transcription runtime for video import), and the formatters `formatter/` runs on ⌘S
+(project `node_modules/.bin/biome` or `prettier` first, then `prettier`, `ruff`,
+`black`, `gofmt`, `rustfmt`, `shfmt` from the login shell; 10 s timeout, the answer is
+an outcome, never an error, and the save has already happened). Third-party drift cannot be ruled out; the
 policy in this repo is a hard check at the boundary (`video_import/failure.rs` never
 turns tool output into a message).
 

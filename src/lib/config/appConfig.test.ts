@@ -24,6 +24,8 @@ describe('app config', () => {
   it('round-trips each setting', () => {
     setAppConfigValue('enableDeepNlp', true);
     setAppConfigValue('markdownLintEnabled', false);
+    setAppConfigValue('formatOnSave', false);
+    setAppConfigValue('formatOnBlur', true);
     setAppConfigValue('mcpAutoStart', true);
     setAppConfigValue('cliUsageLimits', true);
     setAppConfigValue('agentTerminalFontSize', 16);
@@ -38,6 +40,8 @@ describe('app config', () => {
     expect(loadAppConfig()).toEqual({
       enableDeepNlp: true,
       markdownLintEnabled: false,
+      formatOnSave: false,
+      formatOnBlur: true,
       mcpAutoStart: true,
       cliUsageLimits: true,
       agentTerminalFontSize: 16,

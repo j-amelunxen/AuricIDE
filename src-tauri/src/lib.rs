@@ -15,6 +15,7 @@ mod database;
 mod delivery;
 mod excalidraw;
 mod extra_mcp;
+mod formatter;
 mod git;
 mod ignored_repos;
 mod inbox;
@@ -540,6 +541,7 @@ pub fn run() {
             video_import::video_import_analyze_media,
             video_import::video_import_preflight,
             machine::machine_dependencies,
+            formatter::format_document,
             video_import::video_import_install_local,
             video_import::video_import_save_process,
             video_import::video_import_clear

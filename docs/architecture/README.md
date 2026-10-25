@@ -150,7 +150,9 @@ Depends on: providers, agents, webview_prefs.
 
 **Imports and machine tools** — `video_import/` (transcription, frames), `machine/`
 (declared table of `ffmpeg`, `ffprobe`, `go`, `okf`; absolute-path resolution through
-the login shell), `excalidraw/` (Excalidraw+ REST, mock lane `AURIC_EXCALIDRAW_MOCK=1`),
+the login shell), `formatter/` (format on save: the project's biome or prettier,
+ruff or black, gofmt, rustfmt, shfmt, resolved through `machine/`; Tauri command
+`format_document`, never writes a file), `excalidraw/` (Excalidraw+ REST, mock lane `AURIC_EXCALIDRAW_MOCK=1`),
 `llm.rs` (HTTP calls to LLM APIs), `app_config.rs` (machine-wide credentials,
 `app-credentials.json`, 0600).
 

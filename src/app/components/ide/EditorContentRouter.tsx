@@ -146,6 +146,8 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
       projectFiles={state.projectFiles}
       scrollToLine={state.scrollToLine}
       onChange={handlers.handleEditorChange}
+      onSave={() => void handlers.handleSave()}
+      onBlur={handlers.handleEditorBlur}
       onCursorChange={state.setCursorPos}
       onSelectionSpawn={handlers.handleSelectionSpawn}
       onWikiLinkNavigate={handlers.handleWikiLinkNavigate}
