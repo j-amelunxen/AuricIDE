@@ -731,6 +731,9 @@ or `ProjectManager*`: both already mean the tickets.
 - **The working loop: Ask, hear back, see where it stands.** "Ask <name>…"
   hands a manager work: a running one gets it as one message
   (`sendAgentInput`), a stopped one is resumed with it as the first task.
+  In the runs rail an unfolded manager carries the same Ask inline
+  (`ManagerAskComposer`, sent through `useAskManager().send`, the path the
+  sheet uses), and the most recent manager unfolds on first show.
   `openManager` serialises per key, so every door (tile, rail, menu bar,
   notification, Ask) ends in one start and no task is dropped. A schedule
   action `open-manager` does the same on a timer, trust and freshness as

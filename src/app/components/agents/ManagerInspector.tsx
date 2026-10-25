@@ -40,6 +40,13 @@ interface ManagerInspectorProps {
   /** Ends the running session and resumes the folder. The caller confirms. */
   onRestart: () => void;
   onToggleFolder: () => void;
+  /** The folder's files, drawn under the facts while the folder is open (the rail). */
+  files?: ReactNode;
+  /**
+   * An inline Ask field at the foot (the rail). It takes the place of the
+   * Ask… button, which opens the same Ask as a sheet everywhere else.
+   */
+  composer?: ReactNode;
 }
 
 /** Why the okf half of the check is not running, per state that means that. */
@@ -206,6 +213,8 @@ export function ManagerInspector({
   onEditInstructions,
   onRestart,
   onToggleFolder,
+  files,
+  composer,
 }: ManagerInspectorProps) {
   const showToast = useStore((s) => s.showToast);
   // The age moves by the minute and the inspector is short-lived: read once, not per render.
@@ -452,20 +461,24 @@ export function ManagerInspector({
           </dd>
         </div>
       </dl>
+      {folderOpen && files}
 
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onOpen} className={ACTION_BUTTON}>
           Open
         </button>
-        <button
-          type="button"
-          onClick={onAsk}
-          aria-label={`Ask ${manager.name}…`}
-          className={ACTION_BUTTON}
-        >
-          Ask…
-        </button>
+        {composer === undefined && (
+          <button
+            type="button"
+            onClick={onAsk}
+            aria-label={`Ask ${manager.name}…`}
+            className={ACTION_BUTTON}
+          >
+            Ask…
+          </button>
+        )}
       </div>
+      {composer}
     </div>
   );
 }

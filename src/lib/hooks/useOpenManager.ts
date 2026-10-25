@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { openManager, type OpenManagerOptions } from '@/lib/agents/openSupervisor';
+import {
+  openManager,
+  type OpenManagerOptions,
+  type OpenManagerOutcome,
+} from '@/lib/agents/openSupervisor';
 import { useStore } from '@/lib/store';
 
 interface OpenManagerHooks {
@@ -26,14 +30,14 @@ export function useOpenManager({ onOpenSettings, onSelectAgent }: OpenManagerHoo
   const inFlight = useRef(0);
 
   const open = useCallback(
-    async (key: string, options?: OpenManagerOptions) => {
+    async (key: string, options?: OpenManagerOptions): Promise<OpenManagerOutcome> => {
       // A second plain Open adds nothing. An Ask carries work and must not be
       // lost: `openManager` itself lines it up behind the start in flight.
-      if (inFlight.current > 0 && !options?.task?.trim()) return;
+      if (inFlight.current > 0 && !options?.task?.trim()) return 'declined';
       inFlight.current += 1;
       setOpening(key);
       try {
-        await openManager(
+        return await openManager(
           { spawnSupervisor, showToast, sendAgentInput, agents: useStore.getState().agents },
           key,
           {

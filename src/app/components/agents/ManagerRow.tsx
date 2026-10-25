@@ -3,6 +3,8 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { managerStatus, type ManagerStatus } from '@/lib/agents/managerStatus';
+import { providerName } from '@/lib/usage/quota';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
@@ -55,8 +57,10 @@ interface ManagerRowProps {
   archived: boolean;
   expanded: boolean;
   folderOpen: boolean;
-  /** The folder's files, drawn under the inspector while the folder is open. */
+  /** The folder's files, drawn under the inspector's facts while the folder is open. */
   files: ReactNode;
+  /** The inline Ask field at the foot of the unfolded row. */
+  composer: ReactNode;
   reloadToken: number;
   onToggle: () => void;
   onToggleFolder: () => void;
@@ -68,8 +72,40 @@ interface ManagerRowProps {
   onRestart: () => void;
 }
 
-function Status({ live, archived, ago }: { live: boolean; archived: boolean; ago: string | null }) {
-  if (live) return <span className="text-primary">Running</span>;
+/** Status owns the dot: the accent while it works, amber when it waits for the human. */
+const DOT_CLASS: Record<ManagerStatus, string> = {
+  running: 'bg-primary shadow-[0_0_6px_var(--primary)]',
+  attention: 'bg-amber-400',
+  idle: 'border border-foreground-muted/60',
+};
+
+/**
+ * Running names the harness the session actually runs on: a manager is not
+ * tied to one provider, so the row says which one this session uses.
+ */
+function Status({
+  status,
+  provider,
+  archived,
+  ago,
+}: {
+  status: ManagerStatus;
+  provider: string | undefined;
+  archived: boolean;
+  ago: string | null;
+}) {
+  if (status !== 'idle') {
+    return (
+      <>
+        {status === 'attention' ? (
+          <span className="text-amber-200">Needs you</span>
+        ) : (
+          <span className="text-primary">Running</span>
+        )}
+        {provider && <span> · {providerName(provider)}</span>}
+      </>
+    );
+  }
   const age = ago === null ? null : `${ago} ago`;
   return <>{archived ? ['Archived', age].filter(Boolean).join(' · ') : (age ?? 'Not started')}</>;
 }
@@ -87,6 +123,7 @@ export function ManagerRow({
   expanded,
   folderOpen,
   files,
+  composer,
   reloadToken,
   onToggle,
   onToggleFolder,
@@ -97,10 +134,13 @@ export function ManagerRow({
   onEditInstructions,
   onRestart,
 }: ManagerRowProps) {
-  const live = liveSupervisor !== undefined;
+  const status = managerStatus(liveSupervisor, now);
   const ago = run.modifiedAtMs === null ? null : formatAgentDuration(now - run.modifiedAtMs);
   return (
-    <li data-testid="manager-row">
+    <li
+      data-testid="manager-row"
+      className={expanded ? 'border-y border-white/5 bg-white/[0.02] pb-2' : undefined}
+    >
       <div
         onContextMenu={(event) => {
           event.preventDefault();
@@ -108,7 +148,7 @@ export function ManagerRow({
         }}
         className={`group flex items-center gap-1.5 px-3 py-1 text-sm transition-colors ${
           expanded
-            ? 'bg-primary/10 text-foreground'
+            ? 'text-foreground'
             : 'text-foreground-muted hover:bg-white/5 hover:text-foreground'
         }`}
       >
@@ -132,18 +172,23 @@ export function ManagerRow({
             <span className="flex items-center gap-1.5">
               <span
                 aria-hidden="true"
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  live
-                    ? 'bg-primary shadow-[0_0_6px_var(--primary)]'
-                    : 'border border-foreground-muted/60'
-                }`}
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_CLASS[status]}`}
               />
-              <span className={`truncate ${archived ? 'text-foreground-muted' : ''}`}>
+              <span
+                className={`truncate ${archived ? 'text-foreground-muted' : ''} ${
+                  expanded ? 'font-semibold' : ''
+                }`}
+              >
                 {manager.name}
               </span>
             </span>
             <span className="block truncate pl-3 text-[11px] text-foreground-muted">
-              <Status live={live} archived={archived} ago={ago} />
+              <Status
+                status={status}
+                provider={liveSupervisor?.provider}
+                archived={archived}
+                ago={ago}
+              />
             </span>
           </span>
         </button>
@@ -154,22 +199,22 @@ export function ManagerRow({
         />
       </div>
       {expanded && !archived && (
-        <>
-          <ManagerInspector
-            manager={manager}
-            run={run}
-            liveSupervisor={liveSupervisor}
-            folderOpen={folderOpen}
-            reloadToken={reloadToken}
-            onOpen={onOpen}
-            onAsk={onAsk}
-            onOpenFile={onOpenFile}
-            onEditInstructions={onEditInstructions}
-            onRestart={onRestart}
-            onToggleFolder={onToggleFolder}
-          />
-          {folderOpen && files}
-        </>
+        <ManagerInspector
+          manager={manager}
+          run={run}
+          liveSupervisor={liveSupervisor}
+          folderOpen={folderOpen}
+          reloadToken={reloadToken}
+          onOpen={onOpen}
+          onAsk={onAsk}
+          onOpenFile={onOpenFile}
+          onEditInstructions={onEditInstructions}
+          onRestart={onRestart}
+          onToggleFolder={onToggleFolder}
+          // The tree keeps the rail's own indent rather than the inspector's.
+          files={<div className="-ml-6 -mr-2 py-1">{files}</div>}
+          composer={composer}
+        />
       )}
     </li>
   );
