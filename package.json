@@ -32,6 +32,7 @@
     "test:e2e:tauri": "pnpm test:e2e:tauri:durability",
     "test:e2e:tauri:durability": "node --import tsx scripts/run-tauri-durability-e2e.mts",
     "test:e2e:tauri:merge": "node --import tsx scripts/run-tauri-merge-e2e.mts",
+    "test:e2e:tauri:file-tree": "node --import tsx scripts/run-tauri-file-tree-e2e.mts",
     "probe:merge-agent": "node --import tsx scripts/probe-merge-agent.mjs",
     "lean:build": "cd verification/lean && lake build",
     "lean:check": "node scripts/lean-check.mjs",

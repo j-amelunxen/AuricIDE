@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-type CommandPlan = {
+export type CommandPlan = {
   command: string;
   args: string[];
   cwd: string;
@@ -71,7 +71,7 @@ export function createTauriMergeE2ePlan({
   return skipBuild ? [run] : [build, run];
 }
 
-async function allocateLoopbackPort(): Promise<number> {
+export async function allocateLoopbackPort(): Promise<number> {
   return await new Promise((resolvePort, reject) => {
     const server = createServer();
     server.once('error', reject);
@@ -87,7 +87,7 @@ async function allocateLoopbackPort(): Promise<number> {
   });
 }
 
-function run({ command, args, cwd, env }: CommandPlan): Promise<void> {
+export function run({ command, args, cwd, env }: CommandPlan): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd,
