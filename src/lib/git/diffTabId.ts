@@ -12,9 +12,15 @@ export function diffTabId(source: DiffSource, filePath: string, repoPath: string
       return `diff:rev:${source.oid}:${repoPath}:${filePath}`;
     case 'ref':
       return `diff:ref:${encodeURIComponent(source.ref)}:${repoPath}:${filePath}`;
+    case 'files':
+      return `diff:files:${encodeURIComponent(source.left)}:${encodeURIComponent(source.right)}`;
   }
 }
 
 export function isDiffTabId(id: string): boolean {
   return id.startsWith('diff:');
+}
+
+export function isFilesDiffTabId(id: string): boolean {
+  return id.startsWith('diff:files:');
 }

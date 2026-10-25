@@ -672,4 +672,24 @@ describe('DiffViewer lock', () => {
     expect(marked).toHaveLength(1);
     expect(marked[0].textContent).toBe('new line');
   });
+
+  it('renders a files comparison read-only: both names, no staging, discard or lock controls', () => {
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="src/a.ts ↔ lib/b.ts"
+        emptyMessage="The files are identical"
+      />
+    );
+    expect(screen.getByText('src/a.ts ↔ lib/b.ts')).toBeInTheDocument();
+    expect(screen.queryByTestId('diff-lock-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /stage|discard/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Double-click a line to edit/)).not.toBeInTheDocument();
+  });
+
+  it('says the files are identical for an empty comparison', () => {
+    render(<DiffViewer diff="" fileName="a ↔ b" emptyMessage="The files are identical" />);
+    expect(screen.getByText('The files are identical')).toBeInTheDocument();
+    expect(screen.queryByText('No changes')).not.toBeInTheDocument();
+  });
 });

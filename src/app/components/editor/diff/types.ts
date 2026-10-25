@@ -20,6 +20,8 @@ export interface DiffViewerProps {
   /** Absolute work-tree path. Required to write inline edits. */
   repoPath?: string;
   source?: DiffSource;
+  /** Shown instead of "No changes" when the patch is empty. */
+  emptyMessage?: string;
 }
 
 export interface EditSession {

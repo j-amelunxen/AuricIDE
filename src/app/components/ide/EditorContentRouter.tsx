@@ -28,12 +28,14 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
   if (!state.activeTabId) return null;
 
   if (handlers.isDiffTab && diffTab) {
+    const isFileComparison = diffTab.source.kind === 'files';
     return (
       <DiffViewer
         diff={diffTab.patch}
         fileName={diffTab.filePath}
-        repoPath={diffTab.repoPath}
-        source={diffTab.source}
+        repoPath={isFileComparison ? undefined : diffTab.repoPath}
+        source={isFileComparison ? undefined : diffTab.source}
+        emptyMessage={isFileComparison ? 'The files are identical' : undefined}
       />
     );
   }

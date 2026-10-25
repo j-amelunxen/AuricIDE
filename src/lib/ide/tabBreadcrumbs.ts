@@ -1,4 +1,4 @@
-import { isDiffTabId } from '@/lib/git/diffTabId';
+import { isDiffTabId, isFilesDiffTabId } from '@/lib/git/diffTabId';
 import { isGraphTabId } from '@/lib/git/graphTabId';
 import { isMergeTabId } from '@/lib/git/mergeTabId';
 import { isReviewTabId } from '@/lib/git/review/reviewSession';
@@ -18,6 +18,7 @@ function segments(path: string | undefined): string[] {
  */
 export function tabBreadcrumbs(activeTabId: string | null, tab: Tab | undefined): string[] {
   if (!activeTabId) return [ROOT];
+  if (isFilesDiffTabId(activeTabId)) return [ROOT, 'Compare', tab?.name ?? 'Files'];
   if (isDiffTabId(activeTabId)) return [ROOT, 'Diff', ...segments(tab?.path)];
   if (isMergeTabId(activeTabId)) return [ROOT, 'Merge', ...segments(tab?.path)];
   if (isGraphTabId(activeTabId)) return [ROOT, tab?.name ?? 'Graph'];

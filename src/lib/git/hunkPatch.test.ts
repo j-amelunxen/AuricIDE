@@ -225,6 +225,7 @@ describe('hunkActionsFor', () => {
     expect(hunkActionsFor({ kind: 'combined' }, MULTI)).toEqual([]);
     expect(hunkActionsFor({ kind: 'revision' }, MULTI)).toEqual([]);
     expect(hunkActionsFor({ kind: 'ref' }, MULTI)).toEqual([]);
+    expect(hunkActionsFor({ kind: 'files' }, MULTI)).toEqual([]);
   });
 
   it('offers nothing when no hunk can be cut', () => {

@@ -36,6 +36,7 @@ describe('isEditableDiffSource', () => {
     [{ kind: 'staged' }, true],
     [{ kind: 'revision', oid: 'abc', summary: 'wip' }, false],
     [{ kind: 'ref', ref: 'main' }, true],
+    [{ kind: 'files', left: '/a', right: '/b' }, false],
   ])('%j → %s', (source, expected) => {
     expect(isEditableDiffSource(source)).toBe(expected);
   });

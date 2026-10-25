@@ -6,7 +6,8 @@ const NO_STATUSES: never[] = [];
 
 /**
  * Keeps the active staged/unstaged/combined/ref diff tab in sync with git
- * status. Compare-ref tabs refetch against that ref, not HEAD. Revision
+ * status. A file comparison has no repo: it is re-read from disk whenever its
+ * tab becomes active, so edits made meanwhile show up. Compare-ref tabs refetch against that ref, not HEAD. Revision
  * patches are snapshots and are never refetched. The repo the diff belongs
  * to travels with the tab (`DiffTabState.repoPath`) — two repos can hold a
  * file at the same relative path, so the tab, not the project root, is what
@@ -31,6 +32,31 @@ export function useActiveDiffLoader() {
     if (!filePath || !repoPath) return '';
     return signatureOf(s.repoStates[repoPath]?.fileStatuses ?? NO_STATUSES, filePath);
   });
+
+  useEffect(() => {
+    if (!activeTabId || sourceKind !== 'files') return;
+
+    let cancelled = false;
+    void (async () => {
+      const source = useStore.getState().diffByTabId[activeTabId]?.source;
+      if (source?.kind !== 'files') return;
+      try {
+        const { diffFiles } = await import('@/lib/tauri/compare');
+        const patch = await diffFiles(source.left, source.right);
+        if (cancelled) return;
+        const current = useStore.getState().diffByTabId[activeTabId];
+        if (current) useStore.getState().setDiffTab(activeTabId, { ...current, patch });
+      } catch (error) {
+        if (!cancelled) {
+          useStore.getState().showToast(String(error), 'error');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTabId, sourceKind]);
 
   useEffect(() => {
     if (!repoPath || !activeTabId || !filePath || !sourceKind) return;

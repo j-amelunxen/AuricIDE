@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { diffTabId, isDiffTabId } from './diffTabId';
+import { diffTabId, isDiffTabId, isFilesDiffTabId } from './diffTabId';
 
 describe('diffTabId', () => {
+  it('builds a files id from both paths, independent of label and repo', () => {
+    const source = { kind: 'files' as const, left: '/p/a b.ts', right: '/p/b.ts' };
+    expect(diffTabId(source, 'label one', '')).toBe('diff:files:%2Fp%2Fa%20b.ts:%2Fp%2Fb.ts');
+    expect(diffTabId(source, 'label two', '')).toBe(diffTabId(source, 'label one', ''));
+    expect(diffTabId({ ...source, left: '/p/b.ts', right: '/p/a b.ts' }, 'x', '')).not.toBe(
+      diffTabId(source, 'x', '')
+    );
+  });
+
   it('builds a stable unstaged id from the repo and file path', () => {
     expect(diffTabId({ kind: 'unstaged' }, 'src/a.ts', '/repo')).toBe(
       'diff:unstaged:/repo:src/a.ts'
@@ -60,5 +69,12 @@ describe('isDiffTabId', () => {
   it('is false for ordinary file tabs', () => {
     expect(isDiffTabId('/project/src/a.ts')).toBe(false);
     expect(isDiffTabId('src/a.ts')).toBe(false);
+  });
+});
+
+describe('isFilesDiffTabId', () => {
+  it('tells a file comparison from a git diff tab', () => {
+    expect(isFilesDiffTabId('diff:files:a:b')).toBe(true);
+    expect(isFilesDiffTabId('diff:unstaged:/repo:src/a.ts')).toBe(false);
   });
 });
