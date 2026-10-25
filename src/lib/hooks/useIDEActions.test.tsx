@@ -282,4 +282,53 @@ describe('useIDEActions – global keybindings', () => {
 
     expect(mockSetInboxCaptureOpen).toHaveBeenCalledWith(true);
   });
+
+  const key = (type: 'keydown' | 'keyup', key: string, init: KeyboardEventInit = {}) =>
+    window.dispatchEvent(new KeyboardEvent(type, { key, ...init }));
+
+  it('opens file search on a deliberate Shift Shift double tap', () => {
+    const setFileSearchOpen = vi.fn();
+    renderHook(() => useIDEActions({ ...state, setFileSearchOpen } as IDEState, handlers));
+
+    key('keydown', 'Shift', { shiftKey: true });
+    key('keyup', 'Shift');
+    key('keydown', 'Shift', { shiftKey: true });
+
+    expect(setFileSearchOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('sees the keys a terminal stops between two Shifts (Shift+Tab, Shift+Tab)', () => {
+    const setFileSearchOpen = vi.fn();
+    renderHook(() => useIDEActions({ ...state, setFileSearchOpen } as IDEState, handlers));
+    // xterm stops propagation of the keys it sends to the shell.
+    const terminal = document.createElement('textarea');
+    terminal.addEventListener('keydown', (e) => e.stopPropagation());
+    document.body.appendChild(terminal);
+    const press = (type: 'keydown' | 'keyup', key: string) =>
+      terminal.dispatchEvent(new KeyboardEvent(type, { key, shiftKey: true, bubbles: true }));
+
+    press('keydown', 'Shift');
+    press('keydown', 'Tab');
+    press('keyup', 'Shift');
+    press('keydown', 'Shift');
+    press('keydown', 'Tab');
+    press('keyup', 'Shift');
+
+    expect(setFileSearchOpen).not.toHaveBeenCalled();
+    terminal.remove();
+  });
+
+  it('does not open file search while typing two capitals ("OK")', () => {
+    const setFileSearchOpen = vi.fn();
+    renderHook(() => useIDEActions({ ...state, setFileSearchOpen } as IDEState, handlers));
+
+    key('keydown', 'Shift', { shiftKey: true });
+    key('keydown', 'O', { shiftKey: true });
+    key('keyup', 'Shift');
+    key('keydown', 'Shift', { shiftKey: true });
+    key('keydown', 'K', { shiftKey: true });
+    key('keyup', 'Shift');
+
+    expect(setFileSearchOpen).not.toHaveBeenCalled();
+  });
 });

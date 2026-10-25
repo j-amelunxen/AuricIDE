@@ -1,7 +1,7 @@
 'use client';
 
 import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { readProjectLinkEntries } from '@/lib/hooks/ide/projectLinkIndex';
@@ -31,12 +31,13 @@ import { useMergeStateSync } from '@/lib/hooks/useMergeStateSync';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
+import { createDoubleShiftDetector } from './doubleShift';
 
 const appendAgentOutputBatch = (batch: OutputBatch) =>
   useStore.getState().appendAgentLogBatch(batch);
 
 export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useIDEHandlers>) {
-  const lastShiftTime = useRef<number>(0);
+  const [doubleShift] = useState(createDoubleShiftDetector);
   const fsRouterRef = useRef<FsEventRouter | null>(null);
 
   const handleRefreshRef = useRef(handlers.handleRefresh);
@@ -354,11 +355,6 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const { state, handlers } = latest.current;
-      if (e.key === 'Shift') {
-        const now = Date.now();
-        if (now - lastShiftTime.current < 300) state.setFileSearchOpen(true);
-        lastShiftTime.current = now;
-      }
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === 'k') {
         e.preventDefault();
@@ -402,7 +398,22 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
         useStore.getState().setInboxCaptureOpen(true);
       }
     };
+    // Capture phase, see doubleShift.ts: a terminal swallows the keys between
+    // two Shifts before they would bubble here.
+    const shiftDown = (e: KeyboardEvent) => {
+      if (doubleShift.keydown(e, Date.now())) latest.current.state.setFileSearchOpen(true);
+    };
+    const shiftUp = (e: KeyboardEvent) => doubleShift.keyup(e, Date.now());
+    const pointer = () => doubleShift.reset();
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+    window.addEventListener('keydown', shiftDown, true);
+    window.addEventListener('keyup', shiftUp, true);
+    window.addEventListener('pointerdown', pointer, true);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keydown', shiftDown, true);
+      window.removeEventListener('keyup', shiftUp, true);
+      window.removeEventListener('pointerdown', pointer, true);
+    };
+  }, [doubleShift]);
 }
