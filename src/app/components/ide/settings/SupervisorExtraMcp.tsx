@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 import type { SupervisorProjectPolicy } from '@/lib/config/supervisorPolicy';
 import { setExtraMcpServer } from '@/lib/config/supervisorPolicyEdit';
 import { extraMcpInspect, type McpFileInspection } from '@/lib/tauri/extraMcp';
+import {
+  SETTINGS_HINT_CLASS,
+  SETTINGS_LABEL_CLASS,
+} from '@/app/components/ui/settings/SettingsGroup';
 
 interface Props {
   projectPath: string;
@@ -42,10 +46,8 @@ export function SupervisorExtraMcp({ projectPath, entry, onChange }: Props) {
 
   return (
     <fieldset className="space-y-2" data-testid={id}>
-      <legend className="mb-1 text-[10px] font-semibold tracking-wide text-foreground-muted">
-        Additional MCP servers
-      </legend>
-      <p className="text-[11px] text-foreground-muted">
+      <legend className={`mb-1 ${SETTINGS_LABEL_CLASS}`}>Additional MCP servers</legend>
+      <p className={SETTINGS_HINT_CLASS}>
         Agents of this project start with these servers from its .mcp.json, next to the built-in
         ones. A built-in name always wins.
       </p>

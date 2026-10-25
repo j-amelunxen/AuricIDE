@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { LearnMore, SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 import {
   isBashPattern,
   normalizeProjectPath,
@@ -76,16 +77,23 @@ export function SupervisorSkills({ skills, candidates, onChange }: SupervisorSki
 
   return (
     <SettingsSection title="Skills" icon="bolt">
-      <p className="mb-3 text-xs leading-relaxed text-foreground-muted">
-        Each run works in its own folder, <code>~/.auric/supervisors/&lt;start time&gt;/</code>, and
-        may read and write there. It has a shell only for the commands listed under an approved
-        skill; any other command is refused without asking. Approve a skill only if its listed
-        commands are safe to run unattended.
-      </p>
+      <div className="space-y-1">
+        <p className={SETTINGS_HINT_CLASS}>
+          Skills a supervisor run may load, and the only shell commands it may run. Approve a skill
+          only if its commands are safe to run unattended.
+        </p>
+        <LearnMore>
+          <p>
+            Each run works in its own folder, <code>~/.auric/supervisors/&lt;start time&gt;/</code>,
+            and may read and write there. It has a shell only for the commands listed under an
+            approved skill; any other command is refused without asking.
+          </p>
+        </LearnMore>
+      </div>
       {approved.length === 0 ? (
-        <p className="mb-3 text-xs text-foreground-muted">No skill is approved.</p>
+        <p className={SETTINGS_HINT_CLASS}>No skill is approved.</p>
       ) : (
-        <ul className="mb-3 space-y-2">
+        <ul className="space-y-2">
           {approved.map((path) => (
             <SkillRow
               key={path}

@@ -168,6 +168,7 @@ describe('SupervisorContent', () => {
           allowInteractive: expect.any(Boolean),
           maxRunning: 3,
           extraMcpServers: [],
+          providerNotes: {},
         },
       },
     });
@@ -233,6 +234,8 @@ describe('SupervisorContent', () => {
     });
     useStore.setState({ setStarredProjectDescription });
     await renderLoaded();
+    // Allowed already, so the row starts collapsed like every row without a blocker.
+    fireEvent.click(screen.getByTestId(`supervisor-project-disclosure-${OPEN}`));
     const field = screen.getByTestId(`supervisor-description-${OPEN}`) as HTMLTextAreaElement;
 
     fireEvent.change(field, { target: { value: 'typed' } });
@@ -425,6 +428,21 @@ describe('SupervisorContent', () => {
     expect(screen.queryByTestId('supervisor-save')).toBeNull();
   });
 
+  it('offers a model id the catalog lists twice only once', async () => {
+    listProviders.mockResolvedValue([
+      {
+        ...PROVIDERS[0],
+        models: [...PROVIDERS[0].models, { value: 'opus', label: 'Opus (alias)', rank: 3 }],
+      },
+      PROVIDERS[1],
+    ]);
+    await renderLoaded();
+    const values = Array.from(
+      screen.getByTestId('supervisor-model').querySelectorAll('option')
+    ).map((o) => o.value);
+    expect(values.filter((v) => v === 'opus')).toHaveLength(1);
+  });
+
   it('shows what the stored file had rejected', async () => {
     supervisorPolicyGet.mockResolvedValue({
       policy: policy(),
@@ -461,6 +479,7 @@ describe('SupervisorContent — modes that skip permission prompts', () => {
         allowInteractive: false,
         maxRunning: 2,
         extraMcpServers: [],
+        providerNotes: {},
         ...entry,
       },
     });
@@ -537,5 +556,200 @@ describe('SupervisorContent — modes that skip permission prompts', () => {
     await renderLoaded();
     fireEvent.change(screen.getByTestId('supervisor-max-children'), { target: { value: '7' } });
     expect(screen.getByTestId('supervisor-save')).toBeEnabled();
+  });
+});
+
+describe('SupervisorContent — the projects list', () => {
+  const at = (name: string) => `/work/${name}`;
+  const NAMES = ['map-tools', 'docs-site', 'api-gateway', 'alpha-project'];
+
+  beforeEach(() => {
+    supervisorPolicySet.mockClear();
+    listProviders.mockResolvedValue(PROVIDERS);
+    projectProviderPolicyGet.mockResolvedValue({ allow: null, deny: [] });
+    supervisorPolicyGet.mockResolvedValue({ policy: policy(), rejected: [] });
+    useStore.setState({
+      toasts: [],
+      starredProjects: NAMES.map((name, index) => ({
+        path: at(name),
+        name,
+        starredAt: index,
+      })),
+    });
+  });
+
+  const rowNames = () =>
+    screen
+      .getAllByTestId(/^supervisor-project-disclosure-/)
+      .map((button) => button.getAttribute('data-testid')!.replace(/^.*\/work\//, ''));
+  const search = () => screen.getByTestId('supervisor-projects-search') as HTMLInputElement;
+
+  it('narrows the list as you type and says how many are left', async () => {
+    await renderLoaded('projects');
+    expect(screen.getByTestId('supervisor-projects-count')).toHaveTextContent('4 projects');
+    fireEvent.change(search(), { target: { value: 'docs' } });
+    expect(rowNames()).toEqual(['docs-site']);
+    expect(screen.getByTestId('supervisor-projects-count')).toHaveTextContent('1 of 4 projects');
+    expect(screen.getByRole('searchbox', { name: 'Filter projects' })).toBe(search());
+  });
+
+  it('ranks word starts and contiguous runs above scattered hits', async () => {
+    await renderLoaded('projects');
+    fireEvent.change(search(), { target: { value: 'oc' } });
+    expect(rowNames()).toEqual(['docs-site', 'alpha-project']);
+    // Initials count like a prefix, as in the command palette.
+    fireEvent.change(search(), { target: { value: 'ag' } });
+    expect(rowNames()[0]).toBe('api-gateway');
+  });
+
+  it('says when nothing matches and clears from there', async () => {
+    await renderLoaded('projects');
+    fireEvent.change(search(), { target: { value: 'xyz' } });
+    expect(screen.getByTestId('supervisor-projects-empty')).toHaveTextContent(
+      'No project matches “xyz”'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
+    expect(rowNames()).toHaveLength(4);
+  });
+
+  it('clears the filter on Esc without letting Esc close Settings', async () => {
+    await renderLoaded('projects');
+    const closed = vi.fn();
+    window.addEventListener('keydown', closed);
+    fireEvent.change(search(), { target: { value: 'docs' } });
+    fireEvent.keyDown(search(), { key: 'Escape' });
+    expect(search().value).toBe('');
+    expect(rowNames()).toHaveLength(4);
+    expect(closed).not.toHaveBeenCalled();
+    // With the field empty, Esc goes on to whoever closes Settings.
+    fireEvent.keyDown(search(), { key: 'Escape' });
+    expect(closed).toHaveBeenCalledTimes(1);
+    window.removeEventListener('keydown', closed);
+  });
+
+  it('shows a collapsed row with a summary and opens its editor on click', async () => {
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy({
+        [at('docs-site')]: { ...defaultSupervisorProjectPolicy(), allowed: true, maxRunning: 2 },
+      }),
+      rejected: [],
+    });
+    await renderLoaded('projects');
+    const disclosure = screen.getByTestId(`supervisor-project-disclosure-${at('docs-site')}`);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId(`supervisor-project-summary-${at('docs-site')}`)).toHaveTextContent(
+      /Claude Code, Codex · .* · max 2 running/
+    );
+    expect(screen.getByTestId(`supervisor-project-summary-${at('map-tools')}`)).toHaveTextContent(
+      'Off'
+    );
+    expect(screen.queryByTestId(`supervisor-provider-${at('docs-site')}-claude`)).toBeNull();
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId(`supervisor-provider-${at('docs-site')}-claude`)).toBeChecked();
+    fireEvent.click(disclosure);
+    expect(screen.queryByTestId(`supervisor-provider-${at('docs-site')}-claude`)).toBeNull();
+  });
+
+  it('opens a project when it is switched on and marks it edited', async () => {
+    await renderLoaded('projects');
+    const row = screen.getByTestId(`supervisor-project-${at('api-gateway')}`);
+    expect(row).not.toHaveTextContent('Edited');
+    fireEvent.click(screen.getByRole('switch', { name: 'Supervisor may use api-gateway' }));
+    expect(
+      screen.getByTestId(`supervisor-project-disclosure-${at('api-gateway')}`)
+    ).toHaveAttribute('aria-expanded', 'true');
+    expect(row).toHaveTextContent('Edited');
+  });
+
+  it('filters by On and Off without dropping a row switched while it is shown', async () => {
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy({
+        [at('docs-site')]: { ...defaultSupervisorProjectPolicy(), allowed: true },
+      }),
+      rejected: [],
+    });
+    await renderLoaded('projects');
+    fireEvent.click(screen.getByTestId('supervisor-projects-segment-on'));
+    expect(rowNames()).toEqual(['docs-site']);
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${at('docs-site')}`));
+    expect(rowNames()).toEqual(['docs-site']);
+    fireEvent.click(screen.getByTestId('supervisor-projects-segment-off'));
+    expect(rowNames()).toHaveLength(4);
+  });
+
+  it('writes a routing note per provider through the save bar', async () => {
+    await renderLoaded('projects');
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${at('docs-site')}`));
+    const note = screen.getByTestId(
+      `supervisor-note-${at('docs-site')}-claude`
+    ) as HTMLTextAreaElement;
+    expect(note).toHaveAccessibleName('Routing note');
+    fireEvent.change(note, { target: { value: 'Only for source-code changes' } });
+    expect(note.closest('div')).toHaveTextContent(`28/`);
+    expect(screen.getByTestId(`supervisor-project-summary-${at('docs-site')}`)).toHaveTextContent(
+      '1 routing note'
+    );
+
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    const saved = supervisorPolicySet.mock.calls[0][0] as SupervisorPolicy;
+    expect(saved.projects[at('docs-site')].providerNotes).toEqual({
+      claude: 'Only for source-code changes',
+    });
+  });
+
+  it('caps a note at the limit the parser enforces, counting code points of the trimmed text', async () => {
+    await renderLoaded('projects');
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${at('docs-site')}`));
+    const note = screen.getByTestId(
+      `supervisor-note-${at('docs-site')}-claude`
+    ) as HTMLTextAreaElement;
+    // An emoji is two UTF-16 units but one code point; 301 of them must stop at 300.
+    fireEvent.change(note, { target: { value: `  ${'😀'.repeat(301)}  ` } });
+    expect([...note.value.trim()]).toHaveLength(300);
+    expect(note.closest('div')).toHaveTextContent('300/300');
+  });
+
+  it('removes a note that is cleared', async () => {
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy({
+        [at('docs-site')]: {
+          ...defaultSupervisorProjectPolicy(),
+          allowed: true,
+          providerNotes: { claude: 'old' },
+        },
+      }),
+      rejected: [],
+    });
+    await renderLoaded('projects');
+    fireEvent.click(screen.getByTestId(`supervisor-project-disclosure-${at('docs-site')}`));
+    fireEvent.change(screen.getByTestId(`supervisor-note-${at('docs-site')}-claude`), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    const saved = supervisorPolicySet.mock.calls[0][0] as SupervisorPolicy;
+    expect(saved.projects[at('docs-site')].providerNotes).toEqual({});
+  });
+
+  it('opens a project that blocks Save, marks it, and offers it back when a filter hides it', async () => {
+    listProviders.mockResolvedValue([...PROVIDERS, UNATTENDED_BY_DEFAULT]);
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy({
+        [at('docs-site')]: { ...defaultSupervisorProjectPolicy(), allowed: true },
+      }),
+      rejected: [],
+    });
+    await renderLoaded('projects');
+    const disclosure = screen.getByTestId(`supervisor-project-disclosure-${at('docs-site')}`);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(disclosure).toHaveTextContent('Needs a permission mode');
+
+    fireEvent.change(search(), { target: { value: 'map' } });
+    fireEvent.click(screen.getByTestId('supervisor-projects-show-blocked'));
+    expect(search().value).toBe('');
+    expect(screen.getByTestId(`supervisor-unattended-${at('docs-site')}-agy`)).toBeVisible();
   });
 });

@@ -452,7 +452,8 @@ one is refused with `permission_mode_unattended`.
 { balancing: null | { windowDays: number, next: string | null,
                       providers: [{ id, weight, spawns, targetPercent,
                                     actualPercent: number | null }] },
-  providers: [{ id, permissionMode?: string, models: "all" | string[] }],
+  providers: [{ id, permissionMode?: string, models: "all" | string[],
+                 note?: string }],
   allowInteractive: boolean, runningChildren: number, maxRunning: number }
 ```
 
@@ -466,7 +467,7 @@ catalog: { [provider]: [{ id, label, rank: number | null,
 The catalog holds every model the listed projects allow, each described once;
 a project names its models by id, or `"all"` when it allows every model the
 catalog lists for that provider. `permissionMode` is left out for the
-provider's own default. This replaced a shape that repeated every model's
+provider's own default, `note` where the human set none. This replaced a shape that repeated every model's
 label and rank in every project: with fifteen projects it reached 64 KB, was
 cut off before `balancing` (then the last key), and the supervisor chose
 without it. Now fifteen projects with six providers of ten models each stay
@@ -497,6 +498,26 @@ and to pick another provider only when the task needs a model `next` does not
 have, saying why. The rules for the field itself are `providerWeightsRules` in
 `supervisorPolicy.fixtures.json`; the arithmetic is `policy::balancing` in Rust
 only, since nothing in TypeScript computes it.
+
+**Routing notes come before balancing.** A project entry may also carry
+`providerNotes` (provider id → free text, at most 300 characters after
+trimming, Settings: the note beside each provider), e.g.
+`{ claude: "Source changes only, no database access." }`. It is the human's
+rule for which work may go to that provider in that project, typically what a
+data processing agreement covers. `checkSpawn` cannot judge what a task
+touches, so it never reads the note either; it reaches the supervisor as
+`providers[].note` in `list_projects` and beside each provider in the launch
+prompt, whose rule is: a task a note excludes goes to another provider even
+when `balancing.next` names this one (with `provider` passed explicitly and
+the deciding note named in the spawn line); a note that allows something is a
+reason to choose that provider; if no allowed provider fits, ask the human.
+The 16 KB budget above is measured without notes. Each note adds up to 300
+characters per provider, so with many long notes, narrow `list_projects` with
+`project`. The field rules
+are `providerNotesRules` in `supervisorPolicy.fixtures.json`. Link jobs pick
+their provider without a model in the loop, so they never take a provider that
+carries a note, and refuse with `provider_note_restricted` when every usable
+one does (see `design-supervisor-link.md`).
 
 ### Children
 

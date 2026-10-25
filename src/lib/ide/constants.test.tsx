@@ -15,10 +15,10 @@ describe('activityItems — the rail leads with the loop', () => {
     const tools = activityItems.filter((i) => i.section === 'tools').map((i) => i.id);
     expect(tools).toEqual([
       'notifications',
+      'supervisor-runs',
       'inbox',
       'outline',
       'scratches',
-      'supervisor-runs',
       'graph',
       'qa',
       'blueprints',
@@ -60,9 +60,9 @@ describe('activityItems — the rail leads with the loop', () => {
     const always = activityItems.filter((i) => !i.requiresProject).map((i) => i.id);
     expect(always).toEqual([
       'notifications',
+      'supervisor-runs',
       'inbox',
       'scratches',
-      'supervisor-runs',
       'extensions',
       'settings',
     ]);
@@ -77,9 +77,9 @@ describe('visibleActivityItems', () => {
   it('hides project-bound items when no project is open', () => {
     expect(visibleActivityItems(activityItems, false).map((i) => i.id)).toEqual([
       'notifications',
+      'supervisor-runs',
       'inbox',
       'scratches',
-      'supervisor-runs',
       'extensions',
       'settings',
     ]);

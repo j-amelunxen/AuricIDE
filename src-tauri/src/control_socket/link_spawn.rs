@@ -3,7 +3,8 @@
 //!
 //! It gets no right a supervisor's child would not get. Provider and model
 //! are chosen the way a supervisor is told to choose them — the project's
-//! load-balancing `next`, then the smallest ranked model — and the result
+//! load-balancing `next`, then the smallest ranked model — over the providers
+//! without a routing note, which only a supervisor can read — and the result
 //! passes `check_spawn` against the supervisor policy like any child, with
 //! the link's running jobs counted as its children. The agent is always
 //! headless and always in a worktree of its own.
@@ -12,8 +13,8 @@ use super::protocol::*;
 use super::{Dispatcher, Outcome};
 use crate::agents::{AgentRole, AgentStatus};
 use crate::supervisor::policy::{
-    check_spawn, smallest_ranked_model, visible_projects, RunningChildren, SpawnRequest,
-    VisibleProvider,
+    check_spawn, job_providers, smallest_ranked_model, visible_projects, RunningChildren,
+    SpawnRequest, VisibleProvider,
 };
 use crate::supervisor::{canonical_project_path, model_names};
 use serde_json::Value;
@@ -90,7 +91,17 @@ impl Dispatcher {
                 ),
             ));
         };
-        let Some(provider) = self.preferred_provider(project) else {
+        let project = job_providers(project).map_err(|reason| {
+            denied(
+                reason,
+                format!(
+                    "Every provider in {project_path} carries a routing note, so a job cannot \
+                     choose one without a model in the loop. Remove a note or start the work \
+                     through a supervisor."
+                ),
+            )
+        })?;
+        let Some(provider) = self.preferred_provider(&project) else {
             return Err(denied(
                 "provider_not_allowed",
                 format!("No provider is allowed for supervisors in {project_path}."),

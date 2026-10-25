@@ -515,6 +515,13 @@ ADR 0004.
   supervisor's `list_projects`: target vs. actual share of agents started
   there in 7 days, and `next`, the provider that is behind. Spawns are never
   refused over it; a task that needs another provider's model may deviate.
+  Beside each share sits an optional note (`providerNotes`, at most 300
+  characters), the human's routing rule ("source changes only, no database
+  access"). It reaches the supervisor as `providers[].note` and in the launch
+  prompt, ranks above `next`, and is not enforced on a supervisor's spawns:
+  Rust cannot judge a task. Link jobs pick their provider without a model, so they skip every
+  provider with a note (`policy::job_providers`) and refuse with
+  `provider_note_restricted` when all of them have one.
 - **Your own words go into its prompt, not its policy.** Settings → Supervisor
   → Instructions is the app pref `auric.supervisor.instructions`
   (`readSupervisorInstructions`), added to the launch prompt after the built-in
@@ -724,6 +731,9 @@ or `ProjectManager*`: both already mean the tickets.
 - **The working loop: Ask, hear back, see where it stands.** "Ask <name>…"
   hands a manager work: a running one gets it as one message
   (`sendAgentInput`), a stopped one is resumed with it as the first task.
+  In the runs rail an unfolded manager carries the same Ask inline
+  (`ManagerAskComposer`, sent through `useAskManager().send`, the path the
+  sheet uses), and the most recent manager unfolds on first show.
   `openManager` serialises per key, so every door (tile, rail, menu bar,
   notification, Ask) ends in one start and no task is dropped. A schedule
   action `open-manager` does the same on a timer, trust and freshness as

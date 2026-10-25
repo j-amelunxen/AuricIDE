@@ -15,11 +15,15 @@ interface AskManagerHooks {
 
 /**
  * "Ask <name>…" for every surface that offers it: `ask(manager)` opens the
- * sheet, `sheet` is drawn by the caller. Sending is `useOpenManager().open`
- * with a task, so a running manager gets a message and a stopped one starts.
+ * sheet, `sheet` is drawn by the caller. `send` is what the sheet does on
+ * Send, for a surface with a field of its own (the runs rail): one path,
+ * `useOpenManager().open` with a task, so a running manager gets a message
+ * and a stopped one starts.
  */
 export function useAskManager(hooks: AskManagerHooks = {}): {
   ask: (manager: Pick<SupervisorManager, 'key' | 'name'>) => void;
+  /** Resolves true once the task went in; a refusal has already said why in a toast. */
+  send: (manager: Pick<SupervisorManager, 'key'>, task: string) => Promise<boolean>;
   sheet: ReactNode;
 } {
   const { open } = useOpenManager(hooks);
@@ -29,6 +33,9 @@ export function useAskManager(hooks: AskManagerHooks = {}): {
     manager: Pick<SupervisorManager, 'key' | 'name'>;
     trigger: HTMLElement | null;
   } | null>(null);
+
+  const send = async (manager: Pick<SupervisorManager, 'key'>, task: string) =>
+    (await open(manager.key, { task })) === 'opened';
 
   const ask = (manager: Pick<SupervisorManager, 'key' | 'name'>) =>
     setAsking({
@@ -46,9 +53,9 @@ export function useAskManager(hooks: AskManagerHooks = {}): {
           ? asking.trigger
           : document.querySelector<HTMLElement>(`[data-manager-focus="${asking.manager.key}"]`)
       }
-      onSend={(task) => void open(asking.manager.key, { task })}
+      onSend={(task) => void send(asking.manager, task)}
       onClose={() => setAsking(null)}
     />
   );
-  return { ask, sheet };
+  return { ask, send, sheet };
 }

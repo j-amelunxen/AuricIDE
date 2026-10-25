@@ -617,6 +617,10 @@ pub struct SupervisorProviderAccess {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
     pub models: AllowedModels,
+    /// The human's routing rule for this provider here; left out when none
+    /// is set. Advisory: nothing in Rust reads it to refuse a spawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// The wire sorts keys (`serde_json` without `preserve_order`), which puts
@@ -1093,11 +1097,13 @@ pub(crate) mod tests {
                         id: "claude".into(),
                         permission_mode: None,
                         models: AllowedModels::All,
+                        note: Some("Source changes only, no database access.".into()),
                     },
                     SupervisorProviderAccess {
                         id: "codex".into(),
                         permission_mode: Some("acceptEdits".into()),
                         models: AllowedModels::Ids(vec!["gpt-6-luna".into(), "auto".into()]),
+                        note: None,
                     },
                 ],
                 allow_interactive: true,

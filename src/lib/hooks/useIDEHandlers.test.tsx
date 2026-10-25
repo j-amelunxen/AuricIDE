@@ -2599,9 +2599,9 @@ describe('useIDEHandlers', () => {
 
       expect(result.current.itemsWithBadge.map((i) => i.id)).toEqual([
         'notifications',
+        'supervisor-runs',
         'inbox',
         'scratches',
-        'supervisor-runs',
         'extensions',
         'settings',
       ]);
@@ -2617,10 +2617,10 @@ describe('useIDEHandlers', () => {
         'source-control',
         'work',
         'notifications',
+        'supervisor-runs',
         'inbox',
         'outline',
         'scratches',
-        'supervisor-runs',
         'graph',
         'qa',
         'blueprints',

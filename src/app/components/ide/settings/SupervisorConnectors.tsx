@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { LearnMore, SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 import { invoke } from '@/lib/tauri/invoke';
 import {
   allowedConnectorTools,
@@ -98,18 +99,23 @@ export function SupervisorConnectors({
   };
   return (
     <SettingsSection title="External connectors" icon="extension">
-      <p className="mb-3 text-xs text-foreground-muted">
-        Import an owner-reviewed stdio MCP manifest. v0 supports non-secret configuration and auth:
-        none. Grants apply only to new agents of an allowed project. Save to apply changes.
-      </p>
-      <p className="mb-3 text-xs text-foreground-muted">
-        Codex and current Crush receive tool allowlists. Claude denies ungranted declared tools;
-        undeclared tools are not blocked there. Other adapters that accept a full config argument
-        receive config without tool filtering. Unbound adapters and adapters using only the Auric PM
-        bridge receive no connectors. Provider global configuration and direct shell access are
-        outside this boundary.
-      </p>
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="space-y-1">
+        <p className={SETTINGS_HINT_CLASS}>
+          Import an owner-reviewed stdio MCP manifest. Grants apply only to new agents of an allowed
+          project. Save to apply changes.
+        </p>
+        <LearnMore>
+          <p>
+            v0 supports non-secret configuration and auth: none. Codex and current Crush receive
+            tool allowlists. Claude denies ungranted declared tools; undeclared tools are not
+            blocked there. Other adapters that accept a full config argument receive config without
+            tool filtering. Unbound adapters and adapters using only the Auric PM bridge receive no
+            connectors. Provider global configuration and direct shell access are outside this
+            boundary.
+          </p>
+        </LearnMore>
+      </div>
+      <div className="flex flex-wrap gap-2">
         <input
           aria-label="Connector manifest path"
           placeholder="/absolute/path/auric-connector.yaml"
@@ -130,16 +136,15 @@ export function SupervisorConnectors({
         </button>
       </div>
       {error && (
-        <p role="alert" className="mb-3 text-xs text-red-400">
+        <p role="alert" className="text-xs text-red-400">
           {error}
         </p>
       )}
       {preview && (
-        <div className="mb-3 space-y-2 rounded border border-white/10 p-3 text-xs">
+        <div className="space-y-2 rounded-lg border border-white/10 p-3 text-xs">
           <p>
             {preview.manifest.id} · {preview.manifest.version} · auth: {preview.manifest.auth}
           </p>
-          <p className="break-all font-mono">{preview.path}</p>
           <p className="break-all font-mono">{preview.path}</p>
           <p className="break-all font-mono">SHA256: {preview.digest}</p>
           <pre className="overflow-auto whitespace-pre-wrap">
@@ -159,12 +164,12 @@ export function SupervisorConnectors({
         </div>
       )}
       {Object.keys(connectors.registry).length === 0 && (
-        <p className="text-xs text-foreground-muted">
+        <p className={SETTINGS_HINT_CLASS}>
           No connector registered. Review a manifest by its absolute path to begin.
         </p>
       )}
       {Object.entries(connectors.registry).map(([id, entry]) => (
-        <div key={id} className="mb-3 space-y-2 border-t border-white/10 pt-3 text-xs">
+        <div key={id} className="space-y-2 border-t border-white/10 pt-3 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <strong>
               {id} · {entry.manifest.version}

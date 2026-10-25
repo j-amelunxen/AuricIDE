@@ -41,7 +41,7 @@ const PROVIDERS: ProviderInfo[] = [
 /** The first visibleProjects fixture: project-a codex-only, project-b claude-only, c off. */
 const fixtureCase = policyFixtures.visibleProjects[0];
 const visible = visibleProjects(
-  fixtureCase.policy as SupervisorPolicy,
+  fixtureCase.policy as unknown as SupervisorPolicy,
   fixtureCase.projectPolicies as Record<string, ProviderPolicy>,
   fixtureCase.offeredModels as unknown as Record<string, string[]>
 );
@@ -66,6 +66,7 @@ describe('supervisorPromptProjects', () => {
         id: 'codex',
         permissionMode: 'acceptEdits',
         weight: null,
+        note: null,
         models: [
           { id: 'gpt-6-luna', label: 'GPT-6 Luna', rank: 1 },
           { id: 'gpt-6-sol', label: 'GPT-6 Sol', rank: 3 },
@@ -81,7 +82,9 @@ describe('supervisorPromptProjects', () => {
           path: '/abs/x',
           allowInteractive: false,
           maxRunning: 1,
-          providers: [{ id: 'new', models: ['m1'], permissionMode: null, weight: null }],
+          providers: [
+            { id: 'new', models: ['m1'], permissionMode: null, weight: null, note: null },
+          ],
         },
       ],
       PROVIDERS
@@ -137,6 +140,7 @@ describe('buildSupervisorLaunchPrompt', () => {
               models: ['auto', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'],
               permissionMode: null,
               weight: null,
+              note: null,
             },
           ],
         },
@@ -293,6 +297,7 @@ describe('buildSupervisorLaunchPrompt', () => {
               models: ['sonnet', 'haiku', 'opus'],
               permissionMode: null,
               weight: null,
+              note: null,
             },
           ],
         },
@@ -324,7 +329,7 @@ describe('buildSupervisorLaunchPrompt', () => {
     const weighted = policyFixtures.visibleProjects.find((c) => c.name.includes('its weight'))!;
     const [project] = supervisorPromptProjects(
       visibleProjects(
-        weighted.policy as SupervisorPolicy,
+        weighted.policy as unknown as SupervisorPolicy,
         weighted.projectPolicies as Record<string, ProviderPolicy>,
         weighted.offeredModels as unknown as Record<string, string[]>
       ),
@@ -334,6 +339,32 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('Load balancing: antigravity 0 : claude 2 : codex 1');
     expect(text).toContain('`balancing.next`');
     expect(prompt).not.toContain('Load balancing:');
+  });
+
+  it("shows a provider's routing note under it and ranks notes above the balancing", () => {
+    const noted = policyFixtures.visibleProjects.find((c) => c.name.includes("provider's note"))!;
+    const [project] = supervisorPromptProjects(
+      visibleProjects(
+        noted.policy as unknown as SupervisorPolicy,
+        noted.projectPolicies as Record<string, ProviderPolicy>,
+        noted.offeredModels as unknown as Record<string, string[]>
+      ),
+      PROVIDERS
+    );
+    expect(project.providers.map((p) => p.note)).toEqual([
+      'Source changes only, no database access.',
+      null,
+    ]);
+    const text = buildSupervisorLaunchPrompt([project]);
+    expect(text).toContain(
+      "- provider `claude` (the provider's default permission mode):\n" +
+        '  Human\'s rule for this provider: "Source changes only, no database access."'
+    );
+    expect(text.match(/Human's rule for this provider/g)).toHaveLength(1);
+    expect(prompt).toContain("**Provider: the human's notes come first.**");
+    expect(prompt.indexOf("the human's notes come first")).toBeLessThan(
+      prompt.indexOf('follow the load balancing')
+    );
   });
 });
 

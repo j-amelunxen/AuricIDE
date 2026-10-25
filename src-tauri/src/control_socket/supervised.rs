@@ -341,6 +341,7 @@ impl Dispatcher {
                         models: allowed_models(&catalog, &provider),
                         id: provider.id,
                         permission_mode: provider.permission_mode,
+                        note: provider.note,
                     })
                     .collect();
                 entry.supervisor = Some(SupervisorAccess {

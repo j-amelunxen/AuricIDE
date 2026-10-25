@@ -5,6 +5,7 @@ import {
   setExtraMcpServer,
   setProjectAllowed,
   setSupervisorPermissionMode,
+  setSupervisorProviderNote,
   setSupervisorProviderWeight,
   toggleSupervisorModel,
   toggleSupervisorProvider,
@@ -68,6 +69,30 @@ describe('setSupervisorProviderWeight', () => {
     expect(setSupervisorProviderWeight(entry, 'claude', null).providerWeights).not.toHaveProperty(
       'claude'
     );
+  });
+});
+
+describe('setSupervisorProviderNote', () => {
+  it('stores the note as typed and deletes it for null or a blank text', () => {
+    const policy = setProjectAllowed(emptySupervisorPolicy(), PATH, true);
+    expect(policy.projects[PATH].providerNotes).toEqual({});
+    let entry = setSupervisorProviderNote(policy.projects[PATH], 'claude', ' Source only ');
+    entry = setSupervisorProviderNote(entry, 'codex', 'May use databases');
+    expect(entry.providerNotes).toEqual({ claude: ' Source only ', codex: 'May use databases' });
+    const saved = JSON.stringify({ ...policy, projects: { [PATH]: entry } });
+    expect(parseSupervisorPolicy(saved).policy.projects[PATH].providerNotes).toEqual({
+      claude: 'Source only',
+      codex: 'May use databases',
+    });
+    expect(setSupervisorProviderNote(entry, 'claude', null).providerNotes).toEqual({
+      codex: 'May use databases',
+    });
+    expect(setSupervisorProviderNote(entry, 'codex', '  \n ').providerNotes).toEqual({
+      claude: ' Source only ',
+    });
+    expect(setSupervisorProviderNote(entry, 'codex', '\uFEFF\u0085').providerNotes).toEqual({
+      claude: ' Source only ',
+    });
   });
 });
 

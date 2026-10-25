@@ -33,6 +33,13 @@ export interface SupervisorProjectPolicy {
    * `{}` means no balancing.
    */
   providerWeights: Record<string, number>;
+  /**
+   * Routing rules: provider id → the human's note on which work may go there, e.g.
+   * `{ claude: 'Source changes only, no database access' }`. Advisory like the weights (the
+   * spawn check cannot judge a task), but shown to the supervisor beside each provider and
+   * ranked above balancing. Trimmed, at most `MAX_PROVIDER_NOTE_LENGTH` characters.
+   */
+  providerNotes: Record<string, string>;
   allowInteractive: boolean;
   maxRunning: number;
   /**
@@ -85,7 +92,8 @@ export type SupervisorParseReason =
   | 'unsupported_version'
   | 'invalid_entry'
   | 'path_not_absolute'
-  | 'bypass_permissions';
+  | 'bypass_permissions'
+  | 'provider_note_too_long';
 
 export interface SupervisorPolicyRejection {
   /** The project key as written, or `null` when the whole file was refused. */
@@ -165,6 +173,7 @@ export function defaultSupervisorProjectPolicy(): SupervisorProjectPolicy {
     models: {},
     permissionMode: {},
     providerWeights: {},
+    providerNotes: {},
     extraMcpServers: [],
   };
 }
@@ -388,10 +397,51 @@ function readModelList(entry: unknown): string[] {
 }
 
 export const MAX_PROVIDER_WEIGHT = 99;
+/** Characters (code points, as Rust's `chars().count()`), after trimming. */
+export const MAX_PROVIDER_NOTE_LENGTH: number = fixtures.maxProviderNoteLength;
+
+/** Unicode White_Space (what Rust's `char::is_whitespace` matches) plus U+FEFF, at either end. */
+const NOTE_EDGES =
+  /^[\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+|[\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+$/g;
+
+/**
+ * Trims a routing note the way Rust's `parse_notes` does. JavaScript's own `trim()` differs
+ * (it keeps U+0085), so the parser and the Settings counter use this one.
+ */
+export function trimProviderNote(note: string): string {
+  return note.replace(NOTE_EDGES, '');
+}
+
+/** A note's length as the parser counts it: code points after `trimProviderNote`. */
+export function providerNoteLength(note: string): number {
+  return [...trimProviderNote(note)].length;
+}
 
 function readWeight(entry: unknown): number {
   if (!isLimit(entry) || entry > MAX_PROVIDER_WEIGHT) throw new InvalidEntry('invalid_entry');
   return entry;
+}
+
+/**
+ * Routing notes (the fixtures' `providerNotesRules`): trimmed, an empty one dropped, too long
+ * refuses the project. Two keys for one provider keep the note of the raw key that sorts first,
+ * the order serde_json walks an object in, so both sides pick the same one.
+ */
+function parseProviderNotes(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (!isObject(value)) throw new InvalidEntry('invalid_entry');
+  const notes: Record<string, string> = {};
+  const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [key, entry] of entries) {
+    const id = providerId(key);
+    if (typeof entry !== 'string' || !id) throw new InvalidEntry('invalid_entry');
+    const note = trimProviderNote(entry);
+    if ([...note].length > MAX_PROVIDER_NOTE_LENGTH) {
+      throw new InvalidEntry('provider_note_too_long');
+    }
+    if (note && !(id in notes)) notes[id] = note;
+  }
+  return sortedKeys(notes);
 }
 
 function readPermissionMode(entry: unknown): string {
@@ -425,6 +475,7 @@ function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
     models: parseProviderMap(value.models, readModelList, mergeModelLists),
     permissionMode: parseProviderMap(value.permissionMode, readPermissionMode),
     providerWeights: sortedKeys(parseProviderMap(value.providerWeights, readWeight, Math.min)),
+    providerNotes: parseProviderNotes(value.providerNotes),
     allowInteractive: optionalOf(
       value.allowInteractive,
       isBoolean,
@@ -485,7 +536,7 @@ function sortedKeys<T>(map: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(map).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
-function sameWeights(a: Record<string, number>, b: Record<string, number>): boolean {
+function sameMap<T>(a: Record<string, T>, b: Record<string, T>): boolean {
   const keys = Object.keys(a);
   return keys.length === Object.keys(b).length && keys.every((id) => a[id] === b[id]);
 }
@@ -503,7 +554,8 @@ function stricterEntry(
     models: intersectModels(a.models, b.models),
     permissionMode: modesClash ? {} : { ...a.permissionMode, ...b.permissionMode },
     // A hint, not a permission: two spellings that disagree balance nothing.
-    providerWeights: sameWeights(a.providerWeights, b.providerWeights) ? a.providerWeights : {},
+    providerWeights: sameMap(a.providerWeights, b.providerWeights) ? a.providerWeights : {},
+    providerNotes: sameMap(a.providerNotes, b.providerNotes) ? a.providerNotes : {},
     allowInteractive: a.allowInteractive && b.allowInteractive,
     maxRunning: Math.min(a.maxRunning, b.maxRunning),
     // Only what both entries name: an extra server is a grant.
@@ -587,6 +639,8 @@ export interface VisibleProvider {
   permissionMode: string | null;
   /** Its load-balancing weight; `null` where `providerWeights` does not name it. */
   weight: number | null;
+  /** The human's routing rule for it in this project; `null` where `providerNotes` has none. */
+  note: string | null;
 }
 
 export interface VisibleProject {
@@ -680,6 +734,7 @@ export function visibleProjects(
           models: modelsFor(entry, id, offeredModels[id]),
           permissionMode: entry.permissionMode[id] ?? null,
           weight: entry.providerWeights[id] ?? null,
+          note: entry.providerNotes[id] ?? null,
         }))
         .filter((provider) => provider.models.length > 0)
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

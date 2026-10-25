@@ -1313,7 +1313,8 @@
                 "providers": [
                   {
                     "id": "claude",
-                    "models": "all"
+                    "models": "all",
+                    "note": "Source changes only, no database access."
                   },
                   {
                     "id": "codex",

@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import {
+  MANAGER_INSTRUCTIONS_FILE,
+  MANAGER_KNOWLEDGE_FOLDER,
+  managerActivityMs,
+  managerFolderFirst,
+  mostRecentManagerKey,
+  runsRailMemory,
+} from '@/lib/agents/managerRail';
 import { openManager, resumeSupervisor } from '@/lib/agents/openSupervisor';
 import { runningSupervisors, supervisorUsingRunDir } from '@/lib/agents/supervisorLaunch';
 import {
@@ -31,6 +39,7 @@ import {
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ManagerAskComposer } from './ManagerAskComposer';
 import { ManagerRow, MissingManagerRow, MoreActionsButton, type MenuPoint } from './ManagerRow';
 import { PromoteManagerSheet } from './PromoteManagerSheet';
 import { ManagerNameSheet } from './ManagerNameSheet';
@@ -46,6 +55,9 @@ interface SupervisorRunsPanelProps {
 
 const ICON_BUTTON =
   'text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed';
+
+/** Recent runs listed before "Show N more": enough for this week, not a wall of dates. */
+const RECENT_RUNS_SHOWN = 12;
 
 /** "Changed N ago" only moves by the minute, so the clock does too. */
 const CLOCK_TICK_MS = 60_000;
@@ -352,10 +364,24 @@ const NO_REGISTRY: Registry = { managers: [], error: null };
 /** The registry can be out of reach (browser mode); the runs still say who the managers are. */
 const readRegistry = (): Promise<Registry> => managerRegistry().catch((): Registry => NO_REGISTRY);
 
+/** The manager to unfold on first show; the live fleet is read now, as the data lands. */
+function mostRecentManager(runs: SupervisorRun[], managers: SupervisorManager[]): string | null {
+  const live = runningSupervisors(useStore.getState().agents);
+  return mostRecentManagerKey(
+    splitSupervisorRuns(runs).managers.map((run) => ({
+      key: run.manager.key,
+      name: run.manager.name,
+      running: supervisorUsingRunDir(live, run.path) !== undefined,
+      activityMs: managerActivityMs(
+        managers.find((m) => m.key === run.manager.key) ?? { lastLaunch: null },
+        run.modifiedAtMs
+      ),
+    }))
+  );
+}
+
 /** Wide enough for "Remove Project Manager…" without a truncation. */
 const MENU_WIDTH = 232;
-
-const INSTRUCTIONS_FILE = 'INSTRUCTIONS.md';
 
 const CONFIRMATIONS: Record<
   Confirmation['kind'],
@@ -492,13 +518,18 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [resuming, setResuming] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [expandedManagers, setExpandedManagers] = useState<Set<string>>(new Set());
+  const [expandedManagers, setExpandedManagers] = useState<Set<string>>(
+    () => new Set(runsRailMemory.expanded)
+  );
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [allRunsShown, setAllRunsShown] = useState(false);
   const [memoryReads, setMemoryReads] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [nameSheet, setNameSheet] = useState<NameSheet | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const { ask, sheet: askSheet } = useAskManager({ onSelectAgent });
+  const { ask, send, sheet: askSheet } = useAskManager({ onSelectAgent });
+  /** Managers whose folder was opened on unfolding; a folder closed by hand stays closed. */
+  const seededFolders = useRef(new Set<string>());
   // Read by a refresh, which reloads whatever is open without re-subscribing to it.
   const treesRef = useRef(trees);
   useEffect(() => {
@@ -522,6 +553,11 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
     () =>
       Promise.all([supervisorRunsList(), readRegistry()]).then(
         ([listed, known]) => {
+          if (!runsRailMemory.defaultUnfolded) {
+            runsRailMemory.defaultUnfolded = true;
+            const key = mostRecentManager(listed, known.managers);
+            if (key !== null) setExpandedManagers((current) => new Set(current).add(key));
+          }
           setRuns(listed);
           setRegistry(known);
           setError(null);
@@ -555,6 +591,23 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   );
   const blockedReason = registry.error ?? undefined;
 
+  // The rail remounts on every switch; the human's folding outlives it.
+  useEffect(() => {
+    runsRailMemory.expanded = expandedManagers;
+  }, [expandedManagers]);
+
+  // An unfolded manager shows its folder with the memory open, however it was unfolded.
+  useEffect(() => {
+    for (const run of groups.managers) {
+      const key = run.manager.key;
+      if (!expandedManagers.has(key) || seededFolders.current.has(key)) continue;
+      seededFolders.current.add(key);
+      setOpenFolders((current) => new Set(current).add(`${run.path}\0${MANAGER_KNOWLEDGE_FOLDER}`));
+      setTrees((current) => (run.path in current ? current : { ...current, [run.path]: null }));
+      void loadTree(run.path);
+    }
+  }, [expandedManagers, groups.managers, loadTree]);
+
   const toggleRun = (run: SupervisorRun) => {
     if (run.path in trees) {
       setTrees(({ [run.path]: _closed, ...rest }) => rest);
@@ -575,8 +628,10 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   const toggleManager = (key: string) =>
     setExpandedManagers((current) => {
       const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+        seededFolders.current.delete(key);
+      } else next.add(key);
       return next;
     });
 
@@ -672,7 +727,8 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
     return managerMenu(manager.name, archived, blockedReason, {
       open: () => void open(manager),
       ask: () => ask(manager),
-      editInstructions: () => onOpenFile(`${run.path.replace(/\/+$/, '')}/${INSTRUCTIONS_FILE}`),
+      editInstructions: () =>
+        onOpenFile(`${run.path.replace(/\/+$/, '')}/${MANAGER_INSTRUCTIONS_FILE}`),
       rename: () => setNameSheet({ kind: 'rename', manager }),
       showInFinder: () =>
         void revealInFileManager(run.path).catch((cause: unknown) =>
@@ -706,6 +762,7 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   const renderManager = (run: ManagedRun, archived: boolean) => {
     const manager = managerOf(run);
     const running = supervisorUsingRunDir(live, run.path);
+    const tree = trees[run.path] ?? null;
     return (
       <ManagerRow
         key={run.path}
@@ -718,11 +775,19 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
         folderOpen={run.path in trees}
         files={
           <RunFiles
-            tree={trees[run.path] ?? null}
+            tree={tree === null ? null : managerFolderFirst(tree)}
             isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
             toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
             onOpenFile={onOpenFile}
             now={now}
+          />
+        }
+        composer={
+          <ManagerAskComposer
+            name={manager.name}
+            running={running !== undefined}
+            blockedReason={blockedReason}
+            onSend={(task) => send(manager, task)}
           />
         }
         reloadToken={memoryReads[manager.key] ?? 0}
@@ -733,7 +798,7 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
         onAsk={() => ask(manager)}
         onOpenFile={onOpenFile}
         onEditInstructions={() =>
-          onOpenFile(`${run.path.replace(/\/+$/, '')}/${INSTRUCTIONS_FILE}`)
+          onOpenFile(`${run.path.replace(/\/+$/, '')}/${MANAGER_INSTRUCTIONS_FILE}`)
         }
         onRestart={() => running && setConfirmation({ kind: 'restart', manager, live: running })}
       />
@@ -828,30 +893,41 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
             <>
               <SectionTitle>Recent Runs</SectionTitle>
               <ul>
-                {groups.recent.map((run) => (
-                  <RunRow
-                    key={run.path}
-                    run={run}
-                    now={now}
-                    liveHere={supervisorUsingRunDir(live, run.path)}
-                    tree={trees[run.path]}
-                    resuming={resuming}
-                    onToggle={() => toggleRun(run)}
-                    onResume={() => void resume(run)}
-                    onShow={onSelectAgent}
-                    onMenu={(point) =>
-                      showMenu(
-                        point,
-                        runMenu(blockedReason, () => setNameSheet({ kind: 'promote', run }))
-                      )
-                    }
-                    // Folder keys are relative to their run; prefix them so two runs never share one.
-                    isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
-                    toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
-                    onOpenFile={onOpenFile}
-                  />
-                ))}
+                {(allRunsShown ? groups.recent : groups.recent.slice(0, RECENT_RUNS_SHOWN)).map(
+                  (run) => (
+                    <RunRow
+                      key={run.path}
+                      run={run}
+                      now={now}
+                      liveHere={supervisorUsingRunDir(live, run.path)}
+                      tree={trees[run.path]}
+                      resuming={resuming}
+                      onToggle={() => toggleRun(run)}
+                      onResume={() => void resume(run)}
+                      onShow={onSelectAgent}
+                      onMenu={(point) =>
+                        showMenu(
+                          point,
+                          runMenu(blockedReason, () => setNameSheet({ kind: 'promote', run }))
+                        )
+                      }
+                      // Folder keys are relative to their run; prefix them so two runs never share one.
+                      isFolderOpen={(key) => openFolders.has(`${run.path}\0${key}`)}
+                      toggleFolder={(key) => toggleFolder(`${run.path}\0${key}`)}
+                      onOpenFile={onOpenFile}
+                    />
+                  )
+                )}
               </ul>
+              {!allRunsShown && groups.recent.length > RECENT_RUNS_SHOWN && (
+                <button
+                  type="button"
+                  onClick={() => setAllRunsShown(true)}
+                  className="mx-3 mt-1 rounded px-1 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  Show {groups.recent.length - RECENT_RUNS_SHOWN} more
+                </button>
+              )}
             </>
           )}
         </div>

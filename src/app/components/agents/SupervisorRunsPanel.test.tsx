@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
+import { resetRunsRailMemoryForTests } from '@/lib/agents/managerRail';
 import { SupervisorRunsPanel } from './SupervisorRunsPanel';
 
 const {
@@ -78,6 +79,7 @@ const supervisor: AgentInfo = {
 
 describe('SupervisorRunsPanel', () => {
   beforeEach(() => {
+    resetRunsRailMemoryForTests();
     supervisorRunsList.mockReset().mockResolvedValue([RUN]);
     supervisorRunFiles.mockReset().mockResolvedValue([
       { relativePath: 'notes.md', path: `${RUN.path}/notes.md`, size: 1, modifiedAtMs: 10 },
@@ -236,6 +238,15 @@ const withManagers = (registryError: string | null = null) => {
   managerRegistry.mockResolvedValue({ managers, error: registryError });
 };
 
+/** The manager's whole list item: header, inspector, folder and Ask field. */
+const managerRow = (name: string) => {
+  const row = screen
+    .getAllByTestId('manager-row')
+    .find((item) => item.querySelector(`[aria-expanded]`)?.textContent?.includes(name));
+  if (!row) throw new Error(`No manager row for ${name}`);
+  return row;
+};
+
 const rowMenu = async (name: string | RegExp) => {
   fireEvent.contextMenu(await screen.findByRole('button', { name }));
   return screen.getByRole('menu');
@@ -243,6 +254,7 @@ const rowMenu = async (name: string | RegExp) => {
 
 describe('SupervisorRunsPanel: Project Managers', () => {
   beforeEach(() => {
+    resetRunsRailMemoryForTests();
     supervisorRunFiles.mockReset().mockResolvedValue([]);
     managerPromote.mockReset().mockResolvedValue({ ...desk, key: 'fresh-one', name: 'Fresh One' });
     managerCreate.mockReset().mockResolvedValue({ ...desk, key: 'new-desk', name: 'New Desk' });
@@ -493,7 +505,7 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     });
     const onSelectAgent = vi.fn();
     render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={onSelectAgent} />);
-    fireEvent.click(await screen.findByRole('button', { name: /^Release Desk/ }));
+    // The running manager is the most recent one, so it is unfolded already.
     fireEvent.click(await screen.findByRole('button', { name: 'Restart Now' }));
     expect(killRunningAgent).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restart' }));
@@ -516,6 +528,140 @@ describe('SupervisorRunsPanel: Project Managers', () => {
     expect(await screen.findByText('release-desk')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: `Folder ${desk.runDir}` }));
     expect(await screen.findByRole('button', { name: /^INSTRUCTIONS\.md/ })).toBeInTheDocument();
+  });
+
+  describe('the most recent manager', () => {
+    const expandedNames = () =>
+      screen
+        .getAllByRole('button', { expanded: true })
+        .map((button) => button.textContent ?? '')
+        .filter((text) => /Release Desk|Inbox Triage/.test(text));
+
+    it('unfolds on first show: the one at work most recently', async () => {
+      withManagers();
+      managerRegistry.mockResolvedValue({
+        managers: [
+          { ...desk, lastLaunch: { at: new Date().toISOString(), instructionsSha256: 'x' } },
+          triage,
+          oldDesk,
+        ],
+        error: null,
+      });
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      await screen.findByRole('textbox', { name: 'Ask Release Desk…' });
+      expect(expandedNames()).toEqual([expect.stringContaining('Release Desk')]);
+    });
+
+    it('prefers a running manager over one used more recently, and names its harness', async () => {
+      withManagers();
+      managerRegistry.mockResolvedValue({
+        managers: [
+          desk,
+          { ...triage, lastLaunch: { at: new Date().toISOString(), instructionsSha256: 'x' } },
+          oldDesk,
+        ],
+        error: null,
+      });
+      useStore.setState({
+        agents: [
+          {
+            ...supervisor,
+            provider: 'codex',
+            supervisorKey: 'release-desk',
+            repoPath: `${ROOT}/${desk.runDir}`,
+          },
+        ],
+      });
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      await screen.findByRole('textbox', { name: 'Ask Release Desk…' });
+      expect(expandedNames()).toEqual([expect.stringContaining('Release Desk')]);
+      expect(screen.getByText('Running').parentElement).toHaveTextContent('Running · Codex');
+    });
+
+    it('stays folded once the human folds it, across a refresh', async () => {
+      withManagers();
+      // Rust answers every read with new arrays; the same one twice would hide a re-unfold.
+      supervisorRunsList.mockImplementation(async () => [runOf(triage), runOf(desk)]);
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^Inbox Triage/, expanded: true }));
+      // act flushes the refresh the focus starts, so its new data has landed.
+      await act(async () => {
+        fireEvent(window, new Event('focus'));
+      });
+      expect(supervisorRunsList).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: /^Inbox Triage/ })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+    });
+
+    it('stays folded when the rail switches away and back (the panel remounts)', async () => {
+      withManagers();
+      const first = render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^Inbox Triage/, expanded: true }));
+      fireEvent.click(screen.getByRole('button', { name: /^Release Desk/, expanded: false }));
+      first.unmount();
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      expect(
+        await screen.findByRole('button', { name: /^Release Desk/, expanded: true })
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Inbox Triage/ })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+    });
+
+    it('shows its folder with the instructions and the open memory on top', async () => {
+      withManagers();
+      supervisorRunFiles.mockResolvedValue([
+        {
+          relativePath: 'notes.md',
+          path: `${ROOT}/${triage.runDir}/notes.md`,
+          size: 1,
+          modifiedAtMs: 9,
+        },
+        {
+          relativePath: 'knowledge/index.md',
+          path: `${ROOT}/${triage.runDir}/knowledge/index.md`,
+          size: 1,
+          modifiedAtMs: 2,
+        },
+        {
+          relativePath: 'INSTRUCTIONS.md',
+          path: `${ROOT}/${triage.runDir}/INSTRUCTIONS.md`,
+          size: 1,
+          modifiedAtMs: 1,
+        },
+      ]);
+      const onOpenFile = vi.fn();
+      render(<SupervisorRunsPanel onOpenFile={onOpenFile} onSelectAgent={vi.fn()} />);
+      const row = within(await waitFor(() => managerRow('Inbox Triage')));
+      const index = await row.findByRole('button', { name: /^index\.md/ });
+      const names = row
+        .getAllByRole('button')
+        .map((button) => button.textContent ?? '')
+        .filter((text) => /^(INSTRUCTIONS|knowledge|index|notes)/.test(text));
+      expect(names.map((text) => text.split(/\d/)[0])).toEqual([
+        'INSTRUCTIONS.md',
+        'knowledge',
+        'index.md',
+        'notes.md',
+      ]);
+      fireEvent.click(index);
+      expect(onOpenFile).toHaveBeenCalledWith(`${ROOT}/${triage.runDir}/knowledge/index.md`);
+    });
+  });
+
+  it('lists the first runs and the rest on request', async () => {
+    const many = Array.from({ length: 15 }, (_, index) => ({
+      ...RUN,
+      name: `2026-10-${String(index + 1).padStart(2, '0')}_090000`,
+      path: `${ROOT}/2026-10-${String(index + 1).padStart(2, '0')}_090000`,
+    }));
+    supervisorRunsList.mockResolvedValue(many);
+    render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show 3 more' }));
+    expect(screen.getAllByTestId('run-row')).toHaveLength(15);
   });
 
   describe('the working loop', () => {
@@ -560,18 +706,51 @@ describe('SupervisorRunsPanel: Project Managers', () => {
       fireEvent.change(screen.getByRole('textbox', { name: 'Task' }), {
         target: { value: 'Plan the release.' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' }));
       await waitFor(() =>
         expect(sendAgentInput).toHaveBeenCalledWith('sup-1', 'Plan the release.\r')
       );
     });
 
-    it('asks from the inspector, next to Open', async () => {
+    it('asks a stopped manager inline: Send starts it with the task, no sheet in between', async () => {
       withManagers();
+      const spawnSupervisor = vi.fn(async () => ({ kind: 'spawned' as const, agent: supervisor }));
+      useStore.setState({ spawnSupervisor });
       render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
       fireEvent.click(await screen.findByRole('button', { name: /^Release Desk/ }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Ask Release Desk…' }));
-      expect(screen.getByRole('dialog', { name: 'Ask Release Desk' })).toBeInTheDocument();
+      const field = await screen.findByRole('textbox', { name: 'Ask Release Desk…' });
+      expect(field).toHaveAccessibleDescription(/starts Release Desk with this as its first task/i);
+      fireEvent.change(field, { target: { value: 'Plan the release.' } });
+      fireEvent.click(within(managerRow('Release Desk')).getByRole('button', { name: 'Send' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(spawnSupervisor).toHaveBeenCalledWith(
+          expect.objectContaining({ task: 'Plan the release.', managerKey: 'release-desk' })
+        )
+      );
+      expect(field).toHaveValue('');
+    });
+
+    it('asks a running manager inline: the task goes in as one message', async () => {
+      withManagers();
+      const sendAgentInput = vi.fn(async () => undefined);
+      useStore.setState({ agents: [live()], sendAgentInput });
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      const field = await screen.findByRole('textbox', { name: 'Ask Release Desk…' });
+      expect(field).toHaveAccessibleDescription(/goes to the running session as a message/i);
+      fireEvent.change(field, { target: { value: 'Plan the release.' } });
+      fireEvent.keyDown(field, { key: 'Enter', metaKey: true });
+      await waitFor(() =>
+        expect(sendAgentInput).toHaveBeenCalledWith('sup-1', 'Plan the release.\r')
+      );
+    });
+
+    it('turns the inline Ask off, with the reason, while the registry cannot be read', async () => {
+      withManagers('The registry file is not valid JSON.');
+      render(<SupervisorRunsPanel onOpenFile={vi.fn()} onSelectAgent={vi.fn()} />);
+      const field = await screen.findByRole('textbox', { name: 'Ask Inbox Triage…' });
+      expect(field).toBeDisabled();
+      expect(field).toHaveAccessibleDescription('The registry file is not valid JSON.');
     });
 
     it('opens the memory index and the last session note as tabs from the inspector', async () => {
@@ -593,11 +772,12 @@ describe('SupervisorRunsPanel: Project Managers', () => {
       const onOpenFile = vi.fn();
       render(<SupervisorRunsPanel onOpenFile={onOpenFile} onSelectAgent={vi.fn()} />);
       fireEvent.click(await screen.findByRole('button', { name: /^Release Desk/ }));
-      fireEvent.click(await screen.findByRole('button', { name: /Agreed the cut-off/ }));
+      const row = () => within(managerRow('Release Desk'));
+      fireEvent.click(await row().findByRole('button', { name: /Agreed the cut-off/ }));
       expect(onOpenFile).toHaveBeenLastCalledWith(
         `${ROOT}/${desk.runDir}/knowledge/sessions/planning.md`
       );
-      fireEvent.click(await screen.findByRole('button', { name: /2 concepts/ }));
+      fireEvent.click(await row().findByRole('button', { name: /2 concepts/ }));
       expect(onOpenFile).toHaveBeenLastCalledWith(`${ROOT}/${desk.runDir}/knowledge/index.md`);
     });
 

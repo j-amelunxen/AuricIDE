@@ -277,6 +277,65 @@ fn the_supervisor_policy_decides_whether_a_job_may_start() {
     assert!(s.h.backend.requests.lock().unwrap().is_empty());
 }
 
+/// A second provider beside `claude`, both at an equal share.
+fn with_codex(s: &Setup, notes: &[(&str, &str)]) {
+    s.h.backend
+        .offered
+        .lock()
+        .unwrap()
+        .insert("codex".into(), vec![model("luna", Some(1))]);
+    for agent in s.h.backend.agents.lock().unwrap().iter_mut() {
+        if agent.id == "agent-7" {
+            agent.provider = "claude".into();
+        }
+    }
+    let mut policy = s.h.backend.policy.lock().unwrap();
+    let rules = policy.projects.get_mut(s.p.path()).unwrap();
+    rules.provider_weights =
+        std::collections::BTreeMap::from([("claude".into(), 1), ("codex".into(), 1)]);
+    rules.provider_notes = notes
+        .iter()
+        .map(|(id, note)| (id.to_string(), note.to_string()))
+        .collect();
+}
+
+#[test]
+fn a_job_never_goes_to_a_provider_that_carries_a_routing_note() {
+    let s = setup(JobLimits::default());
+    with_codex(&s, &[]);
+    let plain = create(&s, Value::Null).unwrap();
+    assert_eq!(
+        plain["provider"], "codex",
+        "agent-7 on claude puts codex behind"
+    );
+
+    let s = setup(JobLimits::default());
+    with_codex(&s, &[("codex", "Databases allowed, source changes only.")]);
+    let started = create(&s, Value::Null).unwrap();
+    assert_eq!(started["provider"], "claude");
+    assert_eq!(started["model"], "small");
+}
+
+#[test]
+fn a_job_is_refused_when_every_provider_carries_a_routing_note() {
+    let s = setup(JobLimits::default());
+    with_codex(
+        &s,
+        &[
+            ("claude", "Source changes only."),
+            ("codex", "Databases allowed."),
+        ],
+    );
+    let refused = create(&s, Value::Null).unwrap_err();
+    assert_eq!(refused.code, "supervisor_denied");
+    assert_eq!(refused.reason.as_deref(), Some("provider_note_restricted"));
+    assert!(s.h.backend.requests.lock().unwrap().is_empty(), "no spawn");
+    assert!(
+        s.h.link.jobs().list(None, None, 10).is_empty(),
+        "nothing counted"
+    );
+}
+
 #[test]
 fn cancel_stops_the_agent_and_the_job_ends_as_cancelled() {
     let s = setup(JobLimits::default());

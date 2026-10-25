@@ -8,6 +8,7 @@ import {
   permissionModesOf,
   runsUnattended,
   type SupervisorPolicy,
+  trimProviderNote,
   type SupervisorProjectPolicy,
 } from './supervisorPolicy';
 
@@ -99,6 +100,21 @@ export function setSupervisorProviderWeight(
   if (weight === null || !Number.isFinite(weight)) delete providerWeights[providerId];
   else providerWeights[providerId] = Math.min(MAX_PROVIDER_WEIGHT, Math.max(0, Math.floor(weight)));
   return { ...entry, providerWeights };
+}
+
+/**
+ * A provider's routing note, stored as typed (the parser trims on read, `trimProviderNote`).
+ * `null` or a text of only whitespace takes the provider out of the map.
+ */
+export function setSupervisorProviderNote(
+  entry: SupervisorProjectPolicy,
+  providerId: string,
+  note: string | null
+): SupervisorProjectPolicy {
+  const providerNotes = { ...entry.providerNotes };
+  if (note === null || trimProviderNote(note) === '') delete providerNotes[providerId];
+  else providerNotes[providerId] = note;
+  return { ...entry, providerNotes };
 }
 
 /**

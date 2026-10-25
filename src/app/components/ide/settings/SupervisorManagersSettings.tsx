@@ -6,6 +6,7 @@ import { ManagerNameSheet } from '@/app/components/agents/ManagerNameSheet';
 import { useAskManager } from '@/app/components/agents/useAskManager';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 import { liveSupervisorOfManager } from '@/lib/agents/managerStatus';
 import { managerInstructionsPath } from '@/lib/agents/managerFolder';
 import { runningSupervisors } from '@/lib/agents/supervisorLaunch';
@@ -131,7 +132,7 @@ export function SupervisorManagersSettings() {
 
   return (
     <SettingsSection title="Project Managers" icon="folder">
-      <p className="text-xs leading-relaxed text-foreground-muted">
+      <p className={SETTINGS_HINT_CLASS}>
         A Project Manager is a supervisor with a name and a memory. Runs can also be promoted from
         the Supervisor Runs rail.
       </p>
@@ -141,7 +142,7 @@ export function SupervisorManagersSettings() {
           onClick={error ? undefined : () => setCreating(true)}
           aria-disabled={!!error || undefined}
           aria-describedby={error ? 'manager-settings-error' : undefined}
-          className={`rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-foreground transition-colors hover:bg-white/10 ${
+          className={`rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-white/10 ${
             error ? 'cursor-not-allowed opacity-40' : ''
           }`}
         >
@@ -150,10 +151,7 @@ export function SupervisorManagersSettings() {
       </div>
 
       {active.length > 0 && !(menuBar.tray && menuBar.shortcuts) && (
-        <p
-          data-testid="manager-settings-menu-bar-note"
-          className="text-[10px] text-foreground-muted"
-        >
+        <p data-testid="manager-settings-menu-bar-note" className={SETTINGS_HINT_CLASS}>
           {menuBar.tray
             ? 'Shortcuts only work from other apps once global shortcuts are on under Menu bar.'
             : 'The menu bar icon is off, so managers are not listed there yet. Switch it on under Menu bar.'}

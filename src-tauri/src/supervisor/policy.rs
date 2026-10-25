@@ -25,6 +25,9 @@ pub const DEFAULT_PROJECT_MAX_RUNNING: u32 = 2;
 pub const REJECTED_PERMISSION_MODES: [&str; 1] = ["bypassPermissions"];
 /// The largest load-balancing share a provider may be given.
 pub const MAX_PROVIDER_WEIGHT: u64 = 99;
+/// The longest routing note a provider may carry, in characters after trimming
+/// (fixture `maxProviderNoteLength`).
+pub const MAX_PROVIDER_NOTE_LENGTH: usize = 300;
 /// How far back `list_projects` counts the agents started in a project.
 pub const BALANCING_WINDOW_DAYS: u32 = 7;
 /// From this rank on, a supervisor's spawn has to say why it needs the model
@@ -93,6 +96,11 @@ pub struct ProjectRules {
     /// Advisory: `check_spawn` never reads it. Empty: no balancing.
     #[serde(default)]
     pub provider_weights: BTreeMap<String, u32>,
+    /// Routing rules: the human's note on which work may go to each provider.
+    /// Advisory like the weights (`check_spawn` cannot judge a task), shown to
+    /// the supervisor beside each provider and ranked above balancing.
+    #[serde(default)]
+    pub provider_notes: BTreeMap<String, String>,
     pub allow_interactive: bool,
     pub max_running: u32,
     /// Names of servers from the project's `.mcp.json` that its agents start
@@ -109,6 +117,7 @@ impl Default for ProjectRules {
             models: BTreeMap::new(),
             permission_mode: BTreeMap::new(),
             provider_weights: BTreeMap::new(),
+            provider_notes: BTreeMap::new(),
             allow_interactive: false,
             max_running: DEFAULT_PROJECT_MAX_RUNNING,
             extra_mcp_servers: Vec::new(),
@@ -182,6 +191,7 @@ pub enum ParseReason {
     InvalidEntry,
     PathNotAbsolute,
     BypassPermissions,
+    ProviderNoteTooLong,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -500,6 +510,7 @@ fn parse_project(key: &str, entry: &Value) -> Result<(String, ProjectRules), Par
         models: parse_models(source.get("models"))?,
         permission_mode: parse_permission_modes(source.get("permissionMode"))?,
         provider_weights: parse_weights(source.get("providerWeights"))?,
+        provider_notes: parse_notes(source.get("providerNotes"))?,
         allow_interactive: optional(source, "allowInteractive", Value::as_bool)?
             .unwrap_or(defaults.allow_interactive),
         max_running: optional(source, "maxRunning", as_limit)?.unwrap_or(defaults.max_running),
@@ -635,6 +646,36 @@ fn parse_weights(value: Option<&Value>) -> Result<BTreeMap<String, u32>, ParseRe
     Ok(weights)
 }
 
+/// Unicode White_Space plus U+FEFF, which `str::trim` keeps and JavaScript's
+/// `trim()` strips; `trimProviderNote` in TypeScript is the same rule.
+fn trim_note(note: &str) -> &str {
+    note.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+}
+
+/// Trimmed, an empty one dropped, too long refuses the project. `source` walks
+/// its raw keys in sorted order, so of two keys for one provider the first
+/// wins, as in TypeScript (fixture `providerNotesRules`).
+fn parse_notes(value: Option<&Value>) -> Result<BTreeMap<String, String>, ParseReason> {
+    let mut notes = BTreeMap::new();
+    let Some(source) = object_of(value)? else {
+        return Ok(notes);
+    };
+    for (provider, note) in source {
+        let id = normalize_provider_id(provider);
+        let note = trim_note(note.as_str().ok_or(ParseReason::InvalidEntry)?);
+        if id.is_empty() {
+            return Err(ParseReason::InvalidEntry);
+        }
+        if note.chars().count() > MAX_PROVIDER_NOTE_LENGTH {
+            return Err(ParseReason::ProviderNoteTooLong);
+        }
+        if !note.is_empty() {
+            notes.entry(id).or_insert_with(|| note.to_string());
+        }
+    }
+    Ok(notes)
+}
+
 /// Adds `rules` under `path`; when the path is there already (two spellings of
 /// one folder), the stricter of both stays, so a deny can never lose to an
 /// allow by how the keys sort (fixture `parseMergeRules`).
@@ -687,12 +728,18 @@ fn stricter(a: ProjectRules, b: ProjectRules) -> ProjectRules {
     } else {
         BTreeMap::new()
     };
+    let provider_notes = if a.provider_notes == b.provider_notes {
+        a.provider_notes
+    } else {
+        BTreeMap::new()
+    };
     ProjectRules {
         allowed: a.allowed && b.allowed && !conflict,
         providers,
         models,
         permission_mode,
         provider_weights,
+        provider_notes,
         allow_interactive: a.allow_interactive && b.allow_interactive,
         max_running: a.max_running.min(b.max_running),
         // Only what both entries name: an extra server is a grant.
@@ -739,7 +786,7 @@ fn effective_mode(
 
 // ── What a supervisor sees ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisibleProvider {
     pub id: String,
@@ -747,15 +794,40 @@ pub struct VisibleProvider {
     pub permission_mode: Option<String>,
     /// Its load-balancing share; `None` where the rules name none.
     pub weight: Option<u32>,
+    /// The human's routing rule for it here; `None` where the rules have none.
+    pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisibleProject {
     pub path: String,
     pub providers: Vec<VisibleProvider>,
     pub allow_interactive: bool,
     pub max_running: u32,
+}
+
+/// Why a link job found no provider it may choose (fixture `reasons.jobProvider`).
+pub const PROVIDER_NOTE_RESTRICTED: &str = "provider_note_restricted";
+
+/// The part of `project` a link job may choose from: the providers without a
+/// routing note, since no model reads the note on that path (fixture
+/// `jobProviderRules`). Every visible provider noted refuses the job; a
+/// project with none visible is left to the caller's own refusal.
+pub fn job_providers(project: &VisibleProject) -> Result<VisibleProject, &'static str> {
+    let providers: Vec<VisibleProvider> = project
+        .providers
+        .iter()
+        .filter(|provider| provider.note.is_none())
+        .cloned()
+        .collect();
+    if providers.is_empty() && !project.providers.is_empty() {
+        return Err(PROVIDER_NOTE_RESTRICTED);
+    }
+    Ok(VisibleProject {
+        providers,
+        ..project.clone()
+    })
 }
 
 /// The models of `provider` the rules leave, in the provider's own order.
@@ -802,6 +874,7 @@ pub fn visible_projects(
                     models: usable_models(rules, id, models),
                     permission_mode: rules.permission_mode.get(id).cloned(),
                     weight: rules.provider_weights.get(id).copied(),
+                    note: rules.provider_notes.get(id).cloned(),
                 })
                 .filter(|provider| !provider.models.is_empty())
                 .collect();
@@ -1320,6 +1393,7 @@ pub(crate) mod tests {
             fixtures["rejectedPermissionModes"],
             json!(REJECTED_PERMISSION_MODES)
         );
+        assert_eq!(fixtures["maxProviderNoteLength"], MAX_PROVIDER_NOTE_LENGTH);
     }
 
     #[test]
@@ -1332,6 +1406,7 @@ pub(crate) mod tests {
             ParseReason::InvalidEntry,
             ParseReason::PathNotAbsolute,
             ParseReason::BypassPermissions,
+            ParseReason::ProviderNoteTooLong,
         ];
         let keys: Vec<String> = fixtures["reasons"]["parse"]
             .as_object()
@@ -1397,6 +1472,29 @@ pub(crate) mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn every_job_providers_case_matches_the_fixture() {
+        let fixtures = fixtures();
+        let cases = fixtures["jobProviders"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let project: VisibleProject = serde_json::from_value(case["project"].clone()).unwrap();
+            let outcome = match job_providers(&project) {
+                Ok(kept) => {
+                    let ids: Vec<&str> = kept.providers.iter().map(|p| p.id.as_str()).collect();
+                    json!({ "providers": ids })
+                }
+                Err(reason) => json!({ "reason": reason }),
+            };
+            assert_eq!(outcome, case["expected"], "{name}");
+        }
+        assert!(
+            fixtures["reasons"]["jobProvider"][PROVIDER_NOTE_RESTRICTED].is_string(),
+            "the refusal has a fixture text"
+        );
     }
 
     #[test]
@@ -1527,6 +1625,7 @@ pub(crate) mod tests {
                 models: vec!["m".into()],
                 permission_mode: None,
                 weight: *weight,
+                note: None,
             })
             .collect()
     }
