@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, type MouseEvent } from 'react';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
+import { findNode } from '@/app/components/explorer/fileTreeTypes';
+import { openFileComparison } from '@/lib/compare/compareFiles';
 import { revealInFileManager } from '@/lib/tauri/opener';
 import { toGitignoreEntry } from '@/lib/git/gitignore';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -14,6 +16,10 @@ function revealInFileManagerLabel(): string {
   if (platform.includes('Mac')) return 'Reveal in Finder';
   if (platform.includes('Win')) return 'Reveal in File Explorer';
   return 'Show in File Manager';
+}
+
+function isFilePair(paths: string[], tree: FileTreeNode[]): boolean {
+  return paths.length === 2 && paths.every((path) => findNode(tree, path)?.isDirectory === false);
 }
 
 export interface UseContextMenuOptionsProps {
@@ -100,6 +106,14 @@ export function useContextMenuOptions({
 
     if (isMultiTarget) {
       options.push({ type: 'separator' });
+      if (isFilePair(state.selectedPaths, state.fileTree ?? [])) {
+        const [left, right] = state.selectedPaths;
+        options.push({
+          label: 'Compare Selected',
+          icon: 'difference',
+          action: () => openFileComparison(left, right),
+        });
+      }
       options.push({
         label: `Copy ${state.selectedPaths.length} Paths`,
         icon: 'content_copy',
@@ -218,6 +232,7 @@ export function useContextMenuOptions({
     state.contextMenu,
     state.rootPath,
     state.selectedPaths,
+    state.fileTree,
     state.repos,
     clipboard,
     setClipboard,

@@ -21,14 +21,37 @@ import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
 import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
 import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
+import {
+  baseName,
+  joinPath,
+  numberedName,
+  planTransfers,
+  replaceBlocker,
+  type PlannedTransfer,
+  type TransferKind,
+} from '@/lib/explorer/transferPlan';
+import { isSameOrInside } from '@/lib/explorer/treeSelection';
+import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import type { IDEState } from './liveIDEState';
+
+/** Upper bound for "Keep Both" numbering, so a full folder cannot spin forever. */
+const MAX_NUMBERED_NAMES = 1000;
+
+/** Closes every tab showing `path` or something beneath it (it is about to be replaced). */
+function closeTabsUnder(path: string) {
+  const { openTabs, closeTab } = useStore.getState();
+  for (const tab of openTabs) {
+    if (isSameOrInside(tab.path, path)) closeTab(tab.id);
+  }
+}
 
 export function useFileMutations(
   state: IDEState,
   clipboard: { path: string; isDirectory: boolean } | null,
   handleRefresh: (dir?: string, isRoot?: boolean) => Promise<unknown>,
   handleFileSelect: (path: string) => Promise<void>,
-  confirm: (options: { title: string; message: string; confirmLabel?: string }) => Promise<boolean>
+  confirm: (options: ConfirmRequest) => Promise<boolean>,
+  flushPendingWrites?: () => Promise<void>
 ) {
   const handleNewFile = useCallback(async () => {
     if (!state.rootPath) return;
@@ -65,26 +88,106 @@ export function useFileMutations(
     [state, handleRefresh, handleFileSelect]
   );
 
-  const handleMoveNode = useCallback(
-    async (sourcePath: string, destDir: string) => {
-      const name = sourcePath.split('/').pop();
-      if (!name) return;
-      const destination = `${destDir}/${name}`;
-      if (destination === sourcePath) return;
+  /**
+   * Where `source` may land when `destination` is taken: asked, never assumed.
+   * Replace deletes what is there first, Keep Both picks the next free
+   * numbered name, Cancel (null) skips this one item.
+   */
+  const resolveClash = useCallback(
+    async (
+      kind: TransferKind,
+      { source, destination }: PlannedTransfer,
+      destDir: string,
+      batch: readonly string[]
+    ) => {
+      if (!(await exists(destination))) return destination;
+      const name = baseName(source);
+      const blocker = replaceBlocker(batch, destination);
+      if (blocker) {
+        state.showToast(blocker, 'error');
+        return null;
+      }
+      let keepBoth = false;
+      const go = await confirm({
+        title: `Replace "${name}"?`,
+        message: `"${baseName(destDir)}" already has an item named "${name}". Replacing it overwrites that item${kind === 'move' ? ' with the one you are moving' : ''}.`,
+        confirmLabel: 'Replace',
+        secondaryLabel: 'Keep Both',
+        onSecondary: () => {
+          keepBoth = true;
+        },
+      });
+      if (!go) return null;
+      if (keepBoth) {
+        for (let n = 2; n < MAX_NUMBERED_NAMES; n++) {
+          const candidate = joinPath(destDir, numberedName(name, n));
+          if (!(await exists(candidate))) return candidate;
+        }
+        state.showToast(`No free name left for "${name}"`, 'error');
+        return null;
+      }
+      closeTabsUnder(destination);
       try {
-        await movePath(sourcePath, destination);
+        await deleteFile(destination);
       } catch (err) {
-        const message = typeof err === 'string' ? err : `Could not move "${name}"`;
-        state.showToast(message, 'error');
-        return;
+        state.showToast(typeof err === 'string' ? err : `Could not replace "${name}"`, 'error');
+        return null;
       }
-      state.renamePath(sourcePath, destination);
-      if (state.selectedPath === sourcePath || state.selectedPath?.startsWith(sourcePath + '/')) {
-        state.selectFile(state.selectedPath.replace(sourcePath, destination));
+      return destination;
+    },
+    [state, confirm]
+  );
+
+  /**
+   * Moves explorer rows (or copies Finder files) into `destDir`, one item at a
+   * time so a name clash can be asked about before anything is overwritten.
+   */
+  const transferInto = useCallback(
+    async (kind: TransferKind, paths: string[], destDir: string) => {
+      const plan = planTransfers(paths, destDir);
+      if (plan.skipped.some((s) => s.reason === 'into-itself')) {
+        state.showToast('A folder cannot be moved into itself', 'error');
       }
+      if (plan.transfers.length === 0) return;
+      // An edit still waiting for autosave would land afterwards: at the old
+      // path of a moved file (bringing it back), or over a replaced one.
+      await flushPendingWrites?.();
+      const batch = plan.transfers.map((t) => t.source);
+      const landed: { from: string; to: string }[] = [];
+      for (const transfer of plan.transfers) {
+        const { source } = transfer;
+        const name = baseName(source);
+        const destination = await resolveClash(kind, transfer, destDir, batch);
+        if (destination === null) continue;
+        try {
+          if (kind === 'move') await movePath(source, destination);
+          else await copyFile(source, destination);
+        } catch (err) {
+          const verb = kind === 'move' ? 'move' : 'copy';
+          state.showToast(typeof err === 'string' ? err : `Could not ${verb} "${name}"`, 'error');
+          continue;
+        }
+        if (kind === 'move') state.renamePath(source, destination);
+        landed.push({ from: source, to: destination });
+      }
+      if (landed.length === 0) return;
+      // What was moved stays selected at its new place.
+      state.setSelectedPaths(landed.map((item) => item.to));
+      state.selectFile(landed[landed.length - 1].to);
+      state.setSelectionAnchor(landed[landed.length - 1].to);
       await handleRefresh();
     },
-    [state, handleRefresh]
+    [state, handleRefresh, resolveClash, flushPendingWrites]
+  );
+
+  const handleMoveNodes = useCallback(
+    (paths: string[], destDir: string) => transferInto('move', paths, destDir),
+    [transferInto]
+  );
+
+  const handleDropExternalPaths = useCallback(
+    (paths: string[], destDir: string) => transferInto('copy', paths, destDir),
+    [transferInto]
   );
 
   const handleCopyPath = useCallback(
@@ -293,7 +396,8 @@ export function useFileMutations(
     handleNewFile,
     handleNewSpec,
     handleNewDiagram,
-    handleMoveNode,
+    handleMoveNodes,
+    handleDropExternalPaths,
     handleCopyPath,
     handleCopyPaths,
     handleRenameRequest,

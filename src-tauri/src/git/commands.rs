@@ -4,6 +4,7 @@ use super::diff::{
 };
 use super::discard::git_discard_impl;
 use super::discovery::git_discover_repos_impl;
+use super::file_compare::diff_files_impl;
 use super::graph::{git_commit_detail_impl, git_graph_log_impl, git_refs_impl};
 use super::log::{git_list_branches_impl, git_log_since_impl};
 use super::merge::{
@@ -54,6 +55,12 @@ pub fn git_diff(
     side: Option<String>,
 ) -> Result<String, String> {
     git_diff_impl(&repo_path, &file_path, side.as_deref())
+}
+
+/// Read-only comparison of two files on disk; neither needs to be in a repository.
+#[tauri::command(async)]
+pub fn diff_files(left: String, right: String) -> Result<String, String> {
+    diff_files_impl(&left, &right)
 }
 
 #[tauri::command(async)]

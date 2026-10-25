@@ -26,6 +26,15 @@ describe('tabBreadcrumbs', () => {
     ]);
   });
 
+  it('names a file comparison by its tab name, never by the encoded paths in its id', () => {
+    const id = 'diff:files:%2Fp%2Fa.ts:%2Fp%2Fb.ts';
+    expect(tabBreadcrumbs(id, { id, path: 'a.ts ↔ b.ts', name: 'a.ts ↔ b.ts' })).toEqual([
+      'AuricIDE',
+      'Compare',
+      'a.ts ↔ b.ts',
+    ]);
+  });
+
   it('names a graph tab by its title, never by the repo path in its id', () => {
     const id = 'git-graph:/private/var/folders/x/repo';
     expect(

@@ -4,6 +4,10 @@ import type { DiffTabState } from '@/lib/git/diffTab';
 
 const mockGetGitDiff = vi.hoisted(() => vi.fn());
 const mockGetGitDiffFileRef = vi.hoisted(() => vi.fn());
+const mockDiffFiles = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/tauri/compare', () => ({
+  diffFiles: (...args: unknown[]) => mockDiffFiles(...args),
+}));
 vi.mock('@/lib/tauri/git', () => ({
   getGitDiff: (...args: unknown[]) => mockGetGitDiff(...args),
   getGitDiffFileRef: (...args: unknown[]) => mockGetGitDiffFileRef(...args),
@@ -14,6 +18,7 @@ const store = vi.hoisted(() => {
     activeTabId: null as string | null,
     repoStates: {} as Record<string, { fileStatuses: { path: string; status: string }[] }>,
     diffByTabId: {} as Record<string, DiffTabState>,
+    showToast: vi.fn(),
     setDiffTab: vi.fn((tabId: string, next: DiffTabState) => {
       state.diffByTabId = { ...state.diffByTabId, [tabId]: next };
     }),
@@ -41,6 +46,7 @@ describe('useActiveDiffLoader', () => {
     vi.clearAllMocks();
     mockGetGitDiff.mockResolvedValue('fresh-patch');
     mockGetGitDiffFileRef.mockResolvedValue('fresh-ref-patch');
+    mockDiffFiles.mockResolvedValue('files-patch');
     store.activeTabId = null;
     store.repoStates = { '/repo': { fileStatuses: [] } };
     store.diffByTabId = {};
@@ -150,6 +156,44 @@ describe('useActiveDiffLoader', () => {
       filePath: 'src/a.ts',
       source: { kind: 'ref', ref: 'origin/main' },
       repoPath: '/repo',
+    });
+  });
+
+  describe('file comparison tab', () => {
+    const id = 'diff:files:a:b';
+    const comparison: DiffTabState = {
+      patch: 'old',
+      filePath: 'a.ts ↔ b.ts',
+      source: { kind: 'files', left: '/p/a.ts', right: '/p/b.ts' },
+      repoPath: '',
+    };
+
+    it('re-reads both files from disk when the tab is active, without a repo', async () => {
+      store.activeTabId = id;
+      store.diffByTabId = { [id]: comparison };
+
+      renderHook(() => useActiveDiffLoader());
+
+      await vi.waitFor(() => {
+        expect(mockDiffFiles).toHaveBeenCalledWith('/p/a.ts', '/p/b.ts');
+      });
+      expect(mockGetGitDiff).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(store.setDiffTab).toHaveBeenCalledWith(id, { ...comparison, patch: 'files-patch' });
+      });
+    });
+
+    it('keeps the last patch and toasts when a file cannot be read any more', async () => {
+      mockDiffFiles.mockRejectedValue('b.ts could not be read.');
+      store.activeTabId = id;
+      store.diffByTabId = { [id]: comparison };
+
+      renderHook(() => useActiveDiffLoader());
+
+      await vi.waitFor(() => {
+        expect(store.showToast).toHaveBeenCalledWith('b.ts could not be read.', 'error');
+      });
+      expect(store.setDiffTab).not.toHaveBeenCalled();
     });
   });
 });

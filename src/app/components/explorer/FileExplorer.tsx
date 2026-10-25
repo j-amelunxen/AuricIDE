@@ -8,21 +8,22 @@ import {
   dirsWithRecentlyCreatedFile,
   nextRecentlyCreatedExpiry,
 } from '@/lib/explorer/recentlyCreated';
+import { rangeSelection } from '@/lib/explorer/treeSelection';
+import { baseName } from '@/lib/explorer/transferPlan';
 import {
-  MOVE_MIME,
-  isInvalidMove,
   flattenVisibleTree,
   flattenVisibleNodes,
   findNode,
-  computeRange,
   parentDir,
   type FileTreeNode,
   type FlatTreeEntry,
 } from './fileTreeTypes';
 import { TreeNode } from './TreeNode';
 import { planRows } from './virtualRows';
+import { useTreeDrag } from './useTreeDrag';
+import { useExternalTreeDrop } from './useExternalTreeDrop';
 
-export { MOVE_MIME, isInvalidMove, flattenVisibleTree };
+export { flattenVisibleTree };
 export type { FileTreeNode, FlatTreeEntry };
 
 export interface FileExplorerProps {
@@ -47,8 +48,12 @@ export interface FileExplorerProps {
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
   /** Right-click on the empty area below the tree — targets the project root. */
   onRootContextMenu?: (e: React.MouseEvent) => void;
-  /** Move `sourcePath` into `destDir`. Enables drag-and-drop reordering. */
-  onMoveNode?: (sourcePath: string, destDir: string) => void;
+  /** Move the dragged rows into `destDir`. Enables dragging rows onto folders. */
+  onMoveNodes?: (paths: string[], destDir: string) => void;
+  /** Copy files dropped from Finder into `destDir`. */
+  onDropExternalPaths?: (paths: string[], destDir: string) => void;
+  /** Open a collapsed folder without touching the selection (hovering it mid-drag). */
+  onExpandDir?: (path: string) => void;
   /** Project root — enables dropping onto empty space to move an item to the root. */
   rootPath?: string | null;
 }
@@ -71,14 +76,12 @@ export function FileExplorer({
   onOpenFolder,
   onContextMenu,
   onRootContextMenu,
-  onMoveNode,
+  onMoveNodes,
+  onDropExternalPaths,
+  onExpandDir,
   rootPath,
 }: FileExplorerProps) {
-  const [isRootDropTarget, setIsRootDropTarget] = useState(false);
-  const [isRootDropValid, setIsRootDropValid] = useState(true);
-  const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [tick, setTick] = useState(() => Date.now());
-  const canDropToRoot = !!onMoveNode && !!rootPath;
 
   const createdAtTimes = useMemo(() => collectCreatedAt(tree), [tree]);
   const modifiedAtTimes = useMemo(() => collectModifiedAt(tree), [tree]);
@@ -133,8 +136,9 @@ export function FileExplorer({
   // only the ones in (or near) view keeps the DOM and the heap flat. Rows keep
   // their place in normal flow between spacer gaps (`planRows`), and three
   // rows stay mounted wherever they are: the focused one (so focus, and the
-  // keyboard handling on this pane, survives scrolling it away), the dragged
-  // one (so its dragend still arrives) and one keyboard focus is heading to.
+  // keyboard handling on this pane, survives scrolling it away) and the one
+  // keyboard focus is heading to. A drag needs no pinned row: its listeners
+  // sit on the window (see `useTreeDrag`).
   const rows = useMemo(() => flattenVisibleNodes(tree), [tree]);
   const rowIndex = useMemo(() => new Map(rows.map((row, i) => [row.node.path, i])), [rows]);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -188,7 +192,36 @@ export function FileExplorer({
     observedRowRef.current = row;
   });
 
-  const pinnedPaths = [focusedPath, draggingPath, pendingFocus];
+  // Read at click time rather than listed as a dependency: a click handler
+  // that changed with every tree would re-render every row on each refresh.
+  const treeRef = useRef(tree);
+  useEffect(() => {
+    treeRef.current = tree;
+  });
+
+  const isCollapsedDir = useCallback((path: string) => {
+    const node = findNode(treeRef.current, path);
+    return !!node?.isDirectory && !node.expanded;
+  }, []);
+  const { drag, ghostRef, onRowMouseDown } = useTreeDrag({
+    paneRef,
+    rootPath,
+    selectedPaths,
+    selectedPath,
+    onMoveNodes,
+    onExpandDir,
+    isCollapsedDir,
+  });
+  const externalTarget = useExternalTreeDrop({
+    paneRef,
+    rootPath,
+    onDropPaths: onDropExternalPaths,
+  });
+  const dropTarget = drag?.target ?? externalTarget;
+  const dropValid = drag ? drag.valid : externalTarget !== null;
+  const isRootDropTarget = !!rootPath && dropTarget === rootPath;
+
+  const pinnedPaths = [focusedPath, pendingFocus];
   const plan = planRows({
     count: rows.length,
     rowHeight,
@@ -214,20 +247,19 @@ export function FileExplorer({
     // the next out-of-window focus replaces it.
   }, [pendingFocus]);
 
-  // Read at click time rather than listed as a dependency: a click handler
-  // that changed with every tree would re-render every row on each refresh.
-  const treeRef = useRef(tree);
-  useEffect(() => {
-    treeRef.current = tree;
-  });
-
   const handleNodeClick = useCallback(
     (node: FileTreeNode, e: React.MouseEvent) => {
       if (e.shiftKey && onRangeSelect) {
         e.preventDefault();
-        const flat = flattenVisibleTree(treeRef.current);
-        const range = computeRange(flat, selectionAnchor ?? selectedPath, node.path);
-        onRangeSelect(range, node.path);
+        const next = rangeSelection({
+          visible: flattenVisibleTree(treeRef.current).map((entry) => entry.path),
+          paths: selectedPaths,
+          primary: selectedPath,
+          anchor: selectionAnchor,
+          target: node.path,
+          additive: e.metaKey || e.ctrlKey,
+        });
+        onRangeSelect(next.paths, node.path);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && onToggleSelect) {
@@ -241,7 +273,25 @@ export function FileExplorer({
         onSelectFile(node.path);
       }
     },
-    [selectionAnchor, selectedPath, onRangeSelect, onToggleSelect, onToggleDir, onSelectFile]
+    [
+      selectionAnchor,
+      selectedPath,
+      selectedPaths,
+      onRangeSelect,
+      onToggleSelect,
+      onToggleDir,
+      onSelectFile,
+    ]
+  );
+
+  // Right-clicking a row outside the selection makes it the selection first,
+  // as Finder does, so the menu never acts on rows the user is not looking at.
+  const handleRowContextMenu = useCallback(
+    (e: React.MouseEvent, node: FileTreeNode) => {
+      if (!selectedPaths.includes(node.path)) onFocusNode?.(node.path);
+      onContextMenu?.(e, node);
+    },
+    [selectedPaths, onFocusNode, onContextMenu]
   );
 
   const handleTreeKeyDown = useCallback(
@@ -375,9 +425,10 @@ export function FileExplorer({
         ref={paneRef}
         data-testid="file-explorer-root-dropzone"
         onScroll={(e) => setScrollRow(Math.floor(e.currentTarget.scrollTop / rowHeight))}
+        data-drop-target={isRootDropTarget ? (dropValid ? 'valid' : 'invalid') : undefined}
         className={`py-1 flex-1 overflow-y-auto ${
           isRootDropTarget
-            ? isRootDropValid
+            ? dropValid
               ? 'ring-1 ring-inset ring-primary/40 bg-primary/5'
               : 'ring-1 ring-inset ring-red-500/40 bg-red-500/5 cursor-not-allowed'
             : ''
@@ -388,30 +439,6 @@ export function FileExplorer({
             ? (e) => {
                 e.preventDefault();
                 onRootContextMenu(e);
-              }
-            : undefined
-        }
-        onDragOver={
-          canDropToRoot
-            ? (e) => {
-                // Unconditional preventDefault (WebKit-safe — see TreeNode).
-                e.preventDefault();
-                const valid = draggingPath ? !isInvalidMove(draggingPath, rootPath!) : true;
-                e.dataTransfer.dropEffect = valid ? 'move' : 'none';
-                setIsRootDropTarget(true);
-                setIsRootDropValid(valid);
-              }
-            : undefined
-        }
-        onDragLeave={canDropToRoot ? () => setIsRootDropTarget(false) : undefined}
-        onDrop={
-          canDropToRoot
-            ? (e) => {
-                e.preventDefault();
-                setIsRootDropTarget(false);
-                const source = e.dataTransfer.getData(MOVE_MIME);
-                if (isInvalidMove(source, rootPath!)) return;
-                onMoveNode!(source, rootPath!);
               }
             : undefined
         }
@@ -431,10 +458,16 @@ export function FileExplorer({
               selectedPath={selectedPath}
               selectedPaths={selectedPaths}
               onNodeClick={handleNodeClick}
-              onContextMenu={onContextMenu}
-              onMoveNode={onMoveNode}
-              draggingPath={draggingPath}
-              onDragStateChange={setDraggingPath}
+              onContextMenu={onContextMenu ? handleRowContextMenu : undefined}
+              onRowMouseDown={onMoveNodes ? onRowMouseDown : undefined}
+              isDragged={!!drag?.items.includes(node.path)}
+              dropState={
+                dropTarget === node.path && !isRootDropTarget
+                  ? dropValid
+                    ? 'valid'
+                    : 'invalid'
+                  : null
+              }
               now={now}
               recentDirs={recentDirs}
               onRowFocus={setFocusedPath}
@@ -442,6 +475,20 @@ export function FileExplorer({
           );
         })}
       </div>
+      {drag && (
+        <div
+          ref={ghostRef}
+          data-testid="tree-drag-ghost"
+          aria-hidden="true"
+          className="pointer-events-none fixed left-0 top-0 z-50 flex items-center gap-1 rounded-md border border-white/10 bg-panel-bg/95 px-2 py-1 text-xs text-foreground shadow-lg"
+        >
+          <AuricIcon
+            name={drag.items.length > 1 ? 'library_books' : 'description'}
+            className="text-[14px] text-primary"
+          />
+          {drag.items.length > 1 ? `${drag.items.length} items` : baseName(drag.items[0] ?? '')}
+        </div>
+      )}
     </div>
   );
 }

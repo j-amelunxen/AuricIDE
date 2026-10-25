@@ -56,7 +56,9 @@ function ExplorerTree({ state, handlers }: LeftSidebarPanelProps) {
       onOpenFolder={handlers.handleOpenFolder}
       onContextMenu={handlers.handleContextMenu}
       onRootContextMenu={handlers.handleRootContextMenu}
-      onMoveNode={handlers.handleMoveNode}
+      onMoveNodes={handlers.handleMoveNodes}
+      onDropExternalPaths={handlers.handleDropExternalPaths}
+      onExpandDir={handlers.handleExpandDir}
       rootPath={state.rootPath}
     />
   );

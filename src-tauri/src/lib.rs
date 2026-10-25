@@ -382,6 +382,7 @@ pub fn run() {
             git_projects_dirty,
             git_branch_info,
             git_diff,
+            diff_files,
             git_stage,
             git_unstage,
             git_commit,

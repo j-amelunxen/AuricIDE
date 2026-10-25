@@ -48,7 +48,7 @@ const DIFF_SHORTCUTS: ShortcutSheetContent = {
 };
 
 export function DiffViewer(props: DiffViewerProps) {
-  const { diff, fileName, repoPath, source } = props;
+  const { diff, fileName, repoPath, source, emptyMessage = 'No changes' } = props;
   const {
     viewMode,
     setViewMode,
@@ -95,7 +95,7 @@ export function DiffViewer(props: DiffViewerProps) {
   if (!diff.trim()) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
-        No changes
+        {emptyMessage}
       </div>
     );
   }
