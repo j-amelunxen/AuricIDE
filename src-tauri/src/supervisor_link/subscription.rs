@@ -84,6 +84,7 @@ impl Subscription {
                 .as_ref()
                 .map(|ids| ids.iter().cloned().collect()),
             supervisors: params.supervisors.clone(),
+            roles: params.roles.clone(),
         };
         let mut subscription = Self {
             coverage: coverage_of(&filter, tree, requesters),

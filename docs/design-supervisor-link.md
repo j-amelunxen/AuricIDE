@@ -174,26 +174,26 @@ type LinkError = { code: ErrorCode; message: string; reason?: string };
 
 ## Methods
 
-| method               | params                                                                                                     | result                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `session.hello`      | `{ client?: string }`                                                                                      | `Hello`                                      |
-| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }`             | `{ agentId, key: string \| null, existing }` |
-| `supervisors.list`   | —                                                                                                          | `{ supervisors: LinkSupervisor[] }`          |
-| `agents.list`        | —                                                                                                          | `{ agents: LinkAgent[] }`                    |
-| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                      | `OutputChunk`                                |
-| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean (default true) }`                                 | `{ agentId, bytesWritten }`                  |
-| `agents.kill`        | `{ agentId \| supervisor }`                                                                                | `{ agentId, killed: true }`                  |
-| `events.subscribe`   | `{ agentIds?, supervisors?: string[], output?, sinceOffsets?: Record<string, number>, jobs?: boolean }`    | `{ agents: LinkAgent[] }`                    |
-| `events.unsubscribe` | —                                                                                                          | `{ subscribed: false }`                      |
-| `documents.projects` | —                                                                                                          | `{ projects: DocumentProject[] }`            |
-| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                      | `{ documents: DocumentEntry[] }`             |
-| `documents.get`      | `{ project, type, id, rev?: string }`                                                                      | `Document`                                   |
-| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                               | `Document`                                   |
-| `documents.asset`    | `{ project, path, rev?: string }`                                                                          | `Asset`                                      |
-| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }` | `Proposal`                                   |
-| `jobs.create`        | `{ project, kind: string, payload: any, supervisor?: string }`                                             | `JobStarted`                                 |
-| `jobs.list`          | `{ project?: string, status?: JobStatus, limit?: number }`                                                 | `{ jobs: Job[] }`                            |
-| `jobs.cancel`        | `{ jobId }`                                                                                                | `{ jobId, cancelled, status }`               |
+| method               | params                                                                                                                                      | result                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `session.hello`      | `{ client?: string }`                                                                                                                       | `Hello`                                      |
+| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }`                                              | `{ agentId, key: string \| null, existing }` |
+| `supervisors.list`   | —                                                                                                                                           | `{ supervisors: LinkSupervisor[] }`          |
+| `agents.list`        | `{ roles? }`                                                                                                                                | `{ agents: LinkAgent[] }`                    |
+| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                                                       | `OutputChunk`                                |
+| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean (default true) }`                                                                  | `{ agentId, bytesWritten }`                  |
+| `agents.kill`        | `{ agentId \| supervisor }`                                                                                                                 | `{ agentId, killed: true }`                  |
+| `events.subscribe`   | `{ agentIds?, supervisors?: string[], roles?: ('supervisor'\|'worker')[], output?, sinceOffsets?: Record<string, number>, jobs?: boolean }` | `{ agents: LinkAgent[] }`                    |
+| `events.unsubscribe` | —                                                                                                                                           | `{ subscribed: false }`                      |
+| `documents.projects` | —                                                                                                                                           | `{ projects: DocumentProject[] }`            |
+| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                                                       | `{ documents: DocumentEntry[] }`             |
+| `documents.get`      | `{ project, type, id, rev?: string }`                                                                                                       | `Document`                                   |
+| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                                                                | `Document`                                   |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                                                                           | `Asset`                                      |
+| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }`                                  | `Proposal`                                   |
+| `jobs.create`        | `{ project, kind: string, payload: any, supervisor?: string }`                                                                              | `JobStarted`                                 |
+| `jobs.list`          | `{ project?: string, status?: JobStatus, limit?: number }`                                                                                  | `{ jobs: Job[] }`                            |
+| `jobs.cancel`        | `{ jobId }`                                                                                                                                 | `{ jobId, cancelled, status }`               |
 
 `agentId | supervisor`: exactly one of the two, else `invalid_params`. A
 `supervisor` is a key (see "Supervisor keys"), resolved to the live supervisor
@@ -215,7 +215,7 @@ Optional, but the way to learn what this build offers:
     "server": "AuricIDE",
     "methods": ["session.hello", "supervisors.spawn", "agents.list", "…"],
     "events": ["agent.added", "agent.updated", "agent.removed", "agent.output", "job.started", "…"],
-    "features": ["supervisorKeys"]
+    "features": ["supervisorKeys", "roleFilter"]
   }
 }
 ```
@@ -223,7 +223,8 @@ Optional, but the way to learn what this build offers:
 A later version adds methods; it never changes what an existing one means
 without raising `v`. `features` names additions within protocol 1 a client may
 check for (fixture `features`): `supervisorKeys` is everything in "Supervisor
-keys" below.
+keys" below; `roleFilter` is the `roles` param of `agents.list` and
+`events.subscribe`.
 
 ### The supervisor tree
 

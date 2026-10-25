@@ -68,6 +68,8 @@ pub struct Filter {
     pub agent_ids: Option<BTreeSet<String>>,
     /// `None`: no supervisors filter. Entries are keys or agent ids.
     pub supervisors: Option<Vec<String>>,
+    /// `None`: no role filter. Otherwise it narrows what the rest covers.
+    pub roles: Option<Vec<AgentRole>>,
 }
 
 /// What a filter covers in one agent list.
@@ -100,6 +102,24 @@ impl Filter {
     /// job events unfiltered, as before supervisors were a filter; with
     /// `supervisors`, only the jobs they asked for, and those jobs' agents.
     pub fn coverage(&self, agents: &[AgentInfo], jobs: &[JobRef<'_>]) -> Coverage {
+        let wide = self.coverage_by_subtree(agents, jobs);
+        let Some(roles) = &self.roles else {
+            return wide;
+        };
+        // The role filter is applied to the list as it stands, so an agent
+        // that joins later is judged on the next poll like any other.
+        let agents_covered = agents
+            .iter()
+            .filter(|agent| roles.contains(&agent.role) && wide.covers_agent(&agent.id))
+            .map(|agent| agent.id.clone())
+            .collect();
+        Coverage {
+            agents: Some(agents_covered),
+            ..wide
+        }
+    }
+
+    fn coverage_by_subtree(&self, agents: &[AgentInfo], jobs: &[JobRef<'_>]) -> Coverage {
         let Some(entries) = &self.supervisors else {
             return Coverage {
                 agents: self.agent_ids.clone(),
@@ -286,7 +306,12 @@ mod tests {
             agents.extend(agents_of(&case["addLater"]));
             let filter = Filter {
                 agent_ids: case.get("agentIds").map(strings),
-                supervisors: Some(strings(&case["supervisors"]).into_iter().collect()),
+                supervisors: case
+                    .get("supervisors")
+                    .map(|list| strings(list).into_iter().collect()),
+                roles: case
+                    .get("roles")
+                    .map(|list| serde_json::from_value(list.clone()).expect("roles")),
             };
             let coverage = filter.coverage(&agents, &refs);
             let covered: BTreeSet<String> = agents
@@ -316,6 +341,7 @@ mod tests {
         let by_id = Filter {
             agent_ids: Some(BTreeSet::from(["agent-2".to_string()])),
             supervisors: None,
+            roles: None,
         }
         .coverage(&agents, &[]);
         assert!(by_id.covers_agent("agent-2") && !by_id.covers_agent("agent-1"));

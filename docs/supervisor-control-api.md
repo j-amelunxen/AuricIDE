@@ -122,13 +122,14 @@ There is no login. After the WebSocket upgrade the connection is ready.
     "result": { "protocol": 1, "server": "AuricIDE",
                 "methods": ["session.hello", "supervisors.spawn", "…"],
                 "events": ["agent.added", "…"],
-                "features": ["supervisorKeys"] } }
+                "features": ["supervisorKeys", "roleFilter"] } }
 ```
 
 `features` names what this build added within protocol 1. `supervisorKeys`
 means everything under [Several supervisors](#several-supervisors) is there:
 check for it before you send a `key` or a `supervisor` param to an older build,
-which would refuse the unknown param with `invalid_params`.
+which would refuse the unknown param with `invalid_params`. `roleFilter`
+means `roles` on `agents.list` and `events.subscribe` is there.
 
 Every message carries `"v": 1`. A message with another `v` is answered with
 `unsupported_version`. The request path `/v1` and the `v` field change
@@ -240,26 +241,26 @@ type LinkError = { code: string; message: string; reason?: string };
 
 ## Methods
 
-| method               | params                                                                                                                     | result                                            |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `session.hello`      | `{ client?: string }`                                                                                                      | `{ protocol, server, methods, events, features }` |
-| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }` (`if` only with `key`)      | `{ agentId, key: string \| null, existing }`      |
-| `supervisors.list`   | —                                                                                                                          | `{ supervisors: LinkSupervisor[] }`               |
-| `agents.list`        | —                                                                                                                          | `{ agents: LinkAgent[] }`                         |
-| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                                      | `OutputChunk`                                     |
-| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean }` (`submit` defaults to `true`)                                  | `{ agentId, bytesWritten }`                       |
-| `agents.kill`        | `{ agentId \| supervisor }`                                                                                                | `{ agentId, killed: true }`                       |
-| `events.subscribe`   | `{ agentIds?: string[], supervisors?: string[], output?: boolean, sinceOffsets?: Record<string, number>, jobs?: boolean }` | `{ agents: LinkAgent[] }`                         |
-| `events.unsubscribe` | —                                                                                                                          | `{ subscribed: false }`                           |
-| `documents.projects` | —                                                                                                                          | `{ projects: DocumentProject[] }`                 |
-| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                                      | `{ documents: DocumentEntry[] }`                  |
-| `documents.get`      | `{ project, type, id, rev?: string }`                                                                                      | `Document`                                        |
-| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                                               | `Document`                                        |
-| `documents.asset`    | `{ project, path, rev?: string }`                                                                                          | `Asset`                                           |
-| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }`                 | `Proposal`                                        |
-| `jobs.create`        | `{ project, kind, payload, supervisor?: string }` (`payload` required, `null` allowed)                                     | `JobStarted`                                      |
-| `jobs.list`          | `{ project?: string, status?: 'running' \| 'finished' \| 'failed', limit?: number }`                                       | `{ jobs: Job[] }`                                 |
-| `jobs.cancel`        | `{ jobId }`                                                                                                                | `{ jobId, cancelled, status }`                    |
+| method               | params                                                                                                                                                           | result                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `session.hello`      | `{ client?: string }`                                                                                                                                            | `{ protocol, server, methods, events, features }` |
+| `supervisors.spawn`  | `{ key?: string, if?: 'new' \| 'existing', task?: string, provider?: string, model?: string }` (`if` only with `key`)                                            | `{ agentId, key: string \| null, existing }`      |
+| `supervisors.list`   | —                                                                                                                                                                | `{ supervisors: LinkSupervisor[] }`               |
+| `agents.list`        | `{ roles?: ('supervisor' \| 'worker')[] }`                                                                                                                       | `{ agents: LinkAgent[] }`                         |
+| `agents.read`        | `{ agentId \| supervisor, sinceOffset?: number, tailBytes?: number }`                                                                                            | `OutputChunk`                                     |
+| `agents.send`        | `{ agentId \| supervisor, text: string, submit?: boolean }` (`submit` defaults to `true`)                                                                        | `{ agentId, bytesWritten }`                       |
+| `agents.kill`        | `{ agentId \| supervisor }`                                                                                                                                      | `{ agentId, killed: true }`                       |
+| `events.subscribe`   | `{ agentIds?: string[], supervisors?: string[], roles?: ('supervisor' \| 'worker')[], output?: boolean, sinceOffsets?: Record<string, number>, jobs?: boolean }` | `{ agents: LinkAgent[] }`                         |
+| `events.unsubscribe` | —                                                                                                                                                                | `{ subscribed: false }`                           |
+| `documents.projects` | —                                                                                                                                                                | `{ projects: DocumentProject[] }`                 |
+| `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                                                                                            | `{ documents: DocumentEntry[] }`                  |
+| `documents.get`      | `{ project, type, id, rev?: string }`                                                                                                                            | `Document`                                        |
+| `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                                                                                     | `Document`                                        |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                                                                                                | `Asset`                                           |
+| `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string, supervisor?: string }`                                                       | `Proposal`                                        |
+| `jobs.create`        | `{ project, kind, payload, supervisor?: string }` (`payload` required, `null` allowed)                                                                           | `JobStarted`                                      |
+| `jobs.list`          | `{ project?: string, status?: 'running' \| 'finished' \| 'failed', limit?: number }`                                                                             | `{ jobs: Job[] }`                                 |
+| `jobs.cancel`        | `{ jobId }`                                                                                                                                                      | `{ jobId, cancelled, status }`                    |
 
 `agentId | supervisor` means exactly one of the two: an agent id, or a
 [supervisor key](#several-supervisors) resolved when the request runs. Both or
@@ -301,7 +302,7 @@ type LinkSupervisor = {
 };
 ```
 
-**`agents.list`** answers the supervisor tree. A `LinkAgent` carries at least:
+**`agents.list`** answers the supervisor tree; with `roles` only the agents of those roles. A `LinkAgent` carries at least:
 
 ```ts
 type LinkAgent = {
@@ -627,6 +628,16 @@ as it is now, so you start from a consistent picture.
   child started later joins), and the jobs it asked for with their agents. An
   entry nothing matches yet is not an error: it covers a supervisor that
   starts later under that key. With `agentIds`, the union of both.
+- `roles` — `["supervisor"]`, `["worker"]` or both; needs the `roleFilter`
+  feature. Only agents whose own `role` is listed are covered, so
+  `roles: ["supervisor"]` is the "supervisors only" view: every supervisor,
+  Project Managers included (they are supervisors), and none of their workers
+  or subagents. It is worked out again every 250 ms with the rest, so a
+  supervisor started later is delivered as `agent.added` without subscribing
+  again. Alone it covers every agent of the role; together with `agentIds` or
+  `supervisors` it narrows what they cover (a supervisor's subtree filtered to
+  its workers, say). It does not filter `job.*` events; only `supervisors`
+  does. An unknown role or an empty list is `invalid_params`.
 - `output` (default `true`) — push console text.
 - `sinceOffsets` — per agent, the output offset to continue from after a
   reconnect. Without it, output starts at the current end; use `agents.read`

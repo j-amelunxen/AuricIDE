@@ -2,6 +2,7 @@
 //! text frame, versioned with `v`. `src/lib/agents/supervisorLink.fixtures.json`
 //! is the contract; the tests below run every case in it.
 
+use crate::agents::AgentRole;
 use crate::control_socket::protocol::{ControlError, MAX_TAIL_BYTES};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -87,7 +88,7 @@ pub const ERROR_CODES: [&str; 31] = [
 
 /// What this server can do beyond protocol 1 as first published; a client
 /// checks before it relies on it (`session.hello`).
-pub const FEATURES: [&str; 1] = ["supervisorKeys"];
+pub const FEATURES: [&str; 2] = ["supervisorKeys", "roleFilter"];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LinkError {
@@ -297,6 +298,28 @@ pub struct SubscribeParams {
     /// poll (`subtree.rs`). With `agentIds`, the union of both.
     #[serde(default)]
     pub supervisors: Option<Vec<String>>,
+    /// Only agents of these roles (`roleFilter`). Narrows whatever the other
+    /// filters cover; alone it covers every tree agent of the role, so a
+    /// supervisor started later is delivered without subscribing again.
+    #[serde(default)]
+    pub roles: Option<Vec<AgentRole>>,
+}
+
+/// `agents.list { roles }`.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListAgentsParams {
+    #[serde(default)]
+    pub roles: Option<Vec<AgentRole>>,
+}
+
+fn non_empty_roles(method: &str, roles: &Option<Vec<AgentRole>>) -> Result<(), LinkError> {
+    match roles {
+        Some(list) if list.is_empty() => Err(LinkError::invalid_params(format!(
+            "{method}: roles needs at least one of \"supervisor\", \"worker\""
+        ))),
+        _ => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -425,7 +448,7 @@ pub enum LinkRequest {
     Hello(HelloParams),
     SpawnSupervisor(SpawnSupervisorParams),
     ListSupervisors,
-    ListAgents,
+    ListAgents(ListAgentsParams),
     Read(ReadParams),
     Send(SendParams),
     Kill(AgentParams),
@@ -534,8 +557,9 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
             LinkRequest::ListSupervisors
         }
         "agents.list" => {
-            params::<Empty>(method, raw)?;
-            LinkRequest::ListAgents
+            let list: ListAgentsParams = params(method, raw)?;
+            non_empty_roles(method, &list.roles)?;
+            LinkRequest::ListAgents(list)
         }
         "agents.read" => {
             let read: RawRead = params(method, raw)?;
@@ -564,7 +588,11 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
                 target: target(method, kill.agent_id, kill.supervisor)?,
             })
         }
-        "events.subscribe" => LinkRequest::Subscribe(params(method, raw)?),
+        "events.subscribe" => {
+            let subscribe: SubscribeParams = params(method, raw)?;
+            non_empty_roles(method, &subscribe.roles)?;
+            LinkRequest::Subscribe(subscribe)
+        }
         "events.unsubscribe" => {
             params::<Empty>(method, raw)?;
             LinkRequest::Unsubscribe

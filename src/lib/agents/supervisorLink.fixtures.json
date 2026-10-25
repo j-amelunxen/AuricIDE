@@ -1,7 +1,7 @@
 {
   "$comment": "Machine-checkable half of docs/design-supervisor-link.md (the Supervisor Control API). Rust reads it in supervisor_link tests, TypeScript in the settings. Change this first.",
   "protocol": 1,
-  "features": ["supervisorKeys"],
+  "features": ["supervisorKeys", "roleFilter"],
   "socketFileName": "supervisor-link.sock",
   "policyFileName": "supervisor-link.json",
   "path": "/v1",
@@ -328,6 +328,28 @@
       "line": "{\"v\":1,\"id\":57,\"method\":\"supervisors.spawn\",\"params\":{\"key\":\"agent-3\"}}",
       "error": "supervisor_key_invalid",
       "id": 57
+    },
+    {
+      "name": "agents.list with roles",
+      "line": "{\"v\":1,\"id\":9,\"method\":\"agents.list\",\"params\":{\"roles\":[\"supervisor\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "subscribe to supervisors only",
+      "line": "{\"v\":1,\"id\":9,\"method\":\"events.subscribe\",\"params\":{\"roles\":[\"supervisor\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "an unknown role",
+      "line": "{\"v\":1,\"id\":9,\"method\":\"events.subscribe\",\"params\":{\"roles\":[\"manager\"]}}",
+      "error": "invalid_params",
+      "id": 9
+    },
+    {
+      "name": "an empty roles list",
+      "line": "{\"v\":1,\"id\":9,\"method\":\"agents.list\",\"params\":{\"roles\":[]}}",
+      "error": "invalid_params",
+      "id": 9
     }
   ],
   "resolve": [
@@ -1138,7 +1160,7 @@
     "reservedPattern": "^agent-\\d+$"
   },
   "subtree": {
-    "$comment": "events.subscribe { supervisors } and supervisors.list over one agent list. A supervisors entry is a key or an agent id; it covers the supervisor, every descendant through the spawnedByAgentId chain (recomputed every poll, so a child started later joins), the agents of jobs it requested and those jobs. An unknown entry covers nothing and is no error. agentIds and supervisors together are their union. Without supervisors, job events are not filtered (as before); with them, only the covered jobs. rootSupervisorIds is LinkAgent.rootSupervisorId: the topmost supervisor of the chain, null where the chain reaches no listed supervisor. finished is what run results still keep after a supervisor ended.",
+    "$comment": "events.subscribe { supervisors } and supervisors.list over one agent list. A supervisors entry is a key or an agent id; it covers the supervisor, every descendant through the spawnedByAgentId chain (recomputed every poll, so a child started later joins), the agents of jobs it requested and those jobs. An unknown entry covers nothing and is no error. agentIds and supervisors together are their union. Without supervisors, job events are not filtered (as before); with them, only the covered jobs. rootSupervisorIds is LinkAgent.rootSupervisorId: the topmost supervisor of the chain, null where the chain reaches no listed supervisor. finished is what run results still keep after a supervisor ended. roles (feature roleFilter) narrows what the other filters cover to agents whose own role is listed; alone it covers every listed agent of that role, so a supervisor started later is covered from the next poll. It does not pull in a supervisor's children and it does not filter job events (only supervisors does).",
     "agents": [
       {
         "id": "agent-1",
@@ -1346,6 +1368,58 @@
         "supervisors": ["agent-0"],
         "agents": [],
         "jobs": ["job-3"]
+      },
+      {
+        "name": "roles supervisor alone: only supervisors, no workers, job events unfiltered",
+        "roles": ["supervisor"],
+        "agents": ["agent-1", "agent-4"],
+        "jobs": ["job-1", "job-2", "job-3"]
+      },
+      {
+        "name": "roles supervisor: a supervisor started later is covered without subscribing again, its worker is not",
+        "roles": ["supervisor"],
+        "addLater": [
+          {
+            "id": "agent-11",
+            "name": "Night shift",
+            "role": "supervisor",
+            "status": "running",
+            "supervisorKey": "night-shift",
+            "spawnedByAgentId": null,
+            "repoPath": "/home/user/.auric/supervisors/2026-10-21_220000"
+          },
+          {
+            "id": "agent-12",
+            "name": "Worker agent-12",
+            "role": "worker",
+            "status": "running",
+            "supervisorKey": null,
+            "spawnedByAgentId": "agent-11",
+            "repoPath": "/work/alpha"
+          }
+        ],
+        "agents": ["agent-1", "agent-4", "agent-11"],
+        "jobs": ["job-1", "job-2", "job-3"]
+      },
+      {
+        "name": "roles worker alone: every worker, no supervisor",
+        "roles": ["worker"],
+        "agents": ["agent-2", "agent-3", "agent-5", "agent-6", "agent-7", "agent-8"],
+        "jobs": ["job-1", "job-2", "job-3"]
+      },
+      {
+        "name": "roles narrows supervisors: the supervisor itself, not its subtree",
+        "supervisors": ["mail-triage"],
+        "roles": ["supervisor"],
+        "agents": ["agent-1"],
+        "jobs": ["job-1"]
+      },
+      {
+        "name": "roles worker with supervisors: the subtree without the supervisor",
+        "supervisors": ["mail-triage"],
+        "roles": ["worker"],
+        "agents": ["agent-2", "agent-3", "agent-7", "agent-8"],
+        "jobs": ["job-1"]
       }
     ],
     "list": [

@@ -295,7 +295,19 @@ impl Link {
             })),
             LinkRequest::SpawnSupervisor(params) => self.spawn_supervisor(params),
             LinkRequest::ListSupervisors => self.list_supervisors(),
-            LinkRequest::ListAgents => to_value(json!({ "agents": self.tree() })),
+            LinkRequest::ListAgents(params) => {
+                let agents: Vec<LinkAgent> = self
+                    .tree()
+                    .into_iter()
+                    .filter(|agent| {
+                        params
+                            .roles
+                            .as_ref()
+                            .map_or(true, |roles| roles.contains(&agent.summary.info.role))
+                    })
+                    .collect();
+                to_value(json!({ "agents": agents }))
+            }
             LinkRequest::Read(params) => {
                 let agent_id = self.resolve(params.target)?;
                 self.control(Request::ReadOutput(ReadOutputParams {

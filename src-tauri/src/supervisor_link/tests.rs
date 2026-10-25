@@ -934,6 +934,81 @@ fn a_supervisor_subscription_follows_its_subtree_and_ignores_others() {
 }
 
 #[test]
+fn agents_list_with_roles_answers_only_those_roles() {
+    let h = harness(vec![
+        agent("agent-1", AgentRole::Supervisor, None),
+        agent("agent-2", AgentRole::Worker, Some("agent-1")),
+        agent("agent-3", AgentRole::Worker, Some("agent-2")),
+    ]);
+    let line = |roles: &str| {
+        format!(r#"{{"v":1,"id":1,"method":"agents.list","params":{{"roles":{roles}}}}}"#)
+    };
+    assert_eq!(
+        ids(&ask(&h.link, &line(r#"["supervisor"]"#)).unwrap()),
+        vec!["agent-1"]
+    );
+    assert_eq!(
+        ids(&ask(&h.link, &line(r#"["worker"]"#)).unwrap()),
+        vec!["agent-2", "agent-3"]
+    );
+    assert_eq!(
+        ids(&ask(&h.link, &line(r#"["supervisor","worker"]"#)).unwrap()).len(),
+        3
+    );
+    // No filter: as before.
+    let all = ask(&h.link, r#"{"v":1,"id":1,"method":"agents.list"}"#).unwrap();
+    assert_eq!(ids(&all).len(), 3);
+}
+
+#[test]
+fn a_role_subscription_delivers_a_supervisor_started_later_and_never_a_worker() {
+    let h = harness(vec![
+        agent("agent-1", AgentRole::Supervisor, None),
+        agent("agent-2", AgentRole::Worker, Some("agent-1")),
+    ]);
+    let reply = h.link.handle(
+        parse_message(
+            r#"{"v":1,"id":1,"method":"events.subscribe","params":{"roles":["supervisor"],"output":false}}"#,
+        )
+        .unwrap()
+        .1,
+    );
+    assert_eq!(ids(reply.result.as_ref().unwrap()), vec!["agent-1"]);
+    let Some(Install::Set(subscription)) = reply.install else {
+        panic!("subscribe installs a subscription");
+    };
+    let mut subscription = *subscription;
+    let read = |id: &str, since: u64| h.link.output_since(id, since);
+    {
+        let mut agents = h.backend.agents.lock().unwrap();
+        agents.push(agent("agent-3", AgentRole::Worker, Some("agent-1")));
+        agents.push(crate::supervisor::several::tests::agent_from(&json!({
+            "id": "agent-4", "role": "supervisor", "supervisorKey": "night-shift"
+        })));
+        // A supervisor a supervisor started is a supervisor too.
+        agents.push(agent("agent-5", AgentRole::Supervisor, Some("agent-1")));
+    }
+    let events = subscription.poll(&h.link.tree(), &[], read);
+    let added: Vec<&str> = events
+        .iter()
+        .filter(|(name, _)| *name == "agent.added")
+        .map(|(_, data)| data["agent"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(added, vec!["agent-4", "agent-5"]);
+    // A supervisor that ends is announced as removed; workers never were.
+    h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|a| a.id != "agent-4");
+    let read = |id: &str, since: u64| h.link.output_since(id, since);
+    let events = subscription.poll(&h.link.tree(), &[], read);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, "agent.removed");
+    assert_eq!(events[0].1["agentId"], "agent-4");
+}
+
+#[test]
 fn a_proposal_for_a_supervisor_names_it_and_an_unknown_key_is_refused() {
     let h = harness(Vec::new());
     let refused = ask(
