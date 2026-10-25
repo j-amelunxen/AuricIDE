@@ -55,7 +55,8 @@ export function useIDEHandlers(state: IDEState) {
     clipboard,
     treeRefresh.handleRefresh,
     handleFileSelect,
-    confirm
+    confirm,
+    editorAndScratch.autosave.flush
   );
 
   // 5. Git actions, commit, push, history, diff

@@ -1,7 +1,7 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { isRecentlyCreated, isRecentlyModified } from '@/lib/explorer/recentlyCreated';
-import { MOVE_MIME, isInvalidMove, type FileTreeNode } from './fileTreeTypes';
+import { type FileTreeNode } from './fileTreeTypes';
 import { getFileIcon, gitBadgeMap } from './fileTreeIcons';
 
 interface TreeNodeProps {
@@ -11,9 +11,12 @@ interface TreeNodeProps {
   selectedPaths: string[];
   onNodeClick: (node: FileTreeNode, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
-  onMoveNode?: (sourcePath: string, destDir: string) => void;
-  draggingPath: string | null;
-  onDragStateChange: (path: string | null) => void;
+  /** Starts a possible drag (see `useTreeDrag`); absent when moving is not wired. */
+  onRowMouseDown?: (path: string, e: React.MouseEvent) => void;
+  /** This row is part of the items being dragged. */
+  isDragged: boolean;
+  /** This folder is where the dragged items would land: true valid, false refused. */
+  dropState: 'valid' | 'invalid' | null;
   now: number;
   /** Folders holding a recently created file, computed once per tree by the explorer. */
   recentDirs: ReadonlySet<string>;
@@ -27,7 +30,8 @@ interface TreeNodeProps {
  *
  * Memoized: a watcher refresh hands back a tree in which unchanged nodes keep
  * their identity, so only the rows whose node changed re-render. Every other
- * prop is either stable or changes for all rows at once (selection, drag).
+ * prop is either stable, per row (drag and drop state) or changes for all rows
+ * at once (selection).
  */
 export const TreeNode = memo(function TreeNode({
   node,
@@ -36,28 +40,23 @@ export const TreeNode = memo(function TreeNode({
   selectedPaths,
   onNodeClick,
   onContextMenu,
-  onMoveNode,
-  draggingPath,
-  onDragStateChange,
+  onRowMouseDown,
+  isDragged,
+  dropState,
   now,
   recentDirs,
   onRowFocus,
 }: TreeNodeProps) {
   const isSelected = selectedPaths.includes(node.path);
   const isPrimary = selectedPath === node.path;
-  const isDraggingSelf = draggingPath === node.path;
   const isIgnored = node.gitStatus === 'ignored';
   const isRecentFile = !node.isDirectory && isRecentlyCreated(node.createdAt, now);
   const isRecentlyModifiedFile = !node.isDirectory && isRecentlyModified(node.modifiedAt, now);
   const containsRecent = node.isDirectory && recentDirs.has(node.path);
   const isRecent = isRecentFile || isRecentlyModifiedFile || containsRecent;
   const paddingLeft = `${12 + depth * 16}px`;
-  const [isDropTarget, setIsDropTarget] = useState(false);
-  const [isValidDropTarget, setIsValidDropTarget] = useState(true);
 
   const fileInfo = !node.isDirectory ? getFileIcon(node.name) : null;
-  const isMarkdown = !node.isDirectory && /\.(md|markdown)$/i.test(node.name);
-  const canDrop = node.isDirectory && !!onMoveNode;
 
   return (
     <button
@@ -71,49 +70,12 @@ export const TreeNode = memo(function TreeNode({
         e.stopPropagation();
         onContextMenu?.(e, node);
       }}
-      draggable
-      onDragStart={(e) => {
-        // Explorer-internal move payload (every node can be moved)…
-        e.dataTransfer.setData(MOVE_MIME, node.path);
-        if (isMarkdown) {
-          // …plus the editor-embed payload for markdown (drop into the editor).
-          e.dataTransfer.setData('text/plain', node.path);
-          e.dataTransfer.effectAllowed = 'copyMove';
-        } else {
-          e.dataTransfer.effectAllowed = 'move';
-        }
-        onDragStateChange(node.path);
-      }}
-      onDragEnd={() => onDragStateChange(null)}
-      onDragOver={
-        canDrop
-          ? (e) => {
-              // Always preventDefault so the browser permits the drop. WebKit
-              // (Tauri's macOS webview) doesn't expose custom MIME types in
-              // `types` during dragover, so gating on it would silently block
-              // the drop. The actual payload is validated on drop instead.
-              e.preventDefault();
-              e.stopPropagation(); // don't also light up the root dropzone
-              const valid = draggingPath ? !isInvalidMove(draggingPath, node.path) : true;
-              e.dataTransfer.dropEffect = valid ? 'move' : 'none';
-              setIsDropTarget(true);
-              setIsValidDropTarget(valid);
-            }
-          : undefined
-      }
-      onDragLeave={canDrop ? () => setIsDropTarget(false) : undefined}
-      onDrop={
-        canDrop
-          ? (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDropTarget(false);
-              const source = e.dataTransfer.getData(MOVE_MIME);
-              if (isInvalidMove(source, node.path)) return;
-              onMoveNode!(source, node.path);
-            }
-          : undefined
-      }
+      onMouseDown={onRowMouseDown ? (e) => onRowMouseDown(node.path, e) : undefined}
+      // Read by the drop hit-test (`dropTargetAt`).
+      data-tree-path={node.path}
+      data-tree-dir={node.isDirectory ? 'true' : undefined}
+      data-drop-target={dropState ?? undefined}
+      data-selected={isSelected ? 'true' : undefined}
       data-recently-created={isRecentFile ? 'true' : undefined}
       data-recently-modified={isRecentlyModifiedFile ? 'true' : undefined}
       data-contains-recent={containsRecent ? 'true' : undefined}
@@ -126,12 +88,12 @@ export const TreeNode = memo(function TreeNode({
               ? 'Contains a file created in the last 5 minutes'
               : undefined
       }
-      className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-[background-color,box-shadow,opacity,color] duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
-        isDropTarget
-          ? isValidDropTarget
+      className={`flex w-full select-none items-center gap-1 py-0.5 text-left text-xs transition-[background-color,box-shadow,opacity,color] duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
+        dropState
+          ? dropState === 'valid'
             ? 'bg-primary/20 ring-2 ring-inset ring-primary/60 text-foreground'
             : 'bg-red-500/10 ring-2 ring-inset ring-red-500/50 text-foreground cursor-not-allowed'
-          : isDraggingSelf
+          : isDragged
             ? 'opacity-40'
             : isSelected
               ? `bg-primary/10 text-foreground ${isPrimary ? 'border-l-2 border-primary' : ''}`

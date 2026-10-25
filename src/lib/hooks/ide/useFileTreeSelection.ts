@@ -7,6 +7,8 @@ import { type FileNode } from '@/lib/store/fileTreeSlice';
 import { readDirectory } from '@/lib/tauri/fs';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
 import { statusesByRepo } from './useTreeRefresh';
+import { toggleSelection } from '@/lib/explorer/treeSelection';
+import { findNode } from '@/app/components/explorer/fileTreeTypes';
 import type { IDEState } from './liveIDEState';
 
 export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Promise<boolean>) {
@@ -35,16 +37,10 @@ export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Prom
 
   const handleToggleSelect = useCallback(
     (path: string) => {
-      const current =
-        state.selectedPaths.length > 0
-          ? state.selectedPaths
-          : state.selectedPath
-            ? [state.selectedPath]
-            : [];
-      const next = current.includes(path) ? current.filter((p) => p !== path) : [...current, path];
-      state.setSelectedPaths(next);
-      state.selectFile(path);
-      state.setSelectionAnchor(path);
+      const next = toggleSelection(state.selectedPaths, state.selectedPath, path);
+      state.setSelectedPaths(next.paths);
+      if (next.primary !== null) state.selectFile(next.primary);
+      state.setSelectionAnchor(next.anchor);
     },
     [state]
   );
@@ -61,11 +57,9 @@ export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Prom
     state.setSelectedPaths(state.selectedPath ? [state.selectedPath] : []);
   }, [state]);
 
-  const handleToggleDir = useCallback(
+  /** Loads a folder's children and flips it open or closed; the selection is the caller's. */
+  const toggleDirOpen = useCallback(
     async (path: string) => {
-      state.selectFile(path);
-      state.setSelectedPaths([path]);
-      state.setSelectionAnchor(path);
       state.toggleExpand(path);
       const entries = await readDirectory(path);
       const { repos, repoStates } = useStore.getState();
@@ -86,6 +80,26 @@ export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Prom
     [state]
   );
 
+  const handleToggleDir = useCallback(
+    async (path: string) => {
+      state.selectFile(path);
+      state.setSelectedPaths([path]);
+      state.setSelectionAnchor(path);
+      await toggleDirOpen(path);
+    },
+    [state, toggleDirOpen]
+  );
+
+  /** Hovering a collapsed folder mid-drag opens it; the dragged selection stays as it is. */
+  const handleExpandDir = useCallback(
+    async (path: string) => {
+      const node = findNode(useStore.getState().fileTree ?? [], path);
+      if (!node?.isDirectory || node.expanded) return;
+      await toggleDirOpen(path);
+    },
+    [toggleDirOpen]
+  );
+
   return {
     handleFileSelect,
     handleFocusNode,
@@ -93,5 +107,6 @@ export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Prom
     handleRangeSelect,
     handleClearSelection,
     handleToggleDir,
+    handleExpandDir,
   };
 }
