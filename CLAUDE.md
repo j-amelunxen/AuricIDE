@@ -1265,6 +1265,30 @@ the way that surfaces is a `ModuleNotFoundError`.
 real probes against the real machine — the only place the probe logic is checked
 where it actually acts.
 
+## Moving, selecting and comparing in the explorer
+
+- **Row drags are mouse events, not HTML5 drag-and-drop.** Tauri's native drop
+  handler (`dragDropEnabled`, default on, needed for Finder drops into
+  terminals, video import and the canvas) takes every drag session over the
+  webview on macOS: wry answers it itself and never hands it to WKWebView, so
+  `dragover`/`drop` never fire in the page. `useTreeDrag.ts` therefore tracks
+  the press on window listeners and hit-tests with `elementFromPoint`
+  (`dropTarget.ts`: folder row = that folder, file row = its folder, empty
+  pane = project root). Finder drops arrive as `onDragDropEvent` with absolute
+  paths in physical pixels (`useExternalTreeDrop.ts`) and are **copied**.
+- **One plan, one clash rule.** `src/lib/explorer/transferPlan.ts` decides what
+  a drop does (never into itself, nothing for an item already in that folder,
+  a folder once with its selected children); `useFileMutations.transferInto`
+  asks Replace / Keep Both / Cancel per clash. Replace deletes first, so it is
+  refused when the destination holds any item of the drop, compared without
+  case (APFS is case-insensitive by default).
+- **Selection** is `src/lib/explorer/treeSelection.ts` (Cmd toggles, Shift
+  ranges from the anchor, Cmd+Shift adds a range; the order is kept, so
+  "Compare Selected" reads the first two as left and right). Compare opens the
+  normal `DiffViewer` on a `DiffSource` of kind `files` (Rust `diff_files`,
+  read-only: no repo, no hunk actions). Real-app check:
+  `pnpm test:e2e:tauri:file-tree`.
+
 ## Dating folders without walking them
 
 The explorer marks a file created in the last five minutes, and marks any folder
