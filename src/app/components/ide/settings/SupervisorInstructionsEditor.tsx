@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import {
+  SETTINGS_HINT_CLASS,
+  SETTINGS_LABEL_CLASS,
+} from '@/app/components/ui/settings/SettingsGroup';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
 export interface SupervisorInstructionsEditorProps {
@@ -26,14 +30,11 @@ export function SupervisorInstructionsEditor({
   return (
     <SettingsSection title="Instructions" icon="edit_note">
       <div className="space-y-3">
-        <label
-          htmlFor={`supervisor-instructions-${activeTab}`}
-          className="block text-xs text-foreground-muted"
-        >
+        <p id="supervisor-instructions-hint" className={SETTINGS_HINT_CLASS}>
           Added to the supervisor&apos;s start prompt, after its built-in rules. Where they differ,
-          yours win; they cannot widen what the limits on this page allow. Configure instructions
-          per provider.
-        </label>
+          yours win; they cannot widen what the limits on these pages allow. Each provider has its
+          own.
+        </p>
 
         {activeCandidates.length > 1 && (
           <div className="flex items-center gap-1 border-b border-white/10 pb-2">
@@ -68,12 +69,14 @@ export function SupervisorInstructionsEditor({
         )}
 
         <div>
-          {activeCandidates.length > 1 && (
-            <span className="block text-[11px] font-medium text-foreground-muted mb-1">
-              Instructions for {activeName}
-            </span>
-          )}
+          <label
+            htmlFor={`supervisor-instructions-${activeTab}`}
+            className={`mb-1 block ${SETTINGS_LABEL_CLASS}`}
+          >
+            Instructions for {activeName}
+          </label>
           <textarea
+            aria-describedby="supervisor-instructions-hint"
             id={`supervisor-instructions-${activeTab}`}
             data-testid="supervisor-instructions"
             value={instructions[activeTab] ?? ''}

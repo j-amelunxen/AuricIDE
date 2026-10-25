@@ -18,15 +18,10 @@ import {
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   SUPERVISOR_PARSE_REASONS,
-  normalizeProjectPath,
   type SupervisorPolicy,
   type SupervisorPolicyRejection,
 } from '@/lib/config/supervisorPolicy';
-import {
-  setProjectAllowed,
-  unattendedBlockers,
-  updateSupervisorProject,
-} from '@/lib/config/supervisorPolicyEdit';
+import { unattendedBlockers } from '@/lib/config/supervisorPolicyEdit';
 import { listProviders, type ProviderInfo } from '@/lib/tauri/providers';
 import { supervisorPolicyGet, supervisorPolicySet } from '@/lib/tauri/supervisorPolicy';
 import { listProjectSkills } from '@/lib/tauri/projectSkills';
@@ -39,7 +34,8 @@ import {
 } from './SupervisorSkills';
 import { SupervisorTools, invalidToolEntries } from './SupervisorTools';
 import { SupervisorConnectors } from './SupervisorConnectors';
-import { SupervisorProjectRow } from './SupervisorProjectRow';
+import { SupervisorProjectsPage } from './SupervisorProjectsPage';
+import { SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 
 interface Loaded {
   saved: SupervisorPolicy;
@@ -207,7 +203,7 @@ export function SupervisorContent({ section }: { section: SupervisorSection }) {
       {page(
         'general',
         <>
-          <p className="text-xs leading-relaxed text-foreground-muted">
+          <p className={SETTINGS_HINT_CLASS}>
             The Supervisor tile in Quick Access starts an agent that hands work to other agents in
             the projects you allow here. It never types into them and cannot go past these limits.
           </p>
@@ -220,31 +216,20 @@ export function SupervisorContent({ section }: { section: SupervisorSection }) {
         'projects',
         <>
           <SettingsSection title="Projects" icon="star">
-            {starredProjects.length === 0 ? (
-              <p className="text-xs text-foreground-muted">
-                Star a project in Quick Access to offer it to the supervisor.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {starredProjects.map((project) => (
-                  <SupervisorProjectRow
-                    key={project.path}
-                    project={project}
-                    entry={draft.projects[normalizeProjectPath(project.path)]}
-                    providers={loaded.providers}
-                    projectPolicy={loaded.projectPolicies[project.path]}
-                    description={descriptions.value(project.path)}
-                    onDescriptionChange={(text) => descriptions.edit(project.path, text)}
-                    onAllowedChange={(allowed) =>
-                      setDraft(setProjectAllowed(draft, project.path, allowed))
-                    }
-                    onChange={(entry) =>
-                      setDraft(updateSupervisorProject(draft, project.path, () => entry))
-                    }
-                  />
-                ))}
-              </div>
-            )}
+            <p className={SETTINGS_HINT_CLASS}>
+              The starred projects the supervisor may start agents in, and with what. Open a project
+              to choose its providers, models and limits.
+            </p>
+            <SupervisorProjectsPage
+              projects={starredProjects}
+              draft={draft}
+              saved={loaded.saved}
+              providers={loaded.providers}
+              projectPolicies={loaded.projectPolicies}
+              blockers={blockers}
+              descriptions={descriptions}
+              onChange={setDraft}
+            />
           </SettingsSection>
           <SupervisorConnectors policy={draft} onChange={setDraft} />
         </>
@@ -315,6 +300,7 @@ function useDescriptionDrafts() {
   );
   return {
     dirty: changed.length > 0,
+    isDirty: (path: string) => changed.some((p) => p.path === path),
     value: (path: string) =>
       drafts[path] ?? starredProjects.find((p) => p.path === path)?.description ?? '',
     edit: (path: string, text: string) => setDrafts({ ...drafts, [path]: text }),

@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { InfoTooltip } from '../InfoTooltip';
+import { SettingsSwitch } from './SettingsSwitch';
 
 interface SettingsToggleProps {
   label: string;
@@ -37,30 +38,14 @@ export function SettingsToggle({
           <span className="text-[9px] text-foreground-muted opacity-60">{description}</span>
         )}
       </div>
-      <span className="relative inline-flex h-4 w-7 flex-shrink-0 items-center">
-        <input
-          id={id}
-          type="checkbox"
-          data-testid={testId}
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="peer sr-only"
-        />
-        {/* Custom switch track — native checkbox styling ignores theme tokens,
-            so we render an on-brand track/thumb driven by the checked prop. */}
-        <span
-          aria-hidden="true"
-          className={`h-4 w-7 rounded-full transition-colors duration-150 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[rgba(var(--primary-light-rgb),0.7)] ${
-            checked ? (danger ? 'bg-red-500' : 'bg-primary') : 'bg-white/15'
-          }`}
-        />
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
-            checked ? 'translate-x-3' : 'translate-x-0'
-          }`}
-        />
-      </span>
+      <SettingsSwitch
+        id={id}
+        checked={checked}
+        onChange={onChange}
+        danger={danger}
+        testId={testId}
+        switchRole={false}
+      />
     </label>
   );
 }

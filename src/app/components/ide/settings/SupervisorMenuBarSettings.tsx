@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
 import {
   readMenuBarPrefs,
@@ -25,6 +26,9 @@ export function SupervisorMenuBarSettings() {
 
   return (
     <SettingsSection title="Menu bar" icon="keyboard_command_key">
+      <p className={SETTINGS_HINT_CLASS}>
+        The supervisor outside this window. Both switches apply at once, on this Mac.
+      </p>
       <SettingsToggle
         label="Show the supervisor in the menu bar"
         description="An icon at the top of the screen lists the supervisor's Quick Access skills and your Project Managers. A skill starts a new supervisor with that skill as its first task; a Project Manager opens."
@@ -34,7 +38,7 @@ export function SupervisorMenuBarSettings() {
       />
       <SettingsToggle
         label="Global shortcuts for supervisor skills"
-        description="The shortcuts set on the supervisor tile's skills (Quick Access Settings → Launch options) and on Project Managers work while another app is in front. Applies immediately."
+        description="The shortcuts set on the supervisor tile's skills (Quick Access Settings → Launch options) and on Project Managers work while another app is in front."
         checked={prefs.shortcuts}
         onChange={(shortcuts) => change({ shortcuts })}
         testId="supervisor-global-shortcuts-toggle"

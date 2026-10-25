@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { SETTINGS_LABEL_CLASS, SettingsGroup } from '@/app/components/ui/settings/SettingsGroup';
 import { useNowWhen } from '@/lib/hooks/useNow';
 import type {
   PolicyProposal,
@@ -105,11 +106,10 @@ export function ProposalsBlock({
   const recent = [...(proposals?.recent ?? [])].sort((a, b) => b.at - a.at).slice(0, RECENT_SHOWN);
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-white/10 p-3">
-      <p className="text-xs font-semibold text-foreground">Proposals</p>
-      <p className="text-[10px] text-foreground-muted">
-        A supervisor may propose a change to these settings. It takes effect only once you apply it.
-      </p>
+    <SettingsGroup
+      title="Proposals"
+      description="A supervisor may propose a change to these settings. It takes effect only once you apply it."
+    >
       {error && (
         <p role="alert" className="text-[11px] text-red-400">
           {error}
@@ -133,9 +133,7 @@ export function ProposalsBlock({
       )}
       {recent.length > 0 && (
         <div data-testid="supervisor-link-recent" className="space-y-0.5 pt-1">
-          <p className="text-[10px] font-semibold tracking-wide text-foreground-muted">
-            Last decisions
-          </p>
+          <p className={SETTINGS_LABEL_CLASS}>Last decisions</p>
           <ul className="space-y-0.5">
             {recent.map((entry) => (
               <li
@@ -154,6 +152,6 @@ export function ProposalsBlock({
           </ul>
         </div>
       )}
-    </div>
+    </SettingsGroup>
   );
 }

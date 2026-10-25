@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import {
+  LearnMore,
+  SETTINGS_HINT_CLASS,
+  SettingsGroup,
+} from '@/app/components/ui/settings/SettingsGroup';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
 import { useStore } from '@/lib/store';
 import { normalizeProjectPath } from '@/lib/config/supervisorPolicy';
@@ -113,7 +118,9 @@ interface JsonEditorProps<T extends { documentTypes: unknown[]; jobKinds: unknow
   example: string;
   testId: string;
   saveTestId: string;
+  /** One short line under the field; the rest goes in `details`, behind "Learn more". */
   hint: React.ReactNode;
+  details?: React.ReactNode;
   onSave: (value: T) => Promise<string | null>;
 }
 
@@ -129,6 +136,7 @@ function JsonEditor<T extends { documentTypes: unknown[]; jobKinds: unknown[] }>
   testId,
   saveTestId,
   hint,
+  details,
   onSave,
 }: JsonEditorProps<T>) {
   const id = useId();
@@ -147,10 +155,7 @@ function JsonEditor<T extends { documentTypes: unknown[]; jobKinds: unknown[] }>
 
   return (
     <div className="space-y-1">
-      <label
-        htmlFor={id}
-        className="block text-[10px] font-semibold tracking-wide text-foreground-muted"
-      >
+      <label htmlFor={id} className="block text-[11px] font-semibold text-foreground">
         {label}
       </label>
       <textarea
@@ -165,9 +170,10 @@ function JsonEditor<T extends { documentTypes: unknown[]; jobKinds: unknown[] }>
         placeholder={example}
         className={TEXTAREA_CLASS}
       />
-      <p id={`${id}-hint`} className="text-[10px] text-foreground-muted">
+      <p id={`${id}-hint`} className={SETTINGS_HINT_CLASS}>
         {hint}
       </p>
+      {details && <LearnMore>{details}</LearnMore>}
       {error && (
         <p role="alert" className="text-[11px] text-red-400">
           {error}
@@ -196,8 +202,7 @@ function GlobalDefaults({
   onSave: (defaults: LinkDefaults) => Promise<string | null>;
 }) {
   return (
-    <div className="space-y-1.5 rounded-lg border border-white/10 p-3">
-      <p className="text-xs font-semibold text-foreground">Global defaults</p>
+    <SettingsGroup>
       <JsonEditor
         key={JSON.stringify(defaults)}
         label="Global defaults: document types and job kinds (JSON)"
@@ -207,16 +212,17 @@ function GlobalDefaults({
         testId="supervisor-link-defaults"
         saveTestId="supervisor-link-defaults-save"
         onSave={onSave}
-        hint={
-          <>
-            Every shared project inherits these. Globs and <code>instructions</code> are relative to
-            each project; <code>globalInstructions</code> is an absolute path or a file name in the
-            app data folder&apos;s <code>job-kinds/</code>. The IDE reads that file itself and puts
-            it into the job prompt; it is never served to clients.
-          </>
+        hint="Every shared project inherits these."
+        details={
+          <p>
+            Globs and <code>instructions</code> are relative to each project;{' '}
+            <code>globalInstructions</code> is an absolute path or a file name in the app data
+            folder&apos;s <code>job-kinds/</code>. The IDE reads that file itself and puts it into
+            the job prompt; it is never served to clients.
+          </p>
         }
       />
-    </div>
+    </SettingsGroup>
   );
 }
 
@@ -271,15 +277,19 @@ function ProjectRow({
             onSave={onSave}
             hint={
               <>
-                Empty: every global default, nothing else. A document type or job kind with a
-                default&apos;s name overrides it, a new name adds one. <code>inherit: false</code>{' '}
-                drops all defaults, <code>disabledDocumentTypes</code> and{' '}
-                <code>disabledJobKinds</code> drop single ones, <code>dailyLimit</code> sets this
-                project&apos;s jobs per 24 h. The agent may only write a kind&apos;s{' '}
-                <code>writes</code> (default: the document globs); <code>assets</code> globs are
-                read-only. Jobs here in the last 24 hours:{' '}
+                Empty: every global default, nothing else. Jobs here in the last 24 hours:{' '}
                 <span className="tabular-nums">{usedToday}</span>.
               </>
+            }
+            details={
+              <p>
+                A document type or job kind with a default&apos;s name overrides it, a new name adds
+                one. <code>inherit: false</code> drops all defaults,{' '}
+                <code>disabledDocumentTypes</code> and <code>disabledJobKinds</code> drop single
+                ones, <code>dailyLimit</code> sets this project&apos;s jobs per 24 h. The agent may
+                only write a kind&apos;s <code>writes</code> (default: the document globs);{' '}
+                <code>assets</code> globs are read-only.
+              </p>
             }
           />
           <EffectiveProject
@@ -341,12 +351,10 @@ function JobCounter({
   onSave: (limits: JobLimits) => void;
 }) {
   return (
-    <div className="space-y-1.5 rounded-lg border border-white/10 p-3">
-      <p className="text-xs font-semibold text-foreground">Job counter</p>
-      <p className="text-[10px] text-foreground-muted">
-        A guard against a client starting jobs in a loop, not a budget: jobs started in any 24
-        hours. 0 switches jobs off. Empty per-project limit: none.
-      </p>
+    <SettingsGroup
+      title="Job counter"
+      description="A guard against a client starting jobs in a loop, not a budget: jobs started in any 24 hours. 0 switches jobs off. Empty per-project limit: none."
+    >
       <div className="flex flex-wrap gap-4">
         <LimitInput
           key={`daily-${limits.dailyLimit}`}
@@ -372,7 +380,7 @@ function JobCounter({
           {usage.running > 0 && <span className="tabular-nums">, {usage.running} running</span>}.
         </p>
       )}
-    </div>
+    </SettingsGroup>
   );
 }
 
@@ -490,12 +498,21 @@ export function SupervisorLinkSettings() {
 
   return (
     <SettingsSection title="Supervisor link" icon="hub">
-      <p className="text-xs leading-relaxed text-foreground-muted">
-        A client of the Supervisor Control API can start and talk to supervisors and their agents
-        over a local socket. It sees nothing you started in the IDE. In the projects you share below
-        it may read the JSON documents described for them and start the job kinds they offer. Every
-        change it proposes and every job result arrives as a branch you merge or delete.
-      </p>
+      <div className="space-y-1">
+        <p className={SETTINGS_HINT_CLASS}>
+          Lets a local app talk to supervisors over a socket and work in the projects you share
+          below. Every change it makes arrives as a branch you merge or delete.
+        </p>
+        <LearnMore>
+          <p>
+            A client of the Supervisor Control API can start and talk to supervisors and their
+            agents over a local socket. It sees nothing you started in the IDE. In the projects you
+            share below it may read the JSON documents described for them and start the job kinds
+            they offer. Every change it proposes and every job result arrives as a branch you merge
+            or delete.
+          </p>
+        </LearnMore>
+      </div>
       {error ? (
         <p role="alert" className="text-xs text-red-400">
           Could not read the supervisor link settings: {error}
@@ -507,11 +524,14 @@ export function SupervisorLinkSettings() {
           <JobCounter limits={policy.jobs} usage={usage} onSave={saveLimits} />
           <GlobalDefaults defaults={policy.defaults} onSave={saveDefaults} />
           {starredProjects.length === 0 ? (
-            <p className="text-xs text-foreground-muted">
+            <p className={SETTINGS_HINT_CLASS}>
               Star a project in Quick Access to share it with the link.
             </p>
           ) : (
-            <div className="space-y-3">
+            <SettingsGroup
+              title="Shared projects"
+              description="Switch a project on to let the link read its documents and run its jobs."
+            >
               {starredProjects.map((project) => (
                 <ProjectRow
                   key={project.path}
@@ -524,7 +544,7 @@ export function SupervisorLinkSettings() {
                   onSave={saveProject(project.path)}
                 />
               ))}
-            </div>
+            </SettingsGroup>
           )}
           <ProposalsBlock proposals={proposals} onDecide={decide} />
         </>

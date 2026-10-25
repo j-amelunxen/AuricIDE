@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { LearnMore, SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
 import {
   isUnrestrictedTool,
   normalizeProjectPath,
@@ -60,15 +61,23 @@ export function SupervisorTools({ tools, onChange }: SupervisorToolsProps) {
 
   return (
     <SettingsSection title="Tools" icon="terminal">
-      <p className="mb-3 text-xs leading-relaxed text-foreground-muted">
-        A command-line tool listed here may be run by the supervisor, with any arguments, without
-        asking. Name it as the shell does (<code>umi</code>) or give the path to the binary. Every
-        other command is refused. Allow only tools that are safe to run unattended.
-      </p>
+      <div className="space-y-1">
+        <p className={SETTINGS_HINT_CLASS}>
+          Command-line tools the supervisor may run with any arguments, without asking. Allow only
+          tools that are safe to run unattended.
+        </p>
+        <LearnMore>
+          <p>
+            Name a tool as the shell does (<code>umi</code>) or give the path to the binary. Each is
+            allowed as itself and with arguments; a chained command needs every part allowed. Every
+            other command is refused.
+          </p>
+        </LearnMore>
+      </div>
       {allowed.length === 0 ? (
-        <p className="mb-3 text-xs text-foreground-muted">No tool is allowed.</p>
+        <p className={SETTINGS_HINT_CLASS}>No tool is allowed.</p>
       ) : (
-        <ul className="mb-3 space-y-2">
+        <ul className="space-y-2">
           {allowed.map((tool) => (
             <ToolRow
               key={tool}
