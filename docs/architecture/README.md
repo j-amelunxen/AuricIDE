@@ -91,7 +91,7 @@ Uses: IPC, store. Contract fixtures live next to it (`*.fixtures.json`).
 
 ### 2.2 Rust backend
 
-**Command layer** — `lib.rs` (registers about 220 `#[tauri::command]` handlers in one
+**Command layer** — `lib.rs` (registers 226 `#[tauri::command]` handlers in one
 `generate_handler!`), `commands/` (fs, db, app, agent, inbox, terminal, watcher),
 `database/` (SQLite schema, migrations, CRUD for epics, tickets, goals, requirements,
 reviews, goal dependencies). Purpose: IPC dispatch and persistence of the work model.
@@ -132,9 +132,9 @@ not in git; `manifest.json` records `nodeModuleVersion`). Purpose: three server
 modes, see `interfaces.md` section 2.
 Depends on: project DB (`better-sqlite3`), notifications DB, control socket client.
 
-**Git** — `git/` (28 files, git2-rs: status, diff, stage, commit, push, blame, branches,
-graph, merge, worktrees), `ignored_repos.rs`, `src/lib/git`. All git behaviour is in
-Rust; `lib.rs` only registers it. Depends on: ignored_repos, video_import (2), agents (1).
+**Git** — `git/` (30 files, git2-rs: status, diff, two-file compare (`diff_files`), stage,
+commit, push, blame, branches, graph, merge, worktrees), `ignored_repos.rs`, `src/lib/git`.
+All git behaviour is in Rust; `lib.rs` only registers it. Depends on: ignored_repos, video_import (2), agents (1).
 
 **Notifications, schedules, inbox, missions** — `notifications/`, `schedules/`,
 `inbox/`, `missions/`, `delivery/` (outbound push), `notifications.db`, `inbox.db`.

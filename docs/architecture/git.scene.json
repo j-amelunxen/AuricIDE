@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.git",
   "title": "Git (git2)",
-  "description": "All git behaviour of the backend, built on git2-rs: commands.rs exposes the IPC commands and dispatches to status, diff, staging, merge, worktree, log and blame modules. Agents and the control socket call the worktree functions directly.",
+  "description": "All git behaviour of the backend, built on git2-rs: commands.rs exposes the IPC commands and dispatches to status, diff, file compare, staging, merge, worktree, log and blame modules. Agents and the control socket call the worktree functions directly.",
   "nodes": [
     {
       "id": "commands",
@@ -15,7 +15,7 @@
       "metrics": [
         {
           "label": "commands",
-          "value": "33"
+          "value": "45"
         }
       ],
       "position": [7.25, 0, 0]
@@ -27,7 +27,7 @@
       "group": "read",
       "level": 1,
       "weight": 0.6,
-      "position": [-4.1, -5.8, 0]
+      "position": [-7.9, -5.8, 0]
     },
     {
       "id": "discovery",
@@ -36,7 +36,7 @@
       "group": "read",
       "level": 2,
       "weight": 0.6,
-      "position": [-2.15, -11.2, 0]
+      "position": [-4.05, -11.2, 0]
     },
     {
       "id": "diff",
@@ -45,7 +45,16 @@
       "group": "read",
       "level": 2,
       "weight": 0.6,
-      "position": [2.05, -11.2, 0]
+      "position": [3.95, -11.2, 0]
+    },
+    {
+      "id": "fileCompare",
+      "label": "file_compare.rs",
+      "preset": "box",
+      "group": "read",
+      "level": 2,
+      "weight": 0.4,
+      "position": [-0.05, -11.2, 0]
     },
     {
       "id": "log",
@@ -54,7 +63,7 @@
       "group": "read",
       "level": 1,
       "weight": 0.4,
-      "position": [-8.1, -5.8, 0]
+      "position": [-3.9, -5.8, 0]
     },
     {
       "id": "blame",
@@ -106,7 +115,7 @@
       "group": "write",
       "level": 2,
       "weight": 0.5,
-      "position": [9.15, -11.2, 0]
+      "position": [11.05, -11.2, 0]
     },
     {
       "id": "worktrees",
@@ -130,7 +139,7 @@
       "group": "worktrees",
       "level": 2,
       "weight": 0.4,
-      "position": [-9.15, -11.2, 0]
+      "position": [-11.05, -11.2, 0]
     },
     {
       "id": "backend",
@@ -181,6 +190,12 @@
       "from": "commands",
       "to": "diff",
       "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "fileCompare",
+      "kind": "calls",
+      "label": "diff_files"
     },
     {
       "from": "commands",
@@ -294,7 +309,7 @@
         },
         {
           "label": "IPC commands",
-          "value": "33"
+          "value": "45"
         },
         {
           "label": "unit tests",

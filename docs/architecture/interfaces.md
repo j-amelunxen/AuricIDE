@@ -33,10 +33,11 @@ The last section compares link and MCP.
 ## 1. Tauri IPC (frontend ↔ Rust)
 
 - **Direction:** webview calls Rust with `invoke(cmd, args)`; Rust pushes events.
-- **Defined in:** `src-tauri/src/lib.rs:318` (one `generate_handler![…]`, about 220
-  commands; 226 `#[tauri::command]` attributes exist in the tree, a few are helpers or
+- **Defined in:** `src-tauri/src/lib.rs:322` (one `generate_handler![…]` with 226
+  commands, one per `#[tauri::command]` attribute in the tree; none is a helper or
   test-only). Implementations: `commands/` (fs 17, db 26, app 42, agent 13, inbox 11,
-  terminal 3, watcher 2), `git/commands.rs` (44), `recent_projects/commands.rs` (9),
+  terminal 3, watcher 2), `git/commands.rs` (45; `diff_files` compares two files
+  read-only, outside any repo, in `git/file_compare.rs`), `recent_projects/commands.rs` (9),
   `supervisor/` (15 incl. managers), `supervisor_link/` (6), `video_import/` (5),
   `webview_prefs.rs`, `app_config.rs`, `agent_window.rs`, `usage_limits/`, `cc_usage/`,
   `agent_usage/`, `ui_watchdog.rs`, `clipboard.rs`, `machine/`, `formatter/`, `menu_bar.rs`.
