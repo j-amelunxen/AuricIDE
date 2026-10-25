@@ -1067,6 +1067,37 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => mockData) }))
 
 Dynamic reconfigurations use CodeMirror `Compartment`s so the editor doesn't need to be recreated.
 
+### Format on save
+
+⌘S in the editor (and, if switched on, focus leaving it) formats the file with
+the project's own tool. Settings → Editor → Formatting holds the two triggers
+and one switch per language (`auric.editor.format-*`). Rules worth keeping:
+
+- **The formatter never decides whether the save happens.** `handleSave` writes
+  the text as typed first, then asks `format_document` (`src-tauri/src/formatter/`).
+  A missing tool, a syntax error or the 10 s timeout cost the formatting and one
+  short toast (`formatOnSave.ts` says a missing tool once per language per
+  session), never the save. The Rust command answers an outcome and never writes.
+- **Installed tools, nothing bundled.** Project `node_modules/.bin/biome` (with a
+  biome config) or `prettier` first, then the login shell's `prettier` (only where
+  the project has a prettier config, or its defaults would rewrite a repository
+  that never used it), `ruff` / `black`, `gofmt`, `rustfmt`, `shfmt`. JSON has a
+  built-in re-indenter that copies every token verbatim. TS owns extension →
+  language (`formatLanguages.ts`), Rust owns language → formatter.
+- **Autosave never formats.** It fires 400 ms after typing; rewriting the line
+  under the cursor is not a save.
+- **Leaving the editor touches only files typed into since their last format.**
+  The editor does not reload on outside changes, so writing an untouched buffer
+  on blur would put stale text over an agent's edit.
+- **A late result is dropped, never written.** If the tab was left or the buffer
+  changed while the formatter ran, the formatting is lost and the text as typed
+  stays saved.
+- **Formatted text enters as an edit, not as a `content` prop.** A prop change is
+  the whole-buffer swap for tab switches (undo reset, cursor at the top).
+  `applyFormattedText` (`activeEditor.ts`) dispatches one undoable change, maps
+  the cursor through it, and refuses when the buffer moved on while the
+  formatter ran.
+
 ## MCP Server
 
 `src/mcp/server.ts` (`src/mcp/cli.ts` mode switch) is a FastMCP server that runs in three modes across 25 tool files (~90 tool registrations):

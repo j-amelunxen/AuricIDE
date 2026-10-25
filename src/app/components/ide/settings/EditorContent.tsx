@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { GUIDANCE } from '@/lib/ui/descriptions';
+import { FormattingSettings } from './FormattingSettings';
 
 export function EditorContent() {
   const enableDeepNlp = useStore((s) => s.enableDeepNlp);
@@ -37,6 +38,8 @@ export function EditorContent() {
           testId="lint-toggle"
         />
       </SettingsSection>
+
+      <FormattingSettings />
     </div>
   );
 }

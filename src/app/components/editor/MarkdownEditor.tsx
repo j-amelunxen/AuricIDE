@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { EditorView } from '@codemirror/view';
-import { Compartment } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import { Compartment, Prec, StateEffect } from '@codemirror/state';
+import { registerActiveEditor } from '@/lib/editor/format/activeEditor';
 import { detachString } from '@/lib/detachString';
 import {
   externalContentReplacement,
@@ -47,6 +48,10 @@ interface UniversalEditorProps {
   projectFiles?: string[];
   scrollToLine?: number;
   onChange?: (content: string) => void;
+  /** ⌘S while the editor has focus. */
+  onSave?: () => void;
+  /** Focus left the editor for something outside it (not its own panels). */
+  onBlur?: () => void;
   onCursorChange?: (line: number, col: number) => void;
   onSelectionSpawn?: (selection: string) => void;
   onWikiLinkNavigate?: (targetPath: string) => void;
@@ -59,6 +64,8 @@ export function MarkdownEditor({
   projectFiles = [],
   scrollToLine,
   onChange,
+  onSave,
+  onBlur,
   onCursorChange,
   onSelectionSpawn,
   onWikiLinkNavigate,
@@ -88,9 +95,17 @@ export function MarkdownEditor({
   // closure (captured once at mount) always calls the latest handler.
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
+  const onSaveRef = useRef(onSave);
+  const onBlurRef = useRef(onBlur);
+  const filePathRef = useRef(filePath);
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+    onBlurRef.current = onBlur;
+    filePathRef.current = filePath;
+  }, [onSave, onBlur, filePath]);
   useEffect(() => {
     onCursorChangeRef.current = onCursorChange;
   }, [onCursorChange]);
@@ -158,8 +173,41 @@ export function MarkdownEditor({
       parent: containerRef.current,
     });
 
+    view.dispatch({
+      effects: StateEffect.appendConfig.of([
+        Prec.high(
+          keymap.of([
+            {
+              key: 'Mod-s',
+              run: () => {
+                onSaveRef.current?.();
+                return true;
+              },
+            },
+          ])
+        ),
+        EditorView.domEventHandlers({
+          blur: (event) => {
+            // An editor being torn down (the tab became an image) is not
+            // the person leaving the file.
+            if (!view.dom.isConnected) return false;
+            // The search panel and other editor panels live inside view.dom;
+            // moving focus there is still editing this file.
+            const next = event.relatedTarget;
+            if (next instanceof Node && view.dom.contains(next)) return false;
+            onBlurRef.current?.();
+            return false;
+          },
+        }),
+      ]),
+    });
+
     viewRef.current = view;
-    return () => view.destroy();
+    registerActiveEditor(view, () => filePathRef.current);
+    return () => {
+      registerActiveEditor(null);
+      view.destroy();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

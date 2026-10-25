@@ -16,7 +16,7 @@ mod version;
 pub use cache::VersionProbe;
 pub use check::Check;
 pub use probe::{run_probe, DEFAULT_PROBE_TIMEOUT};
-pub use resolve::resolve_executable;
+pub use resolve::{expand_home, on_disk, resolve_executable, resolve_with_extra_dirs, shell_path};
 pub use table::{dependency, DependencyReport};
 pub use version::{format_version, meets_minimum, parse_version};
 

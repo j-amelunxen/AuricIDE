@@ -324,7 +324,7 @@ export function useAgentAndCommandHandlers({
       'file.find-in-files': () => {
         if (state.rootPath) state.setFindInFilesOpen(true);
       },
-      'file.save': handleSave,
+      'file.save': () => void handleSave(),
       'file.new-scratch': () => void handleNewScratch(),
       'file.import-spec': () => state.setImportSpecDialogOpen(true),
       'file.import-video': () => state.setVideoImportDialogOpen(true),

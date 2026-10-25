@@ -3,6 +3,12 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { createAutosave } from '@/lib/editor/autosave';
+import {
+  formatForSave,
+  formatLanguageForTrigger,
+  type FormatTrigger,
+} from '@/lib/editor/format/formatOnSave';
+import { applyFormattedText } from '@/lib/editor/format/activeEditor';
 import { readFile, readFileBase64, writeFile, deleteFile, movePath } from '@/lib/tauri/fs';
 import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
@@ -104,13 +110,43 @@ export function useEditorAndScratchHandlers(
     [state.rootPath]
   );
 
-  const handleSave = useCallback(async () => {
-    // Diff, merge and review tabs are not files: ⌘S there must not write the
-    // last editor content to a path named after the tab id.
-    if (!state.activeTabId || isVirtualTabId(state.activeTabId)) return;
-    autosave.schedule(state.activeTabId, state.editorContent);
-    await autosave.flush();
-  }, [state, autosave]);
+  // Files typed into since their last format. Leaving the editor formats only
+  // these: a blur on an untouched buffer must not write it back, because the
+  // editor does not reload on outside changes and its text may be stale — an
+  // agent's edit would be overwritten by the old text.
+  const [editedSinceFormat] = useState(() => new Set<string>());
+
+  const handleSave = useCallback(
+    async (trigger: FormatTrigger = 'save') => {
+      // Diff, merge and review tabs are not files, and image, video and PDF
+      // tabs hold no editor text: ⌘S there must not write `editorContent`.
+      const path = state.activeTabId;
+      if (!path || isVirtualTabId(path) || previewKind(path) !== 'text') return;
+      if (trigger === 'blur') {
+        if (!editedSinceFormat.has(path) || !formatLanguageForTrigger(path, 'blur')) return;
+      }
+      editedSinceFormat.delete(path);
+      const content = state.editorContent;
+      // The text as typed lands first, so formatting can only ever add to a
+      // save that already happened — never delay or replace it.
+      autosave.schedule(path, content);
+      await autosave.flush();
+      const formatted = await formatForSave(path, content, trigger);
+      if (formatted === null) return;
+      // Only through the editor, and only while it still shows this file with
+      // this text: undo and the cursor survive, and a result that arrives
+      // after the buffer moved on — or after the tab was left — is dropped
+      // rather than written over newer text. The edit's onChange schedules
+      // the write.
+      if (useStore.getState().activeTabId !== path) return;
+      if (!applyFormattedText(path, content, formatted)) return;
+      editedSinceFormat.delete(path);
+      await autosave.flush();
+    },
+    [state, autosave, editedSinceFormat]
+  );
+
+  const handleEditorBlur = useCallback(() => void handleSave('blur'), [handleSave]);
 
   const handleEditorChange = useCallback(
     (newContent: string) => {
@@ -119,9 +155,10 @@ export function useEditorAndScratchHandlers(
       // it is never dirty and nothing is scheduled to a path named after its id.
       if (!state.activeTabId || isVirtualTabId(state.activeTabId)) return;
       state.markDirty(state.activeTabId, true);
+      editedSinceFormat.add(state.activeTabId);
       autosave.schedule(state.activeTabId, newContent);
     },
-    [state, autosave]
+    [state, autosave, editedSinceFormat]
   );
 
   const handleNewScratch = useCallback(async () => {
@@ -283,6 +320,7 @@ export function useEditorAndScratchHandlers(
     loadTabContent,
     loadFileContent,
     handleSave,
+    handleEditorBlur,
     handleEditorChange,
     handleNewScratch,
     handleDeleteScratch,

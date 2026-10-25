@@ -5,6 +5,8 @@ const mockEditorState = vi.hoisted(() => ({
   onUpdate: undefined as ((update: unknown) => void) | undefined,
   addToHistory: { of: (value: unknown) => ({ type: 'addToHistory', value }) },
   dispatched: [] as Array<{ annotations?: unknown }>,
+  domHandlers: {} as Record<string, (event: FocusEvent) => boolean>,
+  keys: [] as Array<{ key: string; run: () => boolean }>,
 }));
 import { MarkdownEditor } from './MarkdownEditor';
 
@@ -230,6 +232,10 @@ vi.mock('@codemirror/view', () => {
       },
     };
     static lineWrapping = [];
+    static domEventHandlers = (handlers: Record<string, (event: FocusEvent) => boolean>) => {
+      mockEditorState.domHandlers = handlers;
+      return [];
+    };
 
     constructor(config: { parent?: HTMLElement; state?: { doc?: unknown } }) {
       this.dom = document.createElement('div');
@@ -279,7 +285,12 @@ vi.mock('@codemirror/view', () => {
     ViewPlugin: { fromClass: () => ({}) },
     hoverTooltip: () => [],
     lineNumbers: () => [],
-    keymap: { of: () => [] },
+    keymap: {
+      of: (bindings: Array<{ key: string; run: () => boolean }>) => {
+        mockEditorState.keys.push(...bindings);
+        return [];
+      },
+    },
   };
 });
 
@@ -307,6 +318,8 @@ vi.mock('@codemirror/state', () => ({
   Facet: {
     define: () => ({ of: () => [] }),
   },
+  StateEffect: { appendConfig: { of: (value: unknown) => value } },
+  Prec: { high: (value: unknown) => value },
 }));
 
 vi.mock('@codemirror/lang-markdown', () => ({
@@ -578,6 +591,44 @@ describe('MarkdownEditor', () => {
       await vi.waitFor(() => {
         expect(mockStoreState.loadBlame).toHaveBeenCalledWith('/proj', 'note.md');
       });
+    });
+  });
+
+  describe('save and focus loss', () => {
+    const blur = (relatedTarget: EventTarget | null) =>
+      mockEditorState.domHandlers.blur?.({ relatedTarget } as unknown as FocusEvent);
+
+    it('saves on Mod-s while the editor has focus', () => {
+      const onSave = vi.fn();
+      render(<MarkdownEditor content="x" onSave={onSave} />);
+      const binding = mockEditorState.keys.findLast((k) => k.key === 'Mod-s');
+      expect(binding?.run()).toBe(true);
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports focus leaving for something outside the editor', () => {
+      const onBlur = vi.fn();
+      render(<MarkdownEditor content="x" onBlur={onBlur} />);
+      blur(document.body);
+      expect(onBlur).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report focus moving into its own search panel', () => {
+      const onBlur = vi.fn();
+      render(<MarkdownEditor content="x" onBlur={onBlur} />);
+      const panel = document.createElement('input');
+      screen.getByTestId('cm-editor').appendChild(panel);
+      blur(panel);
+      expect(onBlur).not.toHaveBeenCalled();
+    });
+
+    it('does not report a blur from an editor that is being torn down', () => {
+      const onBlur = vi.fn();
+      const { unmount } = render(<MarkdownEditor content="x" onBlur={onBlur} />);
+      const handlers = mockEditorState.domHandlers;
+      unmount();
+      handlers.blur?.({ relatedTarget: null } as unknown as FocusEvent);
+      expect(onBlur).not.toHaveBeenCalled();
     });
   });
 });

@@ -39,6 +39,9 @@ export const APP_CONFIG_KEYS = {
   blueprintServerUrl: 'auric-blueprint-server-url',
   enableDeepNlp: 'auric.editor.deep-nlp',
   markdownLintEnabled: 'auric.editor.markdown-lint',
+  formatOnSave: 'auric.editor.format-on-save',
+  formatOnBlur: 'auric.editor.format-on-blur',
+  formatLanguages: 'auric.editor.format-languages',
   mcpAutoStart: 'auric.mcp.auto-start',
   cliUsageLimits: 'auric.cli-usage-limits',
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
@@ -99,6 +102,15 @@ export const AGENT_LOG_MAX_ROWS = 200_000;
 export interface AppConfig {
   enableDeepNlp: boolean;
   markdownLintEnabled: boolean;
+  /**
+   * ⌘S formats the file before it lands, with the project's own formatter
+   * (`src/lib/editor/format/`). On by default: saving by hand is the moment
+   * someone asks for a clean file. Autosave never formats — it fires while
+   * typing, and rewriting the line under the cursor is not a save.
+   */
+  formatOnSave: boolean;
+  /** Format and save when the editor loses focus. Off by default. */
+  formatOnBlur: boolean;
   mcpAutoStart: boolean;
   /**
    * Reads the agent CLIs' remaining quota and shows it in the status bar.
@@ -155,6 +167,8 @@ export interface AppConfig {
 export const APP_CONFIG_DEFAULTS: AppConfig = {
   enableDeepNlp: false,
   markdownLintEnabled: true,
+  formatOnSave: true,
+  formatOnBlur: false,
   mcpAutoStart: false,
   cliUsageLimits: false,
   agentTerminalFontSize: 14,
@@ -229,6 +243,14 @@ export function loadAppConfig(): AppConfig {
     markdownLintEnabled: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.markdownLintEnabled),
       APP_CONFIG_DEFAULTS.markdownLintEnabled
+    ),
+    formatOnSave: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.formatOnSave),
+      APP_CONFIG_DEFAULTS.formatOnSave
+    ),
+    formatOnBlur: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.formatOnBlur),
+      APP_CONFIG_DEFAULTS.formatOnBlur
     ),
     mcpAutoStart: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.mcpAutoStart),
