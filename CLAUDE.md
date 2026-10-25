@@ -515,6 +515,13 @@ ADR 0004.
   supervisor's `list_projects`: target vs. actual share of agents started
   there in 7 days, and `next`, the provider that is behind. Spawns are never
   refused over it; a task that needs another provider's model may deviate.
+  Beside each share sits an optional note (`providerNotes`, at most 300
+  characters), the human's routing rule ("source changes only, no database
+  access"). It reaches the supervisor as `providers[].note` and in the launch
+  prompt, ranks above `next`, and is not enforced on a supervisor's spawns:
+  Rust cannot judge a task. Link jobs pick their provider without a model, so they skip every
+  provider with a note (`policy::job_providers`) and refuse with
+  `provider_note_restricted` when all of them have one.
 - **Your own words go into its prompt, not its policy.** Settings → Supervisor
   → Instructions is the app pref `auric.supervisor.instructions`
   (`readSupervisorInstructions`), added to the launch prompt after the built-in

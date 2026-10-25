@@ -188,7 +188,8 @@ function listProjectsTool(call: ControlCaller) {
       'every spawn to get just that one, small and current; leave it out only to find a ' +
       'project. Each has path, name, description (descriptionSource "user" is the owner\'s ' +
       'own words; trust it most), initialized, runningAgents, and a supervisor block: ' +
-      'balancing, providers [{ id, permissionMode (absent: the provider default), models }], ' +
+      'balancing, providers [{ id, permissionMode (absent: the provider default), models, ' +
+      'note }], ' +
       'allowInteractive, runningChildren, maxRunning. models is "all" or a list of model ids; ' +
       'the top-level catalog describes each model once per provider: { id, label, rank, ' +
       'useFor, relativeCost }. rank is the size within its provider (1 small … 4 largest, ' +
@@ -196,7 +197,12 @@ function listProjectsTool(call: ControlCaller) {
       'against the cheapest model of that provider (1). balancing is null, or the load ' +
       'balancing the human set: { windowDays, next, providers [{ id, weight, spawns, ' +
       'targetPercent, actualPercent }] }; next is the provider furthest behind its share, ' +
-      'take it unless the task needs a model only another provider has. Only these providers ' +
+      'take it unless the task needs a model only another provider has. note (absent when ' +
+      "none is set) is the human's routing rule for this provider in this project; read it " +
+      'before choosing a provider: a task the note excludes goes to another provider even ' +
+      'when balancing.next names it, and a note that allows something is a reason to choose ' +
+      'it. Notes come before balancing. Notes add to the size of the answer, so narrow it ' +
+      'with project. Only these providers ' +
       'and models will spawn; anything else is refused. A project you may not use is ' +
       'unknown_project.',
     parameters: z.object({
@@ -218,7 +224,8 @@ function spawnAgentTool(call: ControlCaller) {
     name: 'spawn_agent',
     description:
       'Start an agent in one of your projects. headless is required. provider may be left ' +
-      "out: the project's balancing.next is taken. model may be left out: the smallest " +
+      "out: the project's balancing.next is taken, so pass it whenever a provider's note in " +
+      'list_projects excludes the task for balancing.next. model may be left out: the smallest ' +
       'allowed model with a rank is taken, which fits most work. A model of rank 3 or more ' +
       'needs modelReason, one sentence on why the task cannot be done by a smaller one; ' +
       'without it the spawn is refused (supervisor_denied, model_reason_required) and the ' +
@@ -237,7 +244,10 @@ function spawnAgentTool(call: ControlCaller) {
       provider: z
         .string()
         .optional()
-        .describe("Provider id from that project's supervisor block; default balancing.next"),
+        .describe(
+          "Provider id from that project's supervisor block; default balancing.next. The " +
+            "providers' notes come first: never a provider whose note excludes the task"
+        ),
       model: z
         .string()
         .optional()

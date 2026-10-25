@@ -23,6 +23,7 @@
       "models": {},
       "permissionMode": {},
       "providerWeights": {},
+      "providerNotes": {},
       "allowInteractive": false,
       "maxRunning": 2,
       "extraMcpServers": []
@@ -37,7 +38,8 @@
       "unsupported_version": "The file has a version this build does not know. Nothing is allowed.",
       "invalid_entry": "A project entry is not an object, or a field has the wrong type. That project allows nothing.",
       "path_not_absolute": "A project key is not an absolute path. That project allows nothing.",
-      "bypass_permissions": "A project names bypassPermissions as a permission mode. That project allows nothing."
+      "bypass_permissions": "A project names bypassPermissions as a permission mode. That project allows nothing.",
+      "provider_note_too_long": "A provider note is longer than maxProviderNoteLength characters. That project allows nothing."
     },
     "checkSpawn": {
       "project_not_listed": "The project has no entry in the policy (or the file is missing or unreadable).",
@@ -56,6 +58,9 @@
     "modelChoice": {
       "no_ranked_model": "No model was named and none of the allowed models has a size (rank), so none is picked by default.",
       "model_reason_required": "The model is large (rank at or above reasonRequiredFromRank) and the spawn names no modelReason."
+    },
+    "jobProvider": {
+      "provider_note_restricted": "Every provider in this project carries a routing note, so a job cannot choose one without a model in the loop. Remove a note or start the work through a supervisor."
     }
   },
   "checkOrder": [
@@ -311,6 +316,7 @@
                 "codex": "acceptEdits"
               },
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": true,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -341,6 +347,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -375,6 +382,7 @@
                 "codex": "acceptEdits"
               },
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -405,6 +413,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -435,6 +444,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -467,6 +477,7 @@
               },
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -497,6 +508,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -527,6 +539,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -562,6 +575,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -597,6 +611,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -656,6 +671,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -691,6 +707,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -771,6 +788,7 @@
               },
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -801,6 +819,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -862,6 +881,7 @@
               },
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -892,6 +912,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -1154,6 +1175,7 @@
                 "claude": 2,
                 "codex": 1
               },
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -1224,6 +1246,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -1257,6 +1280,7 @@
                 "claude": 2,
                 "codex": 1
               },
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": []
@@ -1513,6 +1537,7 @@
               "models": {},
               "permissionMode": {},
               "providerWeights": {},
+              "providerNotes": {},
               "allowInteractive": false,
               "maxRunning": 2,
               "extraMcpServers": ["motion", "docs"]
@@ -1547,6 +1572,357 @@
           }
         ]
       }
+    },
+    {
+      "name": "provider notes are trimmed, kept per normalised provider id, and an empty one is dropped",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\" Claude \": \"  Source changes only, no database access. \", \"codex\": \"May use databases.\", \"grok\": \"   \"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "Source changes only, no database access.",
+                "codex": "May use databases."
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "two keys for one provider keep the note of the raw key that sorts first",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"codex\": \"lower\", \"Codex\": \"upper\", \" codex\": \"spaced\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "codex": "spaced"
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a note of exactly maxProviderNoteLength characters is kept, counted in code points not bytes",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"  😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀  \"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a note longer than maxProviderNoteLength drops its project with provider_note_too_long",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"}}, \"/abs/project-b\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}, \"/abs/project-c\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-c": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "provider_note_too_long"
+          },
+          {
+            "project": "/abs/project-b",
+            "reason": "provider_note_too_long"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a note that is not a string, a blank key or a map that is not an object drops its project",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": 1}}, \"/abs/project-b\": {\"allowed\": true, \"providerNotes\": {\"claude\": null}}, \"/abs/project-c\": {\"allowed\": true, \"providerNotes\": {\" \": \"note\"}}, \"/abs/project-d\": {\"allowed\": true, \"providerNotes\": [\"note\"]}, \"/abs/project-e\": {\"allowed\": true, \"providerNotes\": null}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-e": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {},
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-b",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-c",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-d",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two spellings with different provider notes merge to no notes",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"Source only.\"}}, \"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"Anything.\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {},
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "two spellings with the same provider notes keep them",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"Source only.\"}}, \"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"Claude\": \" Source only. \"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "Source only."
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a leading U+FEFF is trimmed before the length is counted, so 300 characters behind it are kept",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"\ufeffxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a note of only U+FEFF is empty after trimming and dropped",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"\ufeff \ufeff\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {},
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "U+0085 (next line) and other Unicode White_Space are trimmed on both ends",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerNotes\": {\"claude\": \"\u0085\u3000Source only.\u2028\u0085\", \"codex\": \"\u0085\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "providerNotes": {
+                "claude": "Source only."
+              },
+              "allowInteractive": false,
+              "maxRunning": 2,
+              "extraMcpServers": []
+            }
+          },
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": []
+      }
     }
   ],
   "visibleProjectsRules": [
@@ -1578,6 +1954,7 @@
             },
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -1591,6 +1968,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1600,6 +1978,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1628,7 +2007,8 @@
               "id": "codex",
               "models": ["gpt-6-luna", "gpt-6-sol"],
               "permissionMode": "acceptEdits",
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": true,
@@ -1641,7 +2021,8 @@
               "id": "claude",
               "models": ["haiku", "sonnet"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -1668,6 +2049,7 @@
             },
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1692,7 +2074,8 @@
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -1719,6 +2102,7 @@
             },
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1743,7 +2127,8 @@
               "id": "claude",
               "models": ["haiku"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -1768,6 +2153,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1830,6 +2216,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -1842,6 +2229,7 @@
               "opencode": "auto"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1875,7 +2263,8 @@
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -1888,13 +2277,15 @@
               "id": "antigravity",
               "models": ["gemini-3-pro"],
               "permissionMode": "plan",
-              "weight": null
+              "weight": null,
+              "note": null
             },
             {
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -1923,6 +2314,7 @@
               "codex": 1,
               "grok": 3
             },
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1948,19 +2340,83 @@
               "id": "antigravity",
               "models": ["gemini-4"],
               "permissionMode": null,
-              "weight": null
+              "weight": null,
+              "note": null
             },
             {
               "id": "claude",
               "models": ["haiku", "sonnet"],
               "permissionMode": null,
-              "weight": 2
+              "weight": 2,
+              "note": null
             },
             {
               "id": "codex",
               "models": ["gpt-6-luna"],
               "permissionMode": null,
-              "weight": 1
+              "weight": 1,
+              "note": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "a provider's note is shown beside it, null where none is set, and a note for a provider that is not visible goes nowhere",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null,
+          "chrome": false
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "providerWeights": {
+              "claude": 1,
+              "codex": 1
+            },
+            "providerNotes": {
+              "claude": "Source changes only, no database access.",
+              "grok": "Not installed here."
+            },
+            "allowInteractive": false,
+            "maxRunning": 2,
+            "extraMcpServers": []
+          }
+        },
+        "skills": {},
+        "tools": {}
+      },
+      "projectPolicies": {},
+      "offeredModels": {
+        "claude": ["opus", "sonnet"],
+        "codex": ["gpt-6-luna"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "claude",
+              "models": ["opus", "sonnet"],
+              "permissionMode": null,
+              "weight": 1,
+              "note": "Source changes only, no database access."
+            },
+            {
+              "id": "codex",
+              "models": ["gpt-6-luna"],
+              "permissionMode": null,
+              "weight": 1,
+              "note": null
             }
           ],
           "allowInteractive": false,
@@ -2000,6 +2456,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2009,6 +2466,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2059,6 +2517,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2068,6 +2527,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2118,6 +2578,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2127,6 +2588,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2215,6 +2677,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2224,6 +2687,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2275,6 +2739,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2284,6 +2749,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2335,6 +2801,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2344,6 +2811,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2395,6 +2863,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2404,6 +2873,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2455,6 +2925,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2464,6 +2935,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2515,6 +2987,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2524,6 +2997,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2574,6 +3048,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2583,6 +3058,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2634,6 +3110,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2643,6 +3120,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2694,6 +3172,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2703,6 +3182,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2754,6 +3234,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2763,6 +3244,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2813,6 +3295,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2822,6 +3305,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2873,6 +3357,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2882,6 +3367,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2934,6 +3420,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2943,6 +3430,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2994,6 +3482,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -3003,6 +3492,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3053,6 +3543,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -3062,6 +3553,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3113,6 +3605,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -3122,6 +3615,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3172,6 +3666,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -3181,6 +3676,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3233,6 +3729,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -3242,6 +3739,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3295,6 +3793,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -3304,6 +3803,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3358,6 +3858,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 0
           },
@@ -3367,6 +3868,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3418,6 +3920,7 @@
               "codex": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -3427,6 +3930,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3478,6 +3982,7 @@
               "opencode": "acceptEdits"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3539,6 +4044,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3602,6 +4108,7 @@
               "antigravity": "plan"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3664,6 +4171,7 @@
               "antigravity": "yolo"
             },
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3725,6 +4233,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3785,6 +4294,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3846,6 +4356,7 @@
             "models": {},
             "permissionMode": {},
             "providerWeights": {},
+            "providerNotes": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3892,6 +4403,7 @@
     }
   ],
   "reasonRequiredFromRank": 3,
+  "maxProviderNoteLength": 300,
   "modelChoiceRules": [
     "Which model a supervisor's spawn runs, decided before checkSpawn. offered is what the provider offers (value, rank),",
     "allowed the models the policy leaves for it in that project (visibleProjects' models). request.model null means",
@@ -4496,7 +5008,8 @@
     "models per provider the intersection where both list it, else the one list. permissionMode: one named mode is kept; two different",
     "modes for one provider make the project allowed: false with permissionMode {} (there is no stricter of two modes).",
     "providerWeights is a load-balancing hint, not a permission: the two entries keep their weights only",
-    "when both name the same ones, otherwise the merged project has providerWeights {} (no balancing)."
+    "when both name the same ones, otherwise the merged project has providerWeights {} (no balancing).",
+    "providerNotes merge like providerWeights: identical maps are kept, different ones become {}."
   ],
   "providerWeightsRules": [
     "providerWeights: provider id -> an integer 0..99, the share of spawns that provider should get in this project",
@@ -4504,6 +5017,122 @@
     "balancing. Keys normalise like provider ids; two keys for one provider keep the smaller weight; a blank key, a",
     "non-integer, a negative number or one above 99 drops the project. visibleProjects reports each provider's",
     "weight, null where the map does not name it."
+  ],
+  "providerNotesRules": [
+    "providerNotes: provider id -> the human's routing rule for that provider in this project, free text",
+    "(e.g. {claude: 'Source changes only, no database access'}). Advisory like providerWeights: checkSpawn never",
+    "reads it, it cannot judge a task. visibleProjects reports it as each provider's note, null where none is set;",
+    "a supervisor's list_projects carries it as providers[].note and leaves it out when there is none.",
+    "Each note is trimmed; one that is empty after trimming is dropped. A note longer than maxProviderNoteLength",
+    "Trimming strips Unicode White_Space (Rust char::is_whitespace, so U+0085 too) plus U+FEFF, on both sides alike.",
+    "characters (Unicode code points after trimming, not bytes) drops the project with provider_note_too_long;",
+    "a note that is not a string, a blank key or a map that is not an object drops it with invalid_entry.",
+    "Keys normalise like provider ids; two keys for one provider keep the note of the key that sorts first",
+    "(code-point order of the raw keys). Two spellings of one project keep their notes only when both name",
+    "the same ones, otherwise the merged project has providerNotes {} (like providerWeights)."
+  ],
+  "jobProviderRules": [
+    "A link job (jobs.create) chooses its provider in Rust, with no model to read a note. So it only",
+    "considers the project's visible providers WITHOUT a note: balancing.next is computed over those,",
+    "then the supervisor's own provider, then the first, and the smallest ranked model as for any job.",
+    "If the project has visible providers and every one carries a note, the job is refused with",
+    "supervisor_denied, reason provider_note_restricted. A project with no visible provider at all is",
+    "left to the existing provider_not_allowed refusal. Rust only: nothing in TypeScript starts a job."
+  ],
+  "jobProviders": [
+    {
+      "name": "without notes every visible provider stays a candidate",
+      "project": {
+        "path": "/abs/project-a",
+        "providers": [
+          {
+            "id": "claude",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": 1,
+            "note": null
+          },
+          {
+            "id": "codex",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": 1,
+            "note": null
+          }
+        ],
+        "allowInteractive": false,
+        "maxRunning": 2
+      },
+      "expected": {
+        "providers": ["claude", "codex"]
+      }
+    },
+    {
+      "name": "a provider with a note is no candidate, even when balancing would name it",
+      "project": {
+        "path": "/abs/project-a",
+        "providers": [
+          {
+            "id": "claude",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": 1,
+            "note": "Source changes only, no database access."
+          },
+          {
+            "id": "codex",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": 1,
+            "note": null
+          }
+        ],
+        "allowInteractive": false,
+        "maxRunning": 2
+      },
+      "expected": {
+        "providers": ["codex"]
+      }
+    },
+    {
+      "name": "every provider with a note refuses the job",
+      "project": {
+        "path": "/abs/project-a",
+        "providers": [
+          {
+            "id": "claude",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": null,
+            "note": "Source changes only."
+          },
+          {
+            "id": "codex",
+            "models": ["m1"],
+            "permissionMode": null,
+            "weight": null,
+            "note": "Databases allowed."
+          }
+        ],
+        "allowInteractive": false,
+        "maxRunning": 2
+      },
+      "expected": {
+        "reason": "provider_note_restricted"
+      }
+    },
+    {
+      "name": "a project with no visible provider is left to provider_not_allowed",
+      "project": {
+        "path": "/abs/project-a",
+        "providers": [],
+        "allowInteractive": false,
+        "maxRunning": 2
+      },
+      "expected": {
+        "providers": []
+      }
+    }
   ],
   "skillPatternRules": [
     "A skill entry is keyed by the absolute path of its folder (the one holding SKILL.md); trailing slashes are dropped.",

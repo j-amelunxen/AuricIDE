@@ -543,7 +543,11 @@ file exists and the project is the root of a git repository with a commit
 (`quota_exceeded`); the supervisor policy allows the agent
 (`supervisor_denied`, with the rule as `reason`). Provider and model are
 chosen by AuricIDE — the project's load-balancing choice and the smallest
-ranked model — never by the client. The agent runs headless in a worktree of
+ranked model — never by the client. A provider that carries a routing note in
+that project (Settings → Supervisor, the note beside each provider) is never
+chosen for a job, because no model reads the note on this path; if every usable
+provider has one, the job is refused (`supervisor_denied`,
+`reason: "provider_note_restricted"`). The agent runs headless in a worktree of
 its own on a new branch.
 
 ```json
@@ -1031,27 +1035,28 @@ It honours `AURIC_LINK_SOCKET` and exits non-zero on a refused request.
 
 ## Troubleshooting
 
-| Symptom                                             | Cause and fix                                                                                                                                                                                           |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENOENT` / `ECONNREFUSED` on connect                | AuricIDE is not running, or another build serves the socket. Check the path for your OS.                                                                                                                |
-| The socket file never appears                       | AuricIDE prints `Supervisor link unavailable: …` to its standard error. Unix socket paths are limited to about 104 bytes on macOS; a very long home folder path exceeds it.                             |
-| HTTP 404 on the upgrade                             | The request path is not `/v1`.                                                                                                                                                                          |
-| `forbidden_agent_caller` and close 1008             | Your client runs inside an IDE agent (its terminal, a tool it started). Start it from a normal terminal.                                                                                                |
-| `busy` / `too_many_connections`                     | Sixteen connections are open. Close idle clients; reuse one connection.                                                                                                                                 |
-| `busy` / `too_many_pending_requests`                | You sent more than 64 requests without waiting for answers. Wait for responses before sending more.                                                                                                     |
-| Close 1009                                          | A message was larger than 1 MiB.                                                                                                                                                                        |
-| `ENOENT` with `%20` in the path, from `ws+unix://`  | `ws` encodes the space in the socket path (macOS: "Application Support") and looks for a file that does not exist. Pass the socket through `createConnection` as shown under [Connecting](#connecting). |
-| `supervisor_unavailable`                            | No project is open to supervisors. Allow one in Settings → Supervisor.                                                                                                                                  |
-| `documents.projects` is empty                       | No project is shared in Settings → Supervisor → Supervisor link, or the settings file is broken (it then shares nothing).                                                                               |
-| `document_not_visible`                              | The project path is not shared, or differs (use the path `documents.projects` returns).                                                                                                                 |
-| A file does not show up in `documents.search`       | Its path does not match a glob, has a hidden segment, is deeper than 8 levels below the glob's base, is over 256 KiB, or is not a JSON object.                                                          |
-| `invalid_params` for `rev`                          | Use a commit id, branch or tag name; expressions like `HEAD~1` are not read.                                                                                                                            |
-| `supervisor_denied`, `reason: "no_ranked_model"`    | No allowed model of the chosen provider has a size. Give the models a `rank` in the provider config.                                                                                                    |
-| `supervisor_denied`, `reason: "project_not_listed"` | The project is shared with the link but not open to supervisors.                                                                                                                                        |
-| `quota_exceeded`                                    | The counter is full. The message says when a slot frees up; raise it in the settings if that is intended. With `reason: "disabled"` the limit is 0: jobs are off.                                       |
-| A job fails with `no_changes`                       | The agent wrote nothing it may write. Check the instructions file and the kind's `writes`.                                                                                                              |
-| A job fails with `agent_failed`                     | The agent exited with an error, or someone stopped it. What it committed is still on the job's branch (`commit`).                                                                                       |
-| A job fails with `interrupted`                      | AuricIDE quit while it ran. Its worktree and branch are still there; remove them when done (`git worktree remove`, `git branch -D`).                                                                    |
+| Symptom                                                   | Cause and fix                                                                                                                                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ENOENT` / `ECONNREFUSED` on connect                      | AuricIDE is not running, or another build serves the socket. Check the path for your OS.                                                                                                                |
+| The socket file never appears                             | AuricIDE prints `Supervisor link unavailable: …` to its standard error. Unix socket paths are limited to about 104 bytes on macOS; a very long home folder path exceeds it.                             |
+| HTTP 404 on the upgrade                                   | The request path is not `/v1`.                                                                                                                                                                          |
+| `forbidden_agent_caller` and close 1008                   | Your client runs inside an IDE agent (its terminal, a tool it started). Start it from a normal terminal.                                                                                                |
+| `busy` / `too_many_connections`                           | Sixteen connections are open. Close idle clients; reuse one connection.                                                                                                                                 |
+| `busy` / `too_many_pending_requests`                      | You sent more than 64 requests without waiting for answers. Wait for responses before sending more.                                                                                                     |
+| Close 1009                                                | A message was larger than 1 MiB.                                                                                                                                                                        |
+| `ENOENT` with `%20` in the path, from `ws+unix://`        | `ws` encodes the space in the socket path (macOS: "Application Support") and looks for a file that does not exist. Pass the socket through `createConnection` as shown under [Connecting](#connecting). |
+| `supervisor_unavailable`                                  | No project is open to supervisors. Allow one in Settings → Supervisor.                                                                                                                                  |
+| `documents.projects` is empty                             | No project is shared in Settings → Supervisor → Supervisor link, or the settings file is broken (it then shares nothing).                                                                               |
+| `document_not_visible`                                    | The project path is not shared, or differs (use the path `documents.projects` returns).                                                                                                                 |
+| A file does not show up in `documents.search`             | Its path does not match a glob, has a hidden segment, is deeper than 8 levels below the glob's base, is over 256 KiB, or is not a JSON object.                                                          |
+| `invalid_params` for `rev`                                | Use a commit id, branch or tag name; expressions like `HEAD~1` are not read.                                                                                                                            |
+| `supervisor_denied`, `reason: "no_ranked_model"`          | No allowed model of the chosen provider has a size. Give the models a `rank` in the provider config.                                                                                                    |
+| `supervisor_denied`, `reason: "provider_note_restricted"` | Every usable provider in the project carries a routing note, and a job never takes a noted provider. Remove a note in Settings → Supervisor or start the work through a supervisor.                     |
+| `supervisor_denied`, `reason: "project_not_listed"`       | The project is shared with the link but not open to supervisors.                                                                                                                                        |
+| `quota_exceeded`                                          | The counter is full. The message says when a slot frees up; raise it in the settings if that is intended. With `reason: "disabled"` the limit is 0: jobs are off.                                       |
+| A job fails with `no_changes`                             | The agent wrote nothing it may write. Check the instructions file and the kind's `writes`.                                                                                                              |
+| A job fails with `agent_failed`                           | The agent exited with an error, or someone stopped it. What it committed is still on the job's branch (`commit`).                                                                                       |
+| A job fails with `interrupted`                            | AuricIDE quit while it ran. Its worktree and branch are still there; remove them when done (`git worktree remove`, `git branch -D`).                                                                    |
 
 ## Compatibility and stability
 

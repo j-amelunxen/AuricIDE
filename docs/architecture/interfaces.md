@@ -169,7 +169,8 @@ Apply/Discard in the inbox, audit log).
 Merged result: `policy::resolve` (fixture `resolution`). Jobs additionally need the
 project open to supervisors in `supervisor-policy.json` and a provider with a ranked
 model; provider and model are the supervisor's rule (load-balancing `next`, smallest
-ranked model), never the client's. A `rev` is a commit id, branch or tag, never a
+ranked model), never the client's. A job never takes a provider that carries a routing
+note (`providerNotes`); all noted is `provider_note_restricted`. A `rev` is a commit id, branch or tag, never a
 revision expression. Asset reads must match an asset glob after symlink resolution.
 
 ### 3.5 Documents and jobs in one picture

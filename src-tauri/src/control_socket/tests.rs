@@ -1432,6 +1432,36 @@ fn a_supervisor_is_told_which_provider_is_behind_its_load_balancing_share() {
 }
 
 #[test]
+fn a_supervisor_reads_the_humans_routing_note_beside_the_provider_it_is_for() {
+    let s = supervised_scope();
+    let mut policy = scope_policy(&s.path);
+    let rules = policy.projects.get_mut(&s.path).unwrap();
+    rules.provider_notes = BTreeMap::from([
+        (
+            "claude".into(),
+            "Source changes only, no database access.".into(),
+        ),
+        ("grok".into(), "Not offered here, so never shown.".into()),
+    ]);
+    *s.h.backend.policy.lock().unwrap() = policy;
+
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "a", "method": "list_projects" }),
+    );
+
+    assert_eq!(
+        response["result"]["projects"][0]["supervisor"]["providers"],
+        json!([
+            { "id": "claude", "models": "all", "note": "Source changes only, no database access." },
+            { "id": "codex", "permissionMode": "acceptEdits", "models": "all" }
+        ]),
+        "a provider without a note carries no note field"
+    );
+}
+
+#[test]
 fn a_supervisor_lists_one_project_with_balancing_first_and_only_its_models_described() {
     let s = supervised_scope();
     let other = auric_project();

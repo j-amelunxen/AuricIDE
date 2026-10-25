@@ -39,6 +39,8 @@ export interface SupervisorPromptProvider {
   permissionMode: string | null;
   /** Load-balancing weight; `null` where the project names none for it. */
   weight: number | null;
+  /** The human's routing rule for this provider here; `null` where none is set. */
+  note?: string | null;
   models: SupervisorPromptModel[];
 }
 
@@ -91,6 +93,7 @@ export function supervisorPromptProjects(
         id: entry.id,
         permissionMode: entry.permissionMode,
         weight: entry.weight,
+        note: entry.note,
         models: entry.models.map((id) => {
           const option = info?.models.find((model) => model.value === id);
           return {
@@ -224,6 +227,9 @@ function describeProject(project: SupervisorPromptProject): string {
       ? `permission mode ${provider.permissionMode}`
       : "the provider's default permission mode";
     lines.push(`- provider \`${provider.id}\` (${mode}):`);
+    // Quoted as JSON: the human's own words, kept on one line whatever they contain.
+    if (provider.note)
+      lines.push(`  Human's rule for this provider: ${JSON.stringify(provider.note)}`);
     const fallback = defaultModelId(provider.models);
     for (const model of byRank(provider.models)) {
       lines.push(`  - ${describeModel(model, model.id === fallback)}`);
@@ -241,6 +247,12 @@ const SPAWN_RULES = [
   '- **Long-running or multi-step work, or work a human may need to answer**: ' +
     '`headless: false`, only where interactive runs are allowed. Report the agent id, then ' +
     'watch it as "Working with your agents" says.',
+  "- **Provider: the human's notes come first.** A provider in list_projects may carry a " +
+    "`note`: the human's rule for what work may go to it in that project. A task its note " +
+    'excludes goes to another provider, even when `balancing.next` names this one; then pass ' +
+    '`provider` explicitly and say in your spawn line which note decided. A note that allows ' +
+    'something is a reason to choose that provider. When no allowed provider fits a note, do ' +
+    'not spawn: ask the human.',
   '- **Provider: follow the load balancing.** Where a project has it, take the provider ' +
     'list_projects names as `balancing.next`; leaving `provider` out does exactly that. Take ' +
     'another one only when that provider has no model the task needs, and say why in your ' +

@@ -815,7 +815,14 @@ In this order, the first that fails is the answer:
    `check_spawn` a supervisor's child passes: permission mode not
    unattended, `maxRunning` of the project and in total, with running jobs
    counted as one supervisor's children. **The client cannot choose provider,
-   model, permission mode or anything else about the agent.**
+   model, permission mode or anything else about the agent.** No model reads
+   the project's provider notes (`providerNotes`, `design-agent-control.md`)
+   on this path, so a job never takes a provider that carries one: the
+   choice above (balancing `next` included) runs over the providers without
+   a note only (`policy::job_providers`, fixture `jobProviderRules`). When
+   every usable provider has a note, the job is refused with
+   `supervisor_denied`, `reason: "provider_note_restricted"`; such work goes
+   through a supervisor.
 
 The agent then runs **headless** (no stdin, nobody can answer a prompt) in a
 **git worktree of its own** on a new branch; it is part of the supervisor

@@ -433,6 +433,8 @@ const supervisorProjectBlock = z.object({
       permissionMode: z.string().nullish(),
       /** `"all"`: every model the catalog lists for this provider. */
       models: z.union([z.literal('all'), z.array(z.string())]),
+      /** The human's routing rule for this provider (`providerNotes`); absent when none is set. */
+      note: z.string().optional(),
     })
   ),
   allowInteractive: z.boolean(),

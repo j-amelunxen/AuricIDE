@@ -16,6 +16,8 @@ import {
   effectivePermissionMode,
   permissionModesOf,
   pmServerNames,
+  providerNoteLength,
+  trimProviderNote,
   runsUnattended,
   parseSupervisorPolicy,
   SUPERVISOR_DENIED_REASON_TEXT,
@@ -45,7 +47,7 @@ describe('supervisor policy — shared contract', () => {
       it(testCase.name, () => {
         expect(
           visibleProjects(
-            testCase.policy as SupervisorPolicy,
+            testCase.policy as unknown as SupervisorPolicy,
             testCase.projectPolicies as Record<string, ProviderPolicy>,
             testCase.offeredModels as unknown as OfferedModels,
             ('permissionModes' in testCase
@@ -105,6 +107,15 @@ describe('modelChoice', () => {
     for (const reason of Object.keys(SUPERVISOR_MODEL_CHOICE_REASON_TEXT)) {
       expect(used, reason).toContain(reason);
     }
+  });
+});
+
+describe('providerNoteLength', () => {
+  it('counts what the parser keeps, so the Settings counter and Rust agree', () => {
+    expect(providerNoteLength(`\uFEFF${'x'.repeat(300)}`)).toBe(300);
+    expect(providerNoteLength('\u0085 \uFEFF')).toBe(0);
+    expect(trimProviderNote('\u0085\u3000Source only.\u2028\u0085')).toBe('Source only.');
+    expect(providerNoteLength('\u{1F600}'.repeat(3))).toBe(3);
   });
 });
 
