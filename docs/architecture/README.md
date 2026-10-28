@@ -140,7 +140,10 @@ All git behaviour is in Rust; `lib.rs` only registers it. Depends on: ignored_re
 `inbox/`, `missions/`, `delivery/` (outbound push), `notifications.db`, `inbox.db`.
 Purpose: cross-project event log, cron and one-shot schedules that survive restarts,
 GTD inbox, markdown missions owned by a repo. Depends on: database, schedules ↔
-notifications (mutual).
+notifications (mutual). `schedules_occurrences` walks the runner's own engine over a time
+window so the Command Center's calendar and timeline views draw exactly the runs the
+runner will make (capped at 200 per schedule, 3 000 overall); past runs are read from the
+notifications a schedule raised, never from a separate history.
 
 **Usage** — `cc_usage/` (what the CLIs consumed, from transcripts), `usage_limits/`
 (quota window via a Claude `--settings` statusLine sidecar and the Codex CLI),

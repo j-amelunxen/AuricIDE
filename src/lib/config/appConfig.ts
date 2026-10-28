@@ -67,6 +67,7 @@ export const APP_CONFIG_KEYS = {
   goalTableColumns: 'auric.goals.table-columns',
   goalsDetailView: 'auric.goals.detail-view',
   gitGraphInspectorWidth: 'auric.git-graph.inspector-width',
+  commandCenterScheduleView: 'auric.command-center.schedule-view',
   notificationSoundEnabled: 'auric.notifications.sound',
   notificationSound: 'auric.notifications.sound-id',
 } as const;

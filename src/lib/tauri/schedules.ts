@@ -74,3 +74,31 @@ export async function schedulesSetEnabled(id: string, enabled: boolean): Promise
 export async function schedulesPreview(schedule: Schedule, count = 3): Promise<string[]> {
   return invoke<string[]>('schedules_preview', { schedule, count });
 }
+
+/** One schedule's occurrences inside a window — see `schedules_occurrences`. */
+export interface ScheduleOccurrences {
+  scheduleId: string;
+  /** UTC `YYYY-MM-DD HH:MM:SS`, oldest first. */
+  at: string[];
+  /** More occurrences exist in the window than `at` holds. */
+  truncated: boolean;
+}
+
+/**
+ * Every occurrence of the given schedules in `(from, to]`, computed by the
+ * same engine the runner uses, so a view cannot show a run that will not
+ * happen. `from` and `to` are UTC `YYYY-MM-DD HH:MM:SS`.
+ */
+export async function schedulesOccurrences(
+  schedules: Schedule[],
+  from: string,
+  to: string,
+  perScheduleCap?: number
+): Promise<ScheduleOccurrences[]> {
+  return invoke<ScheduleOccurrences[]>('schedules_occurrences', {
+    schedules,
+    from,
+    to,
+    perScheduleCap,
+  });
+}

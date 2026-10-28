@@ -1,16 +1,21 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import type { ProjectGroup } from '@/lib/notifications/commandCenter';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
+import { parseScheduleView, type ScheduleView } from '@/lib/notifications/scheduleCalendar';
 import { projectIconFor } from '@/lib/quickAccess/icon';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { NotificationsPanel } from './NotificationsPanel';
+import { SchedulesCalendar } from './SchedulesCalendar';
+import { ScheduleViewSwitch } from './ScheduleViewSwitch';
 import { SchedulesSection } from './SchedulesSection';
+import { SchedulesTimeline } from './SchedulesTimeline';
 
 export interface ProjectDetailProps {
   /** The selected group, or `null` for "All". */
@@ -106,6 +111,23 @@ export function ProjectDetail({
     [group, groups]
   );
 
+  // The views draw exactly what the list would: the rail already scoped
+  // `groups`/`group`, so the project filter reaches them with no extra code.
+  const viewSchedules = useMemo(
+    () => triggerGroups.flatMap((triggerGroup) => triggerGroup.schedules),
+    [triggerGroups]
+  );
+
+  // The center only mounts once opened (client side), so reading the saved
+  // choice while initialising cannot disagree with a server render.
+  const [view, setView] = useState<ScheduleView>(() =>
+    parseScheduleView(readAppPref(APP_CONFIG_KEYS.commandCenterScheduleView))
+  );
+  const changeView = (next: ScheduleView) => {
+    setView(next);
+    writeAppPref(APP_CONFIG_KEYS.commandCenterScheduleView, next);
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-col">
       <div
@@ -133,6 +155,7 @@ export function ProjectDetail({
             {questionsWaiting(openQuestions)}
           </span>
         )}
+        <ScheduleViewSwitch value={view} onChange={changeView} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -140,7 +163,7 @@ export function ProjectDetail({
             part that changes — below the fold. */}
         <section
           data-testid="command-center-triggers"
-          className="max-h-[42vh] overflow-y-auto border-b border-white/10"
+          className={`overflow-y-auto border-b border-white/10 ${view === 'list' ? 'max-h-[42vh]' : 'max-h-[60vh]'}`}
         >
           <div className="flex items-center justify-between px-3 py-2">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
@@ -157,7 +180,21 @@ export function ProjectDetail({
             </button>
           </div>
 
-          {triggerGroups.length === 0 ? (
+          {view === 'calendar' && viewSchedules.length > 0 ? (
+            <SchedulesCalendar
+              schedules={viewSchedules}
+              notifications={notifications}
+              now={now}
+              onEdit={onEditSchedule}
+            />
+          ) : view === 'timeline' && viewSchedules.length > 0 ? (
+            <SchedulesTimeline
+              schedules={viewSchedules}
+              notifications={notifications}
+              now={now}
+              onEdit={onEditSchedule}
+            />
+          ) : triggerGroups.length === 0 ? (
             <SchedulesSection
               schedules={[]}
               now={now}
