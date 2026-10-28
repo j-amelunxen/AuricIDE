@@ -494,6 +494,7 @@ pub fn run() {
             schedules_delete,
             schedules_set_enabled,
             schedules_preview,
+            schedules_occurrences,
             mission_create,
             delivery::worker::pushover_send_test,
             goals_save,

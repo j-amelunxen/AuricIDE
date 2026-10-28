@@ -473,6 +473,24 @@ pub fn schedules_preview(schedule: Schedule, count: Option<usize>) -> Result<Vec
 }
 
 #[tauri::command]
+pub fn schedules_occurrences(
+    schedules: Vec<Schedule>,
+    from: String,
+    to: String,
+    per_schedule_cap: Option<usize>,
+) -> Result<Vec<schedules::ScheduleOccurrences>, String> {
+    let parse = |raw: &str| {
+        schedules::parse_ts(raw).ok_or_else(|| format!("Unreadable timestamp \"{}\"", raw))
+    };
+    schedules::occurrences_impl(
+        &schedules,
+        parse(&from)?,
+        parse(&to)?,
+        per_schedule_cap.unwrap_or(200),
+    )
+}
+
+#[tauri::command]
 pub fn mission_create(
     input: CreateMissionInput,
     state: tauri::State<'_, NotificationsState>,

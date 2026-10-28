@@ -414,6 +414,94 @@ fn preview_lists_the_next_occurrences() {
 }
 
 #[test]
+fn occurrences_walk_a_window_like_the_runner_does() {
+    let found = occurrences_impl(
+        &[every_14_days()],
+        at("2026-08-12 07:00:00"),
+        at("2026-10-01 00:00:00"),
+        200,
+    )
+    .expect("occurrences");
+
+    // Anchor 2026-08-12 is excluded (window is open at the start); then +14 d each.
+    assert_eq!(
+        found[0].at,
+        vec![
+            "2026-08-26 07:00:00",
+            "2026-09-09 07:00:00",
+            "2026-09-23 07:00:00"
+        ]
+    );
+    assert!(!found[0].truncated);
+}
+
+#[test]
+fn occurrences_agree_with_the_preview() {
+    let schedule = every_14_days();
+    let now = at("2026-08-12 07:00:00");
+    let preview = preview_impl(&schedule, now, 1).expect("preview");
+    let found = occurrences_impl(&[schedule], now, at("2026-09-01 00:00:00"), 200).expect("occ");
+
+    assert!(preview[0].contains("26.08.2026"));
+    assert_eq!(found[0].at[0], "2026-08-26 07:00:00");
+}
+
+#[test]
+fn occurrences_cap_and_flag_truncation() {
+    let mut hourly = every_14_days();
+    hourly.every_n = Some(1);
+    hourly.every_unit = Some("hour".into());
+    let found = occurrences_impl(
+        &[hourly],
+        at("2026-08-12 07:00:00"),
+        at("2026-08-20 07:00:00"),
+        5,
+    )
+    .expect("occurrences");
+
+    assert_eq!(found[0].at.len(), 5);
+    assert!(found[0].truncated);
+}
+
+#[test]
+fn occurrences_of_a_disabled_schedule_are_empty() {
+    let mut schedule = every_14_days();
+    schedule.enabled = false;
+    let found = occurrences_impl(
+        &[schedule],
+        at("2026-08-12 07:00:00"),
+        at("2026-10-01 00:00:00"),
+        200,
+    )
+    .expect("occurrences");
+
+    assert!(found[0].at.is_empty());
+    assert!(!found[0].truncated);
+}
+
+#[test]
+fn occurrences_of_a_cron_schedule_stay_on_the_local_wall_clock() {
+    let mut weekly = every_14_days();
+    weekly.spec_kind = "cron".into();
+    weekly.cron_expr = Some("0 0 17 * * WED".into());
+    weekly.every_n = None;
+    weekly.every_unit = None;
+    let found = occurrences_impl(
+        &[weekly],
+        at("2026-10-20 00:00:00"),
+        at("2026-11-04 00:00:00"),
+        200,
+    )
+    .expect("occurrences");
+
+    // 17:00 Berlin: CEST (UTC+2) before 25 Oct, CET (UTC+1) after.
+    assert_eq!(
+        found[0].at,
+        vec!["2026-10-21 15:00:00", "2026-10-28 16:00:00"]
+    );
+}
+
+#[test]
 fn running_due_schedules_raises_a_notification() {
     let mut conn = test_db();
     let mut schedule = every_14_days();

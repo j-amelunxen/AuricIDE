@@ -1,6 +1,7 @@
 use super::types::*;
 use chrono::{DateTime, Days, NaiveTime, Utc};
 use chrono_tz::Tz;
+use serde::Serialize;
 use std::str::FromStr;
 
 /// Walks a fixed interval, keeping the wall clock where the user put it.
@@ -190,6 +191,62 @@ pub fn preview_impl(
             }
             None => break,
         }
+    }
+
+    Ok(out)
+}
+
+/// Hard ceiling over every schedule of one `occurrences_impl` call, so a view
+/// over hundreds of schedules cannot ask for an unbounded answer.
+pub const MAX_OCCURRENCES_TOTAL: usize = 3_000;
+
+/// One schedule's occurrences inside a window, for the calendar and timeline.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleOccurrences {
+    pub schedule_id: String,
+    /// UTC `YYYY-MM-DD HH:MM:SS`, oldest first.
+    pub at: Vec<String>,
+    /// More occurrences exist in the window than `at` holds.
+    pub truncated: bool,
+}
+
+/// Every occurrence of the given schedules in `(from, to]`.
+///
+/// The same walkers the runner uses, so a view can never show a run the
+/// runner would not make. Disabled schedules owe nothing and come back empty,
+/// and `created_at` is the floor just as in `window_start`. Per-schedule
+/// `per_schedule_cap` and the overall `MAX_OCCURRENCES_TOTAL` cut the lists
+/// and set `truncated`, so the caller can say the picture is partial.
+pub fn occurrences_impl(
+    schedules: &[Schedule],
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    per_schedule_cap: usize,
+) -> Result<Vec<ScheduleOccurrences>, String> {
+    let mut remaining = MAX_OCCURRENCES_TOTAL;
+    let mut out = Vec::with_capacity(schedules.len());
+
+    for schedule in schedules {
+        let mut result = ScheduleOccurrences {
+            schedule_id: schedule.id.clone(),
+            at: Vec::new(),
+            truncated: false,
+        };
+        if schedule.enabled && to > from {
+            let tz = timezone_of(schedule);
+            let floor = parse_ts(&schedule.created_at).map_or(from, |c| c.max(from));
+            let (all, _) = match schedule.spec_kind.as_str() {
+                "cron" => cron_occurrences(schedule, tz, floor, to)?,
+                "every" => every_occurrences(schedule, tz, floor, to)?,
+                other => return Err(format!("Unknown schedule kind: {}", other)),
+            };
+            let limit = per_schedule_cap.min(remaining);
+            result.truncated = all.len() > limit;
+            result.at = all.into_iter().take(limit).map(format_ts).collect();
+            remaining -= result.at.len();
+        }
+        out.push(result);
     }
 
     Ok(out)
