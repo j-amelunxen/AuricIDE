@@ -48,6 +48,54 @@ pub struct Schedule {
     pub next_due_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Single-occurrence exceptions ("only this event"): skipped or moved
+    /// occurrences of an otherwise unchanged series.
+    #[serde(default)]
+    pub exceptions: Vec<ScheduleException>,
+}
+
+/// At most this many exceptions per schedule.
+pub const MAX_EXCEPTIONS: usize = 500;
+
+/// One occurrence that differs from the series.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleException {
+    /// UTC `YYYY-MM-DD HH:MM:SS`: the occurrence the walker would produce.
+    pub original_at: String,
+    /// UTC stamp the occurrence happens at instead; `None` skips it.
+    #[serde(default)]
+    pub moved_to: Option<String>,
+}
+
+/// Checks what the engine relies on: stamps parse, a move actually moves, and
+/// the list stays small.
+pub fn validate_exceptions(exceptions: &[ScheduleException]) -> Result<(), String> {
+    if exceptions.len() > MAX_EXCEPTIONS {
+        return Err(format!(
+            "A schedule can have at most {} exceptions",
+            MAX_EXCEPTIONS
+        ));
+    }
+    for exception in exceptions {
+        let original = parse_ts(&exception.original_at).ok_or_else(|| {
+            format!(
+                "Exception originalAt \"{}\" is not a UTC timestamp",
+                exception.original_at
+            )
+        })?;
+        if let Some(raw) = exception.moved_to.as_deref() {
+            let moved = parse_ts(raw)
+                .ok_or_else(|| format!("Exception movedTo \"{}\" is not a UTC timestamp", raw))?;
+            if moved == original {
+                return Err(format!(
+                    "Exception for {} is moved to the same time",
+                    exception.original_at
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// What a schedule owes right now.

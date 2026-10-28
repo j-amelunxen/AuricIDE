@@ -1,5 +1,5 @@
 use super::engine::{due_occurrences, overdue_body, schedule_dedupe_key};
-use super::types::{format_ts, timezone_of, Schedule};
+use super::types::{format_ts, timezone_of, validate_exceptions, Schedule};
 use crate::database::apply_migration;
 use crate::notifications::{dispatch_impl, NotificationInput};
 use chrono::{DateTime, Utc};
@@ -39,15 +39,29 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         "link_schedules_to_missions",
         "ALTER TABLE schedules ADD COLUMN mission_slug TEXT;\n\
          CREATE INDEX schedules_mission ON schedules(project_path, mission_slug);",
+    )?;
+    apply_migration(
+        conn,
+        10,
+        "add_schedule_exceptions",
+        "ALTER TABLE schedules ADD COLUMN exceptions TEXT NOT NULL DEFAULT '[]';",
     )
 }
 
 pub const SELECT_COLUMNS: &str =
     "id, name, enabled, project_path, project_name, mission_slug, spec_kind, cron_expr, \
      every_n, every_unit, anchor_at, time_of_day, timezone, catch_up, payload, \
-     last_fired_at, last_checked_at, next_due_at, created_at, updated_at";
+     last_fired_at, last_checked_at, next_due_at, created_at, updated_at, exceptions";
 
 pub fn row_to_schedule(row: &rusqlite::Row) -> rusqlite::Result<Schedule> {
+    let raw_exceptions: String = row.get(20)?;
+    let exceptions = serde_json::from_str(&raw_exceptions).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            20,
+            rusqlite::types::Type::Text,
+            format!("schedule exceptions are not valid JSON: {}", e).into(),
+        )
+    })?;
     Ok(Schedule {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -69,6 +83,7 @@ pub fn row_to_schedule(row: &rusqlite::Row) -> rusqlite::Result<Schedule> {
         next_due_at: row.get(17)?,
         created_at: row.get(18)?,
         updated_at: row.get(19)?,
+        exceptions,
     })
 }
 
@@ -152,18 +167,21 @@ pub fn upsert_at(
     })
 }
 
-// code-gate: complexity-cyclomatic - one upsert statement; the count is the 15 bound columns, not branches
+// code-gate: complexity-cyclomatic - one upsert statement; the count is the 16 bound columns, not branches
 fn write_schedule(conn: &Connection, schedule: &Schedule) -> Result<Schedule, String> {
     if let Some(slug) = schedule.mission_slug.as_deref() {
         if !valid_mission_slug(slug) {
             return Err("Mission slug must be one canonical path component".to_string());
         }
     }
+    validate_exceptions(&schedule.exceptions)?;
+    let exceptions = serde_json::to_string(&schedule.exceptions)
+        .map_err(|e| format!("Failed to encode schedule exceptions: {}", e))?;
     conn.execute(
         "INSERT INTO schedules
             (id, name, enabled, project_path, project_name, mission_slug, spec_kind, cron_expr, every_n,
-             every_unit, anchor_at, time_of_day, timezone, catch_up, payload)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             every_unit, anchor_at, time_of_day, timezone, catch_up, payload, exceptions)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             enabled = excluded.enabled,
@@ -179,6 +197,7 @@ fn write_schedule(conn: &Connection, schedule: &Schedule) -> Result<Schedule, St
             timezone = excluded.timezone,
             catch_up = excluded.catch_up,
             payload = excluded.payload,
+            exceptions = excluded.exceptions,
             updated_at = datetime('now')",
         params![
             schedule.id,
@@ -196,6 +215,7 @@ fn write_schedule(conn: &Connection, schedule: &Schedule) -> Result<Schedule, St
             schedule.timezone,
             schedule.catch_up,
             schedule.payload,
+            exceptions,
         ],
     )
     .map_err(|e| format!("Failed to save schedule: {}", e))?;

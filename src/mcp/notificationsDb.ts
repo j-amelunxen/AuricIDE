@@ -226,6 +226,13 @@ function runMigrations(db: Database.Database): void {
     db.exec('ALTER TABLE agent_launch_runs ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0;');
     record(9, 'add_launch_run_owner_pid');
   }
+
+  // Mirrors `schedules::run_migrations`, migration 10: moved or skipped single
+  // occurrences, JSON-encoded on the schedule row.
+  if (!applied(10)) {
+    db.exec("ALTER TABLE schedules ADD COLUMN exceptions TEXT NOT NULL DEFAULT '[]';");
+    record(10, 'add_schedule_exceptions');
+  }
 }
 
 export function openNotificationsDb(path: string): Database.Database {

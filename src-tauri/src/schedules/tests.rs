@@ -65,6 +65,7 @@ fn every_14_days() -> Schedule {
         next_due_at: None,
         created_at: "2026-08-12 07:00:00".into(),
         updated_at: "2026-08-12 07:00:00".into(),
+        exceptions: Vec::new(),
     }
 }
 
@@ -732,4 +733,315 @@ fn a_schedule_an_agent_created_fires_as_agent_written() {
     };
     assert_eq!(source_of("Scan"), "agent");
     assert_eq!(source_of("Own"), "system");
+}
+
+// ---- single-occurrence exceptions ----
+
+/// Daily 09:00 UTC from 2026-10-01, replaying every missed run.
+fn daily_utc(exceptions: Vec<ScheduleException>) -> Schedule {
+    Schedule {
+        cron_expr: Some("0 0 9 * * *".into()),
+        timezone: "UTC".into(),
+        catch_up: "all".into(),
+        created_at: "2026-10-01 00:00:00".into(),
+        last_checked_at: Some("2026-10-01 00:00:00".into()),
+        exceptions,
+        ..weekly_wednesday()
+    }
+}
+
+fn skip(original: &str) -> ScheduleException {
+    ScheduleException {
+        original_at: original.into(),
+        moved_to: None,
+    }
+}
+
+fn moved(original: &str, to: &str) -> ScheduleException {
+    ScheduleException {
+        original_at: original.into(),
+        moved_to: Some(to.into()),
+    }
+}
+
+fn due_stamps(schedule: &Schedule, now: &str) -> (Vec<String>, Option<String>) {
+    let result = due_occurrences(schedule, at(now)).expect("due");
+    (
+        result.occurrences.into_iter().map(format_ts).collect(),
+        result.next_due.map(format_ts),
+    )
+}
+
+#[test]
+fn a_schedule_without_exceptions_behaves_as_before() {
+    let (due, next) = due_stamps(&daily_utc(vec![]), "2026-10-03 12:00:00");
+    assert_eq!(
+        due,
+        vec![
+            "2026-10-01 09:00:00",
+            "2026-10-02 09:00:00",
+            "2026-10-03 09:00:00"
+        ]
+    );
+    assert_eq!(next.as_deref(), Some("2026-10-04 09:00:00"));
+}
+
+#[test]
+fn a_skipped_occurrence_does_not_fire() {
+    let schedule = daily_utc(vec![skip("2026-10-02 09:00:00")]);
+    let (due, next) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(due, vec!["2026-10-01 09:00:00", "2026-10-03 09:00:00"]);
+    assert_eq!(next.as_deref(), Some("2026-10-04 09:00:00"));
+}
+
+#[test]
+fn an_occurrence_moved_later_the_same_day_fires_there_and_not_at_the_original() {
+    let schedule = daily_utc(vec![moved("2026-10-02 09:00:00", "2026-10-02 15:30:00")]);
+    let (due, _) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(
+        due,
+        vec![
+            "2026-10-01 09:00:00",
+            "2026-10-02 15:30:00",
+            "2026-10-03 09:00:00"
+        ]
+    );
+}
+
+#[test]
+fn an_occurrence_moved_to_another_day_inside_the_window_fires_there() {
+    let schedule = daily_utc(vec![moved("2026-10-02 09:00:00", "2026-10-03 20:00:00")]);
+    let (due, _) = due_stamps(&schedule, "2026-10-04 00:00:00");
+    assert_eq!(
+        due,
+        vec![
+            "2026-10-01 09:00:00",
+            "2026-10-03 09:00:00",
+            "2026-10-03 20:00:00"
+        ]
+    );
+}
+
+#[test]
+fn a_move_beyond_now_is_next_due_and_the_original_does_not_fire() {
+    let schedule = daily_utc(vec![moved("2026-10-03 09:00:00", "2026-10-03 18:00:00")]);
+    let (due, next) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(due, vec!["2026-10-01 09:00:00", "2026-10-02 09:00:00"]);
+    // Earlier than the real next occurrence (10-04 09:00).
+    assert_eq!(next.as_deref(), Some("2026-10-03 18:00:00"));
+}
+
+#[test]
+fn a_move_after_the_real_next_occurrence_does_not_hide_it() {
+    let schedule = daily_utc(vec![moved("2026-10-03 09:00:00", "2026-10-09 09:00:00")]);
+    let (_, next) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(next.as_deref(), Some("2026-10-04 09:00:00"));
+}
+
+#[test]
+fn a_future_original_moved_into_the_window_fires_there() {
+    // Original 10-10 is far ahead of the walk; its target is already due.
+    let schedule = daily_utc(vec![moved("2026-10-10 09:00:00", "2026-10-02 14:00:00")]);
+    let (due, _) = due_stamps(&schedule, "2026-10-03 00:00:00");
+    assert_eq!(
+        due,
+        vec![
+            "2026-10-01 09:00:00",
+            "2026-10-02 09:00:00",
+            "2026-10-02 14:00:00"
+        ]
+    );
+}
+
+#[test]
+fn a_move_outside_the_window_leaves_the_due_list_alone() {
+    let schedule = daily_utc(vec![moved("2026-10-02 09:00:00", "2026-09-20 09:00:00")]);
+    let (due, _) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(due, vec!["2026-10-01 09:00:00", "2026-10-03 09:00:00"]);
+}
+
+#[test]
+fn next_due_skips_an_excluded_original() {
+    let schedule = daily_utc(vec![
+        skip("2026-10-04 09:00:00"),
+        moved("2026-10-05 09:00:00", "2026-10-07 09:00:00"),
+    ]);
+    let (_, next) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(next.as_deref(), Some("2026-10-06 09:00:00"));
+}
+
+#[test]
+fn next_due_skips_a_run_of_excluded_originals() {
+    let schedule = daily_utc(vec![
+        skip("2026-10-04 09:00:00"),
+        skip("2026-10-05 09:00:00"),
+        skip("2026-10-06 09:00:00"),
+    ]);
+    let (_, next) = due_stamps(&schedule, "2026-10-03 12:00:00");
+    assert_eq!(next.as_deref(), Some("2026-10-07 09:00:00"));
+}
+
+#[test]
+fn every_interval_schedules_honour_exceptions_too() {
+    let mut schedule = every_14_days();
+    schedule.catch_up = "all".into();
+    schedule.exceptions = vec![skip("2026-08-26 07:00:00")];
+    let (due, next) = due_stamps(&schedule, "2026-09-10 00:00:00");
+    assert_eq!(due, vec!["2026-09-09 07:00:00"]);
+    assert_eq!(next.as_deref(), Some("2026-09-23 07:00:00"));
+}
+
+#[test]
+fn coalesce_still_folds_to_the_latest_with_exceptions() {
+    let mut schedule = daily_utc(vec![
+        skip("2026-10-03 09:00:00"),
+        moved("2026-10-02 09:00:00", "2026-10-03 18:00:00"),
+    ]);
+    schedule.catch_up = "coalesce".into();
+    let result = due_occurrences(&schedule, at("2026-10-04 00:00:00")).unwrap();
+    assert_eq!(result.total, 2);
+    assert_eq!(
+        result
+            .occurrences
+            .into_iter()
+            .map(format_ts)
+            .collect::<Vec<_>>(),
+        vec!["2026-10-03 18:00:00"]
+    );
+}
+
+#[test]
+fn a_disabled_schedule_with_exceptions_returns_nothing() {
+    let mut schedule = daily_utc(vec![moved("2026-10-02 09:00:00", "2026-10-02 15:00:00")]);
+    schedule.enabled = false;
+    let result = due_occurrences(&schedule, at("2026-10-05 00:00:00")).unwrap();
+    assert!(result.occurrences.is_empty());
+    assert_eq!(result.next_due, None);
+}
+
+#[test]
+fn occurrences_impl_applies_exceptions_and_keeps_cap_and_truncation() {
+    let schedule = daily_utc(vec![
+        skip("2026-10-02 09:00:00"),
+        moved("2026-10-04 09:00:00", "2026-10-04 20:00:00"),
+    ]);
+    let found = occurrences_impl(
+        &[schedule.clone()],
+        at("2026-10-01 00:00:00"),
+        at("2026-10-06 00:00:00"),
+        200,
+    )
+    .unwrap();
+    assert_eq!(
+        found[0].at,
+        vec![
+            "2026-10-01 09:00:00",
+            "2026-10-03 09:00:00",
+            "2026-10-04 20:00:00",
+            "2026-10-05 09:00:00"
+        ]
+    );
+    assert!(!found[0].truncated);
+
+    let capped = occurrences_impl(
+        &[schedule],
+        at("2026-10-01 00:00:00"),
+        at("2026-10-06 00:00:00"),
+        2,
+    )
+    .unwrap();
+    assert_eq!(
+        capped[0].at,
+        vec!["2026-10-01 09:00:00", "2026-10-03 09:00:00"]
+    );
+    assert!(capped[0].truncated);
+}
+
+#[test]
+fn a_moved_run_is_deduped_by_its_new_time() {
+    let target = at("2026-10-02 15:30:00");
+    assert_eq!(
+        schedule_dedupe_key("s1", target),
+        "schedule:s1:2026-10-02 15:30:00"
+    );
+}
+
+#[test]
+fn exceptions_survive_a_save_and_list_round_trip() {
+    let conn = test_db();
+    let exceptions = vec![
+        skip("2026-10-02 09:00:00"),
+        moved("2026-10-03 09:00:00", "2026-10-03 18:00:00"),
+    ];
+    let stored = upsert_impl(&conn, &daily_utc(exceptions.clone())).expect("upsert");
+    assert_eq!(stored.exceptions, exceptions);
+    assert_eq!(list_impl(&conn).unwrap()[0].exceptions, exceptions);
+
+    let cleared = upsert_impl(&conn, &daily_utc(vec![])).expect("clear");
+    assert!(cleared.exceptions.is_empty());
+}
+
+#[test]
+fn saving_dates_next_due_with_the_exceptions_applied() {
+    let conn = test_db();
+    let now = at("2026-10-03 12:00:00");
+    let schedule = daily_utc(vec![moved("2026-10-04 09:00:00", "2026-10-03 18:00:00")]);
+    let stored = upsert_at(&conn, &schedule, now).expect("upsert");
+    assert_eq!(stored.next_due_at.as_deref(), Some("2026-10-03 18:00:00"));
+}
+
+#[test]
+fn the_exceptions_column_is_added_by_the_migration() {
+    let conn = test_db();
+    let default: String = conn
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('schedules') WHERE name = 'exceptions'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("column");
+    assert_eq!(default, "'[]'");
+}
+
+#[test]
+fn bad_stored_json_is_a_clear_error_not_a_panic() {
+    let conn = test_db();
+    upsert_impl(&conn, &daily_utc(vec![])).expect("upsert");
+    conn.execute("UPDATE schedules SET exceptions = 'not json'", [])
+        .unwrap();
+    let error = list_impl(&conn).expect_err("bad json");
+    assert!(
+        error.contains("exceptions are not valid JSON"),
+        "got {error}"
+    );
+}
+
+#[test]
+fn invalid_exceptions_are_refused_on_save() {
+    let conn = test_db();
+    for bad in [
+        vec![skip("tomorrow")],
+        vec![moved("2026-10-02 09:00:00", "later")],
+        vec![moved("2026-10-02 09:00:00", "2026-10-02 09:00:00")],
+    ] {
+        assert!(upsert_impl(&conn, &daily_utc(bad)).is_err());
+    }
+    let too_many: Vec<_> = (0..=MAX_EXCEPTIONS)
+        .map(|i| {
+            skip(&format_ts(
+                at("2026-10-02 09:00:00") + chrono::Duration::days(i as i64),
+            ))
+        })
+        .collect();
+    assert!(upsert_impl(&conn, &daily_utc(too_many)).is_err());
+    assert!(list_impl(&conn).unwrap().is_empty());
+}
+
+#[test]
+fn a_schedule_json_without_exceptions_still_deserialises() {
+    let mut value = serde_json::to_value(daily_utc(vec![skip("2026-10-02 09:00:00")])).unwrap();
+    assert_eq!(value["exceptions"][0]["originalAt"], "2026-10-02 09:00:00");
+    value.as_object_mut().unwrap().remove("exceptions");
+    let parsed: Schedule = serde_json::from_value(value).unwrap();
+    assert!(parsed.exceptions.is_empty());
 }

@@ -22,6 +22,16 @@ export interface SchedulePayload {
   actions?: NotificationAction[];
 }
 
+/**
+ * One occurrence that differs from the rhythm: skipped (`movedTo: null`) or
+ * moved to another time. Both stamps are UTC `YYYY-MM-DD HH:MM:SS`;
+ * `originalAt` is the occurrence the rhythm itself would have produced.
+ */
+export interface ScheduleException {
+  originalAt: string;
+  movedTo: string | null;
+}
+
 export interface Schedule {
   id: string;
   name: string;
@@ -38,6 +48,8 @@ export interface Schedule {
   anchorAt: string | null;
   /** `HH:MM` in the schedule's own zone. */
   timeOfDay: string | null;
+  /** Single occurrences moved or skipped. Absent on schedules from before they existed. */
+  exceptions?: ScheduleException[];
   /** IANA name, stored per schedule so a wall-clock time survives DST. */
   timezone: string;
   catchUp: ScheduleCatchUp;

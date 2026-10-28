@@ -2,6 +2,7 @@ use super::types::*;
 use chrono::{DateTime, Days, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::str::FromStr;
 
 /// Walks a fixed interval, keeping the wall clock where the user put it.
@@ -100,6 +101,72 @@ pub fn cron_occurrences(
     Ok((due, next_due))
 }
 
+/// The raw series walk for a schedule's kind, before any exception.
+fn walk_series(
+    schedule: &Schedule,
+    tz: Tz,
+    from: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<Walk, String> {
+    match schedule.spec_kind.as_str() {
+        "cron" => cron_occurrences(schedule, tz, from, now),
+        "every" => every_occurrences(schedule, tz, from, now),
+        other => Err(format!("Unknown schedule kind: {}", other)),
+    }
+}
+
+/// The one place exceptions are applied; `due_occurrences` and
+/// `occurrences_impl` both walk through here.
+///
+/// A skipped or moved-away original is dropped. A move becomes an occurrence
+/// at its target wherever that falls in `(from, now]`, independent of the
+/// walker's own series, and counts for `next_due` when it lies after `now`.
+/// If the walker's next date is itself an excluded original, the walk
+/// continues from it, at most once per exception.
+fn walk_with_exceptions(
+    schedule: &Schedule,
+    tz: Tz,
+    from: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<Walk, String> {
+    let (mut due, mut next_due) = walk_series(schedule, tz, from, now)?;
+    if schedule.exceptions.is_empty() {
+        return Ok((due, next_due));
+    }
+
+    let excluded: HashSet<DateTime<Utc>> = schedule
+        .exceptions
+        .iter()
+        .filter_map(|e| parse_ts(&e.original_at))
+        .collect();
+    due.retain(|at| !excluded.contains(at));
+
+    for _ in 0..=schedule.exceptions.len() {
+        match next_due {
+            Some(next) if excluded.contains(&next) => {
+                next_due = walk_series(schedule, tz, next, next)?.1;
+            }
+            _ => break,
+        }
+    }
+
+    for target in schedule
+        .exceptions
+        .iter()
+        .filter_map(|e| e.moved_to.as_deref().and_then(parse_ts))
+    {
+        if target > from && target <= now {
+            due.push(target);
+        } else if target > now {
+            next_due = Some(next_due.map_or(target, |next| next.min(target)));
+        }
+    }
+    due.sort();
+    due.dedup();
+
+    Ok((due, next_due))
+}
+
 /// Everything this schedule owed between its last check and now.
 ///
 /// Pure, with `now` passed in — a catch-up algorithm that reads the clock
@@ -116,11 +183,7 @@ pub fn due_occurrences(schedule: &Schedule, now: DateTime<Utc>) -> Result<DueRes
     let tz = timezone_of(schedule);
     let from = window_start(schedule).unwrap_or(now);
 
-    let (all, next_due) = match schedule.spec_kind.as_str() {
-        "cron" => cron_occurrences(schedule, tz, from, now)?,
-        "every" => every_occurrences(schedule, tz, from, now)?,
-        other => return Err(format!("Unknown schedule kind: {}", other)),
-    };
+    let (all, next_due) = walk_with_exceptions(schedule, tz, from, now)?;
 
     let total = all.len();
     let occurrences = match schedule.catch_up.as_str() {
@@ -236,11 +299,7 @@ pub fn occurrences_impl(
         if schedule.enabled && to > from {
             let tz = timezone_of(schedule);
             let floor = parse_ts(&schedule.created_at).map_or(from, |c| c.max(from));
-            let (all, _) = match schedule.spec_kind.as_str() {
-                "cron" => cron_occurrences(schedule, tz, floor, to)?,
-                "every" => every_occurrences(schedule, tz, floor, to)?,
-                other => return Err(format!("Unknown schedule kind: {}", other)),
-            };
+            let (all, _) = walk_with_exceptions(schedule, tz, floor, to)?;
             let limit = per_schedule_cap.min(remaining);
             result.truncated = all.len() > limit;
             result.at = all.into_iter().take(limit).map(format_ts).collect();

@@ -107,6 +107,7 @@ pub fn build_schedule(
         next_due_at: None,
         created_at: created_at.clone(),
         updated_at: created_at,
+        exceptions: Vec::new(),
     })
 }
 
