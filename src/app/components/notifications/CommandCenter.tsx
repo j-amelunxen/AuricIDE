@@ -21,6 +21,7 @@ import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills'
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
 import { schedulesPreview, type Schedule } from '@/lib/tauri/schedules';
 import { ProjectDetail } from './ProjectDetail';
+import { isMovedRun, moveOccurrence, shiftSeries } from '@/lib/notifications/scheduleMove';
 import { ProjectRail } from './ProjectRail';
 import { ScheduleEditor } from './ScheduleEditor';
 import { UpcomingStrip } from './UpcomingStrip';
@@ -39,6 +40,8 @@ interface EditorState {
   schedule: Schedule | null;
   defaultProjectPath: string | null;
   defaultProjectName: string | null;
+  /** Set when the editor was opened by clicking a calendar or timeline slot. */
+  defaultSlot?: number | null;
 }
 
 /**
@@ -169,9 +172,55 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
   // A new reminder started from a project pane is aimed at THAT project; from
   // All it starts on whatever is open, which is the only project the user
   // could mean.
-  const newScheduleTarget = selectedGroup
-    ? { path: selectedGroup.path, name: selectedGroup.label }
-    : { path: rootPath, name: rootPath?.split('/').filter(Boolean).pop() ?? null };
+  const newScheduleTarget = useMemo(
+    () =>
+      selectedGroup
+        ? { path: selectedGroup.path, name: selectedGroup.label }
+        : { path: rootPath, name: rootPath?.split('/').filter(Boolean).pop() ?? null },
+    [selectedGroup, rootPath]
+  );
+
+  // A click on an empty slot: the project the pane shows (a timeline lane names
+  // its own), else the open one — same rule as the "New schedule" button.
+  const createScheduleAt = useCallback(
+    (at: number, project?: { path: string | null; name: string | null }) => {
+      const target = project ?? newScheduleTarget;
+      setEditing({
+        schedule: null,
+        defaultProjectPath: target.path,
+        defaultProjectName: target.name,
+        defaultSlot: at,
+      });
+    },
+    [newScheduleTarget]
+  );
+
+  // A run dropped on another slot. A recurring schedule asks, as the macOS
+  // Calendar does: this occurrence only, or the whole series. Cancel (or
+  // Escape) leaves everything as it was.
+  const moveRun = useCallback(
+    async (schedule: Schedule, from: number, to: number) => {
+      const series = isMovedRun(schedule, from) ? null : shiftSeries(schedule, from, to);
+      let next = moveOccurrence(schedule, from, to);
+      if (series !== null) {
+        let onlyThis = false;
+        const go = await confirm({
+          title: `Move "${schedule.name}"?`,
+          message: 'This schedule repeats. Move only this occurrence, or the whole series?',
+          confirmLabel: 'All occurrences',
+          variant: 'discard',
+          secondaryLabel: 'Only this occurrence',
+          onSecondary: () => {
+            onlyThis = true;
+          },
+        });
+        if (!go) return;
+        if (!onlyThis) next = series;
+      }
+      await saveSchedule(next);
+    },
+    [confirm, saveSchedule]
+  );
 
   // Deleting a reminder is not undoable and the thing you lose is future
   // prompting you will not notice is missing — so it asks.
@@ -390,6 +439,8 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
             onOpen={handleOpen}
             onAction={(notification, action) => void runAction(notification, action)}
             onNewSchedule={() => openEditorFor(newScheduleTarget.path, newScheduleTarget.name)}
+            onCreateScheduleAt={createScheduleAt}
+            onMoveRun={(schedule, from, to) => void moveRun(schedule, from, to)}
             onEditSchedule={(schedule) =>
               setEditing({
                 schedule,
@@ -411,6 +462,7 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
           schedule={editing.schedule}
           defaultProjectPath={editing.defaultProjectPath}
           defaultProjectName={editing.defaultProjectName}
+          defaultSlot={editing.defaultSlot ?? null}
           preview={visiblePreview}
           starredProjects={starredProjects}
           projectOptions={projectOptions}

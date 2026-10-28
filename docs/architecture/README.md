@@ -144,6 +144,10 @@ notifications (mutual). `schedules_occurrences` walks the runner's own engine ov
 window so the Command Center's calendar and timeline views draw exactly the runs the
 runner will make (capped at 200 per schedule, 3 000 overall); past runs are read from the
 notifications a schedule raised, never from a separate history.
+A schedule also carries `exceptions` (JSON column, migration 10): single occurrences moved
+or skipped, applied inside the engine so the runner, the preview and the views agree. The
+calendar and timeline create schedules by click and move runs by drag ("only this
+occurrence" writes an exception, "all occurrences" rewrites the rhythm).
 
 **Usage** — `cc_usage/` (what the CLIs consumed, from transcripts), `usage_limits/`
 (quota window via a Claude `--settings` statusLine sidecar and the Codex CLI),

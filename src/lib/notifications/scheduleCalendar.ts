@@ -143,6 +143,34 @@ export function cellOf(at: number, weekStart: number): WeekCell {
   return { day, minute: d.getHours() * 60 + d.getMinutes() };
 }
 
+/** A click or a drop in a calendar cell lands on a slot this many minutes wide. */
+export const SLOT_MINUTES = 15;
+
+/**
+ * The local instant `fraction` (0–1) of the way down hour `hour` of column
+ * `day`, snapped to a slot. Built from calendar fields, so a DST week keeps
+ * its wall clock.
+ */
+export function slotInstant(
+  weekStart: number,
+  day: number,
+  hour: number,
+  fraction: number
+): number {
+  const base = new Date(weekStart);
+  const minute = Math.min(
+    60 - SLOT_MINUTES,
+    Math.floor(fraction * (60 / SLOT_MINUTES)) * SLOT_MINUTES
+  );
+  return new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate() + day,
+    hour,
+    minute
+  ).getTime();
+}
+
 export interface TimelineLane {
   key: string;
   label: string;

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ProjectGroup } from '@/lib/notifications/commandCenter';
 import type { Notification } from '@/lib/notifications/types';
@@ -96,6 +96,8 @@ function renderDetail(overrides: Partial<ProjectDetailProps> = {}) {
     onOpen: vi.fn(),
     onAction: vi.fn(),
     onNewSchedule: vi.fn(),
+    onCreateScheduleAt: vi.fn(),
+    onMoveRun: vi.fn(),
     onEditSchedule: vi.fn(),
     onToggleSchedule: vi.fn(),
     onDeleteSchedule: vi.fn(),
@@ -306,5 +308,150 @@ describe('with nothing to draw', () => {
     renderDetail({ groups: [] });
     fireEvent.click(screen.getByTestId('schedule-view-calendar'));
     expect(screen.getByTestId('schedules-empty')).toBeTruthy();
+  });
+});
+
+function overCell(cell: Element, rect = { top: 0, height: 28 }) {
+  (cell as HTMLElement).getBoundingClientRect = () => ({ ...rect, left: 0, width: 100 }) as DOMRect;
+  document.elementFromPoint = () => cell;
+}
+
+function drag(chip: Element, to: { x: number; y: number }) {
+  fireEvent.pointerDown(chip, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(window, { clientX: to.x, clientY: to.y });
+}
+
+describe('creating and moving on the calendar', () => {
+  // A drop swallows the click that follows it until the next macrotask.
+  afterEach(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  async function openCalendar(overrides: Partial<ProjectDetailProps> = {}) {
+    const props = renderDetail(overrides);
+    fireEvent.click(screen.getByTestId('schedule-view-calendar'));
+    const chip = await screen.findByTestId(`calendar-run-${futureRun}`);
+    const cell = chip.closest<HTMLElement>('[data-slot-day]')!;
+    const day = Number(cell.dataset.slotDay);
+    const target = screen.getByTestId(`calendar-cell-${day + 1}-15`);
+    return { props, chip, cell, target };
+  }
+
+  it('creates a schedule at the clicked slot, snapped to a quarter hour', async () => {
+    const { props, target } = await openCalendar();
+    overCell(target);
+    fireEvent.click(target, { clientY: 14 });
+    expect(props.onCreateScheduleAt).toHaveBeenCalledTimes(1);
+    const at = new Date((props.onCreateScheduleAt as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect([at.getHours(), at.getMinutes()]).toEqual([15, 30]);
+  });
+
+  it('does not create when a run chip is clicked', async () => {
+    const { props, chip } = await openCalendar();
+    fireEvent.click(chip);
+    expect(props.onEditSchedule).toHaveBeenCalled();
+    expect(props.onCreateScheduleAt).not.toHaveBeenCalled();
+  });
+
+  it('shows a ghost on the target slot while dragging and moves the run on drop', async () => {
+    const { props, chip, target } = await openCalendar();
+    overCell(target);
+    drag(chip, { x: 40, y: 14 });
+    expect(screen.getByTestId('calendar-drop-ghost').getAttribute('data-valid')).toBe('true');
+    expect(target.contains(screen.getByTestId('calendar-drop-ghost'))).toBe(true);
+    fireEvent.pointerUp(window);
+    expect(props.onMoveRun).toHaveBeenCalledTimes(1);
+    const [schedule, from, to] = (props.onMoveRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(schedule).toEqual(alpha);
+    expect(from).toBe(Date.parse('2026-08-13T07:00:00Z'));
+    const moved = new Date(to);
+    expect([moved.getHours(), moved.getMinutes()]).toEqual([15, 30]);
+    expect(screen.queryByTestId('calendar-drop-ghost')).toBeNull();
+  });
+
+  it('cancels the drag on Escape without moving anything', async () => {
+    const { props, chip, target } = await openCalendar();
+    overCell(target);
+    drag(chip, { x: 40, y: 14 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.pointerUp(window);
+    expect(props.onMoveRun).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('calendar-drop-ghost')).toBeNull();
+  });
+
+  it('treats a press that barely moves as a click, not a drag', async () => {
+    const { props, chip } = await openCalendar();
+    fireEvent.pointerDown(chip, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(window, { clientX: 1, clientY: 1 });
+    fireEvent.pointerUp(window);
+    expect(screen.queryByTestId('calendar-drop-ghost')).toBeNull();
+    expect(props.onMoveRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses a drop into the past', async () => {
+    const { props, chip } = await openCalendar();
+    const past = screen.getByTestId('calendar-cell-0-1');
+    overCell(past);
+    drag(chip, { x: 40, y: 14 });
+    expect(screen.getByTestId('calendar-drop-ghost').getAttribute('data-valid')).toBe('false');
+    fireEvent.pointerUp(window);
+    expect(props.onMoveRun).not.toHaveBeenCalled();
+  });
+
+  it('does not make a run that already fired draggable', async () => {
+    renderDetail({
+      notifications: [makeNotification({ uid: 'a', dedupeKey: 'schedule:s1:2026-08-11 07:00:00' })],
+    });
+    fireEvent.click(screen.getByTestId('schedule-view-calendar'));
+    const fired = await screen.findByTestId(
+      `calendar-run-s1@${Date.parse('2026-08-11T07:00:00Z')}`
+    );
+    drag(fired, { x: 40, y: 14 });
+    expect(screen.queryByTestId('calendar-drop-ghost')).toBeNull();
+  });
+});
+
+describe('creating and moving on the timeline', () => {
+  afterEach(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  it("creates at the clicked point of a lane, in that lane's project", async () => {
+    const props = renderDetail();
+    fireEvent.click(screen.getByTestId('schedule-view-timeline'));
+    await screen.findByTestId(`timeline-run-${futureRun}`);
+    const track = screen.getByTestId('timeline-track-/repo/beta');
+    track.getBoundingClientRect = () => ({ left: 0, width: 1000, top: 0, height: 28 }) as DOMRect;
+    fireEvent.click(track, { clientX: 500 });
+    const [at, project] = (props.onCreateScheduleAt as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(typeof at).toBe('number');
+    expect(project).toEqual({ path: '/repo/beta', name: 'beta' });
+  });
+
+  it('drags a single run later on the axis', async () => {
+    const props = renderDetail();
+    fireEvent.click(screen.getByTestId('schedule-view-timeline'));
+    const dot = await screen.findByTestId(`timeline-run-${futureRun}`);
+    const track = screen.getByTestId('timeline-track-/repo/alpha');
+    track.getBoundingClientRect = () => ({ left: 0, width: 1000, top: 0, height: 28 }) as DOMRect;
+    document.elementFromPoint = () => track;
+    drag(dot, { x: 900, y: 10 });
+    expect(screen.getByTestId('timeline-drop-ghost')).toBeTruthy();
+    fireEvent.pointerUp(window);
+    const [, from, to] = (props.onMoveRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(to).toBeGreaterThan(from);
+  });
+});
+
+describe('the inbox in the roomy views', () => {
+  it('folds into a bar under the calendar and opens on demand', () => {
+    renderDetail({ totals: { unread: 2, openQuestions: 0 } });
+    fireEvent.click(screen.getByTestId('schedule-view-calendar'));
+    const toggle = screen.getByTestId('command-center-inbox-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('2');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('stays a plain section in the list view', () => {
+    renderDetail();
+    expect(screen.queryByTestId('command-center-inbox-toggle')).toBeNull();
   });
 });

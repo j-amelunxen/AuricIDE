@@ -88,6 +88,8 @@ function renderDetail(overrides: Partial<ProjectDetailProps> = {}) {
     onOpen: vi.fn(),
     onAction: vi.fn(),
     onNewSchedule: vi.fn(),
+    onCreateScheduleAt: vi.fn(),
+    onMoveRun: vi.fn(),
     onEditSchedule: vi.fn(),
     onToggleSchedule: vi.fn(),
     onDeleteSchedule: vi.fn(),

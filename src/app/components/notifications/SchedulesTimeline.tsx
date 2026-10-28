@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type MouseEvent } from 'react';
 import { useScheduleRuns } from '@/lib/hooks/useScheduleRuns';
 import {
   buildLanes,
@@ -8,26 +8,32 @@ import {
   DAY,
   projectColor,
   type ScheduleRun,
+  type TimelineLane,
   type TimelineLanes,
 } from '@/lib/notifications/scheduleCalendar';
 import type { Notification } from '@/lib/notifications/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { RunLegend, runDotStyle } from './RunLegend';
+import { useRunDrag } from './useRunDrag';
 
 export interface SchedulesTimelineProps {
   schedules: Schedule[];
   notifications: Notification[];
   now: number;
   onEdit: (schedule: Schedule) => void;
+  /** A click on an empty stretch of a lane: a new schedule at that instant, in that lane's project. */
+  onCreate: (at: number, lane: TimelineLane) => void;
+  /** A single upcoming run dropped later or earlier on the axis. */
+  onMove: (schedule: Schedule, from: number, to: number) => void;
 }
 
 const HOUR = 3_600_000;
 
 /** How far back and forward each zoom reaches; the future gets most of the room. */
 const ZOOMS = {
-  '24h': { label: '24 hours', before: 6 * HOUR, after: 18 * HOUR, tick: 3 * HOUR },
-  '7d': { label: '7 days', before: 2 * DAY, after: 5 * DAY, tick: DAY },
-  '30d': { label: '30 days', before: 7 * DAY, after: 23 * DAY, tick: 5 * DAY },
+  '24h': { label: '24 hours', before: 6 * HOUR, after: 18 * HOUR, tick: 3 * HOUR, snap: HOUR / 12 },
+  '7d': { label: '7 days', before: 2 * DAY, after: 5 * DAY, tick: DAY, snap: HOUR / 4 },
+  '30d': { label: '30 days', before: 7 * DAY, after: 23 * DAY, tick: 5 * DAY, snap: HOUR },
 } as const;
 type Zoom = keyof typeof ZOOMS;
 
@@ -43,6 +49,21 @@ const dayTime = new Intl.DateTimeFormat('en-GB', {
 const dayOnly = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit' });
 const hourOnly = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
 
+/** The instant under a pointer on a lane's track, snapped to the zoom's grain. */
+function instantAt(x: number, y: number): number | null {
+  const track = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-track-from]');
+  return track ? instantOnTrack(track, x) : null;
+}
+
+function instantOnTrack(track: HTMLElement, x: number): number {
+  const from = Number(track.dataset.trackFrom);
+  const to = Number(track.dataset.trackTo);
+  const snap = Number(track.dataset.trackSnap);
+  const rect = track.getBoundingClientRect();
+  const fraction = rect.width > 0 ? Math.min(1, Math.max(0, (x - rect.left) / rect.width)) : 0;
+  return Math.round((from + fraction * (to - from)) / snap) * snap;
+}
+
 /**
  * Runs along a horizontal time axis, one lane per project (or per schedule).
  * The window is anchored at the current hour, so "now" stays put as the clock
@@ -53,12 +74,14 @@ export function SchedulesTimeline({
   notifications,
   now,
   onEdit,
+  onCreate,
+  onMove,
 }: SchedulesTimelineProps) {
   const [zoom, setZoom] = useState<Zoom>('7d');
   const [laneMode, setLaneMode] = useState<TimelineLanes>('project');
 
   const anchor = Math.floor(now / HOUR) * HOUR;
-  const { before, after, tick } = ZOOMS[zoom];
+  const { before, after, tick, snap } = ZOOMS[zoom];
   const from = anchor - before;
   const to = anchor + after;
   const span = to - from;
@@ -75,6 +98,22 @@ export function SchedulesTimeline({
     () => new Map(schedules.map((schedule) => [schedule.id, schedule])),
     [schedules]
   );
+
+  const { drag, begin } = useRunDrag({
+    resolveTarget: instantAt,
+    isValidTarget: (at) => at > now,
+    onDrop: (run, to) => {
+      const schedule = byId.get(run.scheduleId);
+      if (schedule !== undefined) onMove(schedule, run.at, to);
+    },
+  });
+  const ghostPos =
+    drag?.targetAt !== undefined && drag.targetAt !== null
+      ? ((drag.targetAt - from) / span) * 100
+      : null;
+
+  const createAt = (event: MouseEvent<HTMLElement>, lane: TimelineLane) =>
+    onCreate(instantOnTrack(event.currentTarget, event.clientX), lane);
 
   const runsByLane = useMemo(() => {
     const laneOf = new Map<string, string>();
@@ -191,7 +230,41 @@ export function SchedulesTimeline({
                     {lane.label}
                   </span>
                 </div>
-                <div className="relative h-7 border-t border-white/5">
+                <div
+                  data-testid={`timeline-track-${lane.key}`}
+                  data-track-from={from}
+                  data-track-to={to}
+                  data-track-snap={snap}
+                  title={drag === null ? 'Click to add a schedule here' : undefined}
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) createAt(event, lane);
+                  }}
+                  className={`relative h-7 border-t border-white/5 ${
+                    drag === null ? 'cursor-crosshair hover:bg-white/[0.04]' : ''
+                  }`}
+                >
+                  {ghostPos !== null &&
+                    drag?.targetAt !== undefined &&
+                    drag.targetAt !== null &&
+                    lane.scheduleIds.includes(drag.run.scheduleId) && (
+                      <span
+                        data-testid="timeline-drop-ghost"
+                        data-valid={drag.valid}
+                        aria-hidden="true"
+                        className={`pointer-events-none absolute inset-y-0 z-10 w-0.5 ${
+                          drag.valid ? 'bg-primary' : 'bg-red-400/70'
+                        }`}
+                        style={{ left: `${ghostPos}%` }}
+                      >
+                        <span
+                          className={`absolute -top-0.5 left-1 -translate-y-full whitespace-nowrap rounded px-1 font-mono text-[9px] ${
+                            drag.valid ? 'bg-primary text-black' : 'bg-red-400/80 text-black'
+                          }`}
+                        >
+                          {dayTime.format(drag.targetAt)}
+                        </span>
+                      </span>
+                    )}
                   {ticks.map((at) => (
                     <span
                       key={at}
@@ -205,12 +278,13 @@ export function SchedulesTimeline({
                     const schedule = byId.get(first.scheduleId);
                     if (schedule === undefined) return null;
                     const many = cluster.runs.length > 1;
+                    const movable = !many && first.state === 'upcoming';
                     const names = [
                       ...new Set(cluster.runs.map((run) => byId.get(run.scheduleId)?.name)),
                     ];
                     const title = many
                       ? `${cluster.runs.length} runs from ${dayTime.format(first.at)} · ${names.slice(0, 5).join(', ')}`
-                      : `${schedule.name} · ${dayTime.format(first.at)} · ${first.state === 'upcoming' ? 'due' : first.state}`;
+                      : `${schedule.name} · ${dayTime.format(first.at)} · ${first.state === 'upcoming' ? 'due · drag to move' : first.state}`;
                     return (
                       <button
                         key={first.key}
@@ -220,8 +294,14 @@ export function SchedulesTimeline({
                         data-count={cluster.runs.length}
                         title={title}
                         aria-label={title}
-                        onClick={() => onEdit(schedule)}
-                        className="absolute top-1/2 flex h-3.5 min-w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-0.5 text-[8px] font-bold text-black"
+                        onPointerDown={movable ? (event) => begin(event, first) : undefined}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(schedule);
+                        }}
+                        className={`absolute top-1/2 flex h-3.5 min-w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-0.5 text-[8px] font-bold text-black hover:ring-2 hover:ring-white/40 ${
+                          movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                        } ${drag?.run.key === first.key ? 'opacity-40' : ''}`}
                         style={{
                           left: `${cluster.at * 100}%`,
                           ...runDotStyle(cluster.state, projectColor(schedule.projectPath)),

@@ -387,6 +387,8 @@ export function buildScheduleDraft({
     // Mission ownership is backend-authored. Editing its recurrence must not
     // silently turn it back into a generic notification schedule.
     missionSlug: schedule?.missionSlug ?? null,
+    // Moved or skipped single occurrences belong to the schedule, not to the form.
+    exceptions: schedule?.exceptions ?? [],
     timezone: schedule?.timezone ?? localTimezone(),
     catchUp,
     payload: JSON.stringify(payload),

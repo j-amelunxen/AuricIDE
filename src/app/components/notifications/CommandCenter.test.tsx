@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import type { Notification } from '@/lib/notifications/types';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
@@ -15,6 +15,10 @@ import { CommandCenter } from './CommandCenter';
  * quietly clearing every project's inbox. Only the Tauri IPC boundary is
  * mocked.
  */
+
+// `useNow` keeps its clock at module level, read when first imported — a test
+// that fakes the date would still see the real one until the first tick.
+vi.mock('@/lib/hooks/useNow', () => ({ useNow: () => Date.now() }));
 
 const isDirMock = vi.fn(async () => true);
 
@@ -36,6 +40,9 @@ vi.mock('@/lib/tauri/schedules', () => ({
   schedulesDelete: vi.fn(async () => undefined),
   schedulesSetEnabled: vi.fn(async () => undefined),
   schedulesPreview: vi.fn(async () => ['2026-08-20 09:00:00']),
+  schedulesOccurrences: vi.fn(async (schedules: { id: string }[]) =>
+    schedules.map((s) => ({ scheduleId: s.id, at: ['2026-08-13 07:00:00'], truncated: false }))
+  ),
 }));
 
 const listProjectSkillsMock = vi.fn<
@@ -651,5 +658,73 @@ describe('CommandCenter', () => {
     const row = screen.getByTestId(`notification-row-${settled.uid}`);
     expect(within(row).getByText('Deploy it')).toBeTruthy();
     expect(screen.queryByTestId(`notification-action-${settled.uid}-yes`)).toBeNull();
+  });
+});
+
+describe('moving a run from the calendar', () => {
+  async function dragToNextDay() {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-08-12T10:00:00Z') });
+    localStorage.setItem('auric.command-center.schedule-view', 'calendar');
+    stageSchedules(makeSchedule({ anchorAt: '2026-08-01 07:00:00' }));
+    renderCenter();
+    const chip = await screen.findByTestId(
+      `calendar-run-s1@${Date.parse('2026-08-13T07:00:00Z')}`,
+      {},
+      { timeout: 5000 }
+    );
+    const day = Number(chip.closest<HTMLElement>('[data-slot-day]')!.dataset.slotDay);
+    const target = screen.getByTestId(`calendar-cell-${day + 1}-15`);
+    target.getBoundingClientRect = () => ({ top: 0, height: 28, left: 0, width: 100 }) as DOMRect;
+    document.elementFromPoint = () => target;
+    fireEvent.pointerDown(chip, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(window, { clientX: 40, clientY: 14 });
+    fireEvent.pointerUp(window);
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('asks, and "only this occurrence" saves an exception and leaves the rhythm', async () => {
+    const { schedulesUpsert } = await import('@/lib/tauri/schedules');
+    await dragToNextDay();
+    fireEvent.click(await screen.findByRole('button', { name: 'Only this occurrence' }));
+    await waitFor(() => expect(schedulesUpsert).toHaveBeenCalledTimes(1));
+    const saved = vi.mocked(schedulesUpsert).mock.calls[0][0];
+    expect(saved.exceptions).toHaveLength(1);
+    expect(saved.exceptions?.[0].originalAt).toBe('2026-08-13 07:00:00');
+    expect(saved.timeOfDay).toBe('09:00');
+  });
+
+  it('"all occurrences" shifts the series and records no exception', async () => {
+    const { schedulesUpsert } = await import('@/lib/tauri/schedules');
+    await dragToNextDay();
+    fireEvent.click(await screen.findByRole('button', { name: 'All occurrences' }));
+    await waitFor(() => expect(schedulesUpsert).toHaveBeenCalledTimes(1));
+    const saved = vi.mocked(schedulesUpsert).mock.calls[0][0];
+    expect(saved.timeOfDay).not.toBe('09:00');
+    expect(saved.exceptions ?? []).toEqual([]);
+  });
+
+  it('saves nothing when the question is cancelled', async () => {
+    const { schedulesUpsert } = await import('@/lib/tauri/schedules');
+    await dragToNextDay();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await Promise.resolve();
+    expect(schedulesUpsert).not.toHaveBeenCalled();
+  });
+
+  it('opens the editor on a clicked slot, at that weekday and time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-08-12T10:00:00Z') });
+    localStorage.setItem('auric.command-center.schedule-view', 'calendar');
+    stageSchedules(makeSchedule({ anchorAt: '2026-08-01 07:00:00' }));
+    useStore.setState({ rootPath: ALPHA } as never);
+    renderCenter();
+    const cell = await screen.findByTestId('calendar-cell-3-10');
+    cell.getBoundingClientRect = () => ({ top: 0, height: 28, left: 0, width: 100 }) as DOMRect;
+    fireEvent.click(cell, { clientY: 14 });
+    expect(await screen.findByRole('dialog', { name: 'New schedule' })).toBeInTheDocument();
+    expect(screen.getByTestId('schedule-time')).toHaveValue('10:30');
   });
 });

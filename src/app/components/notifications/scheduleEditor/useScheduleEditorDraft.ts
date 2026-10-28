@@ -36,10 +36,24 @@ import {
   type TaskLaunchDraft,
 } from './types';
 
+const WEEKDAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+/** `HH:MM` of a clicked slot, or the form's usual morning. */
+function slotTime(slot: number | null | undefined): string {
+  if (typeof slot !== 'number') return '09:00';
+  const at = new Date(slot);
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+function slotWeekday(slot: number | null | undefined): string {
+  return typeof slot !== 'number' ? 'WED' : WEEKDAY_NAMES[new Date(slot).getDay()];
+}
+
 export function useScheduleEditorDraft({
   schedule,
   defaultProjectPath,
   defaultProjectName,
+  defaultSlot,
   starredProjects,
   projectOptions,
   discoveredSkills,
@@ -49,6 +63,7 @@ export function useScheduleEditorDraft({
   | 'schedule'
   | 'defaultProjectPath'
   | 'defaultProjectName'
+  | 'defaultSlot'
   | 'starredProjects'
   | 'projectOptions'
   | 'discoveredSkills'
@@ -68,10 +83,11 @@ export function useScheduleEditorDraft({
 
   const [name, setName] = useState(schedule?.name ?? '');
   const [rhythm, setRhythm] = useState<RhythmChoice>(() => rhythmOf(schedule));
-  const [time, setTime] = useState(schedule?.timeOfDay ?? '09:00');
+  const [time, setTime] = useState(schedule?.timeOfDay ?? slotTime(defaultSlot));
   const [weekdays, setWeekdays] = useState<string[]>(() => {
     const fields = schedule?.cronExpr?.trim().split(/\s+/) ?? [];
-    return fields.length === 6 && /^[A-Z,]+$/.test(fields[5]) ? fields[5].split(',') : ['WED'];
+    if (fields.length === 6 && /^[A-Z,]+$/.test(fields[5])) return fields[5].split(',');
+    return [slotWeekday(defaultSlot)];
   });
   const [everyN, setEveryN] = useState(schedule?.everyN ?? 14);
   const [everyUnit, setEveryUnit] = useState(schedule?.everyUnit ?? 'day');

@@ -15,6 +15,8 @@ export interface ScheduleEditorProps {
   /** Project a new schedule starts on; null means app-wide. */
   defaultProjectPath: string | null;
   defaultProjectName: string | null;
+  /** A new schedule created by clicking a slot starts at this instant (weekday and time). */
+  defaultSlot?: number | null;
   /** Formatted next occurrences for the draft, from the backend. */
   preview: string[];
   starredProjects: StarredProject[];

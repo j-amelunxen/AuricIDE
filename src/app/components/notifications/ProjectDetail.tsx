@@ -36,6 +36,10 @@ export interface ProjectDetailProps {
   onAction: (notification: Notification, action: NotificationAction) => void;
   /** Opens the editor pre-bound to whatever this pane is showing. */
   onNewSchedule: () => void;
+  /** A click on an empty slot of the calendar or timeline. */
+  onCreateScheduleAt: (at: number, project?: { path: string | null; name: string | null }) => void;
+  /** A run dropped on another slot. */
+  onMoveRun: (schedule: Schedule, from: number, to: number) => void;
   onEditSchedule: (schedule: Schedule) => void;
   onToggleSchedule: (schedule: Schedule, enabled: boolean) => void;
   onDeleteSchedule: (schedule: Schedule) => void;
@@ -83,6 +87,8 @@ export function ProjectDetail({
   onOpen,
   onAction,
   onNewSchedule,
+  onCreateScheduleAt,
+  onMoveRun,
   onEditSchedule,
   onToggleSchedule,
   onDeleteSchedule,
@@ -128,6 +134,11 @@ export function ProjectDetail({
     writeAppPref(APP_CONFIG_KEYS.commandCenterScheduleView, next);
   };
 
+  // Calendar and timeline want the height; the inbox folds into a bar beneath
+  // them so a click on its header, not a scroll, brings it back.
+  const roomy = view !== 'list' && viewSchedules.length > 0;
+  const [inboxOpen, setInboxOpen] = useState(false);
+
   return (
     <div className="flex min-h-0 min-w-0 flex-col">
       <div
@@ -158,14 +169,18 @@ export function ProjectDetail({
         <ScheduleViewSwitch value={view} onChange={changeView} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className={`min-h-0 flex-1 ${roomy ? 'flex flex-col' : 'overflow-y-auto'}`}>
         {/* Capped so a project with many reminders cannot push its inbox — the
             part that changes — below the fold. */}
         <section
           data-testid="command-center-triggers"
-          className={`overflow-y-auto border-b border-white/10 ${view === 'list' ? 'max-h-[42vh]' : 'max-h-[60vh]'}`}
+          className={
+            roomy
+              ? 'flex min-h-0 flex-1 flex-col border-b border-white/10 pt-2'
+              : 'max-h-[42vh] overflow-y-auto border-b border-white/10'
+          }
         >
-          <div className="flex items-center justify-between px-3 py-2">
+          <div className={`flex items-center justify-between px-3 py-2 ${roomy ? 'hidden' : ''}`}>
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
               Triggers
             </h3>
@@ -186,6 +201,8 @@ export function ProjectDetail({
               notifications={notifications}
               now={now}
               onEdit={onEditSchedule}
+              onCreate={(at) => onCreateScheduleAt(at)}
+              onMove={onMoveRun}
             />
           ) : view === 'timeline' && viewSchedules.length > 0 ? (
             <SchedulesTimeline
@@ -193,6 +210,13 @@ export function ProjectDetail({
               notifications={notifications}
               now={now}
               onEdit={onEditSchedule}
+              onCreate={(at, lane) =>
+                onCreateScheduleAt(
+                  at,
+                  lane.path === null ? undefined : { path: lane.path, name: lane.label }
+                )
+              }
+              onMove={onMoveRun}
             />
           ) : triggerGroups.length === 0 ? (
             <SchedulesSection
@@ -220,7 +244,42 @@ export function ProjectDetail({
           )}
         </section>
 
-        <div className="min-h-[240px]">
+        {roomy && (
+          <button
+            type="button"
+            data-testid="command-center-inbox-toggle"
+            aria-expanded={inboxOpen}
+            onClick={() => setInboxOpen(!inboxOpen)}
+            className="flex flex-shrink-0 cursor-pointer items-center gap-2 border-b border-white/5 px-3 py-1.5 text-left hover:bg-white/5"
+          >
+            <AuricIcon
+              name={inboxOpen ? 'expand_more' : 'chevron_right'}
+              aria-hidden="true"
+              className="text-sm text-foreground-muted"
+            />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
+              Notifications
+            </span>
+            {unread > 0 && (
+              <span className="rounded-full bg-primary/20 px-1.5 text-[10px] font-semibold text-primary">
+                {unread}
+              </span>
+            )}
+            {openQuestions > 0 && (
+              <span className="text-[10px] text-[#ffce2e]">{questionsWaiting(openQuestions)}</span>
+            )}
+          </button>
+        )}
+
+        <div
+          className={
+            roomy
+              ? inboxOpen
+                ? 'h-[40%] min-h-[200px] flex-shrink-0 overflow-y-auto'
+                : 'hidden'
+              : 'min-h-[240px]'
+          }
+        >
           <NotificationsPanel
             notifications={rows}
             unreadCount={unread}
