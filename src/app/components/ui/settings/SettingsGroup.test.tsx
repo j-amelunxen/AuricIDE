@@ -40,4 +40,14 @@ describe('SettingsSwitch', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Allow alpha' }));
     expect(onChange).toHaveBeenCalledWith(true);
   });
+
+  it('puts the real input over the visible track, so a click on the track reaches it', () => {
+    // happy-dom has no hit-testing; the contract is that the input covers its track and is
+    // not screen-reader-only (sr-only is 1px, which left the track unclickable outside a label).
+    render(<SettingsSwitch checked={false} onChange={vi.fn()} ariaLabel="Allow alpha" />);
+    const input = screen.getByRole('switch', { name: 'Allow alpha' });
+    expect(input.className).toContain('absolute');
+    expect(input.className).toContain('inset-0');
+    expect(input.className).not.toContain('sr-only');
+  });
 });

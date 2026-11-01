@@ -34,8 +34,10 @@ export function SettingsSwitch({
         data-testid={testId}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="peer sr-only"
+        className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0"
       />
+      {/* The input is invisible but spans the whole track: it must receive the click itself,
+          because the switch is not always inside a <label> (list rows, header rows). */}
       {/* Custom switch track — native checkbox styling ignores theme tokens,
           so we render an on-brand track/thumb driven by the checked prop. */}
       <span
