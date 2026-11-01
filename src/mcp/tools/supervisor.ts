@@ -89,6 +89,19 @@ export function registerSupervisorTools(
 }
 
 /**
+const pmProject = z
+  .string()
+  .describe('Its absolute path or folder name; an older note may say auric-pm-<name>');
+const pmToolName = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/, 'a tool name is letters, digits, _ and -');
+const pmToolsParams = z.object({ project: pmProject.optional(), tool: pmToolName.optional() });
+const pmCallParams = z.object({
+  project: pmProject,
+  tool: pmToolName,
+  arguments: z.record(z.string(), z.unknown()).optional(),
+});
+
  * The PM tools of its projects, one door instead of a server per project
  * (`src/mcp/supervisorPm.ts`). Rust decides on every call whether the project may
  * be used.
@@ -106,7 +119,7 @@ function registerPmGatewayTools(server: FastMCP, gateway: PmGateway): void {
       'more). Without tool: every name with its first sentence. With tool: its full description ' +
       'and input schema, which you need before pm_call. The list is the same in every project; ' +
       'project matters only for a refusal, and is the first usable one if left out.',
-    parameters: z.object({ project: project.optional(), tool: tool.optional() }),
+    parameters: pmToolsParams,
     execute: async (args: { project?: string; tool?: string }) =>
       gateway.describe(args.project, args.tool),
   });
@@ -118,11 +131,7 @@ function registerPmGatewayTools(server: FastMCP, gateway: PmGateway): void {
       "tool's, from pm_tools with tool. A project outside your policy is unknown_project; " +
       'without a project database, or a name two projects share, supervisor_denied with a ' +
       'reason. A name that fits two projects lists their paths. Spawning stays with spawn_agent.',
-    parameters: z.object({
-      project,
-      tool,
-      arguments: z.record(z.string(), z.unknown()).optional(),
-    }),
+    parameters: pmCallParams,
     execute: async (args: { project: string; tool: string; arguments?: Record<string, unknown> }) =>
       gateway.call(args.project, args.tool, args.arguments ?? {}),
   });

@@ -95,6 +95,16 @@ describe('agent control contract', () => {
   });
 
   describe('responses', () => {
+    it('keeps the question count of a supervisor listing: the schema must not strip it', () => {
+      const summary = fixtures.responses.list_agents.result.agents[0];
+      const parsed = parseControlResponse('list_agents', {
+        id: 1,
+        ok: true,
+        result: { agents: [{ ...summary, questionCount: 3 }] },
+      });
+      expect(parsed.ok && parsed.result.agents[0].questionCount).toBe(3);
+    });
+
     const { error, ...byMethod } = fixtures.responses;
 
     for (const [method, response] of Object.entries(byMethod)) {

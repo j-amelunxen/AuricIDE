@@ -131,7 +131,7 @@ export class PmGateway {
   private async target(project: string | undefined) {
     let answer: unknown;
     try {
-      answer = await this.options.call('pm_target', project ? { project } : {});
+      answer = await this.options.call('pm_target', project === undefined ? {} : { project });
     } catch (error) {
       throw refusal(error);
     }

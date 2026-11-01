@@ -198,6 +198,52 @@ function namedSupervisorKey(params: object): string | null {
 /** The changes `link_policy_propose` knows (`supervisorLink.fixtures.json`, `proposals.ops`). */
 export const LINK_POLICY_OPS = linkFixtures.proposals.ops as [string, ...string[]];
 
+const readReportParams = z.object({ agentId }).transform((p) => ({ agentId: p.agentId }));
+
+const awaitResultParams = z
+  .object({
+    agentId,
+    waitSeconds: offset.nullish(),
+    untilInput: z.boolean().nullish(),
+    sinceOffset: offset.nullish(),
+    sinceQuestion: offset.nullish(),
+    sinceReport: z.string().nullish(),
+  })
+  .transform((p) => ({
+    agentId: p.agentId,
+    waitSeconds: Math.min(
+      p.waitSeconds ?? CONTROL_LIMITS.defaultAwaitSeconds,
+      CONTROL_LIMITS.maxAwaitSeconds
+    ),
+    // Left out when unset, as Rust serialises them, so older requests read the same.
+    ...(p.untilInput ? { untilInput: true } : {}),
+    ...(p.sinceOffset !== null && p.sinceOffset !== undefined
+      ? { sinceOffset: p.sinceOffset }
+      : {}),
+    ...(p.sinceQuestion !== null && p.sinceQuestion !== undefined
+      ? { sinceQuestion: p.sinceQuestion }
+      : {}),
+    ...(p.sinceReport ? { sinceReport: p.sinceReport } : {}),
+  }));
+
+const raiseQuestionParams = z
+  .object({
+    question: questionText.refine((text) => text.trim().length > 0, 'question must not be empty'),
+    context: questionText.nullish(),
+    options: z.array(questionText).max(CONTROL_LIMITS.questionOptionsMax).nullish(),
+  })
+  .strict()
+  .transform((p) => ({
+    question: p.question,
+    ...(p.context ? { context: p.context } : {}),
+    ...(p.options?.length ? { options: p.options } : {}),
+  }));
+
+/** Left out: the first permitted, initialised project. */
+const pmTargetParams = z
+  .object({ project: z.string().trim().min(1, 'project must not be empty').optional() })
+  .transform((p) => (p.project ? { project: p.project } : {}));
+
 const PARAMS = {
   list_agents: noParams,
   list_projects: z
@@ -281,51 +327,13 @@ const PARAMS = {
       ...(p.modelReason ? { modelReason: p.modelReason } : {}),
       ...(p.supervisorKey ? { supervisorKey: p.supervisorKey } : {}),
     })),
-  await_result: z
-    .object({
-      agentId,
-      waitSeconds: offset.nullish(),
-      untilInput: z.boolean().nullish(),
-      sinceOffset: offset.nullish(),
-      sinceQuestion: offset.nullish(),
-      sinceReport: z.string().nullish(),
-    })
-    .transform((p) => ({
-      agentId: p.agentId,
-      waitSeconds: Math.min(
-        p.waitSeconds ?? CONTROL_LIMITS.defaultAwaitSeconds,
-        CONTROL_LIMITS.maxAwaitSeconds
-      ),
-      // Left out when unset, as Rust serialises them, so older requests read the same.
-      ...(p.untilInput ? { untilInput: true } : {}),
-      ...(p.sinceOffset !== null && p.sinceOffset !== undefined
-        ? { sinceOffset: p.sinceOffset }
-        : {}),
-      ...(p.sinceQuestion !== null && p.sinceQuestion !== undefined
-        ? { sinceQuestion: p.sinceQuestion }
-        : {}),
-      ...(p.sinceReport ? { sinceReport: p.sinceReport } : {}),
-    })),
-  read_report: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
-  raise_question: z
-    .object({
-      question: questionText.refine((text) => text.trim().length > 0, 'question must not be empty'),
-      context: questionText.nullish(),
-      options: z.array(questionText).max(CONTROL_LIMITS.questionOptionsMax).nullish(),
-    })
-    .strict()
-    .transform((p) => ({
-      question: p.question,
-      ...(p.context ? { context: p.context } : {}),
-      ...(p.options?.length ? { options: p.options } : {}),
-    })),
+  await_result: awaitResultParams,
+  read_report: readReportParams,
+  raise_question: raiseQuestionParams,
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   dismiss: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   link_policy_get: noParams,
-  /** Left out: the first permitted, initialised project. */
-  pm_target: z
-    .object({ project: z.string().trim().min(1, 'project must not be empty').optional() })
-    .transform((p) => (p.project ? { project: p.project } : {})),
+  pm_target: pmTargetParams,
   /**
    * Only the op is checked here; Rust checks every field against the policy
    * rules and answers `invalid_params` naming the change that broke one.
@@ -456,6 +464,8 @@ const agentSummary = z.object({
   status: z.enum(['running', 'idle', 'queued', 'error', 'done']),
   finishedAt: z.number().optional(),
   answerPreview: z.string().nullable().optional(),
+  /** How many questions it raised; only a supervisor's listing has it, absent at zero. */
+  questionCount: offset.optional(),
   currentTask: z.string().nullable(),
   startedAt: z.number(),
   lastActivityAt: z.number().nullable(),

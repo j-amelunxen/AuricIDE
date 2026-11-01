@@ -217,6 +217,13 @@ describe('refusals never start anything', () => {
     expect(r.gateway.cachedPaths()).toEqual([]);
   });
 
+  it('takes an empty project for a mistake, not for the first usable one', async () => {
+    const r = rig();
+    await expect(r.pmCall({ project: '', tool: 'list_epics' })).rejects.toThrow('unknown_project');
+    await expect(r.pmTools({ project: '' })).rejects.toThrow('unknown_project');
+    expect(r.startedPaths).toEqual([]);
+  });
+
   it('shows a refusal with its reason and starts nothing', async () => {
     const call = (async () => {
       throw new ControlError('supervisor_denied', 'has no database', 'project_not_initialized');
