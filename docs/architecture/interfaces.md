@@ -44,7 +44,9 @@ The last section compares link and MCP.
 - **Frontend side:** wrappers in `src/lib/tauri/*.ts` over one helper, `invoke.ts`
   (lazy import, throws `Tauri IPC is unavailable (<cmd>)` instead of calling undefined).
 - **Who may call:** capability files `src-tauri/capabilities/default.json` (window
-  `main`) and `agent-window.json`. Permissions: `core:default`, dialog, notification,
+  `main`) and `agent-window.json`. Permissions: `core:default`,
+  `core:window:allow-start-dragging` (both windows hide the native title bar and are moved
+  through `data-tauri-drag-region`), dialog, notification,
   `opener:allow-reveal-item-in-dir`, `opener:allow-open-path` only under
   `$HOME/.auric/supervisors/**`, `opener:allow-open-url` for `https://*`. There is no
   network listener for IPC; a browser cannot reach it.
