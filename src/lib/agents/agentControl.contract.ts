@@ -26,6 +26,7 @@ export const CONTROL_METHODS = [
   'dismiss',
   'link_policy_get',
   'link_policy_propose',
+  'pm_target',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -88,12 +89,13 @@ export const RUN_RESULT_SOURCES = ['cli_result', 'console_tail'] as const;
 
 /**
  * The stable keys a `supervisor_denied` refusal names in `error.reason`
- * (`supervisorPolicy.fixtures.json`, `reasons.checkSpawn` and
- * `reasons.modelChoice`).
+ * (`supervisorPolicy.fixtures.json`, `reasons.checkSpawn`,
+ * `reasons.modelChoice` and `reasons.pmTarget`).
  */
 export const SUPERVISOR_DENIED_REASONS = [
   ...Object.keys(policyFixtures.reasons.checkSpawn),
   ...Object.keys(policyFixtures.reasons.modelChoice),
+  ...Object.keys(policyFixtures.reasons.pmTarget),
 ].filter((key) => key !== '_comment');
 
 /**
@@ -277,6 +279,10 @@ const PARAMS = {
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   dismiss: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   link_policy_get: noParams,
+  /** Left out: the first permitted, initialised project. */
+  pm_target: z
+    .object({ project: z.string().trim().min(1, 'project must not be empty').optional() })
+    .transform((p) => (p.project ? { project: p.project } : {})),
   /**
    * Only the op is checked here; Rust checks every field against the policy
    * rules and answers `invalid_params` naming the change that broke one.
@@ -547,6 +553,11 @@ const RESULTS = {
     pending: z.array(
       z.object({ id: z.string(), reason: z.string(), diff: z.array(z.string()), expiresAt: offset })
     ),
+  }),
+  /** The one folder a PM tool may run in, by the policy in force at this call. */
+  pm_target: z.object({
+    path: z.string().startsWith('/', 'path must be absolute'),
+    name: z.string(),
   }),
   /** `pending` always: proposing applies nothing; a person decides in the IDE. */
   link_policy_propose: z.object({

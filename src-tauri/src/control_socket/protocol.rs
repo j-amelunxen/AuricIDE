@@ -197,6 +197,16 @@ pub enum Request {
     Dismiss(AgentIdParams),
     LinkPolicyGet(EmptyParams),
     LinkPolicyPropose(LinkPolicyProposeParams),
+    PmTarget(PmTargetParams),
+}
+
+/// `pm_target`: which project folder a PM tool may run in. `project` is a path,
+/// a folder name or an old server name; left out, the first usable project.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PmTargetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 /// `link_policy_propose`: structured changes to the supervisor link policy
@@ -208,7 +218,15 @@ pub struct LinkPolicyProposeParams {
     pub changes: Vec<crate::supervisor_link::proposals::PolicyChange>,
 }
 
-const METHODS: [&str; 11] = [
+/// `pm_target`: the one folder a PM tool may run in now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PmTargetResult {
+    pub path: String,
+    pub name: String,
+}
+
+const METHODS: [&str; 12] = [
     "list_agents",
     "read_output",
     "send_input",
@@ -220,6 +238,7 @@ const METHODS: [&str; 11] = [
     "dismiss",
     "link_policy_get",
     "link_policy_propose",
+    "pm_target",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -366,6 +385,9 @@ fn normalise_params(request: Request) -> Result<Request, String> {
             if blank(&params.reason) || params.changes.is_empty() =>
         {
             Err("reason and at least one change are required".into())
+        }
+        Request::PmTarget(params) if params.project.as_deref().is_some_and(blank) => {
+            Err("project must not be empty; leave it out for the first usable project".into())
         }
         Request::ListProjects(params) if params.project.as_deref().is_some_and(blank) => {
             Err("project must not be empty; leave it out to list every project".into())
@@ -973,6 +995,16 @@ pub(crate) mod tests {
             (
                 "link_policy_get",
                 ok_response(&json!(30), sample_link_policy()),
+            ),
+            (
+                "pm_target",
+                ok_response(
+                    &json!(60),
+                    PmTargetResult {
+                        path: "/tmp/example-project".into(),
+                        name: "example-project".into(),
+                    },
+                ),
             ),
             (
                 "link_policy_propose",

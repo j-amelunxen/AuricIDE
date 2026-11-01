@@ -10,6 +10,7 @@
 pub mod attachments;
 pub mod managers;
 pub mod memory;
+pub mod pm_target;
 pub mod policy;
 #[cfg(test)]
 mod probe_driver;
@@ -435,34 +436,38 @@ fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("No app data directory: {error}"))
 }
 
-/// Every permitted project gets its own `auric-pm` server, named
-/// `auric-pm-<folder>` (fixture `pmServerNames`).
-pub const PM_SERVER_PREFIX: &str = "auric-pm-";
-/// Keeps `mcp__auric-pm-<slug>__<longest tool>` inside Claude Code's 64
-/// characters.
+/// What a supervisor's notes may still call a project's PM tools by. It has no
+/// such server any more; `pm_target` accepts the name (fixture `pmServerNames`).
+const PM_SERVER_PREFIX: &str = "auric-pm-";
+/// Kept `mcp__auric-pm-<slug>__<longest tool>` inside Claude Code's 64 characters.
 const PM_SLUG_MAX: usize = 16;
 
-/// `auric-pm-<slug>` per project path, in the order given. The slug is the
-/// folder name in lowercase ASCII letters, digits and dashes, at most 16
-/// long; a repeat gets `-2`, `-3`, … The TS twin names the same servers in
-/// the launch prompt, so both read `supervisorPolicy.fixtures.json`.
-pub fn pm_server_names(paths: &[String]) -> Vec<String> {
+/// The folder name in lowercase ASCII letters, digits and dashes, at most 16
+/// long; `project` when nothing usable is left.
+fn pm_slug(path: &str) -> String {
+    let folder = normalize_project_path(path);
+    let base = folder.rsplit('/').next().unwrap_or("").to_lowercase();
+    let mut slug = String::new();
+    for c in base.chars() {
+        let c = if c.is_ascii_alphanumeric() { c } else { '-' };
+        if !(c == '-' && (slug.is_empty() || slug.ends_with('-'))) {
+            slug.push(c);
+        }
+    }
+    slug.truncate(PM_SLUG_MAX);
+    match slug.trim_end_matches('-') {
+        "" => "project".to_string(),
+        trimmed => trimmed.to_string(),
+    }
+}
+
+/// `auric-pm-<slug>` per project path, in the order given; a repeat gets `-2`,
+/// `-3`, … These are the names a supervisor's servers carried before the PM
+/// gateway, so older notes can still say which project they meant.
+fn pm_server_names(paths: &[String]) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     for path in paths {
-        let folder = normalize_project_path(path);
-        let base = folder.rsplit('/').next().unwrap_or("").to_lowercase();
-        let mut slug = String::new();
-        for c in base.chars() {
-            let c = if c.is_ascii_alphanumeric() { c } else { '-' };
-            if !(c == '-' && (slug.is_empty() || slug.ends_with('-'))) {
-                slug.push(c);
-            }
-        }
-        slug.truncate(PM_SLUG_MAX);
-        let slug = match slug.trim_end_matches('-') {
-            "" => "project".to_string(),
-            trimmed => trimmed.to_string(),
-        };
+        let slug = pm_slug(path);
         let mut name = format!("{PM_SERVER_PREFIX}{slug}");
         let mut n = 2;
         while names.contains(&name) {
@@ -472,23 +477,6 @@ pub fn pm_server_names(paths: &[String]) -> Vec<String> {
         names.push(name);
     }
     names
-}
-
-/// The `auric-pm` servers a supervisor gets: one per permitted project that
-/// has a project database, named over every permitted project so a name does
-/// not shift when another project is initialised.
-pub fn supervisor_pm_servers(policy: &SupervisorPolicy) -> Vec<(String, String)> {
-    let permitted: Vec<String> = policy
-        .projects
-        .iter()
-        .filter(|(_, rules)| rules.allowed)
-        .map(|(path, _)| path.clone())
-        .collect();
-    pm_server_names(&permitted)
-        .into_iter()
-        .zip(permitted)
-        .filter(|(_, path)| Path::new(path).join(".auric").join("project.db").is_file())
-        .collect()
 }
 
 /// `~/.auric/supervisors` for this home directory.
@@ -1207,31 +1195,5 @@ mod tests {
             let expected: Vec<String> = serde_json::from_value(case["expected"].clone()).unwrap();
             assert_eq!(pm_server_names(&paths), expected, "{}", case["name"]);
         }
-    }
-
-    #[test]
-    fn only_permitted_initialised_projects_get_an_auric_pm() {
-        let root = tempfile::tempdir().unwrap();
-        let project = |name: &str, initialised: bool| {
-            let dir = root.path().join(name);
-            std::fs::create_dir_all(dir.join(".auric")).unwrap();
-            if initialised {
-                std::fs::write(dir.join(".auric").join("project.db"), "").unwrap();
-            }
-            dir.to_string_lossy().into_owned()
-        };
-        let (a, b, c) = (project("a", true), project("b", false), project("c", true));
-        let mut policy = SupervisorPolicy::default();
-        for (path, allowed) in [(&a, true), (&b, true), (&c, false)] {
-            let rules = policy::ProjectRules {
-                allowed,
-                ..Default::default()
-            };
-            policy.projects.insert(path.clone(), rules);
-        }
-        assert_eq!(
-            supervisor_pm_servers(&policy),
-            vec![("auric-pm-a".to_string(), a)]
-        );
     }
 }

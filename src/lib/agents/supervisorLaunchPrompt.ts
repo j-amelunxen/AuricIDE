@@ -50,8 +50,6 @@ export interface SupervisorPromptProject {
   allowInteractive: boolean;
   maxRunning: number;
   providers: SupervisorPromptProvider[];
-  /** Its `auric-pm` MCP server, when the policy names one. */
-  pmServer?: string;
 }
 
 const RANK_LABELS: Record<number, string> = { 1: 'small', 2: 'medium', 3: 'large', 4: 'largest' };
@@ -78,12 +76,10 @@ function byRank(models: SupervisorPromptModel[]): SupervisorPromptModel[] {
 export function supervisorPromptProjects(
   visible: VisibleProject[],
   providers: ProviderInfo[],
-  descriptions: Record<string, string | null | undefined> = {},
-  pmServers: Record<string, string> = {}
+  descriptions: Record<string, string | null | undefined> = {}
 ): SupervisorPromptProject[] {
   return visible.map((project) => ({
     path: project.path,
-    ...(pmServers[project.path] ? { pmServer: pmServers[project.path] } : {}),
     description: descriptions[project.path] ?? null,
     allowInteractive: project.allowInteractive,
     maxRunning: project.maxRunning,
@@ -112,7 +108,7 @@ export function supervisorPromptProjects(
 const ROLE =
   'You are the AuricIDE supervisor. You orchestrate agents in other projects; you never do ' +
   "the projects' work yourself. Your tools run without asking, and they are all you have: " +
-  "auric-supervisor, each project's auric-pm, the file tools (Read, Write, Edit, Glob, " +
+  "auric-supervisor (it also reaches each project's PM tools), the file tools (Read, Write, Edit, Glob, " +
   'Grep) and the skills listed below. MCP tools may load deferred: fetch them with ' +
   'ToolSearch rather than concluding they are missing. The file tools reach only your run folder, the working directory this run started ' +
   'in; keep collected data, notes and artifacts there. Anything else is refused, not asked. ' +
@@ -203,6 +199,13 @@ function describeBalancing(providers: SupervisorPromptProvider[]): string | null
   );
 }
 
+const PM_RULES =
+  "A project's PM tools run through two tools of yours. `pm_tools` lists their names, " +
+  "`pm_tools` with `tool` gives one tool's schema, and `pm_call` with `project`, `tool` and " +
+  '`arguments` runs it. `project` is the path or folder name, where list_projects reports it ' +
+  'initialized. An older note may name `mcp__auric-pm-<x>__<tool>`: that now means `pm_call` ' +
+  'with project `auric-pm-<x>` or the project path.';
+
 function describeProject(project: SupervisorPromptProject): string {
   const lines = [`### ${project.path}`];
   if (project.description) lines.push(project.description);
@@ -210,12 +213,6 @@ function describeProject(project: SupervisorPromptProject): string {
     `Interactive runs: ${project.allowInteractive ? 'allowed' : 'not allowed, headless only'}. ` +
       `At most ${project.maxRunning} of your agents at once here.`
   );
-  if (project.pmServer) {
-    lines.push(
-      `Tickets, goals and stations: the \`${project.pmServer}\` tools ` +
-        `(\`mcp__${project.pmServer}__*\`), when list_projects reports it initialized.`
-    );
-  }
   if (project.providers.length === 0) {
     lines.push('No provider is usable here right now: do not spawn in this project.');
     return lines.join('\n');
@@ -329,7 +326,7 @@ const CLEANUP_RULES = [
   '- **removed: false is a handover, not an error.** The worktree holds work (dirty or ' +
     'branchAhead). Do not retry, do not merge, do not ask another agent to delete it. Tell the ' +
     'human the project, branch, path and what the work is, and that it waits for a merge in ' +
-    "the IDE's Git panel; where the project has an auric-pm server, also record it with notify.",
+    "the IDE's Git panel; where the project is initialized, also record it with pm_call and notify.",
   '- **Finished agents stay listed until you clear them.** list_my_agents shows them with ' +
     'status done or error, finishedAt and answerPreview; their results are still there. ' +
     'After reading a result and removing ' +
@@ -541,6 +538,8 @@ export function buildSupervisorLaunchPrompt(
     'What you may use when you started. Call list_projects with `project` for the live state ' +
       'of a project: the policy, the running counts and the allowed models can change.',
     projectSection,
+    '## Tickets, goals and stations',
+    PM_RULES,
     '## Skills',
     describeSkills(skills, tools.length > 0),
     ...(tools.length > 0 ? ['## Tools', describeTools(tools)] : []),

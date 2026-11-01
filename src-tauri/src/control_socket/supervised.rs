@@ -13,6 +13,7 @@ use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::providers::ModelOption;
+use crate::supervisor::pm_target::{pm_facts, resolve_pm_target, PmRefusal};
 use crate::supervisor::policy::{
     balancing, check_spawn, normalize_provider_id, resolve_model, visible_projects, Balancing,
     ModelChoice, ModelRequest, SpawnRequest, VisibleProject, VisibleProvider,
@@ -59,6 +60,7 @@ impl Dispatcher {
             }
             Request::LinkPolicyGet(_) => self.link_policy_get(),
             Request::LinkPolicyPropose(params) => self.link_policy_propose(supervisor, params),
+            Request::PmTarget(params) => self.pm_target(params.project.as_deref()),
         }
     }
 
@@ -360,6 +362,19 @@ impl Dispatcher {
         })
     }
 
+    /// The folder a PM tool may run in, by the policy as it is at this call
+    /// (`supervisor::pm_target`; fixture `callerScope.supervisor.pmTarget`).
+    fn pm_target(&self, wanted: Option<&str>) -> Outcome {
+        let policy = self.backend.supervisor_policy();
+        let facts = pm_facts(&policy, wanted);
+        let target = resolve_pm_target(&policy, wanted, &facts)
+            .map_err(|refusal| pm_refusal(refusal, wanted.unwrap_or_default()))?;
+        to_value(PmTargetResult {
+            path: target.path,
+            name: target.name,
+        })
+    }
+
     /// The provider a supervisor is told to take in `project`: the balancing
     /// `next`, else its own provider when the project allows it, else the
     /// first one the project allows.
@@ -389,6 +404,30 @@ pub(super) fn names_project(entry: &ProjectEntry, wanted: &str) -> bool {
         return canonical_project_path(wanted) == canonical_project_path(&entry.path);
     }
     entry.name.eq_ignore_ascii_case(wanted)
+}
+
+fn pm_refusal(refusal: PmRefusal, wanted: &str) -> ControlError {
+    let denied = |reason: &str, message: String| {
+        ControlError::new(ErrorCode::SupervisorDenied, message).with_reason(reason)
+    };
+    match refusal {
+        PmRefusal::Unknown => unknown_project(wanted),
+        PmRefusal::NotInitialized { path } => denied(
+            "project_not_initialized",
+            format!("{path} has no .auric/project.db, so it has no PM tools yet."),
+        ),
+        PmRefusal::Ambiguous { candidates } => denied(
+            "ambiguous_project",
+            format!(
+                "'{wanted}' fits more than one project: {}. Pass the path.",
+                candidates.join(", ")
+            ),
+        ),
+        PmRefusal::NoneInitialized => denied(
+            "no_initialized_project",
+            "None of your projects has a .auric/project.db, so there are no PM tools.".to_string(),
+        ),
+    }
 }
 
 pub(super) fn unknown_project(wanted: &str) -> ControlError {

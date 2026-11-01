@@ -22,7 +22,9 @@ import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { registerAgentControlTools } from './tools/agentControl';
 import { registerAgentUsageTools } from './tools/agentUsage';
 import { registerSupervisorTools } from './tools/supervisor';
+import { callControl } from './controlClient';
 import { openNotificationsDb } from './notificationsDb';
+import { closeWithParent, createPmGateway, type PmGateway } from './supervisorPm';
 
 /**
  * Attaches the notify tools, if the app told us where the inbox lives.
@@ -118,12 +120,12 @@ export function createControlServer(): FastMCP {
  * `auric-mcp --supervisor`: the supervisor tools and nothing else. Runs inside
  * the supervisor agent; the socket scopes it to its own children (ADR 0004).
  */
-export function createSupervisorServer(): FastMCP {
+export function createSupervisorServer(gateway?: PmGateway): FastMCP {
   const server = new FastMCP({
     name: 'auric-supervisor',
     version: '1.0.0',
   });
-  registerSupervisorTools(server);
+  registerSupervisorTools(server, callControl, gateway);
   return server;
 }
 
@@ -141,7 +143,9 @@ if (isMainModule) {
         return;
       }
       if (mode.mode === 'supervisor') {
-        await createSupervisorServer().start({ transportType: 'stdio' });
+        const gateway = createPmGateway(callControl);
+        closeWithParent(gateway);
+        await createSupervisorServer(gateway).start({ transportType: 'stdio' });
         return;
       }
       const { openDatabase } = await import('./db');

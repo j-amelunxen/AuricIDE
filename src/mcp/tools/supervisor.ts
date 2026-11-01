@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
 import type { ControlParamsInput } from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
+import { createPmGateway, type PmGateway } from '../supervisorPm';
 import {
   agentIdParam,
   awaitAgentResultTool,
@@ -25,7 +26,12 @@ import {
 
 const OWN_CHILDREN = ' Only agents you started exist for you; any other id is unknown_agent.';
 
-export function registerSupervisorTools(server: FastMCP, call: ControlCaller = callControl): void {
+export function registerSupervisorTools(
+  server: FastMCP,
+  call: ControlCaller = callControl,
+  gateway: PmGateway = createPmGateway(call)
+): void {
+  registerPmGatewayTools(server, gateway);
   server.addTool(listProjectsTool(call));
   server.addTool(spawnAgentTool(call));
 
@@ -77,6 +83,46 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
   server.addTool(removeWorktreeTool(call, OWN_CHILDREN));
   server.addTool(dismissAgentTool(call, OWN_CHILDREN));
   registerLinkPolicyTools(server, call);
+}
+
+/**
+ * The PM tools of its projects, one door instead of a server per project
+ * (`src/mcp/supervisorPm.ts`). Rust decides on every call whether the project may
+ * be used.
+ */
+function registerPmGatewayTools(server: FastMCP, gateway: PmGateway): void {
+  const project = z
+    .string()
+    .describe('Its absolute path or folder name; an older note may say auric-pm-<name>');
+  const tool = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'a tool name is letters, digits, _ and -');
+
+  server.addTool({
+    name: 'pm_tools',
+    description:
+      'The PM tools of your projects (epics, tickets, goals, stations, requirements, notify and ' +
+      'more). Without tool: every name with its first sentence. With tool: its full description ' +
+      'and input schema, which you need before pm_call. The list is the same in every project; ' +
+      'project matters only for a refusal, and is the first usable one if left out.',
+    parameters: z.object({ project: project.optional(), tool: tool.optional() }),
+    execute: async (args: { project?: string; tool?: string }) =>
+      gateway.describe(args.project, args.tool),
+  });
+
+  server.addTool({
+    name: 'pm_call',
+    description:
+      'Run one PM tool in one project and return its result as it is. arguments are that ' +
+      "tool's, from pm_tools with tool. A project outside your policy is unknown_project; " +
+      'without a project database, or a name two projects share, supervisor_denied with a ' +
+      'reason. A name that fits two projects lists their paths. Spawning stays with spawn_agent.',
+    parameters: z.object({
+      project,
+      tool,
+      arguments: z.record(z.string(), z.unknown()).optional(),
+    }),
+    execute: async (args: { project: string; tool: string; arguments?: Record<string, unknown> }) =>
+      gateway.call(args.project, args.tool, args.arguments ?? {}),
+  });
 }
 
 /**

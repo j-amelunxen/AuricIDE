@@ -928,8 +928,7 @@ fn a_supervisor_without_skills_has_file_tools_and_only_the_timer_shell_grant() {
         supervisor_claude_arguments(
             "/data/agent-bindings/sup $1.mcp.json",
             &crate::supervisor::SkillPlugin::default(),
-            &[],
-            false,
+                        false,
             &[]
         ),
         vec![
@@ -967,14 +966,13 @@ fn an_approved_skill_brings_its_plugin_and_exactly_its_shell_commands() {
     let args = supervisor_claude_arguments(
         "/c.json",
         &skills,
-        &["auric-pm-alpha".to_string()],
         true,
         &[],
     );
     let joined = args.join(" ");
     assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
     assert!(joined.contains("--add-dir \"/home/u/review workspace\" --allowedTools"));
-    assert!(joined.contains("\"mcp__auric-supervisor__*\" \"mcp__auric-pm-alpha__*\""));
+    assert!(joined.contains("\"mcp__auric-supervisor__*\" \"mcp__claude-in-chrome__*\""));
     assert!(joined.contains("--plugin-dir \"/data/supervisor-skills/run 1\""));
     assert!(joined.contains("\"Bash(~/.claude/skills/video-to-tasklist/scripts/*)\""));
     assert!(
@@ -993,7 +991,7 @@ fn an_approved_tool_alone_gives_bash_and_exactly_its_two_rules() {
         crate::supervisor::policy::ToolRules::default(),
     )]);
     crate::supervisor::apply_tool_grants(&mut plugin, &tools);
-    let args = supervisor_claude_arguments("/c.json", &plugin, &[], false, &[]);
+    let args = supervisor_claude_arguments("/c.json", &plugin, false, &[]);
     let joined = args.join(" ");
     assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
     assert!(
@@ -1035,8 +1033,7 @@ fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
         arguments: supervisor_claude_arguments(
             "/c.json",
             &crate::supervisor::SkillPlugin::default(),
-            &[],
-            false,
+                        false,
             &[],
         ),
         env_vars: Vec::new(),
@@ -1079,12 +1076,11 @@ fn a_launch_file_goes_when_the_agent_entry_goes() {
 fn supervisor_codex_arguments_configures_mcp_servers() {
     let runtime = std::path::Path::new("/bin/runtime.js");
     let socket = std::path::Path::new("/tmp/auric.sock");
-    let pm = vec![("auric-pm-p1".to_string(), "/work/p1".to_string())];
     let mut pm_env = std::collections::BTreeMap::new();
     pm_env.insert("AURIC_PROJECT".to_string(), "p1".to_string());
 
-    let args = supervisor_codex_arguments(runtime, socket, &pm, &pm_env, "/opt/homebrew/bin/node")
-        .unwrap();
+    let args =
+        supervisor_codex_arguments(runtime, socket, &pm_env, "/opt/homebrew/bin/node").unwrap();
     let joined = args.join(" ");
     assert!(joined.contains("mcp_servers.auric-supervisor.command=\"/opt/homebrew/bin/node\""));
     assert!(
@@ -1092,17 +1088,14 @@ fn supervisor_codex_arguments_configures_mcp_servers() {
     );
     assert!(joined.contains("mcp_servers.auric-supervisor.required=true"));
     assert!(joined.contains("mcp_servers.auric-supervisor.default_tools_approval_mode=\"approve\""));
-    assert!(joined.contains(
-        "mcp_servers.auric-supervisor.env={\"AURIC_CONTROL_SOCKET\"=\"/tmp/auric.sock\"}"
-    ));
-
-    assert!(joined.contains("mcp_servers.auric-pm-p1.command=\"/opt/homebrew/bin/node\""));
-    assert!(joined.contains(
-        "mcp_servers.auric-pm-p1.args=[\"/bin/runtime.js\",\"--project-root\",\"/work/p1\"]"
-    ));
-    assert!(joined.contains("mcp_servers.auric-pm-p1.required=true"));
-    assert!(joined.contains("mcp_servers.auric-pm-p1.default_tools_approval_mode=\"approve\""));
-    assert!(joined.contains("mcp_servers.auric-pm-p1.env={\"AURIC_PROJECT\"=\"p1\"}"));
+    assert!(joined.contains("\"AURIC_CONTROL_SOCKET\"=\"/tmp/auric.sock\""));
+    // TOML string escapes in the arguments, then one shell quoting around them.
+    assert!(joined.contains("\"AURIC_PM_CHILD_ENV\"="));
+    assert!(joined.contains("AURIC_PROJECT"));
+    assert!(
+        !joined.contains("--project-root") && !joined.contains("auric-pm"),
+        "no server per project: {joined}"
+    );
 }
 
 #[test]
@@ -1774,12 +1767,12 @@ fn a_manager_launch_adds_the_deny_rules_before_the_last_flag_and_a_plain_one_add
         .map(|rule| format!("\"{}\"", rule.as_str().unwrap()))
         .collect();
     let plugin = crate::supervisor::SkillPlugin::default();
-    let plain = supervisor_claude_arguments("/c.json", &plugin, &[], false, &[]);
+    let plain = supervisor_claude_arguments("/c.json", &plugin, false, &[]);
     assert!(!plain
         .iter()
         .any(|a| a == instructions["denyFlag"].as_str().unwrap()));
     let manager =
-        supervisor_claude_arguments("/c.json", &plugin, &[], false, &manager_denied_tools());
+        supervisor_claude_arguments("/c.json", &plugin, false, &manager_denied_tools());
     let flag = manager
         .iter()
         .position(|a| a == instructions["denyFlag"].as_str().unwrap())

@@ -303,24 +303,26 @@ pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
     }
 }
 
-/// Codex flags for a supervisor. Passes `-c` overrides for `auric-supervisor` and any project `pm` servers.
+/// Codex flags for a supervisor: `-c` overrides for its one server, `auric-supervisor`.
 pub fn supervisor_codex_arguments(
     runtime: &std::path::Path,
     socket: &std::path::Path,
-    pm: &[(String, String)],
-    pm_env: &std::collections::BTreeMap<String, String>,
+    pm_child_env: &std::collections::BTreeMap<String, String>,
     node: &str,
 ) -> Result<Vec<String>, String> {
     let runtime_str =
         serde_json::to_string(&runtime.to_string_lossy()).map_err(|e| e.to_string())?;
     let node_str = serde_json::to_string(node).map_err(|e| e.to_string())?;
-    let socket_str = serde_json::to_string(&socket.to_string_lossy()).map_err(|e| e.to_string())?;
     let sup_args =
         format!("mcp_servers.{SUPERVISOR_MCP_SERVER}.args=[{runtime_str},\"--supervisor\"]");
     let sup_env = format!(
-        "mcp_servers.{SUPERVISOR_MCP_SERVER}.env={{\"AURIC_CONTROL_SOCKET\"={socket_str}}}"
+        "mcp_servers.{SUPERVISOR_MCP_SERVER}.env={}",
+        crate::providers::toml_inline_table(&crate::mcp::supervisor_server_env(
+            socket,
+            pm_child_env
+        )?)?
     );
-    let mut arguments = vec![
+    Ok(vec![
         "-c".to_string(),
         crate::providers::shell_quote_argument(&format!(
             "mcp_servers.{SUPERVISOR_MCP_SERVER}.command={node_str}"
@@ -337,43 +339,16 @@ pub fn supervisor_codex_arguments(
         crate::providers::shell_quote_argument(&format!(
             "mcp_servers.{SUPERVISOR_MCP_SERVER}.default_tools_approval_mode=\"approve\""
         )),
-    ];
-    for (name, project_root) in pm {
-        let project_str = serde_json::to_string(project_root).map_err(|e| e.to_string())?;
-        let args =
-            format!("mcp_servers.{name}.args=[{runtime_str},\"--project-root\",{project_str}]");
-        arguments.push("-c".to_string());
-        arguments.push(crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{name}.command={node_str}"
-        )));
-        arguments.push("-c".to_string());
-        arguments.push(crate::providers::shell_quote_argument(&args));
-        arguments.push("-c".to_string());
-        arguments.push(crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{name}.required=true"
-        )));
-        arguments.push("-c".to_string());
-        arguments.push(crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{name}.default_tools_approval_mode=\"approve\""
-        )));
-        if !pm_env.is_empty() {
-            arguments.push("-c".to_string());
-            arguments.push(crate::providers::shell_quote_argument(&format!(
-                "mcp_servers.{name}.env={}",
-                crate::providers::toml_inline_table(pm_env)?
-            )));
-        }
-    }
-    Ok(arguments)
+    ])
 }
 
 /// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
 /// built-in tools it has: the file tools, `Skill`, `ToolSearch` (many MCP
 /// tools load deferred, and without it they are out of reach), and `Bash`
 /// for background sleep timers. Other shell commands require an approved skill
-/// or tool pattern. Each permitted project's
-/// `auric-pm` server (`pm_servers`) is pre-approved like its own tools, and so
-/// is Claude in Chrome when the policy switches it on (`chrome`). `--restricted` confines the file tools
+/// or tool pattern. PM tools of its projects run through `pm_call` on its own
+/// server. Claude in Chrome is pre-approved when the policy switches it on
+/// (`chrome`). `--restricted` confines the file tools
 /// to the working directory (the run folder), ignores the user's, project's
 /// and local settings files, so allow rules such as `Bash(npx:*)` there do
 /// not apply, and loads no skills from disk; the approved ones come in through
@@ -385,7 +360,6 @@ pub fn supervisor_codex_arguments(
 pub fn supervisor_claude_arguments(
     mcp_config_path: &str,
     skills: &crate::supervisor::SkillPlugin,
-    pm_servers: &[String],
     chrome: bool,
     denied_tools: &[String],
 ) -> Vec<String> {
@@ -415,11 +389,6 @@ pub fn supervisor_claude_arguments(
     }
     arguments.push("--allowedTools".to_string());
     arguments.push(quoted(&format!("mcp__{SUPERVISOR_MCP_SERVER}__*")));
-    arguments.extend(
-        pm_servers
-            .iter()
-            .map(|name| quoted(&format!("mcp__{name}__*"))),
-    );
     if chrome {
         arguments.push(quoted(&format!("mcp__{CHROME_MCP_SERVER}__*")));
     }
@@ -516,10 +485,10 @@ fn bind_to_supervisor_mcp(
     let denied_tools = manager_denied_tools_for_run(&app_data, run_name);
     let mut skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
     crate::supervisor::apply_tool_grants(&mut skills, &policy.tools);
-    let pm = crate::supervisor::supervisor_pm_servers(&policy);
-    // No AURIC_AGENT_CWD: `request_agent_launch` stays refused, so every agent
-    // a supervisor starts goes through `spawn_agent` and the policy.
-    let pm_env = crate::mcp::agent_mcp_server_env(
+    // For the project servers `pm_call` starts. No AURIC_AGENT_CWD:
+    // `request_agent_launch` stays refused, so every agent a supervisor starts
+    // goes through `spawn_agent` and the policy.
+    let pm_child_env = crate::mcp::agent_mcp_server_env(
         Some(&crate::notifications::db_path_in(&app_data)),
         app.try_state::<ProviderRegistryState>()
             .as_deref()
@@ -527,22 +496,22 @@ fn bind_to_supervisor_mcp(
         None,
     );
     let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
-        &app_data, &runtime, &pm, &pm_env, node,
+        &app_data,
+        &runtime,
+        &pm_child_env,
+        node,
     )?);
     let arguments = if provider_id == "codex" {
         supervisor_codex_arguments(
             &runtime,
             &crate::control_socket::socket_path_in(&app_data),
-            &pm,
-            &pm_env,
+            &pm_child_env,
             node,
         )?
     } else {
-        let pm_names: Vec<String> = pm.into_iter().map(|(name, _)| name).collect();
         supervisor_claude_arguments(
             &config_file.0.to_string_lossy(),
             &skills,
-            &pm_names,
             policy.supervisor.chrome,
             &denied_tools,
         )

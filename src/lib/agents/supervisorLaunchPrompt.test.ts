@@ -164,10 +164,13 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(prompt).not.toMatch(/Bash, Edit and every other tool ask/);
   });
 
-  it("names a project's auric-pm server, and tells it to load deferred tools", () => {
-    const text = buildSupervisorLaunchPrompt([{ ...projects[0], pmServer: 'auric-pm-alpha' }]);
-    expect(text).toContain('the `auric-pm-alpha` tools (`mcp__auric-pm-alpha__*`)');
-    expect(text).toContain('fetch them with ToolSearch');
+  it('says how to reach PM tools, what old names mean, and to load deferred tools', () => {
+    expect(prompt).toContain('## Tickets, goals and stations');
+    expect(prompt).toContain('`pm_tools` with `tool`');
+    expect(prompt).toContain('`pm_call` with `project`, `tool` and `arguments`');
+    expect(prompt).toContain('`mcp__auric-pm-<x>__<tool>`');
+    expect(prompt).toContain('fetch them with ToolSearch');
+    expect(prompt, 'no server per project any more').not.toMatch(/`auric-pm-[a-z]/);
   });
 
   it('mentions the browser and its limits only when Chrome is switched on', () => {

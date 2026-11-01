@@ -21,6 +21,8 @@ const TOOL_METHODS: Record<string, string> = {
   dismiss_agent: 'dismiss',
   link_policy_get: 'link_policy_get',
   link_policy_propose: 'link_policy_propose',
+  pm_tools: 'pm_target',
+  pm_call: 'pm_target',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;
@@ -47,14 +49,18 @@ describe('supervisor tools', () => {
   it('cover exactly the methods the caller scope grants a supervisor', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual(Object.keys(TOOL_METHODS).sort());
-    expect(Object.values(TOOL_METHODS).sort()).toEqual([...scope.methods].sort());
+    expect([...new Set(Object.values(TOOL_METHODS))].sort()).toEqual([...scope.methods].sort());
   });
 
   it('map each tool onto its socket method', async () => {
     const call = vi.fn(async () => ({})) as unknown as ControlCaller;
     const tools = capture(call);
     for (const [tool, method] of Object.entries(TOOL_METHODS)) {
-      await tools.get(tool)!.execute({ agentId: 'agent-5' });
+      // The stand-in's answer is no project path, so a PM tool stops right after asking.
+      await tools
+        .get(tool)!
+        .execute({ agentId: 'agent-5' })
+        .catch(() => {});
       expect(vi.mocked(call).mock.lastCall?.[0]).toBe(method);
     }
   });

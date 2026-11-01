@@ -596,6 +596,43 @@ fn attack_the_provider_the_check_approved_is_the_provider_that_is_started() {
     );
 }
 
+/// A project outside the policy has no PM tools for a supervisor, whether named
+/// by path, folder or the server name it would have had. The refusal reads like
+/// that of a folder that does not exist, so probing teaches nothing about either.
+#[test]
+fn guard_pm_target_refuses_a_project_outside_the_policy() {
+    let r = rig(2, Duration::from_millis(50));
+    let foreign = tempfile::tempdir().unwrap();
+    std::fs::create_dir(foreign.path().join(".auric")).unwrap();
+    std::fs::write(foreign.path().join(".auric/project.db"), b"").unwrap();
+    let foreign = canonical_project_path(&foreign.path().to_string_lossy());
+    let folder = foreign.rsplit('/').next().unwrap().to_string();
+    let answer = |project: &str| {
+        let request = json!({ "id": 1, "method": "pm_target", "params": { "project": project } });
+        ask(&r, &r.supervisor, request)
+    };
+
+    let shape = |response: &Value, wanted: &str| {
+        strip_id(&response["error"]["message"].to_string(), wanted)
+    };
+    let nowhere = "/nowhere/at/all";
+    let reference = answer(nowhere);
+    assert_eq!(reference["error"]["code"], "unknown_project", "{reference}");
+    for spelling in [&foreign, &folder, &format!("auric-pm-{folder}")] {
+        let response = answer(spelling);
+        assert_eq!(response["error"]["code"], "unknown_project", "{response}");
+        assert_eq!(shape(&response, spelling), shape(&reference, nowhere));
+    }
+
+    // The same call for its own project is allowed, so the refusal above is the
+    // policy speaking and not a broken method.
+    let own = answer(&r.path);
+    assert_eq!(own["result"]["path"], r.path.as_str(), "{own}");
+
+    let external = ask(&r, &Caller::External, json!({ "id": 2, "method": "pm_target" }));
+    assert_eq!(external["error"]["code"], "outside_supervisor_scope");
+}
+
 #[test]
 fn guard_list_projects_shows_only_policy_allowed_projects() {
     let r = rig(2, Duration::from_millis(50));
@@ -965,8 +1002,7 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
     let args = crate::agents::supervisor_claude_arguments(
         "/x/supervisor.mcp.json",
         &crate::supervisor::SkillPlugin::default(),
-        &[],
-        false,
+                false,
         &[],
     );
     let joined = args.join(" ");
@@ -1037,7 +1073,6 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
     let args = crate::agents::supervisor_claude_arguments(
         "/x/supervisor.mcp.json",
         &plugin,
-        &[],
         false,
         &[],
     );

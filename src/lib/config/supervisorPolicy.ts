@@ -203,39 +203,6 @@ class InvalidEntry extends Error {
   }
 }
 
-const PM_SERVER_PREFIX = 'auric-pm-';
-const PM_SLUG_MAX = 16;
-
-/**
- * `auric-pm-<slug>` per project path, in the order given (fixture
- * `pmServerNames`). Rust starts these servers; the launch prompt names them.
- */
-export function pmServerNames(paths: string[]): string[] {
-  const names: string[] = [];
-  for (const path of paths) {
-    const base = (normalizeProjectPath(path).split('/').pop() ?? '').toLowerCase();
-    let slug = base
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+/, '')
-      .slice(0, PM_SLUG_MAX)
-      .replace(/-+$/, '');
-    if (!slug) slug = 'project';
-    let name = `${PM_SERVER_PREFIX}${slug}`;
-    for (let n = 2; names.includes(name); n++) name = `${PM_SERVER_PREFIX}${slug}-${n}`;
-    names.push(name);
-  }
-  return names;
-}
-
-/** Project path → its `auric-pm` server, named over every permitted project like Rust. */
-export function supervisorPmServers(policy: SupervisorPolicy): Record<string, string> {
-  const permitted = Object.keys(policy.projects)
-    .filter((path) => policy.projects[path].allowed)
-    .sort();
-  const names = pmServerNames(permitted);
-  return Object.fromEntries(permitted.map((path, i) => [path, names[i]]));
-}
-
 /**
  * A pattern becomes `Bash(<pattern>)`: a bracket would end the rule early and
  * a line break or quote would split the launch command (fixture

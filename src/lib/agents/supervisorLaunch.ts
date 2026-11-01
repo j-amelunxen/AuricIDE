@@ -1,7 +1,6 @@
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   permissionModesOf,
-  supervisorPmServers,
   visibleProjects,
   type OfferedModels,
   type SupervisorPolicy,
@@ -157,12 +156,7 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
     provider: providerId,
     model: model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
     task: buildSupervisorLaunchPrompt(
-      supervisorPromptProjects(
-        visible,
-        input.providers,
-        input.descriptions,
-        supervisorPmServers(input.policy)
-      ),
+      supervisorPromptProjects(visible, input.providers, input.descriptions),
       {
         firstTask: input.firstTask,
         skills: supervisorPromptSkills(input.policy.skills ?? {}),

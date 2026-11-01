@@ -46,6 +46,8 @@ describe('the supervisor tool surface', () => {
       'link_policy_propose',
       'list_my_agents',
       'list_projects',
+      'pm_call',
+      'pm_tools',
       'read_agent_output',
       'remove_worktree',
       'send_agent_input',

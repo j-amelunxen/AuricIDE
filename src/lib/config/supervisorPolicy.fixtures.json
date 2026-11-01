@@ -59,6 +59,11 @@
       "no_ranked_model": "No model was named and none of the allowed models has a size (rank), so none is picked by default.",
       "model_reason_required": "The model is large (rank at or above reasonRequiredFromRank) and the spawn names no modelReason."
     },
+    "pmTarget": {
+      "project_not_initialized": "The project is permitted but has no .auric/project.db, so it has no PM tools.",
+      "ambiguous_project": "The name fits more than one permitted project. The message lists their paths; pass the path.",
+      "no_initialized_project": "No project was named, and no permitted project has a .auric/project.db."
+    },
     "jobProvider": {
       "provider_note_restricted": "Every provider in this project carries a routing note, so a job cannot choose one without a model in the loop. Remove a note or start the work through a supervisor."
     }
@@ -5171,6 +5176,7 @@
     "osascript",
     "sudo"
   ],
+  "_pmServerNames": "Only Rust reads these now: no supervisor gets a server per project any more, but older notes name them, and pm_target still accepts such a name for its project.",
   "pmServerNames": [
     {
       "name": "the folder name in lowercase",

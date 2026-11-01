@@ -164,8 +164,7 @@ fn manager_deny_rule_holds_in_the_interactive_tui() {
     let arguments = supervisor_claude_arguments(
         &mcp_config.to_string_lossy(),
         &crate::supervisor::SkillPlugin::default(),
-        &[],
-        false,
+                false,
         &denied,
     );
     let command = format!("claude --model {model} {}", arguments.join(" "));

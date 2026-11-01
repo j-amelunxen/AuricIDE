@@ -15,7 +15,6 @@ import {
   toolPatterns,
   effectivePermissionMode,
   permissionModesOf,
-  pmServerNames,
   providerNoteLength,
   trimProviderNote,
   runsUnattended,
@@ -117,14 +116,6 @@ describe('providerNoteLength', () => {
     expect(trimProviderNote('\u0085\u3000Source only.\u2028\u0085')).toBe('Source only.');
     expect(providerNoteLength('\u{1F600}'.repeat(3))).toBe(3);
   });
-});
-
-describe('pmServerNames', () => {
-  for (const testCase of fixtures.pmServerNames) {
-    it(testCase.name, () => {
-      expect(pmServerNames(testCase.paths)).toEqual(testCase.expected);
-    });
-  }
 });
 
 describe('supervisor policy — fixture coverage', () => {

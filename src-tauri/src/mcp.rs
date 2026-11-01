@@ -34,6 +34,9 @@ pub struct AgentMcpConfigs {
 
 static AGENT_CONFIG_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// `PM_CHILD_ENV` in `src/mcp/supervisorPm.ts`.
+const PM_CHILD_ENV: &str = "AURIC_PM_CHILD_ENV";
+
 fn write_new_private_file(path: &Path, content: &[u8]) -> Result<(), String> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -234,16 +237,34 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
     })
 }
 
+/// What the `--supervisor` server needs in its environment: the control socket,
+/// and the environment of the project servers it starts on demand
+/// (`src/mcp/supervisorPm.ts`), named so nothing else takes it for its own.
+pub(crate) fn supervisor_server_env(
+    socket: &Path,
+    pm_child_env: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut env = BTreeMap::from([(
+        "AURIC_CONTROL_SOCKET".to_string(),
+        socket.to_string_lossy().into_owned(),
+    )]);
+    if !pm_child_env.is_empty() {
+        env.insert(
+            PM_CHILD_ENV.to_string(),
+            serde_json::to_string(pm_child_env).map_err(|error| error.to_string())?,
+        );
+    }
+    Ok(env)
+}
+
 /// The private MCP config of one supervisor (ADR 0004): the single server
 /// `auric-supervisor`, the packaged runtime in `--supervisor` mode, pointed at
 /// this app's control socket. Lives next to the per-agent configs.
-/// `pm` are the `auric-pm` servers of the projects the supervisor may work in,
-/// as `(server name, project root)`, each started like a project agent's.
+/// `pm_child_env` is what the project servers it starts on demand run with.
 pub fn ensure_supervisor_mcp_config(
     app_data: &Path,
     runtime: &Path,
-    pm: &[(String, String)],
-    env: &BTreeMap<String, String>,
+    pm_child_env: &BTreeMap<String, String>,
     node: &str,
 ) -> Result<PathBuf, String> {
     let directory = app_data.join("agent-bindings");
@@ -259,8 +280,7 @@ pub fn ensure_supervisor_mcp_config(
         &directory,
         runtime,
         &crate::control_socket::socket_path_in(app_data),
-        pm,
-        env,
+        pm_child_env,
         node,
     )
 }
@@ -269,8 +289,7 @@ pub(crate) fn write_supervisor_mcp_config(
     directory: &Path,
     runtime: &Path,
     socket: &Path,
-    pm: &[(String, String)],
-    env: &BTreeMap<String, String>,
+    pm_child_env: &BTreeMap<String, String>,
     node: &str,
 ) -> Result<PathBuf, String> {
     let mut hasher = DefaultHasher::new();
@@ -291,19 +310,9 @@ pub(crate) fn write_supervisor_mcp_config(
         serde_json::json!({
             "command": node,
             "args": [runtime, "--supervisor"],
-            "env": { "AURIC_CONTROL_SOCKET": socket },
+            "env": supervisor_server_env(socket, pm_child_env)?,
         }),
     );
-    for (name, project_root) in pm {
-        servers.insert(
-            name.clone(),
-            serde_json::json!({
-                "command": node,
-                "args": [runtime, "--project-root", project_root],
-                "env": env,
-            }),
-        );
-    }
     let content = serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
         .map_err(|error| format!("Could not serialize the supervisor MCP config: {error}"))?;
     write_new_private_file(&path, &content)?;
@@ -860,7 +869,6 @@ mod tests {
             dir.path(),
             Path::new("/rt/server.mjs"),
             Path::new("/data/control.sock"),
-            &[],
             &BTreeMap::new(),
             "node",
         )
@@ -882,7 +890,6 @@ mod tests {
             dir.path(),
             Path::new("/rt/server.mjs"),
             Path::new("/s"),
-            &[],
             &BTreeMap::new(),
             "node",
         )
@@ -891,18 +898,13 @@ mod tests {
     }
 
     #[test]
-    fn a_supervisor_config_adds_one_auric_pm_per_permitted_project() {
+    fn a_supervisor_config_holds_one_server_and_the_env_of_its_project_servers() {
         let dir = tempfile::tempdir().unwrap();
         let env = BTreeMap::from([("AURIC_NOTIFICATIONS_DB".to_string(), "/n.db".to_string())]);
-        let pm = [
-            ("auric-pm-alpha".to_string(), "/abs/alpha".to_string()),
-            ("auric-pm-beta".to_string(), "/abs/beta".to_string()),
-        ];
         let path = write_supervisor_mcp_config(
             dir.path(),
             Path::new("/rt/server.mjs"),
             Path::new("/s"),
-            &pm,
             &env,
             "node",
         )
@@ -910,20 +912,38 @@ mod tests {
         let config: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let servers = config["mcpServers"].as_object().unwrap();
-        assert_eq!(servers.len(), 3);
+        assert_eq!(servers.len(), 1, "no server per project: {servers:?}");
+        let supervisor = &servers["auric-supervisor"];
         assert_eq!(
-            servers["auric-pm-beta"],
-            serde_json::json!({
-                "command": "node",
-                "args": ["/rt/server.mjs", "--project-root", "/abs/beta"],
-                "env": { "AURIC_NOTIFICATIONS_DB": "/n.db" }
-            })
+            supervisor["args"],
+            serde_json::json!(["/rt/server.mjs", "--supervisor"])
         );
-        assert!(
-            servers["auric-pm-alpha"]["env"]
-                .get("AURIC_AGENT_CWD")
-                .is_none(),
-            "no launch folder: request_agent_launch stays refused, spawns go through the policy"
+        assert_eq!(supervisor["env"]["AURIC_CONTROL_SOCKET"], "/s");
+        let child: BTreeMap<String, String> =
+            serde_json::from_str(supervisor["env"]["AURIC_PM_CHILD_ENV"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(child, env);
+    }
+
+    /// The other half of the promise: agents inside a project keep their server.
+    #[test]
+    fn a_project_agent_still_gets_its_own_auric_pm() {
+        let dir = tempfile::tempdir().unwrap();
+        let configs = super::write_agent_mcp_configs_with_connectors(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            "node",
+            Path::new("/repo/project"),
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )
+        .unwrap();
+        let standard: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&configs.standard).unwrap()).unwrap();
+        assert_eq!(
+            standard["mcpServers"]["auric-pm"]["args"],
+            serde_json::json!(["/rt/server.mjs", "--project-root", "/repo/project"])
         );
     }
 
@@ -952,7 +972,6 @@ mod tests {
             dir.path(),
             Path::new("/rt/server.mjs"),
             Path::new("/s"),
-            &[("auric-pm-alpha".to_string(), "/abs/alpha".to_string())],
             &BTreeMap::new(),
             node,
         )
@@ -960,7 +979,6 @@ mod tests {
         let config: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(config["mcpServers"]["auric-supervisor"]["command"], node);
-        assert_eq!(config["mcpServers"]["auric-pm-alpha"]["command"], node);
     }
 
     #[test]

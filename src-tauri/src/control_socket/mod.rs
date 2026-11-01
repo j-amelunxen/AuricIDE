@@ -367,6 +367,10 @@ impl Dispatcher {
             Request::LinkPolicyGet(_) | Request::LinkPolicyPropose(_) => {
                 Err(link_policy::supervisors_only())
             }
+            Request::PmTarget(_) => Err(ControlError::new(
+                ErrorCode::OutsideSupervisorScope,
+                "pm_target is for supervisors; an outside client has its own auric-pm server",
+            )),
         }
     }
 

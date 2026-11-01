@@ -399,6 +399,34 @@
       }
     },
     {
+      "name": "pm_target by name",
+      "raw": "{\"id\":60,\"method\":\"pm_target\",\"params\":{\"project\":\"example-project\"}}",
+      "expected": {
+        "id": 60,
+        "method": "pm_target",
+        "params": {
+          "project": "example-project"
+        }
+      }
+    },
+    {
+      "name": "pm_target without a project asks for the first usable one",
+      "raw": "{\"id\":61,\"method\":\"pm_target\"}",
+      "expected": {
+        "id": 61,
+        "method": "pm_target",
+        "params": {}
+      }
+    },
+    {
+      "name": "pm_target with a blank project",
+      "raw": "{\"id\":62,\"method\":\"pm_target\",\"params\":{\"project\":\" \"}}",
+      "expectedError": {
+        "id": 62,
+        "code": "invalid_params"
+      }
+    },
+    {
       "name": "link_policy_get",
       "raw": "{\"id\":30,\"method\":\"link_policy_get\"}",
       "expected": {
@@ -783,6 +811,14 @@
       "result": {
         "agentId": "agent-5",
         "dismissed": true
+      }
+    },
+    "pm_target": {
+      "id": 60,
+      "ok": true,
+      "result": {
+        "path": "/tmp/example-project",
+        "name": "example-project"
       }
     },
     "link_policy_get": {
@@ -1524,7 +1560,8 @@
         "mayPass": ["role", "permissionMode"],
         "refused": {
           "link_policy_get": "outside_supervisor_scope",
-          "link_policy_propose": "outside_supervisor_scope"
+          "link_policy_propose": "outside_supervisor_scope",
+          "pm_target": "outside_supervisor_scope"
         }
       },
       "supervisor": {
@@ -1539,7 +1576,8 @@
           "remove_worktree",
           "dismiss",
           "link_policy_get",
-          "link_policy_propose"
+          "link_policy_propose",
+          "pm_target"
         ],
         "scope": "own_children",
         "outsideScope": "unknown_agent",
@@ -1560,6 +1598,7 @@
         "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory.",
         "typing": "send_input reaches its own interactive children only, like read_output and kill. It can answer a child's question or permission prompt, so the launch prompt tells the supervisor which ones it may answer and which go to the human. A headless child still refuses it (headless_no_stdin).",
         "linkPolicy": "link_policy_get reads the supervisor link policy (stored, effective with origins, pending proposals). link_policy_propose stores a pending proposal and raises an inbox ask with Apply and Discard; nothing changes until a person presses Apply in the IDE. No socket method decides a proposal. External callers, and so the supervisor link socket, are refused both (supervisorLink.fixtures.json, proposals).",
+        "pmTarget": "pm_target { project? } answers { path, name }, the one project folder a PM tool may run in now. It reads the current policy on every call: the project must be permitted and hold .auric/project.db at this moment. project is an absolute path (canonicalised, then compared), a folder name, or an old server name auric-pm-<slug> (supervisorPolicy.fixtures.json pmServerNames). No match, or anything else with a slash, is unknown_project. A permitted project without a database is supervisor_denied (project_not_initialized). Two permitted folders of one name, or a server name whose slug two permitted folders share, are supervisor_denied (ambiguous_project) naming every candidate path, never guessed. Without project it answers the first permitted, initialised project by path, or supervisor_denied (no_initialized_project). The MCP server spawns only the path answered here and asks before every use of a child, cached or not. External callers, and so the supervisor link socket, are refused.",
         "finishedChildren": "list_agents lists its live children and its finished ones while their result is kept (runResultsKept), each finished one with status idle or error, so an empty list means it started nothing, never that its agents were lost. dismiss clears a finished own child from the IDE and forgets its kept result; a running or queued one is refused (invalid_params).",
         "pingback": "When a child finishes, Rust types one notice into the running interactive supervisor's console (bracketed paste plus Enter, the send_input path). Finishes are batched: the notice goes out once no further child has finished for pingbackQuietMs, or pingbackMaxDelayMs after the first one at the latest. It names each agent by id, name and status and says the notice comes from the IDE. A headless or finished supervisor gets none. While the human has a message half typed in the supervisor's console (printable keystrokes since the last Enter or Ctrl-C, the last one less than pingbackDraftHoldMs ago) the notice waits, and what finishes meanwhile joins it."
       },
@@ -1832,6 +1871,27 @@
         "caller": "external",
         "method": "link_policy_propose",
         "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "external caller may not resolve a PM target",
+        "caller": "external",
+        "method": "pm_target",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "supervisor resolves a permitted, initialised project",
+        "caller": "supervisor",
+        "method": "pm_target",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor is refused a project outside its policy",
+        "caller": "supervisor",
+        "method": "pm_target",
+        "params": {
+          "project": "/tmp/not-in-the-policy"
+        },
+        "expected": "unknown_project"
       },
       {
         "name": "supervisor reads the link policy",

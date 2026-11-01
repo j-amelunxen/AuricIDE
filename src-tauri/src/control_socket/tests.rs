@@ -1057,6 +1057,7 @@ fn every_caller_scope_case_in_the_contract_holds() {
             "send_input" => json!({ "agentId": target, "text": "hi" }),
             "await_result" => json!({ "agentId": target, "waitSeconds": 0 }),
             "list_agents" | "list_projects" | "link_policy_get" => json!({}),
+            "pm_target" => json!({ "project": s.path }),
             "link_policy_propose" => json!({
                 "reason": "x",
                 "changes": [{ "op": "set_daily_limit", "dailyLimit": 7 }],
@@ -1852,6 +1853,208 @@ fn await_until_input_ignores_a_headless_child_and_still_returns_its_result() {
         Some("agent-sup".into()),
     );
     assert_eq!(await_until_input(&s, json!({}))["result"]["done"], true);
+}
+
+/// `pm_target` against real folders: what the fixture's prose says, and the
+/// spellings a model might try to get out of its policy.
+mod pm_target {
+    use super::*;
+    use crate::supervisor::canonical_project_path;
+
+    struct Projects {
+        s: Scope,
+        supervisor: Caller,
+        root: tempfile::TempDir,
+    }
+
+    impl Projects {
+        fn new() -> Self {
+            let s = supervised_scope();
+            let supervisor =
+                s.h.dispatcher
+                    .admit_peer(Some(999), below(Some(SUPERVISOR_PID)))
+                    .unwrap();
+            *s.h.backend.policy.lock().unwrap() = SupervisorPolicy::default();
+            Self {
+                s,
+                supervisor,
+                root: tempfile::tempdir().unwrap(),
+            }
+        }
+
+        fn folder(&self, relative: &str, initialised: bool) -> String {
+            let dir = self.root.path().join(relative);
+            std::fs::create_dir_all(dir.join(".auric")).unwrap();
+            if initialised {
+                std::fs::write(dir.join(".auric/project.db"), b"").unwrap();
+            }
+            canonical_project_path(&dir.to_string_lossy())
+        }
+
+        fn permit(&self, path: &str, allowed: bool) {
+            self.s.h.backend.policy.lock().unwrap().projects.insert(
+                path.to_string(),
+                crate::supervisor::policy::ProjectRules {
+                    allowed,
+                    ..Default::default()
+                },
+            );
+        }
+
+        fn ask(&self, project: Option<&str>) -> Value {
+            let params = project.map_or_else(|| json!({}), |p| json!({ "project": p }));
+            call_as(
+                &self.s.h,
+                &self.supervisor,
+                json!({ "id": 1, "method": "pm_target", "params": params }),
+            )
+        }
+
+        fn answered_path(&self, project: Option<&str>) -> String {
+            let response = self.ask(project);
+            assert_eq!(response["ok"], true, "{project:?}: {response}");
+            response["result"]["path"].as_str().unwrap().to_string()
+        }
+
+        fn refused(&self, project: &str) -> (String, Value) {
+            let response = self.ask(Some(project));
+            assert_eq!(response["ok"], false, "{project}: {response}");
+            (error_code(&response).to_string(), response["error"].clone())
+        }
+    }
+
+    #[test]
+    fn a_path_a_folder_name_and_an_old_server_name_all_find_the_project() {
+        let p = Projects::new();
+        let alpha = p.folder("work/Alpha", true);
+        p.permit(&alpha, true);
+        for spelling in [alpha.as_str(), "Alpha", "alpha", "auric-pm-alpha"] {
+            assert_eq!(p.answered_path(Some(spelling)), alpha, "{spelling}");
+        }
+        let response = p.ask(Some("alpha"));
+        assert_eq!(response["result"]["name"], "Alpha");
+    }
+
+    #[test]
+    fn a_project_outside_the_policy_is_refused_however_it_is_spelled() {
+        let p = Projects::new();
+        let alpha = p.folder("alpha", true);
+        let foreign = p.folder("foreign", true);
+        let denied = p.folder("denied", true);
+        p.permit(&alpha, true);
+        p.permit(&denied, false);
+        let via_alpha = format!("{alpha}/../foreign");
+        for spelling in [
+            foreign.as_str(),
+            via_alpha.as_str(),
+            "foreign",
+            "auric-pm-foreign",
+            denied.as_str(),
+            "denied",
+            "auric-pm-denied",
+            "..",
+            "../foreign",
+            "./alpha",
+            "~/alpha",
+            "/",
+            "/nonexistent/alpha",
+        ] {
+            assert_eq!(p.refused(spelling).0, "unknown_project", "{spelling}");
+        }
+    }
+
+    #[test]
+    fn traversal_and_links_are_judged_by_where_they_land() {
+        let p = Projects::new();
+        let alpha = p.folder("alpha", true);
+        let foreign = p.folder("foreign", true);
+        p.permit(&alpha, true);
+        let inward = format!("{foreign}/../alpha");
+        assert_eq!(p.answered_path(Some(&inward)), alpha);
+        assert_eq!(p.answered_path(Some(&format!("{alpha}/"))), alpha);
+
+        let to_alpha = p.root.path().join("link-to-alpha");
+        std::os::unix::fs::symlink(&alpha, &to_alpha).unwrap();
+        assert_eq!(
+            p.answered_path(Some(to_alpha.to_str().unwrap())),
+            alpha,
+            "the answer is the real folder, never the link"
+        );
+        let to_foreign = p.root.path().join("link-to-foreign");
+        std::os::unix::fs::symlink(&foreign, &to_foreign).unwrap();
+        assert_eq!(
+            p.refused(to_foreign.to_str().unwrap()).0,
+            "unknown_project"
+        );
+        // A link named like a permitted folder is still not that folder.
+        let decoy = p.root.path().join("decoys/alpha");
+        std::fs::create_dir_all(decoy.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&foreign, &decoy).unwrap();
+        assert_eq!(p.refused(decoy.to_str().unwrap()).0, "unknown_project");
+    }
+
+    #[test]
+    fn a_permitted_project_without_a_database_says_so() {
+        let p = Projects::new();
+        let beta = p.folder("beta", false);
+        p.permit(&beta, true);
+        let (code, error) = p.refused(&beta);
+        assert_eq!(code, "supervisor_denied");
+        assert_eq!(error["reason"], "project_not_initialized");
+        assert!(error["message"].as_str().unwrap().contains(&beta));
+        let response = p.ask(None);
+        assert_eq!(response["error"]["reason"], "no_initialized_project");
+    }
+
+    #[test]
+    fn a_name_of_two_folders_is_refused_with_both_paths() {
+        let p = Projects::new();
+        let one = p.folder("one/app", true);
+        let two = p.folder("two/app", true);
+        p.permit(&one, true);
+        p.permit(&two, true);
+        for spelling in ["app", "APP", "auric-pm-app", "auric-pm-app-2"] {
+            let (code, error) = p.refused(spelling);
+            assert_eq!(code, "supervisor_denied", "{spelling}");
+            assert_eq!(error["reason"], "ambiguous_project", "{spelling}");
+            let message = error["message"].as_str().unwrap();
+            assert!(message.contains(&one) && message.contains(&two), "{message}");
+        }
+        assert_eq!(p.answered_path(Some(&two)), two);
+    }
+
+    #[test]
+    fn every_call_reads_the_policy_and_the_disk_as_they_are_now() {
+        let p = Projects::new();
+        let alpha = p.folder("alpha", true);
+        let beta = p.folder("beta", true);
+        p.permit(&alpha, true);
+        p.permit(&beta, true);
+        assert_eq!(p.answered_path(None), alpha, "first by path");
+        assert_eq!(p.answered_path(Some(&alpha)), alpha);
+
+        p.permit(&alpha, false);
+        assert_eq!(p.refused(&alpha).0, "unknown_project", "revoked at once");
+        assert_eq!(p.answered_path(None), beta);
+
+        p.permit(&alpha, true);
+        std::fs::remove_file(format!("{alpha}/.auric/project.db")).unwrap();
+        assert_eq!(p.refused(&alpha).1["reason"], "project_not_initialized");
+        assert_eq!(p.answered_path(None), beta);
+    }
+
+    #[test]
+    fn an_outside_client_is_refused_whatever_it_names() {
+        let p = Projects::new();
+        let alpha = p.folder("alpha", true);
+        p.permit(&alpha, true);
+        let response = call_as(
+            &p.s.h,
+            &Caller::External,
+            json!({ "id": 1, "method": "pm_target", "params": { "project": alpha } }),
+        );
+        assert_eq!(error_code(&response), "outside_supervisor_scope");
+    }
 }
 
 mod link_policy {
