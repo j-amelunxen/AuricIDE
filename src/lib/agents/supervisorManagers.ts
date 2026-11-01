@@ -29,7 +29,8 @@ export const MANAGER_OKF_FIX = fixtures.machine.okf.fix;
 const KEY_MAX_LENGTH = fixtures.keyFromName.maxLength;
 const KEY_FALLBACK = fixtures.keyFromName.fallback;
 /** Shaped like an agent id, which `events.subscribe` reads as an id (supervisorLink fixtures). */
-const RESERVED_KEY = /^agent-\d+$/;
+const RESERVED_KEY = /^agent-\d+(-\d+)?$/;
+const RESERVED_SUFFIX = '-manager';
 // Line breaks, control characters and the invisible or reordering format characters
 // (zero-width, bidi), as in `is_invisible_format` in managers.rs: names are shown on one line.
 const NOT_ONE_LINE =
@@ -107,12 +108,14 @@ function foldLetter(key: string, character: string): string {
 /**
  * The address a new manager gets from its name: fold to ASCII (the table above), lowercase, runs
  * of anything else become one dash. `taken` is every registry key (archived
- * included) and every live supervisor's key; a taken or reserved key gets -2,
- * -3, … appended.
+ * included) and every live supervisor's key; a taken key gets -2, -3, … appended,
+ * a reserved one (shaped like an agent id) first gets `-manager`.
  */
 export function keyFromName(name: string, taken: readonly string[]): string {
   const folded = [...name].reduce(foldLetter, '').replace(/^-+|-+$/g, '');
-  const base = cutKey(folded, '') || KEY_FALLBACK;
+  const plain = cutKey(folded, '') || KEY_FALLBACK;
+  // A number after a reserved base is reserved again (agent-7-2), so it gets a word.
+  const base = RESERVED_KEY.test(plain) ? cutKey(plain, RESERVED_SUFFIX) : plain;
   const unavailable = (key: string) => taken.includes(key) || RESERVED_KEY.test(key);
   if (!unavailable(base)) return base;
   for (let n = 2; ; n += 1) {

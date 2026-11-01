@@ -44,6 +44,12 @@ describe('resizeShell', () => {
     });
   });
 
+  it('reads a dated agent id (agent-yyMMdd-N) out of its session key', async () => {
+    await resizeShell('agent-agent-261101-4', 40, 120);
+
+    expect(resizeAgentMirrorMock).toHaveBeenCalledWith('agent-261101-4', 40, 120);
+  });
+
   it('leaves mirrors alone for a plain shell', async () => {
     await resizeShell('shell-1', 40, 120);
     expect(resizeAgentMirrorMock).not.toHaveBeenCalled();

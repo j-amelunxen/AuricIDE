@@ -9,7 +9,9 @@
 //! tests below run it.
 
 use super::runs::{resolve_run_dir, RunManager, SupervisorRun};
-use super::several::{is_live_supervisor, is_valid_key, read_run_key, run_dir_holder};
+use super::several::{
+    is_live_supervisor, is_valid_key, is_well_formed, read_run_key, run_dir_holder,
+};
 use super::{app_data_dir, write_json_atomic};
 use super::{new_supervisor_run_dir, supervisor_runs_root};
 use crate::agents::{AgentInfo, AgentManagerState};
@@ -233,6 +235,8 @@ fn cut_key(key: &str, max: usize) -> String {
         .to_string()
 }
 
+const RESERVED_SUFFIX: &str = "-manager";
+
 /// A supervisor key for `name` that is neither in `taken` nor shaped like an
 /// agent id (fixture `keyFromName`).
 pub fn key_from_name(name: &str, taken: &[String]) -> String {
@@ -241,6 +245,15 @@ pub fn key_from_name(name: &str, taken: &[String]) -> String {
     let base = cut_key(folded.trim_matches('-'), MAX_KEY_LENGTH);
     let base = if base.is_empty() {
         FALLBACK_KEY.to_string()
+    } else {
+        base
+    };
+    // A number after a reserved base is reserved again (agent-7-2), so it gets a word.
+    let base = if super::several::is_agent_id_shaped(&base) {
+        format!(
+            "{}{RESERVED_SUFFIX}",
+            cut_key(&base, MAX_KEY_LENGTH - RESERVED_SUFFIX.len())
+        )
     } else {
         base
     };
@@ -278,8 +291,11 @@ fn read_registry(path: &Path) -> Result<Registry, String> {
     let registry: Registry = serde_json::from_value(value)
         .map_err(|error| registry_unreadable(&format!("an entry is malformed ({error}).")))?;
     // Keys become folder names under `managers/`; a hand-edited one must not
-    // be able to leave it.
-    match registry.managers.iter().find(|m| !is_valid_key(&m.key)) {
+    // be able to leave it. Only the shape counts here: a key made before the
+    // dated agent ids (agent-7-2) is shaped like an id now, and refusing the
+    // whole registry for it would lock out every manager. Launching that one
+    // manager is refused instead, by the key check (`supervisor_key_invalid`).
+    match registry.managers.iter().find(|m| !is_well_formed(&m.key)) {
         Some(bad) => Err(registry_unreadable(&format!(
             "an entry has the invalid key {:?}.",
             bad.key
@@ -1092,7 +1108,7 @@ mod tests {
 
     #[test]
     fn a_key_that_could_leave_the_managers_folder_makes_the_registry_unreadable() {
-        for key in ["../x", "a/b", "UPPER", "agent-7", ""] {
+        for key in ["../x", "a/b", "UPPER", ""] {
             let sandbox = Sandbox::new();
             let record = serde_json::json!({
                 "key": key, "name": "Evil", "runDir": "2026-10-21_090000",
@@ -1108,6 +1124,23 @@ mod tests {
             assert!(error.contains("could not be read"), "{key:?}: {error}");
             assert_eq!(sandbox.registry_bytes(), text.as_bytes(), "left as it is");
         }
+    }
+
+    #[test]
+    fn a_key_made_before_dated_agent_ids_still_loads() {
+        // "Agent 7" used to become agent-7-2, which is shaped like a dated id now.
+        // The registry must not be refused for it; launching that manager is.
+        let sandbox = Sandbox::new();
+        let record = serde_json::json!({
+            "key": "agent-7-2", "name": "Agent 7", "runDir": "2026-10-21_090000",
+            "promotedAt": "2026-10-21T09:00:00Z", "archivedAt": null, "lastLaunch": null
+        });
+        let text = serde_json::json!({ "version": 1, "managers": [record] }).to_string();
+        std::fs::write(&sandbox.registry, text).unwrap();
+        let listed = list(&sandbox.registry);
+        assert_eq!(listed.error, None);
+        assert_eq!(listed.managers.len(), 1);
+        assert!(!is_valid_key("agent-7-2"));
     }
 
     #[test]

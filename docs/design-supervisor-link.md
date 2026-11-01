@@ -274,11 +274,11 @@ should read it as "gone", and it also has the `agent.removed` event.
 
 Several supervisors run at once, each in its own run folder and with its own
 children (`docs/design-agent-control.md`, "Several supervisors"). An agent id
-is a counter that changes when a supervisor is resumed or the app restarts, so
+changes when a supervisor is resumed or the app restarts, so
 a client addresses its supervisor by a **key** it picks:
 
 - Format `^[a-z0-9][a-z0-9-]{0,47}$`, and not shaped like an agent id
-  (`^agent-\d+$`, `reservedPattern`), so a `supervisors` entry in
+  (`^agent-\d+(-\d+)?$`, `reservedPattern`: the legacy `agent-12` and the dated `agent-261101-4`), so a `supervisors` entry in
   `events.subscribe` never names two supervisors (fixture `supervisorKeys`). Unique among
   **live** supervisors; a finished one frees its key.
 - Kept on the agent (`AgentInfo.supervisorKey`), in the restart file, and in

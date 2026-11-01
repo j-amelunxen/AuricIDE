@@ -125,6 +125,19 @@
       }
     },
     {
+      "name": "read_output takes a dated agent id (agent-yyMMdd-N) like any other id",
+      "raw": "{\"id\":2,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-261101-4\"}}",
+      "expected": {
+        "id": 2,
+        "method": "read_output",
+        "params": {
+          "agentId": "agent-261101-4",
+          "tailBytes": 16384,
+          "sinceOffset": null
+        }
+      }
+    },
+    {
       "name": "read_output defaults tailBytes",
       "raw": "{\"id\":2,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\"}}",
       "expected": {

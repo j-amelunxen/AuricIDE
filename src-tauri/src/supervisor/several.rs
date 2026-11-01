@@ -22,16 +22,24 @@ pub const SUPERVISOR_FILE_NAME: &str = "supervisor.json";
 pub const CHILDREN_ADOPTED_EVENT: &str = "supervisor-children-adopted";
 
 /// `^[a-z0-9][a-z0-9-]{0,47}$` (fixture `supervisorKeys.pattern`) and not
-/// shaped like an agent id (`reservedPattern`, `^agent-\d+$`): a subscription
-/// entry is a key or an id, and must never name two supervisors at once.
+/// shaped like an agent id (`reservedPattern`, `^agent-\d+(-\d+)?$`: the legacy
+/// `agent-4` and the dated `agent-261101-4`): a subscription entry is a key or
+/// an id, and must never name two supervisors at once.
 pub fn is_valid_key(key: &str) -> bool {
-    let reserved = key
-        .strip_prefix("agent-")
-        .is_some_and(|n| !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit()));
-    !reserved && is_well_formed(key)
+    !is_agent_id_shaped(key) && is_well_formed(key)
 }
 
-fn is_well_formed(key: &str) -> bool {
+/// Fixture `supervisorKeys.reservedPattern`.
+pub fn is_agent_id_shaped(key: &str) -> bool {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    key.strip_prefix("agent-")
+        .is_some_and(|rest| match rest.split_once('-') {
+            Some((day, seq)) => digits(day) && digits(seq),
+            None => digits(rest),
+        })
+}
+
+pub fn is_well_formed(key: &str) -> bool {
     let lower_or_digit = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
     let bytes = key.as_bytes();
     match bytes.split_first() {

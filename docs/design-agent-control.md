@@ -42,6 +42,20 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
   rather than hidden.
   See `docs/adr/0003-agent-control-socket.md`.
 
+## Agent ids
+
+A new agent gets `agent-<yyMMdd>-<seq>` (`agent-261101-4`): the local day and a
+counter that restarts each day. The pair strictly increases whatever the clock
+does (a clock set back keeps the stored day and counts on), and it is saved in
+`<app_data_dir>/agent-id-state.json` before the id is handed out, under a file
+lock, because the dev and the installed build share that folder. A failed save
+refuses the spawn. Ids are unique across runs and restarts; they stay opaque
+strings for every client. Agents stored from earlier builds keep their
+`agent-<digits>` ids, which a new id can never equal (it has a second hyphen),
+and supervisor keys may not take either shape. Rule, renderer and the
+guarantee of distinct ids are modelled in `verification/lean/AuricIDE/AgentIds.lean`
+and replayed from `verification/contracts/agent-ids-v1.jsonl` (`agents/ids.rs`).
+
 ## Transport
 
 - Socket: `<app_data_dir>/control.sock`

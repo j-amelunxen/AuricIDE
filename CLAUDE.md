@@ -497,7 +497,7 @@ ADR 0004.
   (`max_running*` count per supervisor, so N supervisors may run N times as
   many children). A plain tile click opens the newest running one; a skill,
   a resume or "Start new Supervisor" always starts another. An optional
-  `supervisorKey` (`^[a-z0-9][a-z0-9-]{0,47}$`, not `agent-<digits>`, unique
+  `supervisorKey` (`^[a-z0-9][a-z0-9-]{0,47}$`, not `agent-<digits>` or `agent-<yyMMdd>-<digits>`, unique
   among live supervisors, kept in the run's `supervisor.json`) is the stable
   address external clients use, because the agent id changes on every resume.
   In the agent tabs a supervisor and its descendants form one group with one

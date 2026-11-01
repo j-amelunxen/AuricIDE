@@ -1014,7 +1014,7 @@
     ]
   },
   "supervisorKeys": {
-    "$comment": "A supervisor key is an address a client picks for a supervisor; it is not a permission. Unique among live supervisors (a finished one frees its key). spawn: what supervisors.spawn does with key and if against the live supervisors; a key that resolves to nobody on agents.read/send/kill or jobs.create is unknown_supervisor. Keys shaped like an agent id (reservedPattern) are refused, so a supervisors entry in events.subscribe never names two supervisors at once.",
+    "$comment": "A supervisor key is an address a client picks for a supervisor; it is not a permission. Unique among live supervisors (a finished one frees its key). spawn: what supervisors.spawn does with key and if against the live supervisors; a key that resolves to nobody on agents.read/send/kill or jobs.create is unknown_supervisor. Keys shaped like an agent id (reservedPattern: the legacy agent-N and the dated agent-yyMMdd-N) are refused, so a supervisors entry in events.subscribe never names two supervisors at once.",
     "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
     "maxLength": 48,
     "valid": [
@@ -1037,7 +1037,10 @@
       "mäil",
       "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "agent-3",
-      "agent-12"
+      "agent-12",
+      "agent-261101-4",
+      "agent-000101-1",
+      "agent-7-2"
     ],
     "spawn": {
       "live": [
@@ -1157,7 +1160,7 @@
         }
       ]
     },
-    "reservedPattern": "^agent-\\d+$"
+    "reservedPattern": "^agent-\\d+(-\\d+)?$"
   },
   "subtree": {
     "$comment": "events.subscribe { supervisors } and supervisors.list over one agent list. A supervisors entry is a key or an agent id; it covers the supervisor, every descendant through the spawnedByAgentId chain (recomputed every poll, so a child started later joins), the agents of jobs it requested and those jobs. An unknown entry covers nothing and is no error. agentIds and supervisors together are their union. Without supervisors, job events are not filtered (as before); with them, only the covered jobs. rootSupervisorIds is LinkAgent.rootSupervisorId: the topmost supervisor of the chain, null where the chain reaches no listed supervisor. finished is what run results still keep after a supervisor ended. roles (feature roleFilter) narrows what the other filters cover to agents whose own role is listed; alone it covers every listed agent of that role, so a supervisor started later is covered from the next poll. It does not pull in a supervisor's children and it does not filter job events (only supervisors does).",

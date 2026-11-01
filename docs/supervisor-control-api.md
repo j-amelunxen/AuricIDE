@@ -591,10 +591,10 @@ next tick (every 2 s). A job that already ended answers
 ## Several supervisors
 
 Any number of supervisors may run at once; each manages only the agents it
-started. A supervisor's `agentId` is a counter and changes when it is resumed
+started. A supervisor's `agentId` is unique but changes when it is resumed
 or AuricIDE restarts, so a client that wants **its** supervisor back after a
 reconnect gives it a **key**: an address it chooses, `^[a-z0-9][a-z0-9-]{0,47}$` and not shaped like an
-agent id (`agent-12` is refused).
+agent id (`agent-12` and `agent-261101-4` are refused).
 
 - A key is unique among **live** supervisors. When one ends, its key is free.
 - The key is kept with the supervisor across a restart and in its run folder,
