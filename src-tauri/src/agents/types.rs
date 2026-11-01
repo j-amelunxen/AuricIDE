@@ -206,7 +206,9 @@ impl Drop for OwnedFile {
 
 pub struct AgentManager {
     pub agents: HashMap<String, AgentProcess>,
-    pub counter: u64,
+    /// Hands out `agent-<yyMMdd>-<seq>` ids (`agents/ids.rs`). In memory until
+    /// the app data folder is known.
+    pub ids: super::ids::IdAllocator,
 }
 
 impl Default for AgentManager {
@@ -219,13 +221,14 @@ impl AgentManager {
     pub fn new() -> Self {
         Self {
             agents: HashMap::new(),
-            counter: 0,
+            ids: super::ids::IdAllocator::in_memory(),
         }
     }
 
-    pub fn next_id(&mut self) -> String {
-        self.counter += 1;
-        format!("agent-{}", self.counter)
+    /// A new, never-before-used id. An error means the counter could not be
+    /// saved and no id was handed out.
+    pub fn next_id(&mut self) -> Result<String, String> {
+        self.ids.allocate()
     }
 }
 

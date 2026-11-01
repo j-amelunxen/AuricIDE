@@ -1028,7 +1028,13 @@ pub async fn spawn_agent_impl(
             let _ = child.kill();
         })?;
     }
-    let id = manager.next_id();
+    let id = match manager.next_id() {
+        Ok(id) => id,
+        Err(error) => {
+            let _ = child.kill();
+            return Err(error);
+        }
+    };
 
     let usage = usage.map(|capture| capture.with_agent_id(&id));
 

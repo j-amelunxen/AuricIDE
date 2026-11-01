@@ -90,15 +90,15 @@ impl AgentPersistence {
         }
     }
 
-    /// Highest N over all persisted `agent-N` ids, so the in-memory counter
-    /// can be seeded past them and new ids never collide with restored ones.
-    pub fn max_agent_number(&self) -> u64 {
+    /// Newest dated id (`agent-<yyMMdd>-<seq>`) among the interrupted agents.
+    /// The id allocator never goes below it, which matters only when its own
+    /// state file is gone. Legacy `agent-N` ids need no seed: no new id has
+    /// that shape.
+    pub fn newest_dated_id(&self) -> Option<crate::agents::ids::IdState> {
         self.interrupted
             .iter()
-            .filter_map(|a| a.id.strip_prefix("agent-"))
-            .filter_map(|n| n.parse::<u64>().ok())
+            .filter_map(|a| crate::agents::ids::parse_dated(&a.id))
             .max()
-            .unwrap_or(0)
     }
 
     pub fn record_spawn(&mut self, agent: PersistedAgent) -> Result<(), String> {
@@ -589,21 +589,24 @@ mod tests {
     }
 
     #[test]
-    fn test_max_agent_number_over_interrupted_ids() {
+    fn test_newest_dated_id_ignores_legacy_ids() {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
             p.record_spawn(sample_agent("agent-3")).unwrap();
-            p.record_spawn(sample_agent("agent-11")).unwrap();
+            p.record_spawn(sample_agent("agent-99")).unwrap();
+            p.record_spawn(sample_agent("agent-261101-7")).unwrap();
+            p.record_spawn(sample_agent("agent-261031-40")).unwrap();
         }
         let p = AgentPersistence::load(Some(path));
-        assert_eq!(p.max_agent_number(), 11);
+        let newest = p.newest_dated_id().unwrap();
+        assert_eq!((newest.day, newest.seq), (261101, 7));
     }
 
     #[test]
-    fn test_max_agent_number_defaults_to_zero() {
+    fn test_newest_dated_id_is_none_without_dated_ids() {
         let p = AgentPersistence::load(None);
-        assert_eq!(p.max_agent_number(), 0);
+        assert_eq!(p.newest_dated_id(), None);
     }
 
     #[test]

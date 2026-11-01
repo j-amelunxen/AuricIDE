@@ -246,12 +246,9 @@ pub fn run() {
                 .ok()
                 .map(|d| d.join("active-agents.json"));
             let persistence = agent_persistence::new_agent_persistence_state(persistence_path);
-            // Seed the agent id counter past restored ids so a new spawn never
-            // reuses the id of an interrupted agent still shown in the UI.
-            let max_restored = persistence
-                .lock()
-                .map(|p| p.max_agent_number())
-                .unwrap_or(0);
+            // Dated ids of interrupted agents still shown in the UI: the id
+            // allocator never goes below them (agents/ids.rs).
+            let newest_restored = persistence.lock().ok().and_then(|p| p.newest_dated_id());
             // Agents whose run already has its verdict ended; only letting go
             // of their anchor did not land. They are not offered for resume.
             if let (Some(inbox), Ok(mut p)) = (
@@ -280,11 +277,22 @@ pub fn run() {
             for run in agents::launch_runs::interrupted(&left_behind) {
                 agents::launch_runs::record(app.handle(), run);
             }
-            if max_restored > 0 {
+            {
+                // Ids are kept in the app data folder, shared by the dev and
+                // the installed build, so they never repeat across runs.
                 let manager_state = app.state::<AgentManagerState>().inner().clone();
+                let ids_dir = app.path().app_data_dir().ok();
                 tauri::async_runtime::block_on(async move {
                     let mut manager = manager_state.lock().await;
-                    manager.counter = manager.counter.max(max_restored);
+                    manager.ids = match ids_dir {
+                        Some(dir) => agents::ids::IdAllocator::durable(&dir),
+                        None => agents::ids::IdAllocator::unavailable(
+                            "The app data folder is unknown, so agent ids cannot be saved.",
+                        ),
+                    };
+                    if let Some(newest) = newest_restored {
+                        manager.ids.raise_floor(newest);
+                    }
                 });
             }
 
