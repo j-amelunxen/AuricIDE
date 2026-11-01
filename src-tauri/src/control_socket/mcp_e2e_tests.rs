@@ -53,7 +53,8 @@ impl Reply {
 
 struct McpServer {
     process: Child,
-    stdin: ChildStdin,
+    /// `None` once `close_stdin` has hung up on the server.
+    stdin: Option<ChildStdin>,
     answers: mpsc::Receiver<Value>,
     next_id: u64,
 }
@@ -90,7 +91,7 @@ impl McpServer {
         });
         let mut server = Self {
             process,
-            stdin,
+            stdin: Some(stdin),
             answers,
             next_id: 1,
         };
@@ -110,9 +111,23 @@ impl McpServer {
         self.process.id()
     }
 
+    /// Hangs up as a client that went away would, and waits for the process to
+    /// end by itself. `None`: it was still there at the deadline.
+    fn close_stdin_and_wait(&mut self, patience: Duration) -> Option<std::process::ExitStatus> {
+        drop(self.stdin.take());
+        let deadline = Instant::now() + patience;
+        while Instant::now() < deadline {
+            if let Some(status) = self.process.try_wait().unwrap() {
+                return Some(status);
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        None
+    }
+
     fn notify(&mut self, method: &str) {
         writeln!(
-            self.stdin,
+            self.stdin.as_mut().unwrap(),
             "{}",
             json!({ "jsonrpc": "2.0", "method": method })
         )
@@ -123,7 +138,7 @@ impl McpServer {
         let id = self.next_id;
         self.next_id += 1;
         let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-        writeln!(self.stdin, "{line}").unwrap();
+        writeln!(self.stdin.as_mut().unwrap(), "{line}").unwrap();
         let deadline = Instant::now() + ANSWER_TIMEOUT;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -137,7 +152,7 @@ impl McpServer {
             // A request of the server's own: answered, as a client would.
             if answer.get("method").is_some() && answer.get("id").is_some() {
                 let reply = json!({ "jsonrpc": "2.0", "id": answer["id"], "result": {} });
-                writeln!(self.stdin, "{reply}").unwrap();
+                writeln!(self.stdin.as_mut().unwrap(), "{reply}").unwrap();
             }
         }
     }
@@ -722,6 +737,15 @@ fn tickets_in(project: &Path) -> i64 {
         .unwrap()
 }
 
+fn process_is_there(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
 /// A permitted project whose database the real server created.
 fn permitted(rig: &Rig, name: &str) -> PathBuf {
     let project = project_in(rig, name);
@@ -990,4 +1014,83 @@ fn the_pm_tools_refuse_everyone_but_a_supervisor_and_a_project_without_a_databas
     supervisor
         .call("pm_tools", json!({}))
         .refused("app_not_running");
+}
+
+// testuuid: t_4jej02d9 covers: el_h6np2qvy categories: edge level: integration
+#[test]
+#[ignore = "runs the built MCP bundle: node scripts/build-mcp-runtime.mjs first"]
+fn no_project_server_outlives_its_client_not_even_a_killed_gateway() {
+    let rig = Rig::new();
+    let alpha = permitted(&rig, "alpha");
+
+    // Its database handle must not keep it alive once the client hung up.
+    let mut server = McpServer::start(
+        &rig,
+        &["--project-root", alpha.to_str().unwrap()],
+        &socket_env(&rig),
+    );
+    assert!(!server.call("list_epics", json!({})).is_error);
+    let status = server
+        .close_stdin_and_wait(Duration::from_secs(10))
+        .expect("the project server ends by itself when its stdin closes");
+    assert!(status.success(), "{status}");
+
+    // The case that matters: a gateway killed outright cannot close its children.
+    let mut gateway = supervisor_server(&rig, SUPERVISOR);
+    assert!(
+        !gateway
+            .call(
+                "pm_call",
+                json!({ "project": "alpha", "tool": "list_epics" })
+            )
+            .is_error
+    );
+    let children = Command::new("pgrep")
+        .args(["-P", &gateway.pid().to_string()])
+        .output()
+        .unwrap();
+    let children: Vec<u32> = String::from_utf8_lossy(&children.stdout)
+        .split_whitespace()
+        .map(|pid| pid.parse().unwrap())
+        .collect();
+    assert_eq!(children.len(), 1, "one project, one child: {children:?}");
+    gateway.process.kill().unwrap();
+    gateway.process.wait().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while process_is_there(children[0]) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let left_behind = process_is_there(children[0]);
+    if left_behind {
+        // Not left running by a failed test.
+        let _ = Command::new("kill")
+            .args(["-9", &children[0].to_string()])
+            .status();
+    }
+    assert!(!left_behind, "the child outlived its killed gateway");
+}
+
+// testuuid: t_kc6e35y0 covers: el_8822ww84,el_rqg3vpjg categories: edge level: integration
+#[test]
+#[ignore = "runs the built MCP bundle: node scripts/build-mcp-runtime.mjs first"]
+fn a_codex_rollout_answer_passes_the_contract_as_result_and_as_report() {
+    let rig = Rig::new();
+    let mut supervisor = supervisor_server(&rig, SUPERVISOR);
+    rig.finish_from(
+        CHILD,
+        "From the rollout.",
+        SUPERVISOR,
+        crate::agents::run_results::RunResultSource::CodexRollout,
+    );
+    let done = supervisor
+        .call("await_agent_result", json!({ "agentId": CHILD }))
+        .json();
+    assert_eq!(done["result"]["source"], "codex_rollout");
+    assert_eq!(done["result"]["answer"], "From the rollout.");
+    let report = supervisor
+        .call("read_agent_report", json!({ "agentId": CHILD }))
+        .json();
+    assert_eq!(report["source"], "codex_rollout");
+    assert_eq!(report["report"], "From the rollout.");
 }

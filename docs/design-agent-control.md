@@ -719,8 +719,8 @@ stays as it is: it asks the human through the inbox and names no agent.
      `verification/lean/AuricIDE/AgentQuestions.lean`.
 - **It reaches a supervisor that is not waiting.** One typed notice per child with
   unheard questions, looked for every 2 s, held while the human drafts in that
-  console. It names the agent and the cursor, never the question's text: that stays
-  a tool result, read as data. What an `await_result` already carried needs none. The
+  console. It names the agent and the count, never a cursor (only the reader knows what
+  it really read) and never the question's text, which stays a tool result, read as data. What an `await_result` already carried needs none. The
   notice is a hint, the log is the guarantee. `list_agents` shows `questionCount`.
 - **Answering** is `send_input`, as for any question. A headless agent reads no input;
   the tool tells it to state its assumption and go on.
@@ -735,7 +735,7 @@ stays as it is: it asks the human through the inbox and names no agent.
 
 Nothing here reads a question out of prose: whether a report ends with one is for
 the supervisor to read. The questions live in memory, as the output buffers do; a
-restart ends the agents that raised them.
+restart ends the agents that raised them. Past 1000 agents the oldest agent's log goes.
 
 ### Worktrees
 

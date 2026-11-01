@@ -11,7 +11,7 @@ use super::protocol::tests::sample_agent;
 use super::tests::FakeBackend;
 use super::*;
 use crate::agent_usage::report::{AgentReport, ReportLookup, ReportMissing, ReportSource};
-use crate::agents::run_results::RunResult;
+use crate::agents::run_results::{RunResult, RunResultSource};
 use crate::supervisor::policy::ProjectRules;
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
@@ -132,16 +132,34 @@ impl Rig {
 
     /// Takes `id` out of the live list and books how its run ended, under `parent`.
     pub(super) fn finish(&self, id: &str, answer: Option<&str>, parent: &str) {
-        let mut agents = self.backend.agents.lock().unwrap();
-        let position = agents.iter().position(|a| a.id == id).unwrap();
-        let mut info = agents.remove(position);
-        drop(agents);
-        info.spawned_by_agent_id = Some(parent.to_string());
         let mut result = RunResult::from_finish(id, AgentStatus::Idle, Some(0), None, || None, 7);
         if let Some(answer) = answer {
             result.answer = Some(answer.to_string());
-            result.source = crate::agents::run_results::RunResultSource::Transcript;
+            result.source = RunResultSource::Transcript;
         }
+        self.book(result, parent);
+    }
+
+    /// `finish` with an answer from a named source.
+    pub(super) fn finish_from(
+        &self,
+        id: &str,
+        answer: &str,
+        parent: &str,
+        source: RunResultSource,
+    ) {
+        let mut result = RunResult::from_finish(id, AgentStatus::Idle, Some(0), None, || None, 7);
+        result.answer = Some(answer.to_string());
+        result.source = source;
+        self.book(result, parent);
+    }
+
+    fn book(&self, result: RunResult, parent: &str) {
+        let mut agents = self.backend.agents.lock().unwrap();
+        let position = agents.iter().position(|a| a.id == result.agent_id).unwrap();
+        let mut info = agents.remove(position);
+        drop(agents);
+        info.spawned_by_agent_id = Some(parent.to_string());
         self.run_results.record_finished(result, info);
     }
 
@@ -770,6 +788,52 @@ fn cursors_at_and_past_the_end_a_known_report_and_a_finished_run() {
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_eq!(result(&done)["done"], true);
     assert_eq!(result(&done)["questions"].as_array().unwrap().len(), 2);
+}
+
+// testuuid: t_1a60ksxh covers: el_a75yd10b categories: edge level: integration
+#[test]
+fn only_a_caller_with_a_cursor_is_woken_by_what_it_may_already_know() {
+    let rig = Rig::new();
+    assert_eq!(result(&rig.as_worker(CHILD, raise("Seen?")))["seq"], 1);
+    rig.set_report(CHILD, found("msg-1", "Turn over."));
+
+    // No cursor: the answer carries both, but the wait runs its full length.
+    let started = Instant::now();
+    let answer = rig.as_supervisor(await_of(
+        CHILD,
+        json!({ "untilInput": true, "waitSeconds": 1 }),
+    ));
+    assert!(started.elapsed() >= Duration::from_secs(1), "{answer}");
+    assert_eq!(result(&answer)["questions"][0]["question"], "Seen?");
+    assert_eq!(result(&answer)["reportId"], "msg-1");
+
+    // Each cursor wakes on its own news, at once: 0 and "none" are the first ones.
+    for cursors in [
+        json!({ "sinceQuestion": 0 }),
+        json!({ "sinceReport": "none" }),
+    ] {
+        let mut params = json!({ "untilInput": true, "waitSeconds": 15 });
+        params
+            .as_object_mut()
+            .unwrap()
+            .extend(cursors.as_object().unwrap().clone());
+        let started = Instant::now();
+        let answer = rig.as_supervisor(await_of(CHILD, params));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{cursors}: {answer}"
+        );
+        assert_eq!(result(&answer)["done"], false);
+    }
+
+    // Both cursors up to date: nothing new, so the wait runs out again.
+    let started = Instant::now();
+    let answer = rig.as_supervisor(await_of(
+        CHILD,
+        json!({ "untilInput": true, "waitSeconds": 1, "sinceQuestion": 1, "sinceReport": "msg-1" }),
+    ));
+    assert!(started.elapsed() >= Duration::from_secs(1), "{answer}");
+    assert!(result(&answer).get("questions").is_none(), "{answer}");
 }
 
 // testuuid: t_hdscgrah covers: el_a75yd10b categories: negative level: integration

@@ -132,4 +132,5 @@ _Starting agents through the back door._ The project servers run without `AURIC_
 
 _Too many processes._ At most 8 children at a time; the least recently used goes unless a call is
 running in it, and if all are busy the call answers `pm_busy`. A child that does not answer in 120
-seconds is ended.
+seconds is ended. A project server ends when its stdin closes, so a gateway killed outright leaves
+none behind.
