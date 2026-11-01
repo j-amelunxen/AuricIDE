@@ -91,7 +91,12 @@ export const AGENT_ROLES = ['worker', 'supervisor'] as const;
 export const RUN_SOURCES = ['ui', 'conductor', 'schedule', 'mcp', 'supervisor', 'other'] as const;
 
 /** Where a finished run's `answer` came from. */
-export const RUN_RESULT_SOURCES = ['cli_result', 'transcript', 'codex_rollout', 'console_tail'] as const;
+export const RUN_RESULT_SOURCES = [
+  'cli_result',
+  'transcript',
+  'codex_rollout',
+  'console_tail',
+] as const;
 
 /** Where a clean report came from. There is no console source, on purpose. */
 export const REPORT_SOURCES = ['cli_result', 'claude_transcript', 'codex_rollout'] as const;

@@ -73,12 +73,16 @@ try {
 
 writeFileSync(
   join(output, 'manifest.json'),
-  `${JSON.stringify({
+  `${JSON.stringify(
+    {
       version: 1,
       entrypoint: 'server.mjs',
       // The native addon above was compiled for this Node; the IDE picks a
       // node with the same ABI (src-tauri/src/node_runtime.rs).
       nodeModuleVersion: process.versions.modules,
       nodeVersion: process.versions.node,
-    }, null, 2)}\n`
+    },
+    null,
+    2
+  )}\n`
 );
