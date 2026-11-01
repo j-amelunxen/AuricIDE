@@ -32,6 +32,8 @@ pub(crate) struct FakeBackend {
     pub(crate) recent_runs: Mutex<BTreeMap<String, u32>>,
     /// Agents whose console holds a half-typed message from the human.
     pub(crate) drafting: Mutex<Vec<String>>,
+    /// Per agent: what its transcript would give. Absent: no reader.
+    pub(crate) reports: Mutex<HashMap<String, ReportLookup>>,
 }
 
 impl ControlBackend for FakeBackend {
@@ -45,6 +47,15 @@ impl ControlBackend for FakeBackend {
 
     fn agents(&self) -> Vec<AgentInfo> {
         self.agents.lock().unwrap().clone()
+    }
+
+    fn agent_report(&self, agent_id: &str) -> ReportLookup {
+        self.reports
+            .lock()
+            .unwrap()
+            .get(agent_id)
+            .cloned()
+            .unwrap_or(ReportLookup::Missing(ReportMissing::ProviderUnsupported))
     }
 
     fn agent_pids(&self) -> HashMap<u32, (String, AgentRole)> {
@@ -1982,10 +1993,7 @@ mod pm_target {
         );
         let to_foreign = p.root.path().join("link-to-foreign");
         std::os::unix::fs::symlink(&foreign, &to_foreign).unwrap();
-        assert_eq!(
-            p.refused(to_foreign.to_str().unwrap()).0,
-            "unknown_project"
-        );
+        assert_eq!(p.refused(to_foreign.to_str().unwrap()).0, "unknown_project");
         // A link named like a permitted folder is still not that folder.
         let decoy = p.root.path().join("decoys/alpha");
         std::fs::create_dir_all(decoy.parent().unwrap()).unwrap();
@@ -2018,7 +2026,10 @@ mod pm_target {
             assert_eq!(code, "supervisor_denied", "{spelling}");
             assert_eq!(error["reason"], "ambiguous_project", "{spelling}");
             let message = error["message"].as_str().unwrap();
-            assert!(message.contains(&one) && message.contains(&two), "{message}");
+            assert!(
+                message.contains(&one) && message.contains(&two),
+                "{message}"
+            );
         }
         assert_eq!(p.answered_path(Some(&two)), two);
     }
@@ -2879,4 +2890,448 @@ fn list_agents_names_each_supervisors_key() {
     let agents = response["result"]["agents"].as_array().unwrap();
     assert_eq!(agents[0]["supervisorKey"], "mail-triage");
     assert_eq!(agents[1]["supervisorKey"], Value::Null);
+}
+
+// ── read_report ─────────────────────────────────────────────────────────────
+
+fn found(id: &str, text: &str) -> ReportLookup {
+    ReportLookup::Found {
+        report: AgentReport {
+            id: id.into(),
+            text: text.into(),
+            at: Some("2026-11-01T10:00:00Z".into()),
+        },
+        source: ReportSource::ClaudeTranscript,
+    }
+}
+
+fn set_report(h: &Harness, agent: &str, lookup: ReportLookup) {
+    h.backend
+        .reports
+        .lock()
+        .unwrap()
+        .insert(agent.to_string(), lookup);
+}
+
+fn read_report(id: &str) -> Value {
+    json!({ "id": 1, "method": "read_report", "params": { "agentId": id } })
+}
+
+#[test]
+fn a_running_agents_report_comes_clean_from_its_transcript_not_its_console() {
+    let h = harness(vec![agent("agent-5", false)]);
+    h.buffers.append("agent-5", "⠋ garbled ⠙ table ⠹ redraw");
+    set_report(&h, "agent-5", found("msg_1", "The tests pass."));
+    let reply = call(&h, read_report("agent-5"));
+    assert_eq!(reply["result"]["available"], true);
+    assert_eq!(reply["result"]["report"], "The tests pass.");
+    assert_eq!(reply["result"]["reportId"], "msg_1");
+    assert_eq!(reply["result"]["source"], "claude_transcript");
+    assert_eq!(reply["result"]["status"], "running");
+}
+
+#[test]
+fn without_a_report_it_says_why_and_never_serves_the_console() {
+    let h = harness(vec![agent("agent-5", false)]);
+    h.buffers.append("agent-5", "console noise");
+    let reply = call(&h, read_report("agent-5"));
+    assert_eq!(reply["result"]["available"], false);
+    assert_eq!(reply["result"]["reason"], "provider_unsupported");
+    assert!(reply["result"].get("report").is_none());
+    set_report(
+        &h,
+        "agent-5",
+        ReportLookup::Missing(ReportMissing::NoReportYet),
+    );
+    let reply = call(&h, read_report("agent-5"));
+    assert_eq!(reply["result"]["reason"], "no_report_yet");
+}
+
+#[test]
+fn a_finished_agents_console_tail_is_no_report_and_its_transcript_answer_is() {
+    let h = harness(vec![]);
+    h.run_results.record(
+        RunResult::from_finish(
+            "tail",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || Some("x".into()),
+            1,
+        ),
+        None,
+    );
+    let reply = call(&h, read_report("tail"));
+    assert_eq!(reply["result"]["available"], false);
+    assert_eq!(reply["result"]["reason"], "console_only");
+
+    h.run_results.record(
+        RunResult::from_finish(
+            "clean",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || Some("x".into()),
+            1,
+        )
+        .with_transcript_report(|| Some("The report.".into())),
+        None,
+    );
+    let reply = call(&h, read_report("clean"));
+    assert_eq!(reply["result"]["report"], "The report.");
+    assert_eq!(reply["result"]["status"], "idle");
+
+    h.buffers.append("old", "console only");
+    h.buffers.finish("old", AgentStatus::Idle);
+    let reply = call(&h, read_report("old"));
+    assert_eq!(reply["result"]["reason"], "console_only");
+    assert_eq!(
+        error_code(&call(&h, read_report("nobody"))),
+        "unknown_agent"
+    );
+}
+
+#[test]
+fn a_long_report_keeps_its_end_within_the_limit_on_a_character_boundary() {
+    let h = harness(vec![agent("agent-5", false)]);
+    let text = format!("{}ANSWER: done", "ä".repeat(REPORT_MAX_BYTES));
+    set_report(&h, "agent-5", found("msg_1", &text));
+    let reply = call(&h, read_report("agent-5"));
+    let report = reply["result"]["report"].as_str().unwrap();
+    assert!(report.len() <= REPORT_MAX_BYTES);
+    assert!(report.ends_with("ANSWER: done"));
+    assert_eq!(reply["result"]["truncated"], true);
+}
+
+#[test]
+fn a_supervisor_reads_only_its_own_childrens_reports() {
+    let s = supervised_scope();
+    let call_sup = |id: &str| call_as(&s.h, &s.supervisor, read_report(id));
+    assert_eq!(call_sup("agent-child")["ok"], true);
+    assert_eq!(error_code(&call_sup("agent-other")), "unknown_agent");
+    assert_eq!(error_code(&call_sup("agent-human")), "unknown_agent");
+}
+
+// ── await_result: reports ───────────────────────────────────────────────────
+
+fn await_until(id: &str, extra: Value) -> Value {
+    let mut params = json!({ "agentId": id, "waitSeconds": 2, "untilInput": true });
+    for (key, value) in extra.as_object().unwrap() {
+        params[key] = value.clone();
+    }
+    json!({ "id": 1, "method": "await_result", "params": params })
+}
+
+#[test]
+fn a_finished_turn_wakes_a_watcher_at_once_even_while_the_console_keeps_moving() {
+    let h = harness(vec![agent("agent-5", false)]);
+    // Background sub-agents keep redrawing: no prompt, never silent.
+    h.buffers
+        .append("agent-5", "⠋ 2 background tasks still running");
+    set_report(
+        &h,
+        "agent-5",
+        found("msg_1", "Done. Open question: which branch?"),
+    );
+    let started = Instant::now();
+    let reply = call(&h, await_until("agent-5", json!({})));
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "woken, not timed out"
+    );
+    assert_eq!(reply["result"]["waitingForInput"], false);
+    assert_eq!(reply["result"]["newReport"], true);
+    assert_eq!(reply["result"]["reportId"], "msg_1");
+
+    let started = Instant::now();
+    let seen = call(
+        &h,
+        json!({ "id": 2, "method": "await_result",
+                "params": { "agentId": "agent-5", "waitSeconds": 1, "untilInput": true,
+                            "sinceReport": "msg_1", "sinceOffset": 9999 } }),
+    );
+    assert!(
+        started.elapsed() >= Duration::from_secs(1),
+        "a seen report wakes nothing"
+    );
+    assert!(seen["result"].get("newReport").is_none());
+    assert_eq!(seen["result"]["reportId"], "msg_1");
+}
+
+#[test]
+fn a_provider_without_reports_keeps_the_console_behaviour() {
+    let h = harness(vec![agent("agent-5", false)]);
+    h.buffers
+        .append("agent-5", "Do you want to proceed?\n❯ 1. Yes\n  2. No\n");
+    let reply = call(&h, await_until("agent-5", json!({})));
+    assert_eq!(reply["result"]["waitingForInput"], true);
+    assert!(reply["result"].get("reportId").is_none());
+    assert!(reply["result"].get("questions").is_none());
+}
+
+// ── Questions ───────────────────────────────────────────────────────────────
+
+fn asked(text: &str) -> Value {
+    json!({ "id": 1, "method": "raise_question", "params": { "question": text } })
+}
+
+fn worker(id: &str) -> Caller {
+    Caller::Worker {
+        agent_id: id.into(),
+    }
+}
+
+fn supervised_child(h: &Harness, caller: &Caller, text: &str) -> u64 {
+    call_as(h, caller, asked(text))["result"]["seq"]
+        .as_u64()
+        .unwrap()
+}
+
+fn child_of_supervisor(id: &str) -> AgentInfo {
+    let mut child = agent(id, false);
+    child.spawned_by_agent_id = Some("agent-sup".into());
+    child
+}
+
+#[test]
+fn only_the_control_socket_admits_a_worker_and_only_for_its_question() {
+    let s = supervised_scope();
+    let d = &s.h.dispatcher;
+    let child = worker("agent-child");
+    assert_eq!(
+        d.admit_control_peer(Some(999), below(Some(CHILD_PID))),
+        Ok(child.clone())
+    );
+    assert_eq!(
+        d.admit_control_peer(Some(CHILD_PID), below(None)),
+        Ok(child.clone())
+    );
+    assert_eq!(
+        d.admit_control_peer(Some(999), below(Some(SUPERVISOR_PID))),
+        Ok(s.supervisor.clone())
+    );
+    assert_eq!(
+        d.admit_control_peer(Some(999), below(None)),
+        Ok(Caller::External)
+    );
+    assert_eq!(
+        d.admit_control_peer(None, below(None)).unwrap_err().code,
+        ErrorCode::ForbiddenAgentCaller
+    );
+    // The door every other client of `admit` uses stays shut.
+    assert!(d.admit_peer(Some(999), below(Some(CHILD_PID))).is_err());
+
+    for forbidden in [
+        json!({ "id": 1, "method": "list_agents", "params": {} }),
+        json!({ "id": 1, "method": "list_projects", "params": {} }),
+        json!({ "id": 1, "method": "read_output", "params": { "agentId": "agent-child" } }),
+        read_report("agent-child"),
+        json!({ "id": 1, "method": "send_input", "params": { "agentId": "agent-sup", "text": "x" } }),
+        json!({ "id": 1, "method": "kill", "params": { "agentId": "agent-sup" } }),
+        json!({ "id": 1, "method": "spawn", "params": { "projectPath": s.path, "prompt": "x" } }),
+        json!({ "id": 1, "method": "link_policy_get", "params": {} }),
+    ] {
+        let reply = call_as(&s.h, &child, forbidden.clone());
+        assert_eq!(error_code(&reply), "forbidden_agent_caller", "{forbidden}");
+    }
+}
+
+#[test]
+fn nobody_but_a_started_agent_can_raise_a_question() {
+    let h = harness(vec![agent("agent-human", false)]);
+    assert_eq!(
+        error_code(&call_as(&h, &worker("agent-human"), asked("x"))),
+        "forbidden_agent_caller",
+        "the human started it: nobody to ask"
+    );
+    assert_eq!(
+        error_code(&call_as(&h, &worker("agent-gone"), asked("x"))),
+        "forbidden_agent_caller"
+    );
+    assert_eq!(error_code(&call(&h, asked("x"))), "forbidden_agent_caller");
+    let s = supervised_scope();
+    assert_eq!(
+        error_code(&call_as(&s.h, &s.supervisor, asked("x"))),
+        "forbidden_agent_caller"
+    );
+}
+
+#[test]
+fn a_question_reaches_the_supervisor_once_per_cursor_while_the_agent_keeps_working() {
+    let h = harness(vec![child_of_supervisor("agent-5")]);
+    let child = worker("agent-5");
+    h.buffers.append("agent-5", "⠋ still working");
+    let sup = Caller::Supervisor {
+        agent_id: "agent-sup".into(),
+    };
+    assert_eq!(supervised_child(&h, &child, "Which branch?"), 1);
+    assert_eq!(supervised_child(&h, &child, "Keep the old API?"), 2);
+
+    let started = Instant::now();
+    let first = call_as(&h, &sup, await_until("agent-5", json!({})));
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "a question wakes at once"
+    );
+    assert_eq!(first["result"]["done"], false);
+    assert_eq!(first["result"]["waitingForInput"], false);
+    assert_eq!(first["result"]["questionCursor"], 2);
+    assert_eq!(first["result"]["questions"][0]["question"], "Which branch?");
+    assert_eq!(first["result"]["questions"][1]["seq"], 2);
+
+    let next = json!({ "id": 2, "method": "await_result",
+        "params": { "agentId": "agent-5", "waitSeconds": 0, "sinceQuestion": 2 } });
+    assert!(call_as(&h, &sup, next.clone())["result"]
+        .get("questions")
+        .is_none());
+
+    let lost = json!({ "id": 3, "method": "await_result",
+        "params": { "agentId": "agent-5", "waitSeconds": 0, "sinceQuestion": 1 } });
+    let again = call_as(&h, &sup, lost);
+    assert_eq!(
+        again["result"]["questions"][0]["seq"], 2,
+        "an answer lost comes again"
+    );
+    assert_eq!(supervised_child(&h, &child, "One more?"), 3);
+    let third = call_as(&h, &sup, next);
+    assert_eq!(third["result"]["questions"][0]["question"], "One more?");
+    assert_eq!(third["result"]["questionCursor"], 3);
+}
+
+#[test]
+fn questions_outlive_the_run_and_a_finished_agents_answer_carries_them() {
+    let h = harness(vec![child_of_supervisor("agent-5")]);
+    supervised_child(&h, &worker("agent-5"), "Which branch?");
+    h.backend.agents.lock().unwrap().clear();
+    h.run_results.record(
+        RunResult::from_finish("agent-5", AgentStatus::Idle, Some(0), None, || None, 1),
+        Some("agent-sup".into()),
+    );
+    let reply = call(
+        &h,
+        json!({ "id": 1, "method": "await_result",
+        "params": { "agentId": "agent-5", "sinceQuestion": 0 } }),
+    );
+    assert_eq!(reply["result"]["done"], true);
+    assert_eq!(reply["result"]["questions"][0]["question"], "Which branch?");
+}
+
+#[test]
+fn a_full_question_log_refuses_and_keeps_every_question() {
+    let h = harness(vec![child_of_supervisor("agent-5")]);
+    let child = worker("agent-5");
+    for n in 1..=crate::agents::questions::QUESTIONS_PER_AGENT {
+        assert_eq!(supervised_child(&h, &child, &n.to_string()), n as u64);
+    }
+    assert_eq!(
+        error_code(&call_as(&h, &child, asked("too many"))),
+        "invalid_params"
+    );
+    let reply = call(
+        &h,
+        json!({ "id": 1, "method": "await_result",
+        "params": { "agentId": "agent-5" } }),
+    );
+    assert_eq!(
+        reply["result"]["questions"].as_array().unwrap().len(),
+        crate::agents::questions::QUESTIONS_PER_AGENT
+    );
+}
+
+#[test]
+fn a_notice_goes_out_once_and_not_for_what_an_await_already_carried() {
+    let mut sup = agent("agent-sup", false);
+    sup.role = AgentRole::Supervisor;
+    let h = harness(vec![sup, child_of_supervisor("agent-5")]);
+    let child = worker("agent-5");
+    supervised_child(&h, &child, "Which branch?");
+
+    h.backend.drafting.lock().unwrap().push("agent-sup".into());
+    h.dispatcher.announce_questions();
+    assert!(
+        h.backend.written.lock().unwrap().is_empty(),
+        "the human is typing"
+    );
+    h.backend.drafting.lock().unwrap().clear();
+
+    h.dispatcher.announce_questions();
+    h.dispatcher.announce_questions();
+    {
+        let writes = h.backend.written.lock().unwrap();
+        assert_eq!(writes.len(), 1, "one notice");
+        assert_eq!(writes[0].0, "agent-sup");
+        assert!(writes[0].1.contains("agent-5"));
+        assert!(writes[0].1.contains("sinceQuestion: 0"));
+        assert!(
+            !writes[0].1.contains("Which branch"),
+            "the text stays out of the typed notice"
+        );
+    }
+
+    supervised_child(&h, &child, "Second?");
+    call(
+        &h,
+        json!({ "id": 1, "method": "await_result",
+        "params": { "agentId": "agent-5", "sinceQuestion": 1 } }),
+    );
+    h.dispatcher.announce_questions();
+    assert_eq!(
+        h.backend.written.lock().unwrap().len(),
+        1,
+        "the await carried it"
+    );
+
+    supervised_child(&h, &child, "Third?");
+    h.dispatcher.announce_questions();
+    assert!(h.backend.written.lock().unwrap()[1]
+        .1
+        .contains("sinceQuestion: 2"));
+}
+
+#[test]
+fn a_supervisors_listing_counts_its_childs_questions() {
+    let h = harness(vec![child_of_supervisor("agent-5")]);
+    let sup = Caller::Supervisor {
+        agent_id: "agent-sup".into(),
+    };
+    let list = json!({ "id": 1, "method": "list_agents", "params": {} });
+    assert!(call_as(&h, &sup, list.clone())["result"]["agents"][0]
+        .get("questionCount")
+        .is_none());
+    supervised_child(&h, &worker("agent-5"), "Which branch?");
+    assert_eq!(
+        call_as(&h, &sup, list)["result"]["agents"][0]["questionCount"],
+        1
+    );
+}
+
+/// The `finished` half of `agent-report-v1.jsonl`: which kept answers count as a
+/// report. Generated by the Lean model.
+#[test]
+fn the_finished_report_rule_replays_the_lean_corpus() {
+    let corpus = include_str!("../../../verification/contracts/agent-report-v1.jsonl");
+    let mut seen = 0;
+    for line in corpus.lines() {
+        let vector: Value = serde_json::from_str(line).unwrap();
+        if vector["kind"] != "finished" {
+            continue;
+        }
+        let source = match vector["source"].as_str().unwrap() {
+            "cli_result" => RunResultSource::CliResult,
+            "transcript" => RunResultSource::Transcript,
+            _ => RunResultSource::ConsoleTail,
+        };
+        let result = RunResult {
+            source,
+            answer: vector["answer"].as_str().map(str::to_string),
+            ..RunResult::from_finish("a", AgentStatus::Idle, Some(0), None, || None, 1)
+        };
+        let got = match finished_report(result) {
+            ReportLookup::Found { source, .. } => json!(source),
+            ReportLookup::Missing(_) => Value::Null,
+        };
+        assert_eq!(got, vector["report"], "{vector}");
+        seen += 1;
+    }
+    assert_eq!(seen, 12);
 }

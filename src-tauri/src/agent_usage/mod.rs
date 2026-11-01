@@ -10,6 +10,7 @@ pub mod codex;
 pub mod holdback;
 pub mod launch;
 pub mod record;
+pub mod report;
 pub mod reprice;
 pub mod store;
 

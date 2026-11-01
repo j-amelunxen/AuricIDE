@@ -928,7 +928,7 @@ fn a_supervisor_without_skills_has_file_tools_and_only_the_timer_shell_grant() {
         supervisor_claude_arguments(
             "/data/agent-bindings/sup $1.mcp.json",
             &crate::supervisor::SkillPlugin::default(),
-                        false,
+            false,
             &[]
         ),
         vec![
@@ -963,12 +963,7 @@ fn an_approved_skill_brings_its_plugin_and_exactly_its_shell_commands() {
         bash: vec!["~/.claude/skills/video-to-tasklist/scripts/*".to_string()],
         dirs: vec!["/home/u/review workspace".to_string()],
     };
-    let args = supervisor_claude_arguments(
-        "/c.json",
-        &skills,
-        true,
-        &[],
-    );
+    let args = supervisor_claude_arguments("/c.json", &skills, true, &[]);
     let joined = args.join(" ");
     assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
     assert!(joined.contains("--add-dir \"/home/u/review workspace\" --allowedTools"));
@@ -1033,7 +1028,7 @@ fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
         arguments: supervisor_claude_arguments(
             "/c.json",
             &crate::supervisor::SkillPlugin::default(),
-                        false,
+            false,
             &[],
         ),
         env_vars: Vec::new(),
@@ -1771,8 +1766,7 @@ fn a_manager_launch_adds_the_deny_rules_before_the_last_flag_and_a_plain_one_add
     assert!(!plain
         .iter()
         .any(|a| a == instructions["denyFlag"].as_str().unwrap()));
-    let manager =
-        supervisor_claude_arguments("/c.json", &plugin, false, &manager_denied_tools());
+    let manager = supervisor_claude_arguments("/c.json", &plugin, false, &manager_denied_tools());
     let flag = manager
         .iter()
         .position(|a| a == instructions["denyFlag"].as_str().unwrap())

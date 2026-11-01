@@ -181,6 +181,50 @@ pub struct AwaitResultParams {
     /// a question already seen does not wake it again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since_offset: Option<u64>,
+    /// The `questionCursor` of the last answer: questions after it come back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_question: Option<u64>,
+    /// The `reportId` of the last answer: with `until_input`, only another
+    /// report can wake the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_report: Option<String>,
+}
+
+/// `raise_question`: an agent asks whoever started it. No agent id: Rust books
+/// it on the agent the caller's process belongs to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RaiseQuestionParams {
+    pub question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+}
+
+/// `limits.questionMaxBytes`, for the question and for its context each.
+pub const QUESTION_MAX_BYTES: usize = 4096;
+/// `limits.questionOptionsMax`.
+pub const QUESTION_OPTIONS_MAX: usize = 10;
+/// `limits.reportMaxBytes`: what one `read_report` carries at most.
+pub const REPORT_MAX_BYTES: usize = 64 * 1024;
+
+fn check_question(params: &RaiseQuestionParams) -> Result<(), String> {
+    if params.question.trim().is_empty() {
+        return Err("question must not be empty".into());
+    }
+    let too_long = |text: &str| text.len() > QUESTION_MAX_BYTES;
+    if too_long(&params.question) || params.context.as_deref().is_some_and(too_long) {
+        return Err(format!(
+            "question and context hold at most {QUESTION_MAX_BYTES} bytes each"
+        ));
+    }
+    if params.options.len() > QUESTION_OPTIONS_MAX || params.options.iter().any(|o| too_long(o)) {
+        return Err(format!(
+            "at most {QUESTION_OPTIONS_MAX} options of {QUESTION_MAX_BYTES} bytes each"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -188,6 +232,8 @@ pub struct AwaitResultParams {
 pub enum Request {
     ListAgents(EmptyParams),
     ReadOutput(ReadOutputParams),
+    ReadReport(AgentIdParams),
+    RaiseQuestion(RaiseQuestionParams),
     SendInput(SendInputParams),
     Kill(AgentIdParams),
     Spawn(SpawnParams),
@@ -226,9 +272,11 @@ pub struct PmTargetResult {
     pub name: String,
 }
 
-const METHODS: [&str; 12] = [
+const METHODS: [&str; 14] = [
     "list_agents",
     "read_output",
+    "read_report",
+    "raise_question",
     "send_input",
     "kill",
     "spawn",
@@ -406,6 +454,16 @@ fn normalise_params(request: Request) -> Result<Request, String> {
             }
             Ok(Request::Spawn(params))
         }
+        Request::ReadReport(params) => {
+            if blank(&params.agent_id) {
+                return Err("agentId must not be empty".into());
+            }
+            Ok(Request::ReadReport(params))
+        }
+        Request::RaiseQuestion(params) => {
+            check_question(&params)?;
+            Ok(Request::RaiseQuestion(params))
+        }
         Request::AwaitResult(mut params) => {
             if blank(&params.agent_id) {
                 return Err("agentId must not be empty".into());
@@ -528,6 +586,45 @@ pub struct AwaitPending {
     /// Set only by a call with `until_input` that ended because the agent
     /// waits on an answer.
     pub waiting_for_input: bool,
+    #[serde(flatten)]
+    pub delivery: QuestionDelivery,
+    /// The newest complete report, by id only: `read_report` has the text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_bytes: Option<usize>,
+    /// `report_id` differs from the call's `since_report`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub new_report: bool,
+}
+
+/// The questions after a caller's cursor and the cursor to go on with. Absent
+/// when there are none, so an answer without questions reads as before.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionDelivery {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<crate::agents::questions::Question>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_cursor: Option<u64>,
+}
+
+impl QuestionDelivery {
+    pub fn new(questions: Vec<crate::agents::questions::Question>, cursor: u64) -> Self {
+        let question_cursor = (!questions.is_empty()).then_some(cursor);
+        Self {
+            questions,
+            question_cursor,
+        }
+    }
+}
+
+/// The newest report of a pending agent, as an `await_result` states it.
+#[derive(Debug, Clone, Default)]
+pub struct PendingReport {
+    pub id: Option<String>,
+    pub bytes: Option<usize>,
+    pub new: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -535,6 +632,38 @@ pub struct AwaitDone {
     /// Always `true`.
     pub done: bool,
     pub result: RunResult,
+    #[serde(flatten)]
+    pub delivery: QuestionDelivery,
+}
+
+/// `read_report`: the agent's newest complete report, or why there is none.
+/// Never console text: `available: false` is the honest answer without a
+/// transcript (`agent_usage/report.rs`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportResult {
+    pub agent_id: String,
+    pub status: AgentStatus,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<crate::agent_usage::report::ReportSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
+    /// The report was longer than `REPORT_MAX_BYTES`; `report` is its end.
+    pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<crate::agent_usage::report::ReportMissing>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RaiseQuestionResult {
+    pub agent_id: String,
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -551,6 +680,8 @@ impl AwaitOutcome {
         output_bytes: u64,
         waiting_for_input: bool,
         stall: super::stall_watchdog::StallMetrics,
+        delivery: QuestionDelivery,
+        report: PendingReport,
     ) -> Self {
         Self::Pending(AwaitPending {
             done: false,
@@ -559,11 +690,19 @@ impl AwaitOutcome {
             output_bytes,
             waiting_for_input,
             stall,
+            delivery,
+            report_id: report.id,
+            report_bytes: report.bytes,
+            new_report: report.new,
         })
     }
 
-    pub fn done(result: RunResult) -> Self {
-        Self::Done(AwaitDone { done: true, result })
+    pub fn done(result: RunResult, delivery: QuestionDelivery) -> Self {
+        Self::Done(AwaitDone {
+            done: true,
+            result,
+            delivery,
+        })
     }
 }
 
@@ -895,6 +1034,33 @@ pub(crate) mod tests {
                 ),
             ),
             (
+                "read_report",
+                ok_response(
+                    &json!(51),
+                    ReportResult {
+                        agent_id: "agent-5".into(),
+                        status: AgentStatus::Running,
+                        available: true,
+                        report: Some("The tests pass.\n\nANSWER: done".into()),
+                        report_id: Some("msg_1".into()),
+                        source: Some(crate::agent_usage::report::ReportSource::ClaudeTranscript),
+                        at: Some("2026-11-01T10:00:00Z".into()),
+                        truncated: false,
+                        reason: None,
+                    },
+                ),
+            ),
+            (
+                "raise_question",
+                ok_response(
+                    &json!(53),
+                    RaiseQuestionResult {
+                        agent_id: "agent-5".into(),
+                        seq: 1,
+                    },
+                ),
+            ),
+            (
                 "send_input",
                 ok_response(
                     &json!(5),
@@ -976,7 +1142,10 @@ pub(crate) mod tests {
             ),
             (
                 "await_result",
-                ok_response(&json!(18), AwaitOutcome::done(sample_run_result())),
+                ok_response(
+                    &json!(18),
+                    AwaitOutcome::done(sample_run_result(), Default::default()),
+                ),
             ),
             (
                 "remove_worktree",
@@ -1163,24 +1332,90 @@ pub(crate) mod tests {
                 }),
             }),
         };
+        let question =
+            |seq, context: Option<&str>, options: Vec<&str>| crate::agents::questions::Question {
+                seq,
+                question: "Which branch?".into(),
+                context: context.map(Into::into),
+                options: options.into_iter().map(Into::into).collect(),
+                raised_at: 1790000000000,
+            };
         let ours: Vec<(&str, Value)> = vec![
+            (
+                "read_report while nothing is available",
+                ok_response(
+                    &json!(51),
+                    ReportResult {
+                        agent_id: "agent-5".into(),
+                        status: AgentStatus::Running,
+                        available: false,
+                        report: None,
+                        report_id: None,
+                        source: None,
+                        at: None,
+                        truncated: false,
+                        reason: Some(crate::agent_usage::report::ReportMissing::ProviderUnsupported),
+                    },
+                ),
+            ),
+            (
+                "await_result with new questions and a new report",
+                ok_response(
+                    &json!(50),
+                    AwaitOutcome::pending(
+                        "agent-5",
+                        AgentStatus::Running,
+                        4096,
+                        false,
+                        Default::default(),
+                        QuestionDelivery::new(
+                            vec![question(3, Some("Two look right."), vec!["main", "next"])],
+                            3,
+                        ),
+                        PendingReport {
+                            id: Some("msg_1".into()),
+                            bytes: Some(512),
+                            new: true,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "await_result of a finished agent with a question not heard yet",
+                ok_response(
+                    &json!(50),
+                    AwaitOutcome::done(
+                        RunResult {
+                            agent_id: "agent-5".into(),
+                            status: AgentStatus::Idle,
+                            exit_code: Some(0),
+                            answer: Some("ANSWER: done".into()),
+                            is_error: false,
+                            source: crate::agents::run_results::RunResultSource::Transcript,
+                            finished_at: 1790000090000,
+                            cost_usd: None,
+                        },
+                        QuestionDelivery::new(vec![question(1, None, Vec::new())], 1),
+                    ),
+                ),
+            ),
             (
                 "await_result while the agent still runs",
                 ok_response(
                     &json!(18),
-                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048, false, Default::default()),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048, false, Default::default(), Default::default(), Default::default()),
                 ),
             ),
             (
                 "await_result returns early: the agent waits for input",
                 ok_response(
                     &json!(21),
-                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 4096, true, Default::default()),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 4096, true, Default::default(), Default::default(), Default::default()),
                 ),
             ),
             (
                 "await_result for an agent that failed, answer from the console tail",
-                ok_response(&json!(18), AwaitOutcome::done(failed)),
+                ok_response(&json!(18), AwaitOutcome::done(failed, Default::default())),
             ),
             (
                 "list_agents for a supervisor: its children only",

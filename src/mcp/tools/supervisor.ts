@@ -8,6 +8,7 @@ import {
   awaitAgentResultTool,
   dismissAgentTool,
   readAgentOutputTool,
+  readAgentReportTool,
   removeWorktreeTool,
   runControl,
   sendAgentInputTool,
@@ -46,13 +47,15 @@ export function registerSupervisorTools(
       'of the ANSWER line, or null), until you clear them with dismiss_agent, so an agent ' +
       'missing here was never yours or was dismissed, not lost. Agents the human or another ' +
       'supervisor started are not listed. idleForMs is the IDE-observed inactivity duration; ' +
-      'stalledSinceMs is its stall onset (Unix ms), both nullable. The IDE nudges once and ' +
+      'stalledSinceMs is its stall onset (Unix ms), both nullable. questionCount (absent at ' +
+      'zero) is how many questions it raised; await_agent_result delivers them. The IDE nudges once and ' +
       'escalates automatically; do not send another stall nudge.',
     parameters: z.object({}),
     execute: async () => runControl(call, 'list_agents', {}),
   });
 
   server.addTool(readAgentOutputTool(call, OWN_CHILDREN));
+  server.addTool(readAgentReportTool(call, OWN_CHILDREN));
 
   server.addTool(
     awaitAgentResultTool(

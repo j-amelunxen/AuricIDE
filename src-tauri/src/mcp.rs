@@ -114,6 +114,18 @@ pub(crate) fn agent_mcp_server_env(
     env
 }
 
+/// What makes an agent's `auric-pm` server offer `ask_supervisor`: only an agent
+/// a supervisor started has someone to ask, and the rest should not see the
+/// tool. The tool talks to this socket, which checks the same thing.
+pub(crate) fn offer_ask_supervisor(env: &mut BTreeMap<String, String>, app_data: &Path) {
+    let socket = crate::control_socket::socket_path_in(app_data);
+    env.insert(
+        "AURIC_CONTROL_SOCKET".to_string(),
+        socket.to_string_lossy().into_owned(),
+    );
+    env.insert("AURIC_ASK_SUPERVISOR".to_string(), "1".to_string());
+}
+
 /// Writes immutable provider configs used by one logical project.
 /// The file lives in app data, never in the user's repository, and contains
 /// one package-owned runtime plus one canonical project root.

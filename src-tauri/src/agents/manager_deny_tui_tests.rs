@@ -164,7 +164,7 @@ fn manager_deny_rule_holds_in_the_interactive_tui() {
     let arguments = supervisor_claude_arguments(
         &mcp_config.to_string_lossy(),
         &crate::supervisor::SkillPlugin::default(),
-                false,
+        false,
         &denied,
     );
     let command = format!("claude --model {model} {}", arguments.join(" "));
@@ -220,4 +220,90 @@ fn manager_deny_rule_holds_in_the_interactive_tui() {
             "the deny rules did not keep INSTRUCTIONS.md in the interactive TUI"
         );
     }
+}
+
+/// What `read_report` stands on, against the real CLI in its TUI: the agent ends
+/// its turn while its own background task keeps running, and the transcript has
+/// the report while the process lives.
+///
+///   cargo test --lib live_claude_tui_has_a_clean_report -- --ignored --nocapture
+#[test]
+#[ignore = "starts the installed claude CLI interactively and costs about a cent"]
+fn live_claude_tui_has_a_clean_report_while_a_background_task_runs() {
+    use crate::agent_usage::claude::find_session_files;
+    use crate::agent_usage::report::{claude_turn_lines, latest_report, read_tail};
+
+    let model = std::env::var("AURIC_DENY_MODEL").unwrap_or_else(|_| "haiku".to_string());
+    let dir = tempfile::tempdir().unwrap();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let command = format!(
+        // Started from inside another Claude session (a developer's terminal), the
+        // CLI keeps no transcript at all unless told to; the IDE's agents are not that.
+        "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --model {model} \
+         --session-id {session_id} --permission-mode dontAsk \
+         --allowedTools \"Bash(sleep *)\""
+    );
+    let mut session = Session::start(dir.path(), &command);
+    session.settle(Duration::from_secs(60));
+    if session.text().to_lowercase().contains("trust") {
+        session.send(ARROW_DOWN);
+        // A menu redrawing can swallow the first Enter, so look again.
+        for _ in 0..4 {
+            std::thread::sleep(Duration::from_secs(1));
+            session.send(crate::control_socket::ENTER);
+            session.settle(Duration::from_secs(15));
+            let text = session.text();
+            let tail: String = text
+                .chars()
+                .skip(text.chars().count().saturating_sub(300))
+                .collect();
+            if !tail.contains("trust this folder") {
+                break;
+            }
+        }
+    }
+    let paste = session.bracketed_paste();
+    session.send(&compose_message(
+        "Run the shell command `sleep 120` with the Bash tool and run_in_background true. Do not \
+         wait for it. Then end your turn with exactly this text and nothing else: \
+         REPORT-READY. Open question: which branch?",
+        true,
+        paste,
+    ));
+    let root = dirs::home_dir().unwrap().join(".claude/projects");
+    let started = Instant::now();
+    let mut report = None;
+    while started.elapsed() < Duration::from_secs(120) && report.is_none() {
+        std::thread::sleep(Duration::from_secs(1));
+        report = find_session_files(&root, &session_id)
+            .first()
+            .and_then(|path| read_tail(path, 1024 * 1024).ok())
+            .and_then(|text| latest_report(&claude_turn_lines(&text)));
+    }
+    let still_running = matches!(session.child.try_wait(), Ok(None));
+    let console_bytes = session.len();
+    session.child.kill().ok();
+    let Some(report) = report else {
+        let transcript = session.text();
+        let tail: String = transcript
+            .chars()
+            .skip(transcript.chars().count().saturating_sub(3000))
+            .collect();
+        panic!(
+            "no finished turn; files {:?}\n--- console tail ---\n{tail}",
+            find_session_files(&root, &session_id)
+        );
+    };
+    println!(
+        "report: {:?}\nreport bytes: {}, console bytes: {console_bytes}, still running: {still_running}",
+        report.text,
+        report.text.len()
+    );
+    assert!(
+        still_running,
+        "the point is that it is read while the agent lives"
+    );
+    assert!(report
+        .text
+        .contains("REPORT-READY. Open question: which branch?"));
 }

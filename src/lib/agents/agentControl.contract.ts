@@ -17,6 +17,8 @@ import linkFixtures from './supervisorLink.fixtures.json';
 export const CONTROL_METHODS = [
   'list_agents',
   'read_output',
+  'read_report',
+  'raise_question',
   'send_input',
   'kill',
   'spawn',
@@ -73,6 +75,10 @@ export const CONTROL_LIMITS = {
   awaitClientGraceSeconds: 5,
   /** Silence after which `await_result` with `untilInput` reads an agent as waiting. */
   inputQuietSeconds: 20,
+  questionsPerAgentKept: 50,
+  questionMaxBytes: 4096,
+  questionOptionsMax: 10,
+  reportMaxBytes: 65536,
 } as const;
 
 /**
@@ -85,7 +91,18 @@ export const AGENT_ROLES = ['worker', 'supervisor'] as const;
 export const RUN_SOURCES = ['ui', 'conductor', 'schedule', 'mcp', 'supervisor', 'other'] as const;
 
 /** Where a finished run's `answer` came from. */
-export const RUN_RESULT_SOURCES = ['cli_result', 'console_tail'] as const;
+export const RUN_RESULT_SOURCES = ['cli_result', 'transcript', 'console_tail'] as const;
+
+/** Where a clean report came from. There is no console source, on purpose. */
+export const REPORT_SOURCES = ['cli_result', 'claude_transcript', 'codex_rollout'] as const;
+
+/** Why `read_report` has nothing to give. */
+export const REPORT_MISSING_REASONS = [
+  'provider_unsupported',
+  'transcript_missing',
+  'no_report_yet',
+  'console_only',
+] as const;
 
 /**
  * The stable keys a `supervisor_denied` refusal names in `error.reason`
@@ -138,6 +155,13 @@ export class ControlError extends Error {
 
 const agentId = z.string().min(1, 'agentId must not be empty');
 const offset = z.number().int().nonnegative();
+/** Counted in UTF-8 bytes, as Rust counts it. */
+const questionText = z
+  .string()
+  .refine(
+    (text) => Buffer.byteLength(text, 'utf8') <= CONTROL_LIMITS.questionMaxBytes,
+    `at most ${CONTROL_LIMITS.questionMaxBytes} bytes`
+  );
 const optionalText = z.string().nullish();
 
 /** Rust's `WORKER_PROJECT_PATH_MESSAGE`: only a worker needs a folder to run in. */
@@ -263,6 +287,8 @@ const PARAMS = {
       waitSeconds: offset.nullish(),
       untilInput: z.boolean().nullish(),
       sinceOffset: offset.nullish(),
+      sinceQuestion: offset.nullish(),
+      sinceReport: z.string().nullish(),
     })
     .transform((p) => ({
       agentId: p.agentId,
@@ -275,6 +301,23 @@ const PARAMS = {
       ...(p.sinceOffset !== null && p.sinceOffset !== undefined
         ? { sinceOffset: p.sinceOffset }
         : {}),
+      ...(p.sinceQuestion !== null && p.sinceQuestion !== undefined
+        ? { sinceQuestion: p.sinceQuestion }
+        : {}),
+      ...(p.sinceReport ? { sinceReport: p.sinceReport } : {}),
+    })),
+  read_report: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
+  raise_question: z
+    .object({
+      question: questionText.refine((text) => text.trim().length > 0, 'question must not be empty'),
+      context: questionText.nullish(),
+      options: z.array(questionText).max(CONTROL_LIMITS.questionOptionsMax).nullish(),
+    })
+    .strict()
+    .transform((p) => ({
+      question: p.question,
+      ...(p.context ? { context: p.context } : {}),
+      ...(p.options?.length ? { options: p.options } : {}),
     })),
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   dismiss: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
@@ -473,6 +516,15 @@ const catalogModel = z.object({
   relativeCost: z.number().positive().optional(),
 });
 
+/** One question an agent raised for whoever started it. */
+const raisedQuestion = z.object({
+  seq: offset,
+  question: z.string(),
+  context: z.string().optional(),
+  options: z.array(z.string()).optional(),
+  raisedAt: z.number(),
+});
+
 const runResult = z.object({
   agentId: z.string(),
   status: z.enum(['idle', 'error']),
@@ -529,9 +581,33 @@ const RESULTS = {
       stalledSinceMs: offset.nullable().optional(),
       /** Only `untilInput` sets it; an IDE from before it existed sends nothing. */
       waitingForInput: z.boolean().default(false),
+      questions: z.array(raisedQuestion).optional(),
+      questionCursor: offset.optional(),
+      /** The newest complete report, by id; `read_report` has the text. */
+      reportId: z.string().optional(),
+      reportBytes: offset.optional(),
+      newReport: z.boolean().optional(),
     }),
-    z.object({ done: z.literal(true), result: runResult }),
+    z.object({
+      done: z.literal(true),
+      result: runResult,
+      questions: z.array(raisedQuestion).optional(),
+      questionCursor: offset.optional(),
+    }),
   ]),
+  /** `available: false` says why; console text is never offered as a report. */
+  read_report: z.object({
+    agentId: z.string(),
+    status: agentStatus,
+    available: z.boolean(),
+    report: z.string().optional(),
+    reportId: z.string().optional(),
+    source: z.enum(REPORT_SOURCES).optional(),
+    at: z.string().optional(),
+    truncated: z.boolean(),
+    reason: z.enum(REPORT_MISSING_REASONS).optional(),
+  }),
+  raise_question: z.object({ agentId: z.string(), seq: offset }),
   link_policy_get: z.object({
     stored: z.object({
       defaults: z.object({ documentTypes: z.array(z.unknown()), jobKinds: z.array(z.unknown()) }),

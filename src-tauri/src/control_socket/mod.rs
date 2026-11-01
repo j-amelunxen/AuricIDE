@@ -24,9 +24,13 @@ mod stall_watchdog;
 mod supervised;
 pub(crate) use link_spawn::LinkSpawn;
 
+use crate::agent_usage::report::{AgentReport, ReportLookup, ReportMissing, ReportSource};
 use crate::agents::awaiting_input::awaits_input;
 use crate::agents::output_buffer::OutputBuffers;
-use crate::agents::run_results::{RunResult, RunResults, CONSOLE_TAIL_ANSWER_BYTES};
+use crate::agents::questions::{NewQuestion, QuestionLog, QUESTIONS_PER_AGENT};
+use crate::agents::run_results::{
+    RunResult, RunResultSource, RunResults, CONSOLE_TAIL_ANSWER_BYTES,
+};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::provider_policy::ProviderPolicy;
 use crate::providers::ModelOption;
@@ -100,6 +104,11 @@ pub trait ControlBackend: Send + Sync {
     fn human_drafting(&self, _agent_id: &str) -> bool {
         false
     }
+    /// The running agent's newest complete report, from its transcript. Not
+    /// every provider keeps one we can read; the default says so.
+    fn agent_report(&self, _agent_id: &str) -> ReportLookup {
+        ReportLookup::Missing(ReportMissing::ProviderUnsupported)
+    }
 }
 
 /// Who sent a request, as the kernel's peer PID says (`Dispatcher::admit`).
@@ -109,6 +118,9 @@ pub enum Caller {
     External,
     /// A running supervisor agent: its own children only (`supervised.rs`).
     Supervisor { agent_id: String },
+    /// Any other running agent: it may raise a question for whoever started
+    /// it, and nothing else. Only this socket lets one in (`admit_control`).
+    Worker { agent_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -236,6 +248,7 @@ pub struct Dispatcher {
     /// `INPUT_QUIET_SECONDS`, shorter in tests.
     input_quiet: Duration,
     watchdog: Mutex<stall_watchdog::Watchdog>,
+    questions: QuestionLog,
 }
 
 pub(crate) type Outcome = Result<Value, ControlError>;
@@ -264,6 +277,7 @@ impl Dispatcher {
             worktrees: Mutex::new(HashMap::new()),
             input_quiet: Duration::from_secs(INPUT_QUIET_SECONDS),
             watchdog: Mutex::new(stall_watchdog::Watchdog::default()),
+            questions: QuestionLog::default(),
         }
     }
 
@@ -282,6 +296,35 @@ impl Dispatcher {
     /// Nothing the peer sends can make it one.
     pub fn admit(&self, stream: &UnixStream) -> Result<Caller, ControlError> {
         self.admit_peer(caller::peer_pid(stream), caller::parent_pid)
+    }
+
+    /// `admit` for this socket alone: a worker gets in, as a caller that can
+    /// do one thing (`dispatch_worker`). Identity is still the kernel's peer
+    /// PID, so it can only ever speak for itself. The supervisor link keeps
+    /// `admit`, where every agent stays out.
+    fn admit_control(&self, stream: &UnixStream) -> Result<Caller, ControlError> {
+        self.admit_control_peer(caller::peer_pid(stream), caller::parent_pid)
+    }
+
+    /// `admit_control` for a peer PID and a parent lookup.
+    pub(crate) fn admit_control_peer(
+        &self,
+        peer: Option<u32>,
+        parent_of: impl Fn(u32) -> Option<u32>,
+    ) -> Result<Caller, ControlError> {
+        let agents = self.backend.agent_pids();
+        let pids: HashSet<u32> = agents.keys().copied().collect();
+        if let Some(pid) = peer {
+            if let caller::Ancestry::Agent(matched) = caller::nearest_agent(pid, &pids, &parent_of)
+            {
+                if let Some((agent_id, AgentRole::Worker)) = agents.get(&matched) {
+                    return Ok(Caller::Worker {
+                        agent_id: agent_id.clone(),
+                    });
+                }
+            }
+        }
+        self.admit_peer(peer, parent_of)
     }
 
     /// `admit` for a peer PID (`None`: unreadable) and a parent lookup.
@@ -338,10 +381,83 @@ impl Dispatcher {
     }
 
     fn dispatch(&self, caller: &Caller, request: Request) -> Outcome {
-        let Caller::Supervisor { agent_id } = caller else {
-            return self.dispatch_external(request);
+        match caller {
+            Caller::External => self.dispatch_external(request),
+            Caller::Supervisor { agent_id } => self.dispatch_supervised(agent_id, request),
+            Caller::Worker { agent_id } => self.dispatch_worker(agent_id, request),
+        }
+    }
+
+    /// An agent's one right at this socket. Everything else is the refusal it
+    /// always got.
+    fn dispatch_worker(&self, agent_id: &str, request: Request) -> Outcome {
+        match request {
+            Request::RaiseQuestion(params) => self.raise_question(agent_id, params),
+            _ => Err(ControlError::new(
+                ErrorCode::ForbiddenAgentCaller,
+                format!("{agent_id} is an IDE agent; agents may not steer other agents"),
+            )),
+        }
+    }
+
+    /// Books a question on the agent that asked. Only an agent a supervisor
+    /// started has someone to ask.
+    fn raise_question(&self, agent_id: &str, params: RaiseQuestionParams) -> Outcome {
+        let has_parent = self
+            .find_agent(agent_id)
+            .is_some_and(|agent| agent.spawned_by_agent_id.is_some());
+        if !has_parent {
+            return Err(asked_of_nobody());
+        }
+        let raised_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |at| at.as_millis() as u64);
+        let seq = self
+            .questions
+            .raise(
+                agent_id,
+                NewQuestion {
+                    question: params.question,
+                    context: params.context,
+                    options: params.options,
+                    raised_at,
+                },
+            )
+            .map_err(|_| {
+                ControlError::new(
+                    ErrorCode::InvalidParams,
+                    format!(
+                        "{agent_id} has raised {QUESTIONS_PER_AGENT} questions, the most one \
+                         agent may; put the rest in your final report"
+                    ),
+                )
+            })?;
+        to_value(RaiseQuestionResult {
+            agent_id: agent_id.to_string(),
+            seq,
+        })
+    }
+
+    /// The agent's newest complete report, or why there is none. A finished
+    /// agent's is what its result kept, and a console tail does not count.
+    fn read_report(&self, params: AgentIdParams) -> Outcome {
+        let agent_id = params.agent_id;
+        let live = self.find_agent(&agent_id);
+        let finished = self.run_results.get(&agent_id);
+        let status = match (&live, &finished) {
+            (Some(agent), _) => agent.status.clone(),
+            (None, Some(result)) => result.status.clone(),
+            (None, None) => match self.buffers.read(&agent_id, 0, None) {
+                Some(slice) => slice.final_status.unwrap_or(AgentStatus::Idle),
+                None => return Err(Self::unknown(&agent_id)),
+            },
         };
-        self.dispatch_supervised(agent_id, request)
+        let lookup = match finished {
+            Some(result) => finished_report(result),
+            None if live.is_some() => self.backend.agent_report(&agent_id),
+            None => ReportLookup::Missing(ReportMissing::ConsoleOnly),
+        };
+        to_value(report_result(agent_id, status, lookup))
     }
 
     /// Answers `request` with every right an external caller has. The
@@ -350,6 +466,8 @@ impl Dispatcher {
         match request {
             Request::ListAgents(_) => self.list_agents(|_| true),
             Request::ReadOutput(params) => self.read_output(params),
+            Request::ReadReport(params) => self.read_report(params),
+            Request::RaiseQuestion(_) => Err(asked_of_nobody()),
             Request::SendInput(params) => self.send_input(self.input_target(params)?),
             Request::Kill(params) => self.kill(params),
             Request::Spawn(params) => {
@@ -616,6 +734,7 @@ impl Dispatcher {
         let params_value = to_value(&params)?;
         self.via_frontend("dismiss", params_value)?;
         self.run_results.forget(agent_id);
+        self.questions.forget(agent_id);
         to_value(DismissResult {
             agent_id: params.agent_id,
             dismissed: true,
@@ -628,24 +747,33 @@ impl Dispatcher {
     fn await_result(&self, params: AwaitResultParams) -> Outcome {
         let agent_id = params.agent_id.as_str();
         let live = self.find_agent(agent_id);
+        let cursor = params.since_question.unwrap_or(0);
         let finished = self
             .run_results
             .get(agent_id)
             .or_else(|| self.result_from_buffers(agent_id));
         if let Some(result) = finished {
-            return to_value(AwaitOutcome::done(result));
+            return to_value(AwaitOutcome::done(result, self.deliver(agent_id, cursor)));
         }
         if live.is_none() && !self.buffers.knows(agent_id) {
             return Err(Self::unknown(agent_id));
         }
         let wait = Duration::from_secs(params.wait_seconds.unwrap_or(DEFAULT_AWAIT_SECONDS));
         let deadline = Instant::now() + wait;
-        // Headless agents read no input, so there is nothing to wake for.
+        // Headless agents read no input, so that wake is for interactive ones;
+        // a question or a finished turn can come from either.
         let watch_input = params.until_input && live.as_ref().is_some_and(|agent| !agent.headless);
         let mut waiting_for_input = false;
-        if watch_input {
+        if params.until_input && live.is_some() {
             loop {
-                if self.input_awaited(agent_id, params.since_offset) {
+                if !self.questions.since(agent_id, cursor).0.is_empty()
+                    || self
+                        .pending_report(agent_id, params.since_report.as_deref())
+                        .new
+                {
+                    break;
+                }
+                if watch_input && self.input_awaited(agent_id, params.since_offset) {
                     waiting_for_input = true;
                     break;
                 }
@@ -657,11 +785,11 @@ impl Dispatcher {
                     .run_results
                     .wait_for(agent_id, deadline.min(now + INPUT_POLL))
                 {
-                    return to_value(AwaitOutcome::done(result));
+                    return to_value(AwaitOutcome::done(result, self.deliver(agent_id, cursor)));
                 }
             }
         } else if let Some(result) = self.run_results.wait_for(agent_id, deadline) {
-            return to_value(AwaitOutcome::done(result));
+            return to_value(AwaitOutcome::done(result, self.deliver(agent_id, cursor)));
         }
         let status = self
             .find_agent(agent_id)
@@ -677,7 +805,28 @@ impl Dispatcher {
             self.buffers.total_bytes(agent_id),
             waiting_for_input,
             stall,
+            self.deliver(agent_id, cursor),
+            self.pending_report(agent_id, params.since_report.as_deref()),
         ))
+    }
+
+    /// The questions after `cursor`, booked as heard: they travel in this
+    /// answer, so no notice has to announce them.
+    fn deliver(&self, agent_id: &str, cursor: u64) -> QuestionDelivery {
+        let (questions, top) = self.questions.deliver(agent_id, cursor);
+        QuestionDelivery::new(questions, top)
+    }
+
+    /// What an `await_result` says about the newest report of a running agent.
+    fn pending_report(&self, agent_id: &str, since: Option<&str>) -> PendingReport {
+        match self.backend.agent_report(agent_id) {
+            ReportLookup::Found { report, .. } => PendingReport {
+                new: since != Some(report.id.as_str()),
+                bytes: Some(report.text.len()),
+                id: Some(report.id),
+            },
+            ReportLookup::Missing(_) => PendingReport::default(),
+        }
     }
 
     /// Whether a running agent now waits on an answer it printed past
@@ -957,7 +1106,7 @@ fn handle_connection(stream: UnixStream, dispatcher: &Dispatcher, idle_timeout: 
         return;
     };
     let mut reader = BufReader::new(stream);
-    let caller = match dispatcher.admit(reader.get_ref()) {
+    let caller = match dispatcher.admit_control(reader.get_ref()) {
         Ok(caller) => caller,
         Err(error) => {
             refuse(&mut reader, &mut writer, &error);
@@ -1007,6 +1156,72 @@ fn refuse(reader: &mut BufReader<UnixStream>, writer: &mut UnixStream, error: &C
         .unwrap_or(Value::Null);
     let _ = writeln!(writer, "{}", error_response(&id, error));
     let _ = writer.flush();
+}
+
+/// `raise_question` from a caller that has nobody to ask.
+fn asked_of_nobody() -> ControlError {
+    ControlError::new(
+        ErrorCode::ForbiddenAgentCaller,
+        "only an agent a supervisor started has someone to ask; use notify_ask for the human",
+    )
+}
+
+/// A finished run's report: what the CLI or the transcript said. A console
+/// tail is an answer for `await_result`, never a report.
+fn finished_report(result: RunResult) -> ReportLookup {
+    let source = match result.source {
+        RunResultSource::CliResult => ReportSource::CliResult,
+        RunResultSource::Transcript => ReportSource::ClaudeTranscript,
+        RunResultSource::ConsoleTail => {
+            return ReportLookup::Missing(ReportMissing::ConsoleOnly);
+        }
+    };
+    match result.answer {
+        Some(text) if !text.trim().is_empty() => ReportLookup::Found {
+            report: AgentReport {
+                id: format!("final-{}", result.finished_at),
+                text,
+                at: None,
+            },
+            source,
+        },
+        _ => ReportLookup::Missing(ReportMissing::ConsoleOnly),
+    }
+}
+
+/// The wire form of a lookup. A report over `REPORT_MAX_BYTES` keeps its end,
+/// where an agent states its result, cut on a character boundary.
+fn report_result(agent_id: String, status: AgentStatus, lookup: ReportLookup) -> ReportResult {
+    match lookup {
+        ReportLookup::Found { report, source } => {
+            let mut start = report.text.len().saturating_sub(REPORT_MAX_BYTES);
+            while !report.text.is_char_boundary(start) {
+                start += 1;
+            }
+            ReportResult {
+                agent_id,
+                status,
+                available: true,
+                report: Some(report.text[start..].to_string()),
+                report_id: Some(report.id),
+                source: Some(source),
+                at: report.at,
+                truncated: start > 0,
+                reason: None,
+            }
+        }
+        ReportLookup::Missing(reason) => ReportResult {
+            agent_id,
+            status,
+            available: false,
+            report: None,
+            report_id: None,
+            source: None,
+            at: None,
+            truncated: false,
+            reason: Some(reason),
+        },
+    }
 }
 
 // ── Tauri glue ──────────────────────────────────────────────────────────────
@@ -1066,6 +1281,19 @@ impl ControlBackend for TauriBackend {
             .try_state::<crate::providers::ProviderRegistryState>()
             .map(|registry| crate::supervisor::provider_modes(registry.inner(), policy))
             .unwrap_or_default()
+    }
+
+    fn agent_report(&self, agent_id: &str) -> ReportLookup {
+        use tauri::Manager;
+        let state = self.app.state::<crate::agents::AgentManagerState>();
+        let capture = tauri::async_runtime::block_on(state.lock())
+            .agents
+            .get(agent_id)
+            .and_then(|process| process.usage.clone());
+        match (capture, dirs::home_dir()) {
+            (Some(capture), Some(home)) => capture.latest_report(&home),
+            _ => ReportLookup::Missing(ReportMissing::ProviderUnsupported),
+        }
     }
 
     fn human_drafting(&self, agent_id: &str) -> bool {

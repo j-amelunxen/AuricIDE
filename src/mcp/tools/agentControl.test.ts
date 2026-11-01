@@ -15,6 +15,7 @@ const CONTROL_TOOLS = [
   'list_agents',
   'list_projects',
   'read_agent_output',
+  'read_agent_report',
   'remove_worktree',
   'send_agent_input',
   'spawn_agent',
@@ -46,6 +47,7 @@ describe('agent control tools', () => {
     const methods: Record<string, string> = {
       list_agents: 'list_agents',
       read_agent_output: 'read_output',
+      read_agent_report: 'read_report',
       send_agent_input: 'send_input',
       spawn_agent: 'spawn',
       list_projects: 'list_projects',

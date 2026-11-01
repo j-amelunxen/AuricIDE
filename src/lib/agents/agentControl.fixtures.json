@@ -46,7 +46,11 @@
     "consoleTailAnswerBytes": 8192,
     "pingbackQuietMs": 3000,
     "pingbackMaxDelayMs": 15000,
-    "pingbackDraftHoldMs": 180000
+    "pingbackDraftHoldMs": 180000,
+    "questionsPerAgentKept": 50,
+    "questionMaxBytes": 4096,
+    "questionOptionsMax": 10,
+    "reportMaxBytes": 65536
   },
   "enter": "\r",
   "environment": {
@@ -382,6 +386,69 @@
           "agentId": "agent-5",
           "waitSeconds": 0
         }
+      }
+    },
+    {
+      "name": "await_result with both cursors",
+      "raw": "{\"id\":50,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-261101-4\",\"untilInput\":true,\"sinceQuestion\":2,\"sinceReport\":\"msg_1\"}}",
+      "expected": {
+        "id": 50,
+        "method": "await_result",
+        "params": {
+          "agentId": "agent-261101-4",
+          "waitSeconds": 0,
+          "untilInput": true,
+          "sinceQuestion": 2,
+          "sinceReport": "msg_1"
+        }
+      }
+    },
+    {
+      "name": "read_report",
+      "raw": "{\"id\":51,\"method\":\"read_report\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expected": {
+        "id": 51,
+        "method": "read_report",
+        "params": {
+          "agentId": "agent-5"
+        }
+      }
+    },
+    {
+      "name": "read_report without an agent",
+      "raw": "{\"id\":52,\"method\":\"read_report\",\"params\":{\"agentId\":\"\"}}",
+      "expectedError": {
+        "id": 52,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "raise_question with everything",
+      "raw": "{\"id\":53,\"method\":\"raise_question\",\"params\":{\"question\":\"Which branch?\",\"context\":\"Two look right.\",\"options\":[\"main\",\"next\"]}}",
+      "expected": {
+        "id": 53,
+        "method": "raise_question",
+        "params": {
+          "question": "Which branch?",
+          "context": "Two look right.",
+          "options": ["main", "next"]
+        }
+      }
+    },
+    {
+      "name": "raise_question with a blank question",
+      "raw": "{\"id\":54,\"method\":\"raise_question\",\"params\":{\"question\":\"  \"}}",
+      "expectedError": {
+        "id": 54,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "raise_question naming an agent",
+      "raw": "{\"id\":55,\"method\":\"raise_question\",\"params\":{\"question\":\"x\",\"agentId\":\"agent-1\"}}",
+      "expectedError": {
+        "id": 55,
+        "code": "invalid_params"
       }
     },
     {
@@ -910,6 +977,28 @@
         ]
       }
     },
+    "read_report": {
+      "id": 51,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "status": "running",
+        "available": true,
+        "report": "The tests pass.\n\nANSWER: done",
+        "reportId": "msg_1",
+        "source": "claude_transcript",
+        "at": "2026-11-01T10:00:00Z",
+        "truncated": false
+      }
+    },
+    "raise_question": {
+      "id": 53,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "seq": 1
+      }
+    },
     "error": {
       "id": 5,
       "ok": false,
@@ -1059,7 +1148,7 @@
             "exitCode": 0,
             "answer": null,
             "isError": false,
-            "source": "transcript",
+            "source": "a_guess",
             "finishedAt": 1,
             "costUsd": null
           }
@@ -1230,8 +1319,89 @@
   },
   "roles": ["worker", "supervisor"],
   "runSources": ["ui", "conductor", "schedule", "mcp", "supervisor", "other"],
-  "runResultSources": ["cli_result", "console_tail"],
+  "runResultSources": ["cli_result", "transcript", "console_tail"],
+  "reportSources": ["cli_result", "claude_transcript", "codex_rollout"],
+  "reportMissingReasons": [
+    "provider_unsupported",
+    "transcript_missing",
+    "no_report_yet",
+    "console_only"
+  ],
   "additionalResponses": [
+    {
+      "name": "read_report while nothing is available",
+      "method": "read_report",
+      "raw": {
+        "id": 51,
+        "ok": true,
+        "result": {
+          "agentId": "agent-5",
+          "status": "running",
+          "available": false,
+          "reason": "provider_unsupported",
+          "truncated": false
+        }
+      }
+    },
+    {
+      "name": "await_result with new questions and a new report",
+      "method": "await_result",
+      "raw": {
+        "id": 50,
+        "ok": true,
+        "result": {
+          "done": false,
+          "agentId": "agent-5",
+          "status": "running",
+          "outputBytes": 4096,
+          "waitingForInput": false,
+          "idleForMs": null,
+          "stalledSinceMs": null,
+          "questions": [
+            {
+              "seq": 3,
+              "question": "Which branch?",
+              "context": "Two look right.",
+              "options": ["main", "next"],
+              "raisedAt": 1790000000000
+            }
+          ],
+          "questionCursor": 3,
+          "reportId": "msg_1",
+          "reportBytes": 512,
+          "newReport": true
+        }
+      }
+    },
+    {
+      "name": "await_result of a finished agent with a question not heard yet",
+      "method": "await_result",
+      "raw": {
+        "id": 50,
+        "ok": true,
+        "result": {
+          "done": true,
+          "result": {
+            "agentId": "agent-5",
+            "status": "idle",
+            "exitCode": 0,
+            "answer": "ANSWER: done",
+            "isError": false,
+            "source": "transcript",
+            "finishedAt": 1790000090000,
+            "costUsd": null
+          },
+          "questions": [
+            {
+              "seq": 1,
+              "question": "Which branch?",
+              "raisedAt": 1790000000000
+            }
+          ],
+          "questionCursor": 1
+        }
+      }
+    },
     {
       "name": "await_result while the agent still runs",
       "method": "await_result",
@@ -1548,6 +1718,7 @@
         "methods": [
           "list_agents",
           "read_output",
+          "read_report",
           "send_input",
           "kill",
           "spawn",
@@ -1561,7 +1732,8 @@
         "refused": {
           "link_policy_get": "outside_supervisor_scope",
           "link_policy_propose": "outside_supervisor_scope",
-          "pm_target": "outside_supervisor_scope"
+          "pm_target": "outside_supervisor_scope",
+          "raise_question": "forbidden_agent_caller"
         }
       },
       "supervisor": {
@@ -1569,6 +1741,7 @@
           "list_projects",
           "list_agents",
           "read_output",
+          "read_report",
           "await_result",
           "send_input",
           "spawn",
@@ -1603,8 +1776,10 @@
         "pingback": "When a child finishes, Rust types one notice into the running interactive supervisor's console (bracketed paste plus Enter, the send_input path). Finishes are batched: the notice goes out once no further child has finished for pingbackQuietMs, or pingbackMaxDelayMs after the first one at the latest. It names each agent by id, name and status and says the notice comes from the IDE. A headless or finished supervisor gets none. While the human has a message half typed in the supervisor's console (printable keystrokes since the last Enter or Ctrl-C, the last one less than pingbackDraftHoldMs ago) the notice waits, and what finishes meanwhile joins it."
       },
       "worker": {
-        "methods": [],
-        "admission": "forbidden_agent_caller"
+        "methods": ["raise_question"],
+        "admission": "only_raise_question",
+        "otherMethods": "forbidden_agent_caller",
+        "scope": "The question is booked on the agent the kernel's peer PID says the caller belongs to. An agent nobody started gets forbidden_agent_caller."
       }
     },
     "cases": [

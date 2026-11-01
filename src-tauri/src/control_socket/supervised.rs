@@ -33,6 +33,14 @@ impl Dispatcher {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.read_output(params)
             }
+            Request::ReadReport(params) => {
+                self.ensure_child(supervisor, &params.agent_id)?;
+                self.read_report(params)
+            }
+            Request::RaiseQuestion(_) => Err(ControlError::new(
+                ErrorCode::ForbiddenAgentCaller,
+                "a supervisor has nobody above it to ask; use notify_ask for the human",
+            )),
             Request::AwaitResult(params) => {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.await_result(params)
@@ -90,6 +98,12 @@ impl Dispatcher {
         // Project only this supervisor's listing; the shared AgentInfo and
         // await_result keep their existing idle/error status contract.
         for agent in listed["agents"].as_array_mut().into_iter().flatten() {
+            let raised = agent["id"]
+                .as_str()
+                .map_or(0, |id| self.questions.count(id));
+            if raised > 0 {
+                agent["questionCount"] = raised.into();
+            }
             let Some(result) = agent["id"].as_str().and_then(|id| self.run_results.get(id)) else {
                 continue;
             };

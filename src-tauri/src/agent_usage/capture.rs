@@ -22,6 +22,10 @@ use super::record::{
     build_record, Evidence, MatchKind, Outcome, PriceLists, RunEnd, RunFacts, RunKind, RunSource,
     UsageRecord,
 };
+use super::report::{
+    claude_turn_lines, codex_turn_lines, latest_report, read_tail, AgentReport, ReportLookup,
+    ReportMissing, ReportSource, REPORT_SCAN_BYTES,
+};
 use super::store;
 use crate::cc_usage::manifest::UsagePlugin;
 use crate::providers::{SessionIdFrom, TranscriptFormat, UsageConfig};
@@ -81,6 +85,15 @@ struct Inner {
     sniffer: Mutex<SessionIdSniffer>,
     /// A run is booked once, whether its exit or its kill got there first.
     booked: AtomicBool,
+    /// The last report read, so a repeated look at an unchanged transcript
+    /// costs one `stat`.
+    report_cache: Mutex<Option<ReportCache>>,
+}
+
+struct ReportCache {
+    path: PathBuf,
+    length: u64,
+    report: Option<AgentReport>,
 }
 
 /// Cheap to clone: the output pump, the exit hook and the kill path all hold one.
@@ -117,6 +130,7 @@ impl UsageCapture {
                 usage,
                 sniffer: Mutex::new(SessionIdSniffer::default()),
                 booked: AtomicBool::new(false),
+                report_cache: Mutex::new(None),
             }),
         }
     }
@@ -309,6 +323,72 @@ impl UsageCapture {
         }
         evidence.cli_result = cli_result;
         evidence
+    }
+
+    /// The agent's newest complete report, from its transcript. Only a file
+    /// known to be this agent's by its session id is read: an interactive
+    /// Codex run prints no id, and the guess the usage booking lives with
+    /// (`find_rollout_heuristic`) could hand one agent another's words.
+    pub fn latest_report(&self, home: &Path) -> ReportLookup {
+        let Some(format) = self.transcript_config().map(|t| t.format) else {
+            return ReportLookup::Missing(ReportMissing::ProviderUnsupported);
+        };
+        let source = match format {
+            TranscriptFormat::ClaudeJsonl => ReportSource::ClaudeTranscript,
+            TranscriptFormat::CodexRollout => ReportSource::CodexRollout,
+        };
+        let mut cache = self
+            .inner
+            .report_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let known = cache.as_ref().map(|cached| cached.path.clone());
+        let Some(path) = known.or_else(|| self.own_transcript(format, home)) else {
+            return ReportLookup::Missing(ReportMissing::TranscriptMissing);
+        };
+        let Ok(length) = std::fs::metadata(&path).map(|meta| meta.len()) else {
+            return ReportLookup::Missing(ReportMissing::TranscriptMissing);
+        };
+        let unchanged = cache.as_ref().is_some_and(|cached| cached.length == length);
+        if !unchanged {
+            let Ok(text) = read_tail(&path, REPORT_SCAN_BYTES) else {
+                return ReportLookup::Missing(ReportMissing::TranscriptMissing);
+            };
+            let lines = match format {
+                TranscriptFormat::ClaudeJsonl => claude_turn_lines(&text),
+                TranscriptFormat::CodexRollout => codex_turn_lines(&text),
+            };
+            *cache = Some(ReportCache {
+                path,
+                length,
+                report: latest_report(&lines),
+            });
+        }
+        match cache.as_ref().and_then(|cached| cached.report.clone()) {
+            Some(report) => ReportLookup::Found { report, source },
+            None => ReportLookup::Missing(ReportMissing::NoReportYet),
+        }
+    }
+
+    /// The transcript this agent's session id names, if there is one yet.
+    fn own_transcript(&self, format: TranscriptFormat, home: &Path) -> Option<PathBuf> {
+        let facts = &self.inner.facts;
+        match format {
+            TranscriptFormat::ClaudeJsonl => {
+                let id = facts.session_id.as_deref()?;
+                find_session_files(&home.join(CLAUDE_PROJECTS_DIR), id)
+                    .into_iter()
+                    .next()
+            }
+            TranscriptFormat::CodexRollout => {
+                let id = facts
+                    .session_id
+                    .clone()
+                    .or_else(|| self.sniffed_session_id())?;
+                let start_day = facts.started_at.with_timezone(&Local).date_naive();
+                find_rollout_by_session(&home.join(CODEX_SESSIONS_DIR), &id, start_day)
+            }
+        }
     }
 
     /// Whether what was read is all there is to read.

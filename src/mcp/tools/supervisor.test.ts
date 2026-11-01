@@ -14,6 +14,7 @@ const TOOL_METHODS: Record<string, string> = {
   spawn_agent: 'spawn',
   list_my_agents: 'list_agents',
   read_agent_output: 'read_output',
+  read_agent_report: 'read_report',
   await_agent_result: 'await_result',
   send_agent_input: 'send_input',
   kill_agent: 'kill',

@@ -29,6 +29,8 @@ pub const CONSOLE_TAIL_ANSWER_BYTES: u64 = 8 * 1024;
 pub enum RunResultSource {
     /// The CLI's own result object (headless Claude).
     CliResult,
+    /// The last finished turn in the CLI's transcript (`agent_usage/report.rs`).
+    Transcript,
     /// The end of the cleaned console.
     ConsoleTail,
 }
@@ -83,6 +85,19 @@ impl RunResult {
                 cost_usd: None,
             },
         }
+    }
+
+    /// A run that ended well says what its transcript's last finished turn
+    /// said, instead of the screen's last 8 KiB. A failed run keeps the console:
+    /// the error is on the screen, not in the turn before it.
+    pub fn with_transcript_report(mut self, report: impl FnOnce() -> Option<String>) -> Self {
+        if self.source == RunResultSource::ConsoleTail && !self.is_error {
+            if let Some(text) = report() {
+                self.answer = Some(text);
+                self.source = RunResultSource::Transcript;
+            }
+        }
+        self
     }
 }
 
@@ -347,11 +362,14 @@ mod tests {
         let limits = &fixtures["limits"];
         assert_eq!(limits["runResultsKept"], RUN_RESULTS_KEPT);
         assert_eq!(limits["consoleTailAnswerBytes"], CONSOLE_TAIL_ANSWER_BYTES);
-        let sources: Vec<serde_json::Value> =
-            [RunResultSource::CliResult, RunResultSource::ConsoleTail]
-                .iter()
-                .map(|source| serde_json::to_value(source).unwrap())
-                .collect();
+        let sources: Vec<serde_json::Value> = [
+            RunResultSource::CliResult,
+            RunResultSource::Transcript,
+            RunResultSource::ConsoleTail,
+        ]
+        .iter()
+        .map(|source| serde_json::to_value(source).unwrap())
+        .collect();
         assert_eq!(
             serde_json::Value::Array(sources),
             fixtures["runResultSources"]
@@ -398,6 +416,28 @@ mod tests {
             9,
         );
         assert_eq!(blank.answer, None);
+    }
+
+    #[test]
+    fn a_clean_finish_prefers_the_transcript_and_a_failure_keeps_its_console() {
+        let clean = result("a").with_transcript_report(|| Some("The report.".into()));
+        assert_eq!(clean.source, RunResultSource::Transcript);
+        assert_eq!(clean.answer.as_deref(), Some("The report."));
+
+        let none = result("a").with_transcript_report(|| None);
+        assert_eq!(none.source, RunResultSource::ConsoleTail);
+        assert_eq!(none.answer.as_deref(), Some("done\n"));
+
+        let failed = RunResult::from_finish(
+            "a",
+            AgentStatus::Error,
+            Some(1),
+            None,
+            || Some("Error: could not reach the model".into()),
+            9,
+        )
+        .with_transcript_report(|| panic!("a failure is not read from the transcript"));
+        assert_eq!(failed.source, RunResultSource::ConsoleTail);
     }
 
     #[test]

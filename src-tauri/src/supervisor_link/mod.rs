@@ -529,10 +529,12 @@ impl Link {
     pub fn admit_caller(&self, caller: Result<Caller, ControlError>) -> Result<(), LinkError> {
         match caller {
             Ok(Caller::External) => Ok(()),
-            Ok(Caller::Supervisor { agent_id }) => Err(LinkError::from(ControlError::new(
-                ErrorCode::ForbiddenAgentCaller,
-                format!("{agent_id} is an IDE agent; agents may not use the supervisor link"),
-            ))),
+            Ok(Caller::Supervisor { agent_id } | Caller::Worker { agent_id }) => {
+                Err(LinkError::from(ControlError::new(
+                    ErrorCode::ForbiddenAgentCaller,
+                    format!("{agent_id} is an IDE agent; agents may not use the supervisor link"),
+                )))
+            }
             Err(error) => Err(LinkError::from(ControlError::new(
                 ErrorCode::ForbiddenAgentCaller,
                 error.message.replace(

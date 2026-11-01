@@ -49,6 +49,7 @@ describe('the supervisor tool surface', () => {
       'pm_call',
       'pm_tools',
       'read_agent_output',
+      'read_agent_report',
       'remove_worktree',
       'send_agent_input',
       'spawn_agent',

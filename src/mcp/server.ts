@@ -22,6 +22,7 @@ import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { registerAgentControlTools } from './tools/agentControl';
 import { registerAgentUsageTools } from './tools/agentUsage';
 import { registerSupervisorTools } from './tools/supervisor';
+import { offersAskSupervisor, registerAskSupervisorTool } from './tools/askSupervisor';
 import { callControl } from './controlClient';
 import { openNotificationsDb } from './notificationsDb';
 import { closeWithParent, createPmGateway, type PmGateway } from './supervisorPm';
@@ -99,6 +100,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
     inbox,
     scope: { projectPath: projectRoot, projectName: projectRoot.split('/').filter(Boolean).pop() },
   });
+  if (offersAskSupervisor()) registerAskSupervisorTool(server);
 
   return server;
 }

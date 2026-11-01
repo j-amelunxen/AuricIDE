@@ -232,6 +232,15 @@ export const SUPERVISOR_CHILD_ORGANIZATION_NOTE =
   'deliver a stronger result. Keep following every other instruction in this prompt, including its ' +
   'required final ANSWER line.';
 
+/**
+ * Said by the IDE, like the notes above: a question at the end of a report goes
+ * unnoticed while the agent's own sub-agents keep its console moving.
+ */
+export const SUPERVISOR_CHILD_QUESTION_NOTE =
+  'If you need a decision from whoever started you, call the auric-pm tool ask_supervisor where ' +
+  'you have it and keep working on what does not depend on the answer. Where you do not have ' +
+  'it, end your message with the question.';
+
 const ANSWER_INSTRUCTION = 'Finish with one line starting with ANSWER: that states the result.';
 
 function withSupervisorChildNotes(config: AgentConfig, worktree: boolean | null): AgentConfig {
@@ -243,6 +252,7 @@ function withSupervisorChildNotes(config: AgentConfig, worktree: boolean | null)
   const notes = [
     requestedTask,
     SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+    SUPERVISOR_CHILD_QUESTION_NOTE,
     ...(worktree ? [WORKTREE_CHILD_NOTE] : []),
     ...(keepsAnswerLast ? [ANSWER_INSTRUCTION] : []),
   ];

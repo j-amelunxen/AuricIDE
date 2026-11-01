@@ -207,6 +207,7 @@ fn bind_to_project_mcp(
     connectors: &[crate::connectors::ResolvedConnector],
     extras: &[crate::extra_mcp::ExtraMcpServer],
     node: &str,
+    supervised: bool,
 ) -> Result<crate::providers::SpawnCommand, String> {
     let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
     let notifications_db = app
@@ -215,13 +216,18 @@ fn bind_to_project_mcp(
         .ok()
         .map(|app_data| crate::notifications::db_path_in(&app_data));
     let agent_cwd = crate::mcp::canonical_agent_cwd(cwd);
-    let mcp_env = crate::mcp::agent_mcp_server_env(
+    let mut mcp_env = crate::mcp::agent_mcp_server_env(
         notifications_db.as_deref(),
         app.try_state::<ProviderRegistryState>()
             .as_deref()
             .map(|registry| registry.as_ref()),
         agent_cwd.as_deref(),
     );
+    if supervised {
+        if let Ok(app_data) = app.path().app_data_dir() {
+            crate::mcp::offer_ask_supervisor(&mut mcp_env, &app_data);
+        }
+    }
     let mcp_configs = crate::mcp::ensure_agent_mcp_config(
         app,
         binding.project_root(),
@@ -929,6 +935,7 @@ pub async fn spawn_agent_impl(
             &connectors,
             &extra_mcp,
             &node,
+            config.spawned_by_agent_id.is_some(),
         )?;
         if runs_claude_code(&spawn_cmd) {
             super::claude_mcp_guard::check_auric_pm_enabled(
@@ -1190,7 +1197,8 @@ pub async fn spawn_agent_impl(
                     cli_result.as_ref(),
                     console_tail,
                     now_ms(),
-                ),
+                )
+                .with_transcript_report(|| transcript_report_of(usage.as_ref())),
                 finished_info.clone(),
             );
         }
@@ -1368,6 +1376,15 @@ pub(super) fn adopt_into<'a>(
     }
     emit(&adoption);
     Some(adoption)
+}
+
+/// The text of the run's last finished turn, where its transcript can be read.
+fn transcript_report_of(usage: Option<&UsageCapture>) -> Option<String> {
+    let home = dirs::home_dir()?;
+    match usage?.latest_report(&home) {
+        crate::agent_usage::report::ReportLookup::Found { report, .. } => Some(report.text),
+        crate::agent_usage::report::ReportLookup::Missing(_) => None,
+    }
 }
 
 /// The usage capture for a spawn, or `None` (with a log line when something
@@ -1655,7 +1672,8 @@ pub async fn kill_agent_impl(
                 None,
                 console_tail,
                 now_ms(),
-            ),
+            )
+            .with_transcript_report(|| transcript_report_of(process.usage.as_ref())),
             process.info.clone(),
         );
     }

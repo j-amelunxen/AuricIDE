@@ -41,6 +41,7 @@ const {
   handleControlRequest,
   installControlBridge,
   SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+  SUPERVISOR_CHILD_QUESTION_NOTE,
   WORKTREE_CHILD_NOTE,
 } = await import('./controlBridge');
 type Host = Parameters<typeof handleControlRequest>[1];
@@ -283,6 +284,7 @@ describe('control-request spawn for a supervisor', () => {
     [
       task,
       SUPERVISOR_CHILD_ORGANIZATION_NOTE,
+      SUPERVISOR_CHILD_QUESTION_NOTE,
       ...(worktree ? [WORKTREE_CHILD_NOTE] : []),
       answerInstruction,
     ].join('\n\n');

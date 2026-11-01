@@ -28,6 +28,9 @@ use std::time::{Duration, Instant};
 pub const PINGBACK_QUIET: Duration = Duration::from_millis(3_000);
 /// `limits.pingbackMaxDelayMs`.
 pub const PINGBACK_MAX_DELAY: Duration = Duration::from_millis(15_000);
+/// How often the question logs are looked at for a notice still owed. Questions
+/// raised together land in one notice, as long as they fall inside one look.
+const QUESTION_NOTICE_EVERY: Duration = Duration::from_secs(2);
 /// How often waiting waves are looked at again.
 const TICK: Duration = Duration::from_millis(250);
 
@@ -39,6 +42,7 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
     std::thread::spawn(move || {
         let mut waves = Waves::new(PINGBACK_QUIET, PINGBACK_MAX_DELAY);
         let mut checked = Instant::now();
+        let mut asked = Instant::now();
         let stall_timeout = super::stall_watchdog::timeout();
         loop {
             match finished.recv_timeout(TICK) {
@@ -81,8 +85,27 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
             for (supervisor_id, children) in due {
                 dispatcher.ping_supervisor(&supervisor_id, &children);
             }
+            if asked.elapsed() >= QUESTION_NOTICE_EVERY {
+                asked = Instant::now();
+                dispatcher.announce_questions();
+            }
         }
     });
+}
+
+/// The ids and counts only: the question's text is the child's and reaches the
+/// supervisor as a tool result it reads as data, never as typed input.
+fn question_notice(owed: &crate::agents::questions::Unheard) -> String {
+    let what = if owed.count == 1 {
+        "1 question".to_string()
+    } else {
+        format!("{} questions", owed.count)
+    };
+    format!(
+        "AuricIDE: agent {} raised {what} for you. Read them with await_agent_result \
+         {{ agentId: \"{}\", waitSeconds: 0, sinceQuestion: {} }}.",
+        owed.agent_id, owed.agent_id, owed.cursor
+    )
 }
 
 struct Wave {
@@ -184,6 +207,25 @@ impl Dispatcher {
             return false;
         }
         self.ping_supervisor_text(supervisor_id, &notice(children))
+    }
+
+    /// One notice per child with questions its supervisor has not heard of.
+    /// What an `await_result` carried is heard already. A supervisor that
+    /// cannot be told now (drafting human, not running yet) is told later:
+    /// the notice is booked only once it went out.
+    pub(crate) fn announce_questions(&self) {
+        for owed in self.questions.unheard() {
+            let parent = self
+                .find_agent(&owed.agent_id)
+                .and_then(|agent| agent.spawned_by_agent_id)
+                .or_else(|| self.run_results.parent_of(&owed.agent_id));
+            let Some(parent) = parent else {
+                continue;
+            };
+            if self.ping_supervisor_text(&parent, &question_notice(&owed)) {
+                self.questions.mark_announced(&owed.agent_id, owed.top);
+            }
+        }
     }
 
     pub(crate) fn ping_supervisor_text(&self, supervisor_id: &str, text: &str) -> bool {

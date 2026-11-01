@@ -629,7 +629,11 @@ fn guard_pm_target_refuses_a_project_outside_the_policy() {
     let own = answer(&r.path);
     assert_eq!(own["result"]["path"], r.path.as_str(), "{own}");
 
-    let external = ask(&r, &Caller::External, json!({ "id": 2, "method": "pm_target" }));
+    let external = ask(
+        &r,
+        &Caller::External,
+        json!({ "id": 2, "method": "pm_target" }),
+    );
     assert_eq!(external["error"]["code"], "outside_supervisor_scope");
 }
 
@@ -1002,7 +1006,7 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
     let args = crate::agents::supervisor_claude_arguments(
         "/x/supervisor.mcp.json",
         &crate::supervisor::SkillPlugin::default(),
-                false,
+        false,
         &[],
     );
     let joined = args.join(" ");
@@ -1070,12 +1074,8 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
 
     let mut plugin = crate::supervisor::SkillPlugin::default();
     crate::supervisor::apply_tool_grants(&mut plugin, &parsed.policy.tools);
-    let args = crate::agents::supervisor_claude_arguments(
-        "/x/supervisor.mcp.json",
-        &plugin,
-        false,
-        &[],
-    );
+    let args =
+        crate::agents::supervisor_claude_arguments("/x/supervisor.mcp.json", &plugin, false, &[]);
     let joined = args.join(" ");
     let tools_flag = args
         .iter()

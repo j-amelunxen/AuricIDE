@@ -32,8 +32,12 @@ pub enum PmRefusal {
     /// Not permitted, not a project, or spelled in a way that names nothing.
     /// The same answer for each, so probing teaches nothing.
     Unknown,
-    NotInitialized { path: String },
-    Ambiguous { candidates: Vec<String> },
+    NotInitialized {
+        path: String,
+    },
+    Ambiguous {
+        candidates: Vec<String>,
+    },
     NoneInitialized,
 }
 
