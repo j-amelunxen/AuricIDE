@@ -229,6 +229,12 @@
       "kind": "calls"
     },
     {
+      "from": "supervisor",
+      "to": "pmMcp",
+      "kind": "calls",
+      "label": "pm_call, after pm_target"
+    },
+    {
       "from": "children",
       "to": "worktree",
       "kind": "dataflow",

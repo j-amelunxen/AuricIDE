@@ -78,11 +78,13 @@ All field names are camelCase on the wire.
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `list_agents`     | —                                                                                                                                                       | `{ agents: AgentSummary[] }`             |
 | `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                     | `OutputChunk`                            |
+| `read_report`     | `{ agentId }`                                                                                                                                           | `ReportResult`                           |
+| `raise_question`  | `{ question, context?, options? }`, workers only, see "Questions"                                                                                       | `{ agentId, seq }`                       |
 | `send_input`      | `{ agentId \| supervisor, text: string, enter?: boolean (default true) }`                                                                               | `{ agentId, bytesWritten: number }`      |
 | `kill`            | `{ agentId }`                                                                                                                                           | `{ agentId, killed: true }`              |
 | `spawn`           | `{ projectPath?, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", supervisorKey?, worktree?, modelReason? }` | `{ agentId }`                            |
 | `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                   | `{ projects: ProjectEntry[], catalog? }` |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                                                     | `AwaitResult`                            |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number, sinceQuestion?: number, sinceReport?: string }`       | `AwaitResult`                            |
 | `remove_worktree` | `{ agentId }`                                                                                                                                           | `WorktreeRemoval`                        |
 | `dismiss`         | `{ agentId }`                                                                                                                                           | `{ agentId, dismissed: true }`           |
 
@@ -260,7 +262,10 @@ dispatcher reads that agent's `role`:
 | ------------ | ---------------------------------------------- | ------------------------------ |
 | `external`   | no IDE agent among the ancestors               | yes, every method, every agent |
 | `supervisor` | the nearest agent ancestor has role supervisor | yes, in the scope below        |
-| `worker`     | the nearest agent ancestor has any other role  | no, `forbidden_agent_caller`   |
+| `worker`     | the nearest agent ancestor has any other role  | only for `raise_question`      |
+
+A worker gets `forbidden_agent_caller` for every other method, as it always did.
+The supervisor link has no such door: there every agent stays out.
 
 A PID that cannot be read is still refused, as before. Nothing the caller
 sends can change which row it is in: there is no token, and `role` on a request
@@ -271,8 +276,7 @@ A supervisor reaches the socket through its own MCP server,
 (`--control` still refuses) and registers only the supervisor tools. The
 supervisor process is Claude, interactive, in a fresh run folder
 `~/.auric/supervisors/<start time>/`, with that one server
-(`--strict-mcp-config`) plus one `auric-pm-<folder>` server per permitted,
-initialised project, `--tools "Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash"` and
+(`--strict-mcp-config`), `--tools "Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash"` and
 `--restricted` (the file tools reach only the run folder, and the user's
 settings files with their allow rules are not read), those tools plus
 `mcp__auric-supervisor__*` in `--allowedTools`, and `--permission-mode dontAsk`:
@@ -397,7 +401,15 @@ half is `supervisors` in `agentControl.fixtures.json`
 | `remove_worktree` | its own children only                                                                     |
 | `dismiss`         | its own finished children only                                                            |
 | `send_input`      | its own children only                                                                     |
+| `pm_target`       | the one folder a PM tool may run in now, by the current policy (below)                    |
 
+- **`pm_target` reads the policy on every call.** Fixture
+  `callerScope.supervisor.pmTarget` has the rules: a path (canonicalised), a folder name
+  or an old server name `auric-pm-<slug>`. Outside the policy is `unknown_project`.
+  Permitted without a database is `supervisor_denied` (`project_not_initialized`). A name
+  two permitted projects share, or a server name of a slug they share, is
+  `supervisor_denied` (`ambiguous_project`) with both paths. External callers are refused.
+  `verification/lean/AuricIDE/PmScope.lean` proves the order over every trace.
 - **Own children only.** Any other agent id, including the supervisor's own,
   an agent the human started and another supervisor's child, is answered with
   `unknown_agent`, the same as an id that does not exist. A supervisor learns
@@ -617,17 +629,20 @@ it was never a message into the supervisor session.
 Waits up to `waitSeconds` for the agent to finish, then answers:
 
 ```
-{ done: false, agentId, status, outputBytes, waitingForInput }  // still running when the wait ended
-{ done: true, result: RunResult }                               // finished, now or earlier
+{ done: false, agentId, status, outputBytes, waitingForInput,   // still running when the wait ended
+  questions?, questionCursor?, reportId?, reportBytes?, newReport? }
+{ done: true, result: RunResult, questions?, questionCursor? }  // finished, now or earlier
 ```
 
 `RunResult` = `{ agentId, status: "idle" | "error", exitCode: number | null,
-answer: string | null, isError, source: "cli_result" | "console_tail",
+answer: string | null, isError, source: "cli_result" | "transcript" | "console_tail",
 finishedAt, costUsd: number | null }`.
 
 - `answer` is the CLI's own result text when it reports one (headless Claude,
-  `source: "cli_result"`), otherwise the last 8 KiB of the cleaned console
-  (`source: "console_tail"`). `costUsd` is `null` where the CLI states no cost.
+  `source: "cli_result"`), else the last finished turn in its transcript
+  (`source: "transcript"`; not for a failed run, whose error is on the screen),
+  else the last 8 KiB of the cleaned console (`source: "console_tail"`).
+  `costUsd` is `null` where the CLI states no cost.
 - `waitSeconds: 0` only looks. Rust keeps the result of the last **200**
   finished agents (`run_results.rs`). A wait in progress
   does not count against the connection's idle timeout, which only applies
@@ -644,6 +659,79 @@ finishedAt, costUsd: number | null }`.
   the `outputBytes` it last read is not woken twice for the same question. A
   headless agent never wakes it. The silence check counts from the start of
   the call, so a console that was already quiet takes those 20 s to report.
+- With `untilInput: true` a new question (headless agents too) and a new report
+  also end the wait, without `waitingForInput`. See "Questions" and
+  "`read_report`".
+
+### `read_report`
+
+The agent's latest complete report as clean text, in one small answer, also
+while it runs. It comes from the transcript the CLI writes, not from the console,
+so a TUI's redraws and spinners never get in. A report is the text of the last
+turn the model finished; `agent_usage/report.rs` decides, the model is
+`verification/lean/AuricIDE/AgentReport.lean`. `read_output` is unchanged.
+
+```
+{ agentId, status, available: true, report, reportId, source, at, truncated: false }
+{ agentId, status, available: false, reason, truncated: false }
+```
+
+| Provider                       | Works                                                                 |
+| ------------------------------ | --------------------------------------------------------------------- |
+| Claude Code, all modes         | yes: we pass `--session-id`, so the transcript is known to be its own |
+| Codex, session id printed      | yes, from the rollout's `final_answer` (headless runs)                |
+| Codex, interactive             | usually `transcript_missing`: it prints no id, and a guess is refused |
+| Others (no `usage.transcript`) | `provider_unsupported`                                                |
+
+`reason` is `provider_unsupported` (also an agent outside a project, which has no
+usage capture), `transcript_missing`, `no_report_yet` (no turn has ended) or
+`console_only` (finished, only the console is left). Console text is never offered
+as a report. A report over `reportMaxBytes` (64 KiB) keeps its end and says
+`truncated: true`. `reportId` changes with each new report; `await_result` names it
+with `reportBytes`, and `newReport: true` when it differs from `sinceReport`, so a
+caller reads the text only when there is a new one.
+
+Limits: a Claude Code started from inside another Claude Code session keeps no
+transcript (it inherits `CLAUDE_CODE_CHILD_SESSION`), so an IDE launched from such
+a terminal answers `transcript_missing` for its agents. The last 8 MiB of a transcript
+are read; a last turn further back is `no_report_yet`. The model's text is reported as
+it is, so an agent that hands its turn back with one line has a one-line report.
+
+### Questions
+
+An agent with a question for its supervisor says so with the `auric-pm` tool
+`ask_supervisor` (`raise_question` on the socket) and keeps working. The tool is
+offered only to agents a supervisor started (`AURIC_ASK_SUPERVISOR`, set at spawn);
+the socket books the question on the agent it finds by PID, so an agent can speak
+only for itself, and refuses one nobody started. `notify_ask` is a different thing and
+stays as it is: it asks the human through the inbox and names no agent.
+
+- **The rule.** One append-only log per agent; a question gets the next `seq` from
+  1. Every `await_result` answer carries the questions after `sinceQuestion` and
+     `questionCursor`, the value to pass next. Going on from the last cursor, each
+     question arrives exactly once, in order; a lost answer comes again because the
+     cursor did not move. A full log (`questionsPerAgentKept`, **50**) refuses the next
+     question and keeps the others. Proved in
+     `verification/lean/AuricIDE/AgentQuestions.lean`.
+- **It reaches a supervisor that is not waiting.** One typed notice per child with
+  unheard questions, looked for every 2 s, held while the human drafts in that
+  console. It names the agent and the cursor, never the question's text: that stays
+  a tool result, read as data. What an `await_result` already carried needs none. The
+  notice is a hint, the log is the guarantee. `list_agents` shows `questionCount`.
+- **Answering** is `send_input`, as for any question. A headless agent reads no input;
+  the tool tells it to state its assumption and go on.
+
+**What wakes `untilInput`, and how far each can be trusted:**
+
+| Signal            | From             | Wrong how                                                                                                                                                                              |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `questions`       | the agent's call | Misses a question the agent never raises. Never a false alarm.                                                                                                                         |
+| `newReport`       | the transcript   | Fires at every finished turn, question or not, so the supervisor reads a report. Misses nothing on Claude, works without quiet console, and is absent where `read_report` has nothing. |
+| `waitingForInput` | console text     | As before. False alarm: a line that reads like a prompt, or 20 s of quiet in a long tool call. Miss: a moving console, such as background sub-agents redrawing.                        |
+
+Nothing here reads a question out of prose: whether a report ends with one is for
+the supervisor to read. The questions live in memory, as the output buffers do; a
+restart ends the agents that raised them.
 
 ### Worktrees
 
@@ -684,11 +772,22 @@ stays in the Git panel's worktree list for a person.
 | `spawn_agent`        | `spawn`           |
 | `list_my_agents`     | `list_agents`     |
 | `read_agent_output`  | `read_output`     |
+| `read_agent_report`  | `read_report`     |
 | `await_agent_result` | `await_result`    |
 | `send_agent_input`   | `send_input`      |
 | `kill_agent`         | `kill`            |
 | `remove_worktree`    | `remove_worktree` |
 | `dismiss_agent`      | `dismiss`         |
+| `pm_tools`           | `pm_target`       |
+| `pm_call`            | `pm_target`       |
+
+`pm_tools` and `pm_call` ask `pm_target` first and then use a project's own server.
+`src/mcp/supervisorPm.ts` keeps at most 8 of those `--project-root` children, one per
+project, closes the least recently used, and ends them when its own stdin ends or it
+exits (a killed parent closes their stdin, which ends them too). A dead child fails
+the running call with `pm_child_gone` and the next call starts a fresh one; a call
+gets 120 s, then `pm_timeout` and the child goes. Neither retries by itself, because a
+write may have happened. With 8 calls running at once a ninth project gets `pm_busy`.
 
 ## Error codes
 
@@ -722,6 +821,7 @@ exist or refuses the connection, `timeout` when no answer arrives in time, and
 | `spawn_agent`        | `spawn`           |
 | `list_projects`      | `list_projects`   |
 | `await_agent_result` | `await_result`    |
+| `read_agent_report`  | `read_report`     |
 | `remove_worktree`    | `remove_worktree` |
 | `dismiss_agent`      | `dismiss`         |
 

@@ -178,7 +178,8 @@ on every child are unchanged.
   prompt), started only where `.auric/project.db` exists, all tools
   pre-approved. Its env carries no `AURIC_AGENT_CWD`, so `request_agent_launch`
   refuses: every agent a supervisor starts still goes through `spawn_agent`
-  and this policy.
+  and this policy. _Replaced by the PM gateway, see the amendment of
+  2026-11-01; the environment rule stays._
 - **`ToolSearch` is one of its tools.** With a dozen `auric-pm` servers the
   MCP tools load deferred, and without `ToolSearch` they are out of reach; a
   supervisor answering "the auric-supervisor tools aren't available" on its
@@ -258,3 +259,57 @@ What this gives up: one supervisor as the single place where the human sees
 what was delegated. The IDE now has to show which child belongs to which
 supervisor (colour families in the agent tabs), and the human has to keep
 several conversations apart.
+
+## Amendment 2026-11-01: one PM gateway instead of a server per project
+
+Every start carried one `auric-pm-<folder>` server per permitted, initialised
+project. On a machine with 27 projects that was 2,106 deferred tool names and 27
+Node processes before the supervisor did anything, most of them never used.
+Measured with `scripts/measure-supervisor-start.mjs` and the real CLI on 27 temp
+projects, one first request carried 58,475 tokens before and 14,033 after, and that
+list is part of every later request too.
+
+- **Two tools on the supervisor's own server.** `pm_tools` lists the PM tools or
+  shows one schema, `pm_call` runs one in one project. No new server; the tool list
+  grows by two.
+- **Scope is decided per call, in Rust.** `pm_target` reads the current policy each
+  time. This is stricter than before, when the servers were fixed at launch and a
+  revoked project stayed reachable until the supervisor ended. It takes a path, a
+  folder name or an old server name, refuses what is outside the policy like a folder
+  that does not exist, and refuses a name that fits two projects, naming both.
+- **The order is proved.** Policy first, cache second:
+  `verification/lean/AuricIDE/PmScope.lean`. A call reaches a child only if the policy
+  in force at that step permits it; a refused call changes nothing. Rust's resolver and
+  the TypeScript gateway replay its traces. Spawning, JSON-RPC and path canonicalising
+  are outside the model and have tests of their own.
+- **One process per project stays.** The child is the unchanged `--project-root`
+  server, so `McpSessionIsolation.lean` still holds. It starts on first use, at most 8
+  run at once, and it gets the same environment as before (`AURIC_PM_CHILD_ENV`, no
+  `AURIC_AGENT_CWD`), so `request_agent_launch` still refuses.
+- **Agents inside a project change nothing.** They keep `auric-pm`.
+
+What this gives up: a tool's schema is one round trip away instead of being in the
+tool list, so the first use of a tool costs an extra call, and the first call into a
+project waits for its server to start. A client no longer sees PM tools as native
+tools, so a per-tool permission rule on them can no longer be written; all of them
+were pre-approved before too. A cached child of a revoked project stays alive,
+unreachable, until it is pushed out or the supervisor ends.
+
+## Amendment 2026-11-01: a question is the one thing a worker may send
+
+Every agent but a supervisor was refused at the control socket. An interactive
+child that ended a report with open questions while its own sub-agents kept
+running had no way to be heard: the console kept moving, so `untilInput` saw neither
+a prompt nor silence, and the questions were nearly missed.
+
+- **A worker gets in for `raise_question` and nothing else** (`admit_control`,
+  `dispatch_worker`). Identity stays the kernel's peer PID, so the question is booked
+  on the agent the process belongs to; there is no agent id to forge. Only an agent a
+  supervisor started has someone to ask. The supervisor link keeps `admit`, where every
+  agent stays out.
+- **Why not `notify_ask`.** It asks the human through the inbox, carries no agent
+  identity and has no way into a supervisor's scope. It stays what it is.
+- **What this opens.** A child can make its supervisor read up to 50 questions of 4 KiB
+  each. That text can try to steer the supervisor, as its console output always could.
+  It arrives as a tool result, the typed notice carries only an id and a count, and the
+  launch prompt says agent text is data.

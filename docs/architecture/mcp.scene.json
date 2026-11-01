@@ -115,7 +115,7 @@
       "group": "infra",
       "level": 2,
       "weight": 0.5,
-      "position": [-1.9, -11.3, 0]
+      "position": [-3.9, -11.3, 0]
     },
     {
       "id": "db",
@@ -124,7 +124,7 @@
       "group": "infra",
       "level": 2,
       "weight": 0.7,
-      "position": [-6.1, -11.3, 0]
+      "position": [-8.1, -11.3, 0]
     },
     {
       "id": "notificationsDb",
@@ -133,7 +133,16 @@
       "group": "infra",
       "level": 2,
       "weight": 0.5,
-      "position": [2.1, -11.3, 0]
+      "position": [0.1, -11.3, 0]
+    },
+    {
+      "id": "supervisorPm",
+      "label": "supervisorPm.ts",
+      "preset": "box",
+      "group": "infra",
+      "level": 2,
+      "weight": 0.5,
+      "position": [4.1, -11.3, 0]
     },
     {
       "id": "controlClient",
@@ -142,7 +151,7 @@
       "group": "infra",
       "level": 2,
       "weight": 0.5,
-      "position": [6.1, -11.3, 0]
+      "position": [8.1, -11.3, 0]
     },
     {
       "id": "projectDb",
@@ -266,6 +275,24 @@
     },
     {
       "from": "toolsAgents",
+      "to": "supervisorPm",
+      "kind": "calls",
+      "label": "pm_tools, pm_call"
+    },
+    {
+      "from": "supervisorPm",
+      "to": "controlClient",
+      "kind": "calls",
+      "label": "pm_target first"
+    },
+    {
+      "from": "supervisorPm",
+      "to": "server",
+      "kind": "calls",
+      "label": "one --project-root child per project"
+    },
+    {
+      "from": "toolsAgents",
       "to": "toolsPm",
       "kind": "dependency",
       "label": "resolve"
@@ -289,7 +316,15 @@
       "label": "better-sqlite3"
     }
   ],
-  "tour": ["server", "cli", "toolsPm", "toolsGoals", "stationEvidence", "db", "controlClient"],
+  "tour": [
+    "server",
+    "cli",
+    "toolsPm",
+    "toolsGoals",
+    "stationEvidence",
+    "db",
+    "controlClient"
+  ],
   "annotations": [
     {
       "id": "toolFiles",

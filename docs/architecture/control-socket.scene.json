@@ -126,6 +126,15 @@
       "position": [-3.65, -16.5, 0]
     },
     {
+      "id": "supervisorPmTarget",
+      "label": "supervisor/pm_target.rs",
+      "preset": "box",
+      "group": "policy",
+      "level": 4,
+      "weight": 0.4,
+      "position": [1.3, -21.9, 0]
+    },
+    {
       "id": "supervisorPolicy",
       "label": "supervisor/policy.rs",
       "preset": "cylinder",
@@ -139,7 +148,7 @@
           "value": "1330"
         }
       ],
-      "position": [3.5, -21.9, 0]
+      "position": [5.4, -21.9, 0]
     },
     {
       "id": "bridge",
@@ -172,7 +181,7 @@
       "group": "neighbours",
       "level": 4,
       "weight": 0.3,
-      "position": [-3.5, -21.9, 0]
+      "position": [-5.4, -21.9, 0]
     },
     {
       "id": "supervisorLink",
@@ -226,6 +235,17 @@
     },
     {
       "from": "dispatcher",
+      "to": "supervisorPolicy",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "supervisorPmTarget",
+      "kind": "dependency",
+      "label": "pm_target"
+    },
+    {
+      "from": "supervisorPmTarget",
       "to": "supervisorPolicy",
       "kind": "dependency"
     },
@@ -366,7 +386,7 @@
         },
         {
           "label": "supervisor modules",
-          "value": "3"
+          "value": "4"
         },
         {
           "label": "bridge listeners before ready",

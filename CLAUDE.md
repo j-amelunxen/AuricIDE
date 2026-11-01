@@ -422,7 +422,9 @@ it first), the reasoning ADR 0003.
   carry `expiresAt` so a timed-out spawn is never carried out late.
 - **IDE agents are refused at the socket, whatever the provider.** Rust reads
   the peer PID and walks its parents; a running agent among them gets
-  `forbidden_agent_caller`. The `AURIC_IDE_AGENT=1` marker on every agent only
+  `forbidden_agent_caller`, for every method but `raise_question`, which books a
+  question on that same agent (`admit_control`; the supervisor link has no such
+  door). The `AURIC_IDE_AGENT=1` marker on every agent only
   makes `--control` stop early — Codex, for one, does not pass arbitrary env
   vars to MCP servers, so the marker alone would not hold.
 - **Console text is cleaned on append** (`agents/output_buffer.rs`, stateful
@@ -459,6 +461,14 @@ ADR 0004.
   the matched agent and its role; a supervisor is admitted with its own scope,
   a worker still gets `forbidden_agent_caller`. A walk that cannot finish
   (unreadable parent, a loop) is refused too, never treated as external.
+- **A clean report and explicit questions.** `read_agent_report` gives a
+  child's last finished turn as text, also while it runs, from the CLI's transcript
+  (Claude always; Codex where it printed its session id; `available: false` with a
+  reason otherwise, never console text). A child raises a question with
+  `ask_supervisor`; `await_agent_result` delivers each one once per `sinceQuestion`
+  cursor, and a typed notice tells a supervisor that is not waiting. Contract:
+  `docs/design-agent-control.md` ("`read_report`", "Questions"); proofs:
+  `AgentReport.lean`, `AgentQuestions.lean`.
 - **Its scope is its own children.** List, read, await, kill and type into
   only what it spawned. `await_result` with `untilInput` wakes it when a child
   waits on a question (`awaitingInput.fixtures.json`, shared with the attention
@@ -475,11 +485,19 @@ ADR 0004.
   `<app_data_dir>/supervisor-skills/`, and the timer grant `Bash(sleep *)` is always present; other shell commands
   need an approved pattern; a skill's `dirs` become `--add-dir`. Settings → Supervisor
   → Tools approves single CLI tools, by name or absolute path, each as
-  `Bash(<tool>)` and `Bash(<tool> *)` (`policy.tools`, `apply_tool_grants`). Every permitted,
-  initialised project adds an `auric-pm-<folder>` server (fixture
-  `pmServerNames`, no `AURIC_AGENT_CWD`, so spawning stays with the policy),
-  which is why `ToolSearch` is in its tool set. Claude in Chrome is the
-  `supervisor.chrome` switch (`--chrome`, else explicitly `--no-chrome`).
+  `Bash(<tool>)` and `Bash(<tool> *)` (`policy.tools`, `apply_tool_grants`). Claude in
+  Chrome is the `supervisor.chrome` switch (`--chrome`, else explicitly `--no-chrome`).
+- **PM tools come through one door, not a server per project.** `pm_tools` and
+  `pm_call` (`src/mcp/supervisorPm.ts`) replace the 27 × 78 tool names and 27 Node
+  processes a start used to carry. Each call first asks Rust (`pm_target`,
+  `supervisor/pm_target.rs`), which reads the current policy: a revoked project is
+  refused at once even with its child still cached, and a name two projects share is
+  refused with both paths, never guessed. An old name `auric-pm-<folder>` (fixture
+  `pmServerNames`, Rust only now) still means that project. The child is the unchanged
+  `--project-root` server, started on first use, at most 8 at once, environment via
+  `AURIC_PM_CHILD_ENV` with no `AURIC_AGENT_CWD`, so spawning stays with the policy.
+  `PmScope.lean` proves the order over every trace of policy changes and calls;
+  Rust and TypeScript replay its corpus. Agents inside a project keep `auric-pm`.
 - **An earlier run can be resumed.** The run folders are browsable in the
   rail (Supervisor Runs, `SupervisorRunsPanel`, most recently changed first,
   newest file on top) and the tile's right-click menu offers the last five.
