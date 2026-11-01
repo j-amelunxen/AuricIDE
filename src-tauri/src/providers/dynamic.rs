@@ -127,6 +127,13 @@ impl AgentProvider for DynamicProvider {
         }
     }
 
+    fn permission_info(&self) -> ProviderPermissions {
+        ProviderPermissions {
+            modes: self.config.info.permission_modes.clone(),
+            default_mode: self.config.info.default_permission_mode.clone(),
+        }
+    }
+
     fn build_spawn_command(
         &self,
         model: &str,

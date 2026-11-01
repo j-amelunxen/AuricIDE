@@ -1252,3 +1252,45 @@ fn a_model_says_what_it_is_for_and_what_it_costs_and_odd_values_are_none() {
     assert_eq!(shown[0]["relativeCost"], 1.0);
     assert!(shown[2].get("useFor").is_none() && shown[2].get("relativeCost").is_none());
 }
+
+// ── Permission questions never run the model discovery ─────────────
+
+/// Deciding whether a mode skips the prompts reads the config only. `info()`
+/// also resolves the model catalog, which for a provider with discovery runs
+/// its CLI; a policy check paid that per mode, and on a machine where the CLI
+/// hangs, the check hung with it.
+#[test]
+fn permission_info_answers_from_the_config_without_running_the_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("discovery-ran");
+    let mut config = get_claude_config();
+    config.models_discovery = Some(ModelsDiscoveryConfig {
+        command: "sh".to_string(),
+        args: vec!["-c".to_string(), format!("touch '{}'", marker.display())],
+        format: ModelsDiscoveryFormat::TsvIdLabel,
+        cache_seconds: 3600,
+    });
+    config.info.permission_modes = serde_json::from_str(
+        r#"[{ "value": "plan", "label": "Plan", "description": "", "unattended": false },
+            { "value": "yolo", "label": "Yolo", "description": "", "unattended": true }]"#,
+    )
+    .unwrap();
+    let provider = DynamicProvider::new(config);
+
+    let permissions = provider.permission_info();
+    assert!(!marker.exists(), "permission_info ran the model discovery");
+
+    let info = provider.info();
+    assert!(
+        marker.exists(),
+        "the marker must prove that info() does run it"
+    );
+    let values = |modes: &[PermissionModeOption]| -> Vec<(String, bool)> {
+        modes
+            .iter()
+            .map(|m| (m.value.clone(), m.unattended))
+            .collect()
+    };
+    assert_eq!(values(&permissions.modes), values(&info.permission_modes));
+    assert_eq!(permissions.default_mode, info.default_permission_mode);
+}

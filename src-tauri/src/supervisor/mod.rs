@@ -119,8 +119,8 @@ pub fn is_unattended_mode(provider: &dyn crate::providers::AgentProvider, mode: 
         return true;
     }
     let marked = provider
-        .info()
-        .permission_modes
+        .permission_info()
+        .modes
         .iter()
         .any(|option| option.value == mode && option.unattended);
     if marked {
@@ -162,18 +162,18 @@ pub fn modes_of(
     provider: &dyn crate::providers::AgentProvider,
     extra: impl IntoIterator<Item = String>,
 ) -> ProviderModes {
-    let info = provider.info();
+    let info = provider.permission_info();
     let mut candidates: Vec<String> = info
-        .permission_modes
+        .modes
         .iter()
         .map(|option| option.value.clone())
-        .chain(std::iter::once(info.default_permission_mode.clone()))
+        .chain(std::iter::once(info.default_mode.clone()))
         .chain(extra)
         .collect();
     candidates.sort();
     candidates.dedup();
     ProviderModes {
-        default_mode: Some(info.default_permission_mode).filter(|mode| !mode.is_empty()),
+        default_mode: Some(info.default_mode).filter(|mode| !mode.is_empty()),
         unattended: candidates
             .into_iter()
             .filter(|mode| is_unattended_mode(provider, mode))

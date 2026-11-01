@@ -139,6 +139,13 @@ pub struct ProviderInfo {
     pub default_permission_mode: String,
 }
 
+/// The permission half of [`ProviderInfo`], see [`AgentProvider::permission_info`].
+#[derive(Debug, Clone)]
+pub struct ProviderPermissions {
+    pub modes: Vec<PermissionModeOption>,
+    pub default_mode: String,
+}
+
 // ── Return types for spawn logic ─────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -514,6 +521,17 @@ pub struct PromptTemplate {
 
 pub trait AgentProvider: Send + Sync {
     fn info(&self) -> ProviderInfo;
+
+    /// The permission modes and the default one, without the rest of `info`.
+    /// `info` also resolves the model catalog, which for a dynamic provider can
+    /// mean running its CLI; a question about permissions never needs that.
+    fn permission_info(&self) -> ProviderPermissions {
+        let info = self.info();
+        ProviderPermissions {
+            modes: info.permission_modes,
+            default_mode: info.default_permission_mode,
+        }
+    }
 
     fn build_spawn_command(
         &self,
