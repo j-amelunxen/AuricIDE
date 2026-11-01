@@ -53,6 +53,7 @@ describe('supervisor tools', () => {
     expect([...new Set(Object.values(TOOL_METHODS))].sort()).toEqual([...scope.methods].sort());
   });
 
+  // testuuid: t_6b1r4cgf covers: el_8822ww84,el_rqg3vpjg,el_sf1eca3c,el_d93xrgtp,el_h6np2qvy categories: happy level: unit
   it('map each tool onto its socket method', async () => {
     const call = vi.fn(async () => ({})) as unknown as ControlCaller;
     const tools = capture(call);

@@ -86,17 +86,20 @@ theorem step_keeps_log_of_nonraise (w : World) :
   · simp only [step, deliver]; split <;> rfl
   · simp only [step, announce]; split <;> rfl
 
+/- specuuid: s_62ndqc2j covers: el_85cp2q7y,el_vdqm4hcv -/
 /-- A full log refuses and holds what it held. -/
 theorem refused_keeps_the_log (s : Server) (q : Nat) (full : cap ≤ s.log.length) :
     (raise s q).2 = none ∧ (raise s q).1.log = s.log := by
   have : ¬ s.log.length < cap := Nat.not_lt.mpr full
   simp [raise, this]
 
+/- specuuid: s_wbphwab0 covers: el_85cp2q7y,el_vdqm4hcv -/
 /-- An accepted question gets the next number. -/
 theorem accepted_gets_the_next_seq (s : Server) (q : Nat) (room : s.log.length < cap) :
     (raise s q).2 = some (s.log.length + 1) ∧ (raise s q).1.log = s.log ++ [q] := by
   simp [raise, room]
 
+/- specuuid: s_p2tm5gd9 covers: el_85cp2q7y,el_a75yd10b -/
 /-- Nothing ever leaves the log. -/
 theorem log_only_grows (w : World) (s : Step) : w.server.log <+: (step w s).server.log := by
   cases s with
@@ -148,12 +151,14 @@ theorem run_holds (w : World) (trace : List Step) (h : Holds w) : Holds (run w t
   | nil => exact h
   | cons s rest ih => exact ih _ (step_holds w s h)
 
+/- specuuid: s_knh10vdg covers: el_a75yd10b,el_rqg3vpjg -/
 /-- What a reader holds after any trace is a prefix of what was raised, in
 order, each question once: no reordering, no repeat. -/
 theorem received_is_prefix (trace : List Step) :
     (run {} trace).received = (run {} trace).server.log.take (run {} trace).cursor :=
   (run_holds {} trace holds_initially).2
 
+/- specuuid: s_f1ybb9fm covers: el_a75yd10b,el_rqg3vpjg -/
 /-- One more read after any trace leaves the reader with every question there is:
 none lost, whatever was interleaved, lost answers included. -/
 theorem read_after_any_trace_has_everything (trace : List Step) :
@@ -161,6 +166,7 @@ theorem read_after_any_trace_has_everything (trace : List Step) :
   have h := run_holds {} trace holds_initially
   simp only [step, since, h.2, List.take_append_drop]
 
+/- specuuid: s_k5cprhtm covers: el_a75yd10b,el_rqg3vpjg -/
 /-- A read that returned nothing new leaves the next read empty too: nothing is
 handed out twice to a reader that kept its cursor. -/
 theorem nothing_twice (w : World) (h : Holds w) :
@@ -172,6 +178,7 @@ theorem nothing_twice (w : World) (h : Holds w) :
   simp only [step, since, top]
   simp
 
+/- specuuid: s_tkqpx44d covers: el_a75yd10b,el_rqg3vpjg -/
 /-- A lost answer changes nothing for the reader. -/
 theorem lost_answer_changes_nothing_for_the_reader (w : World) :
     (step w .readLost).cursor = w.cursor ∧ (step w .readLost).received = w.received ∧
@@ -226,6 +233,7 @@ theorem run_counted (w : World) (trace : List Step) (h : Counted w) :
   | nil => exact h
   | cons s rest ih => exact ih _ (step_counted w s h)
 
+/- specuuid: s_3cgh3mye covers: el_85cp2q7y -/
 /-- Never more notices than questions: none is announced twice. -/
 theorem notices_at_most_questions (trace : List Step) :
     (run {} trace).notices ≤ (run {} trace).server.log.length := by

@@ -85,6 +85,7 @@ export function readAgentOutputTool(call: ControlCaller, scopeNote = '') {
 }
 
 /** `read_agent_report`, the same for the control and the supervisor server. */
+// elementuuid=el_8822ww84 kind=mcp security=docs/security/supervisor-tools.md validation=zod:readReportParams
 export function readAgentReportTool(call: ControlCaller, scopeNote = '') {
   return {
     name: 'read_agent_report',
@@ -152,6 +153,7 @@ export function dismissAgentTool(call: ControlCaller, scopeNote = '') {
 }
 
 /** `await_agent_result`, the same for the control and the supervisor server. */
+// elementuuid=el_rqg3vpjg kind=mcp security=docs/security/supervisor-tools.md validation=zod:awaitResultParams+raisedQuestion+runResult
 export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
   return {
     name: 'await_agent_result',

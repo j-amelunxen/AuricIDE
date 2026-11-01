@@ -378,6 +378,7 @@ impl Dispatcher {
 
     /// The folder a PM tool may run in, by the policy as it is at this call
     /// (`supervisor::pm_target`; fixture `callerScope.supervisor.pmTarget`).
+    // elementuuid=el_ff0j17a0 kind=api security=docs/security/supervisor-tools.md validation=serde:PmTargetParams
     fn pm_target(&self, wanted: Option<&str>) -> Outcome {
         let policy = self.backend.supervisor_policy();
         let facts = pm_facts(&policy, wanted);

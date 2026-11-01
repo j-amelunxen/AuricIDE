@@ -1,0 +1,14 @@
+{
+  "exclude": [
+    "node_modules",
+    "target",
+    ".next",
+    "out",
+    "dist",
+    "resources",
+    ".lake",
+    ".auric",
+    "verification/contracts",
+    "src-tauri/gen"
+  ]
+}

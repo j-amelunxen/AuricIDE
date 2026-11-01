@@ -245,6 +245,8 @@ worktree flag of the request.
 
 ## Supervisor scope
 
+How each of its tools can be abused and what stops that: `docs/security/supervisor-tools.md`.
+
 A supervisor is an agent the IDE starts so that it can start, watch and stop
 other agents in other projects. It is the one IDE agent the socket admits. The
 reasoning, and the alternatives that were rejected, are in

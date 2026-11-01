@@ -596,6 +596,7 @@ fn attack_the_provider_the_check_approved_is_the_provider_that_is_started() {
     );
 }
 
+// testuuid: t_ez40jjfy covers: el_ff0j17a0 categories: adversarial level: unit
 /// A project outside the policy has no PM tools for a supervisor, whether named
 /// by path, folder or the server name it would have had. The refusal reads like
 /// that of a folder that does not exist, so probing teaches nothing about either.

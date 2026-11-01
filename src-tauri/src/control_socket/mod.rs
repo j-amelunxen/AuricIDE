@@ -402,6 +402,7 @@ impl Dispatcher {
 
     /// Books a question on the agent that asked. Only an agent a supervisor
     /// started has someone to ask.
+    // elementuuid=el_85cp2q7y kind=api security=docs/security/supervisor-tools.md validation=serde:RaiseQuestionParams
     fn raise_question(&self, agent_id: &str, params: RaiseQuestionParams) -> Outcome {
         let has_parent = self
             .find_agent(agent_id)
@@ -440,6 +441,7 @@ impl Dispatcher {
 
     /// The agent's newest complete report, or why there is none. A finished
     /// agent's is what its result kept, and a console tail does not count.
+    // elementuuid=el_r3sk9wv0 kind=api security=docs/security/supervisor-tools.md validation=serde:AgentIdParams
     fn read_report(&self, params: AgentIdParams) -> Outcome {
         let agent_id = params.agent_id;
         let live = self.find_agent(&agent_id);
@@ -744,6 +746,7 @@ impl Dispatcher {
     /// Waits up to `waitSeconds` for the agent's result. The connection's idle
     /// timeout only covers reading the next request, so a long wait here does
     /// not close it.
+    // elementuuid=el_a75yd10b kind=api security=docs/security/supervisor-tools.md validation=serde:AwaitResultParams
     fn await_result(&self, params: AwaitResultParams) -> Outcome {
         let agent_id = params.agent_id.as_str();
         let live = self.find_agent(agent_id);

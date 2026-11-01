@@ -24,6 +24,7 @@ export function registerAskSupervisorTool(
   server: FastMCP,
   call: ControlCaller = callControl
 ): void {
+  // elementuuid=el_vdqm4hcv kind=mcp security=docs/security/supervisor-tools.md validation=zod:raiseQuestionParams+raisedQuestion
   server.addTool({
     name: 'ask_supervisor',
     description:

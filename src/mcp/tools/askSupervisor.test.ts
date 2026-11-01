@@ -19,12 +19,14 @@ function capture(call: ControlCaller): Tool {
 }
 
 describe('ask_supervisor', () => {
+  // testuuid: t_a4aa2xcg covers: el_vdqm4hcv categories: negative level: unit
   it('is offered only to an agent a supervisor started', () => {
     expect(offersAskSupervisor({ AURIC_ASK_SUPERVISOR: '1' })).toBe(true);
     expect(offersAskSupervisor({})).toBe(false);
     expect(offersAskSupervisor({ AURIC_ASK_SUPERVISOR: '0' })).toBe(false);
   });
 
+  // testuuid: t_twnrvxkq covers: el_vdqm4hcv categories: happy level: unit
   it('sends the question and names no agent: the socket finds it by process', async () => {
     const call = vi.fn(async () => ({ agentId: 'agent-5', seq: 1 })) as unknown as ControlCaller;
     const tool = capture(call);
@@ -37,6 +39,7 @@ describe('ask_supervisor', () => {
     expect(JSON.parse(reply)).toEqual({ agentId: 'agent-5', seq: 1 });
   });
 
+  // testuuid: t_f5j8bw70 covers: el_vdqm4hcv categories: adversarial,edge level: unit
   it('validates what it sends before anything reaches the socket', () => {
     const build = (params: unknown) =>
       buildControlRequest(1, 'raise_question', params as { question: string });

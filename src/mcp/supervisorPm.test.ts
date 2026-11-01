@@ -138,6 +138,7 @@ afterEach(() => {
 });
 
 describe('pm_tools and pm_call against a real project server', () => {
+  // testuuid: t_yyy0znje covers: el_d93xrgtp,el_h6np2qvy categories: happy level: unit
   it('lists names and first sentences, gives one schema, and runs a tool', async () => {
     const r = rig();
     const list = await r.pmTools({});
@@ -175,6 +176,7 @@ describe('pm_tools and pm_call against a real project server', () => {
     expect(r.startedPaths).toEqual([alpha]);
   }, 30_000);
 
+  // testuuid: t_18aqd943 covers: el_h6np2qvy categories: negative level: unit
   it('passes on a tool error unchanged, and spawning stays refused', async () => {
     const r = rig();
     const list = await r.pmTools({});
@@ -203,6 +205,7 @@ describe('pm_tools and pm_call against a real project server', () => {
 });
 
 describe('refusals never start anything', () => {
+  // testuuid: t_n5rb06m0 covers: el_d93xrgtp,el_h6np2qvy categories: adversarial level: unit
   it('is refused for every spelling outside the policy, with no process', async () => {
     const r = rig();
     const link = join(root, 'link-to-gamma');
@@ -217,6 +220,7 @@ describe('refusals never start anything', () => {
     expect(r.gateway.cachedPaths()).toEqual([]);
   });
 
+  // testuuid: t_v0j8gtjr covers: el_d93xrgtp,el_h6np2qvy categories: edge level: unit
   it('takes an empty project for a mistake, not for the first usable one', async () => {
     const r = rig();
     await expect(r.pmCall({ project: '', tool: 'list_epics' })).rejects.toThrow('unknown_project');
@@ -286,6 +290,7 @@ describe('refusals never start anything', () => {
 });
 
 describe('the policy decides on every call, the child cache never does', () => {
+  // testuuid: t_qtqvrq4v covers: el_h6np2qvy categories: adversarial level: unit
   it('refuses a revoked project at once, with its child still cached, and reuses it later', async () => {
     const r = rig();
     await r.pmCall({ project: alpha, tool: 'list_epics' });

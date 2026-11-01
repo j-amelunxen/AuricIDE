@@ -88,6 +88,7 @@ def resolve (policy : Policy) : Option String → Resolution
 def Permits (policy : Policy) (path : String) : Prop :=
   ∃ entry ∈ policy, entry.path = path ∧ entry.allowed = true ∧ entry.initialised = true
 
+/- specuuid: s_74e9yrm1 covers: el_ff0j17a0 -/
 theorem resolve_ok_permits (policy : Policy) (reference : Option String) (path : String)
     (resolved : resolve policy reference = .ok path) : Permits policy path := by
   cases reference with
@@ -116,6 +117,7 @@ theorem resolve_ok_permits (policy : Policy) (reference : Option String) (path :
       · cases resolved
     · cases resolved
 
+/- specuuid: s_9vmj0fsb covers: el_ff0j17a0 -/
 /-- A name resolves only when exactly one permitted project fits it. -/
 theorem resolved_name_is_unique (policy : Policy) (reference path : String)
     (resolved : resolve policy (some reference) = .ok path) :
@@ -235,6 +237,7 @@ theorem stepCall_reached_permits (gateway : Gateway) (reference : Option String)
     exact equal ▸ resolve_ok_permits _ _ _ resolved
   · cases reached
 
+/- specuuid: s_rsbx5ja9 covers: el_h6np2qvy -/
 /-- **The core.** Whatever came before, and whatever the cache holds by then: the
 call at this position reaches a child only if the policy in force at this
 position permits it. `policyInForce` reads only the steps before it. -/
@@ -276,6 +279,7 @@ theorem revoked_unreachable (gateway : Gateway) (path : String) (steps : List St
         · rw [stepCall_policy]; exact revoked
         · exact fun other inRest => staysRevoked other (by simp [inRest])
 
+/- specuuid: s_3pqtb1r0 covers: el_h6np2qvy -/
 /-- Revocation holds at once, with the child still in the cache. -/
 theorem revocation_holds_at_once (gateway : Gateway) (path : String) (policy : Policy)
     (reference : Option String) (tool reachedTool : String) (started : Bool)
@@ -298,6 +302,7 @@ theorem refused_changes_nothing (gateway : Gateway) (reference : Option String) 
   · cases refused
   · rfl
 
+/- specuuid: s_br9wgywd covers: el_h6np2qvy -/
 /-- Nothing starts or closes except on a call that reached a child. -/
 theorem refused_starts_nothing (gateway : Gateway) (reference : Option String) (tool path
     reachedTool : String) (why : Resolution) (started : Bool) (closed : Option String)
@@ -307,6 +312,7 @@ theorem refused_starts_nothing (gateway : Gateway) (reference : Option String) (
   intro impossible
   cases impossible
 
+/- specuuid: s_h0c5j21y covers: el_h6np2qvy -/
 theorem ambiguous_never_reaches (gateway : Gateway) (reference tool : String)
     (several : 2 ≤ (candidates gateway.policy reference).length) :
     (stepCall gateway (some reference) tool).1 = gateway ∧
@@ -355,6 +361,7 @@ theorem step_within_limit (gateway : Gateway) (next : Step)
     · exact useChild_within_limit _ _ within
     · exact within
 
+/- specuuid: s_g4w39aqh covers: el_h6np2qvy -/
 theorem cache_within_limit (gateway : Gateway) (steps : List Step)
     (within : gateway.cache.length ≤ cacheLimit) :
     (run gateway steps).1.cache.length ≤ cacheLimit := by

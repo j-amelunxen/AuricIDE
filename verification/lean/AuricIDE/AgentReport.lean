@@ -78,6 +78,7 @@ theorem search_some (lines scan : List Line) (r : Report) (found : search lines 
     · simp [search, ends] at found
       exact tail found
 
+/- specuuid: s_z2rshctm covers: el_r3sk9wv0,el_8822ww84 -/
 /-- A report comes from a line in the transcript that ended a turn and has text. -/
 theorem report_has_a_finished_turn (lines : List Line) (r : Report)
     (found : latest lines = some r) :
@@ -107,6 +108,7 @@ theorem no_report_iff_no_finished_text (lines : List Line) :
   rw [search_none]
   simp only [List.mem_reverse]
 
+/- specuuid: s_qrw4f3ye covers: el_r3sk9wv0,el_8822ww84 -/
 /-- A transcript with no turn over yet has no report, whatever it says. -/
 theorem running_turn_is_no_report (lines : List Line)
     (going : ∀ l ∈ lines, l.endsTurn = false) : latest lines = none := by
@@ -133,6 +135,7 @@ theorem search_append_fresh (lines more scan : List Line)
     have tail := ih (fun x mem => fresh x (List.mem_cons_of_mem _ mem))
     simp only [search, candidate, here, tail]
 
+/- specuuid: s_05b6aq0g covers: el_r3sk9wv0,el_8822ww84 -/
 /-- Lines of a later turn still going leave the report as it was. -/
 theorem turn_still_going_changes_nothing (lines more : List Line)
     (going : ∀ m ∈ more, m.endsTurn = false)
@@ -154,6 +157,7 @@ theorem turn_still_going_changes_nothing (lines more : List Line)
   exact search_append_fresh lines more lines.reverse
     (fun l mem m mem' => fresh l (List.mem_reverse.mp mem) m mem')
 
+/- specuuid: s_srwjpw0z covers: el_r3sk9wv0,el_8822ww84 -/
 /-- A finished turn with text is the report from then on. -/
 theorem newest_finished_turn_wins (lines : List Line) (l : Line)
     (ends : l.endsTurn = true) (text : parts (lines ++ [l]) l.id ≠ []) :
@@ -180,9 +184,11 @@ def finishedReport (source : RunSource) (answer : Option String) : Option Report
   | .cliResult, some text => if blank text then none else some .cliResult
   | .transcript, some text => if blank text then none else some .claudeTranscript
 
+/- specuuid: s_nbgrv6yr covers: el_r3sk9wv0,el_8822ww84 -/
 theorem console_tail_is_no_report (answer : Option String) :
     finishedReport .consoleTail answer = none := rfl
 
+/- specuuid: s_yn4t9yx8 covers: el_r3sk9wv0,el_8822ww84 -/
 theorem available_never_from_console (source : RunSource) (answer : Option String)
     (out : ReportSource) (found : finishedReport source answer = some out) :
     source ≠ .consoleTail := by

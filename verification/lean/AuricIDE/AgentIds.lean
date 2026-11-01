@@ -118,6 +118,7 @@ theorem inv_run (steps : List Step) : ∀ w, Inv w → Inv (run w steps) := by
   | nil => intro w h; exact h
   | cons s rest ih => intro w h; exact ih _ (inv_step w s h)
 
+/- specuuid: s_78snxhkr covers: el_85cp2q7y,el_r3sk9wv0 -/
 /-- Requirement 2: after any trace of allocations, restarts and crashes after
 the state was saved, all ids handed out are pairwise distinct. -/
 theorem all_ids_distinct (steps : List Step) : (run World.init steps).handed.Nodup :=
@@ -265,6 +266,7 @@ theorem split_unique : ∀ (a c b d : List Nat), (∀ x ∈ a, x < 10) → (∀ 
 theorem ten_not_in_digits (n : Nat) : 10 ∉ digits n := by
   intro h; have := digits_lt_ten n 10 h; omega
 
+/- specuuid: s_dhqva813 covers: el_85cp2q7y,el_r3sk9wv0 -/
 /-- Requirement 3 (full): different ids never render to the same text. -/
 theorem render_injective {a b : AgentId} (h : tokens a = tokens b) : a = b := by
   cases a with

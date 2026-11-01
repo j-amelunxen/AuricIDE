@@ -1,0 +1,80 @@
+[
+  {
+    "uuid": "tg_b6kwezny",
+    "name": "A worker asks its supervisor",
+    "description": "An agent a supervisor started raises a question and keeps working; the supervisor hears it once, by cursor, and nobody else can raise it or read it.",
+    "tests": [
+      "t_h1vr3b1z",
+      "t_1amrxzce",
+      "t_jctg4dmm",
+      "t_h5ba3djh",
+      "t_trfhvqbw",
+      "t_x5e8n6ve",
+      "t_3nn2zqj4",
+      "t_pdcmgcnp",
+      "t_c62c9s6s",
+      "t_se76zmpn",
+      "t_3307cj2q",
+      "t_aenxxkqr",
+      "t_hdscgrah",
+      "t_p7afd6n7",
+      "t_ng936qe6",
+      "t_swgam2t0",
+      "t_nz7ggnqv",
+      "t_kjrpq4ct",
+      "s_62ndqc2j",
+      "s_wbphwab0",
+      "s_p2tm5gd9",
+      "s_knh10vdg",
+      "s_f1ybb9fm",
+      "s_k5cprhtm",
+      "s_tkqpx44d",
+      "s_3cgh3mye",
+      "s_78snxhkr",
+      "s_dhqva813"
+    ]
+  },
+  {
+    "uuid": "tg_q2af820g",
+    "name": "A supervisor reads what a child concluded",
+    "description": "A running or finished child's last complete turn comes back as clean text, from its own transcript and never from its console, and only to the supervisor that started it or an outside client.",
+    "tests": [
+      "t_66317f4k",
+      "t_mjm8ac5x",
+      "t_26q99ekn",
+      "t_cry3n1cp",
+      "t_0ck4jtbj",
+      "t_53wp80fa",
+      "t_sktdaew4",
+      "t_411exg5x",
+      "s_z2rshctm",
+      "s_qrw4f3ye",
+      "s_05b6aq0g",
+      "s_srwjpw0z",
+      "s_nbgrv6yr",
+      "s_yn4t9yx8"
+    ]
+  },
+  {
+    "uuid": "tg_5b66dssq",
+    "name": "A supervisor works in a project",
+    "description": "PM tools run in one permitted project through one gateway. The policy in force decides on every call, before any cached child is looked at.",
+    "tests": [
+      "t_xv685a69",
+      "t_azekgt02",
+      "t_76tsvz5h",
+      "t_eysf9gnp",
+      "t_cy4ehpd7",
+      "t_bzs45gx6",
+      "t_mvkqhjng",
+      "t_s9tz2gge",
+      "s_74e9yrm1",
+      "s_9vmj0fsb",
+      "s_rsbx5ja9",
+      "s_3pqtb1r0",
+      "s_br9wgywd",
+      "s_h0c5j21y",
+      "s_g4w39aqh"
+    ]
+  }
+]

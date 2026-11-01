@@ -36,6 +36,7 @@ export function registerSupervisorTools(
   server.addTool(listProjectsTool(call));
   server.addTool(spawnAgentTool(call));
 
+  // elementuuid=el_sf1eca3c kind=mcp security=docs/security/supervisor-tools.md validation=zod:noParams+agentSummary
   server.addTool({
     name: 'list_my_agents',
     description:
@@ -107,11 +108,7 @@ const pmCallParams = z.object({
  * be used.
  */
 function registerPmGatewayTools(server: FastMCP, gateway: PmGateway): void {
-  const project = z
-    .string()
-    .describe('Its absolute path or folder name; an older note may say auric-pm-<name>');
-  const tool = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'a tool name is letters, digits, _ and -');
-
+  // elementuuid=el_d93xrgtp kind=mcp security=docs/security/supervisor-tools.md validation=zod:pmToolsParams+pmTargetParams
   server.addTool({
     name: 'pm_tools',
     description:
@@ -124,6 +121,7 @@ function registerPmGatewayTools(server: FastMCP, gateway: PmGateway): void {
       gateway.describe(args.project, args.tool),
   });
 
+  // elementuuid=el_h6np2qvy kind=mcp security=docs/security/supervisor-tools.md validation=zod:pmCallParams+pmTargetParams
   server.addTool({
     name: 'pm_call',
     description:
