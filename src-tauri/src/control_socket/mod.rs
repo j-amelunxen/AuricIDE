@@ -769,11 +769,16 @@ impl Dispatcher {
         let mut waiting_for_input = false;
         if params.until_input && live.is_some() {
             loop {
-                if !self.questions.since(agent_id, cursor).0.is_empty()
-                    || self
+                // Only a caller that says what it has seen is woken by the new.
+                // Without a cursor the answer still carries everything, but a
+                // client from before the cursors would never wait at all.
+                let new_question = params.since_question.is_some()
+                    && !self.questions.since(agent_id, cursor).0.is_empty();
+                let new_report = params.since_report.is_some()
+                    && self
                         .pending_report(agent_id, params.since_report.as_deref())
-                        .new
-                {
+                        .new;
+                if new_question || new_report {
                     break;
                 }
                 if watch_input && self.input_awaited(agent_id, params.since_offset) {
@@ -1175,6 +1180,7 @@ fn finished_report(result: RunResult) -> ReportLookup {
     let source = match result.source {
         RunResultSource::CliResult => ReportSource::CliResult,
         RunResultSource::Transcript => ReportSource::ClaudeTranscript,
+        RunResultSource::CodexRollout => ReportSource::CodexRollout,
         RunResultSource::ConsoleTail => {
             return ReportLookup::Missing(ReportMissing::ConsoleOnly);
         }
@@ -1489,8 +1495,8 @@ pub fn control_ready(pending: tauri::State<'_, PendingRequestsState>) {
 pub(crate) mod tests;
 
 #[cfg(test)]
-mod supervisor_attack_tests;
-#[cfg(test)]
 mod mcp_e2e_tests;
 #[cfg(test)]
 mod socket_tests;
+#[cfg(test)]
+mod supervisor_attack_tests;

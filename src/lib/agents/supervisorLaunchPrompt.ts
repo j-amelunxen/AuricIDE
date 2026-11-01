@@ -281,7 +281,7 @@ const WAIT_RULES =
   'otherwise set a new timer and end your turn. Never loop on blocking awaits or foreground ' +
   'sleep. For interactive agents also pass `untilInput: true`, `sinceOffset` set to the ' +
   'outputBytes you last read, and `sinceQuestion` and `sinceReport` set to the questionCursor ' +
-  'and reportId you last got.';
+  'and reportId you last got (0 and "none" at first).';
 
 /**
  * A supervisor answers its children's questions so the human does not have to

@@ -173,7 +173,9 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
       'your cursor did not move. Pending answers name the newest complete report: reportId, ' +
       'reportBytes, and newReport: true when it differs from sinceReport. Read it with ' +
       'read_agent_report; it may end with questions for you. With untilInput: true it also ' +
-      'returns, still running, at once on a new question or a new report, and ' +
+      'returns, still running, at once on a question after sinceQuestion (pass 0 at first) or ' +
+      'a report other than sinceReport (pass "none" at first); without those cursors it ' +
+      'waits as usual and the answer still carries them. It also returns ' +
       'still running, as soon as an interactive agent waits on an answer — a prompt or ' +
       `permission menu in its console, or ${CONTROL_LIMITS.inputQuietSeconds} s of silence ` +
       'after a turn — with waitingForInput: true. Read its output, then answer or hand the ' +

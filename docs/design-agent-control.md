@@ -637,12 +637,12 @@ Waits up to `waitSeconds` for the agent to finish, then answers:
 ```
 
 `RunResult` = `{ agentId, status: "idle" | "error", exitCode: number | null,
-answer: string | null, isError, source: "cli_result" | "transcript" | "console_tail",
+answer: string | null, isError, source: "cli_result" | "transcript" | "codex_rollout" | "console_tail",
 finishedAt, costUsd: number | null }`.
 
 - `answer` is the CLI's own result text when it reports one (headless Claude,
   `source: "cli_result"`), else the last finished turn in its transcript
-  (`source: "transcript"`; not for a failed run, whose error is on the screen),
+  (`source: "transcript"` or `"codex_rollout"`; not for a failed or killed run, whose ending is on the screen),
   else the last 8 KiB of the cleaned console (`source: "console_tail"`).
   `costUsd` is `null` where the CLI states no cost.
 - `waitSeconds: 0` only looks. Rust keeps the result of the last **200**
@@ -661,9 +661,11 @@ finishedAt, costUsd: number | null }`.
   the `outputBytes` it last read is not woken twice for the same question. A
   headless agent never wakes it. The silence check counts from the start of
   the call, so a console that was already quiet takes those 20 s to report.
-- With `untilInput: true` a new question (headless agents too) and a new report
-  also end the wait, without `waitingForInput`. See "Questions" and
-  "`read_report`".
+- With `untilInput: true` a question after `sinceQuestion` (headless agents too) and
+  a report other than `sinceReport` also end the wait, without `waitingForInput`. Only
+  a caller that passes that cursor is woken (0 and `"none"` at first); without it the
+  answer still carries them, but the wait goes on, as for a client from before them.
+  See "Questions" and "`read_report`".
 
 ### `read_report`
 

@@ -93,8 +93,14 @@ struct Inner {
 struct ReportCache {
     path: PathBuf,
     length: u64,
+    modified: Option<std::time::SystemTime>,
+    read_at: Instant,
     report: Option<AgentReport>,
 }
+
+/// While an agent works its transcript grows with every line, and a watcher looks
+/// twice a second. A report may be this old rather than parsing megabytes each time.
+const REPORT_READ_EVERY: Duration = Duration::from_secs(2);
 
 /// Cheap to clone: the output pump, the exit hook and the kill path all hold one.
 #[derive(Clone)]
@@ -346,10 +352,14 @@ impl UsageCapture {
         let Some(path) = known.or_else(|| self.own_transcript(format, home)) else {
             return ReportLookup::Missing(ReportMissing::TranscriptMissing);
         };
-        let Ok(length) = std::fs::metadata(&path).map(|meta| meta.len()) else {
+        let Ok(meta) = std::fs::metadata(&path) else {
             return ReportLookup::Missing(ReportMissing::TranscriptMissing);
         };
-        let unchanged = cache.as_ref().is_some_and(|cached| cached.length == length);
+        let (length, modified) = (meta.len(), meta.modified().ok());
+        let unchanged = cache.as_ref().is_some_and(|cached| {
+            (cached.length == length && cached.modified == modified)
+                || cached.read_at.elapsed() < REPORT_READ_EVERY
+        });
         if !unchanged {
             let Ok(text) = read_tail(&path, REPORT_SCAN_BYTES) else {
                 return ReportLookup::Missing(ReportMissing::TranscriptMissing);
@@ -361,6 +371,8 @@ impl UsageCapture {
             *cache = Some(ReportCache {
                 path,
                 length,
+                modified,
+                read_at: Instant::now(),
                 report: latest_report(&lines),
             });
         }

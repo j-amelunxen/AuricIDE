@@ -97,14 +97,15 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
 /// supervisor as a tool result it reads as data, never as typed input.
 fn question_notice(owed: &crate::agents::questions::Unheard) -> String {
     let what = if owed.count == 1 {
-        "1 question".to_string()
+        "a new question".to_string()
     } else {
-        format!("{} questions", owed.count)
+        format!("{} new questions", owed.count)
     };
     format!(
         "AuricIDE: agent {} raised {what} for you. Read them with await_agent_result \
-         {{ agentId: \"{}\", waitSeconds: 0, sinceQuestion: {} }}.",
-        owed.agent_id, owed.agent_id, owed.cursor
+         {{ agentId: \"{}\", waitSeconds: 0, sinceQuestion: <your last questionCursor for it, \
+         or 0> }}.",
+        owed.agent_id, owed.agent_id
     )
 }
 

@@ -388,8 +388,18 @@ describe('the wire', () => {
   }, 20_000);
 
   it('gives up on a server that never answers, and ends it', async () => {
-    const child = scriptChild(`process.stdin.resume();`, () => {}, 200);
+    let gone = false;
+    const child = scriptChild(
+      `process.stdin.resume();`,
+      () => {
+        gone = true;
+      },
+      200
+    );
     await expect(child.request('tools/list', {})).rejects.toThrow('pm_timeout');
+    // Off the gateway's books at once: the next call gets a fresh child, not this one.
+    expect(gone).toBe(true);
+    await expect(child.request('tools/list', {})).rejects.toThrow(/pm_timeout|pm_child_gone/);
     await until(() => isGone(child.pid!));
   }, 20_000);
 

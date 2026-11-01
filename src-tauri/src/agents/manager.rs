@@ -1378,11 +1378,15 @@ pub(super) fn adopt_into<'a>(
     Some(adoption)
 }
 
-/// The text of the run's last finished turn, where its transcript can be read.
-fn transcript_report_of(usage: Option<&UsageCapture>) -> Option<String> {
+/// The run's last finished turn and where it was read, where it can be.
+fn transcript_report_of(
+    usage: Option<&UsageCapture>,
+) -> Option<(String, crate::agent_usage::report::ReportSource)> {
     let home = dirs::home_dir()?;
     match usage?.latest_report(&home) {
-        crate::agent_usage::report::ReportLookup::Found { report, .. } => Some(report.text),
+        crate::agent_usage::report::ReportLookup::Found { report, source } => {
+            Some((report.text, source))
+        }
         crate::agent_usage::report::ReportLookup::Missing(_) => None,
     }
 }
@@ -1672,8 +1676,7 @@ pub async fn kill_agent_impl(
                 None,
                 console_tail,
                 now_ms(),
-            )
-            .with_transcript_report(|| transcript_report_of(process.usage.as_ref())),
+            ),
             process.info.clone(),
         );
     }

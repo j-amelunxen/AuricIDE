@@ -154,6 +154,9 @@ if (isMainModule) {
       const db = openDatabase(mode.databasePath);
       const server = createMcpServer(db, mode.projectRoot);
       await server.start({ transportType: 'stdio' });
+      // Its client is gone. The database handle must not keep this process alive:
+      // a supervisor's gateway relies on this when it is killed outright.
+      process.stdin.once('end', () => process.exit(0));
     })
     .catch((error) => {
       console.error(`[auric-mcp] ${error instanceof Error ? error.message : String(error)}`);

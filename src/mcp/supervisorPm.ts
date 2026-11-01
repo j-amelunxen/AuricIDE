@@ -274,6 +274,7 @@ export class PmStdioChild implements PmChild {
         this.pending.delete(id);
         // Its answer can no longer reach anyone; a fresh child serves the next call.
         this.close();
+        this.markGone('stopped answering');
         reject(
           new UserError(
             `pm_timeout: the server of ${this.path} did not answer ${method} in ` +

@@ -1319,7 +1319,7 @@
   },
   "roles": ["worker", "supervisor"],
   "runSources": ["ui", "conductor", "schedule", "mcp", "supervisor", "other"],
-  "runResultSources": ["cli_result", "transcript", "console_tail"],
+  "runResultSources": ["cli_result", "transcript", "codex_rollout", "console_tail"],
   "reportSources": ["cli_result", "claude_transcript", "codex_rollout"],
   "reportMissingReasons": [
     "provider_unsupported",

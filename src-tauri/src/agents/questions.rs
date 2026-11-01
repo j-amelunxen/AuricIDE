@@ -55,13 +55,13 @@ struct AgentLog {
     announced: u64,
 }
 
-/// A notice owed to a supervisor: `agent_id` has `count` questions it has not
-/// heard of, and `cursor` is what to read them with.
+/// A notice owed to a supervisor: `agent_id` has `count` questions nothing has
+/// told it about yet. No cursor: only the reader knows what it has really read,
+/// because an answer can get lost and a notice can go unread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unheard {
     pub agent_id: String,
     pub count: u64,
-    pub cursor: u64,
     pub top: u64,
 }
 
@@ -157,7 +157,6 @@ impl QuestionLog {
                 (top > heard).then(|| Unheard {
                     agent_id: agent_id.clone(),
                     count: top - heard,
-                    cursor: heard,
                     top,
                 })
             })
@@ -285,7 +284,7 @@ mod tests {
         log.raise("a", asked("two")).unwrap();
         let owed = log.unheard();
         assert_eq!(owed[0].count, 2);
-        assert_eq!((owed[0].cursor, owed[0].top), (0, 2));
+        assert_eq!(owed[0].top, 2);
         log.mark_announced("a", 2);
         assert!(log.unheard().is_empty());
 
@@ -293,7 +292,7 @@ mod tests {
         log.deliver("a", 0);
         assert!(log.unheard().is_empty(), "the await carried it");
         log.raise("a", asked("four")).unwrap();
-        assert_eq!(log.unheard()[0].cursor, 3);
+        assert_eq!(log.unheard()[0].count, 1);
         log.forget("a");
         assert!(log.unheard().is_empty());
         assert_eq!(log.count("a"), 0);

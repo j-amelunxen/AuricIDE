@@ -13,6 +13,7 @@
 
 use super::types::{AgentInfo, AgentRole, AgentStatus};
 use crate::agent_usage::claude::CliResult;
+use crate::agent_usage::report::ReportSource;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard};
@@ -29,8 +30,10 @@ pub const CONSOLE_TAIL_ANSWER_BYTES: u64 = 8 * 1024;
 pub enum RunResultSource {
     /// The CLI's own result object (headless Claude).
     CliResult,
-    /// The last finished turn in the CLI's transcript (`agent_usage/report.rs`).
+    /// The last finished turn in Claude Code's transcript (`agent_usage/report.rs`).
     Transcript,
+    /// The last finished turn in Codex's rollout.
+    CodexRollout,
     /// The end of the cleaned console.
     ConsoleTail,
 }
@@ -89,12 +92,19 @@ impl RunResult {
 
     /// A run that ended well says what its transcript's last finished turn
     /// said, instead of the screen's last 8 KiB. A failed run keeps the console:
-    /// the error is on the screen, not in the turn before it.
-    pub fn with_transcript_report(mut self, report: impl FnOnce() -> Option<String>) -> Self {
+    /// the error is on the screen, not in the turn before it. Neither does a
+    /// killed run ask: its last finished turn is not how it ended.
+    pub fn with_transcript_report(
+        mut self,
+        report: impl FnOnce() -> Option<(String, ReportSource)>,
+    ) -> Self {
         if self.source == RunResultSource::ConsoleTail && !self.is_error {
-            if let Some(text) = report() {
+            if let Some((text, source)) = report() {
                 self.answer = Some(text);
-                self.source = RunResultSource::Transcript;
+                self.source = match source {
+                    ReportSource::CodexRollout => RunResultSource::CodexRollout,
+                    _ => RunResultSource::Transcript,
+                };
             }
         }
         self
@@ -365,6 +375,7 @@ mod tests {
         let sources: Vec<serde_json::Value> = [
             RunResultSource::CliResult,
             RunResultSource::Transcript,
+            RunResultSource::CodexRollout,
             RunResultSource::ConsoleTail,
         ]
         .iter()
@@ -420,9 +431,15 @@ mod tests {
 
     #[test]
     fn a_clean_finish_prefers_the_transcript_and_a_failure_keeps_its_console() {
-        let clean = result("a").with_transcript_report(|| Some("The report.".into()));
+        let clean = result("a").with_transcript_report(|| {
+            Some(("The report.".into(), ReportSource::ClaudeTranscript))
+        });
         assert_eq!(clean.source, RunResultSource::Transcript);
         assert_eq!(clean.answer.as_deref(), Some("The report."));
+
+        let rollout = result("a")
+            .with_transcript_report(|| Some(("The report.".into(), ReportSource::CodexRollout)));
+        assert_eq!(rollout.source, RunResultSource::CodexRollout);
 
         let none = result("a").with_transcript_report(|| None);
         assert_eq!(none.source, RunResultSource::ConsoleTail);
