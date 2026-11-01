@@ -20,6 +20,7 @@ const ORACLES = [
     corpus: 'verification/contracts/provider-policy-v1.jsonl',
   },
   { executable: 'launch-gate-oracle', corpus: 'verification/contracts/launch-gate-v1.jsonl' },
+  { executable: 'agent-ids-oracle', corpus: 'verification/contracts/agent-ids-v1.jsonl' },
 ];
 const EXEC_OPTIONS = { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 };
 /** Lean's standard axioms; anything else (e.g. `sorryAx`) fails the check. */
@@ -50,6 +51,23 @@ export const AXIOM_CHECKS = [
       'spent_budget_no_start',
       'budget_spent_for_every_interleaving',
       'budget_stops_root',
+    ],
+  },
+  {
+    module: 'AuricIDE.AgentIds',
+    namespace: 'AuricIDE.AgentIds',
+    theorems: [
+      'next_increases',
+      'backwards_clock_keeps_day',
+      'inv_step',
+      'inv_run',
+      'all_ids_distinct',
+      'durable_monotone',
+      'dated_never_legacy',
+      'every_id_is_reserved',
+      'digits_injective',
+      'split_unique',
+      'render_injective',
     ],
   },
 ];
@@ -167,7 +185,7 @@ async function main() {
   const { corpusPaths, axioms } = await verifyLeanCorpus();
   const checked = Object.values(axioms).reduce((sum, found) => sum + Object.keys(found).length, 0);
   process.stdout.write(
-    `Lean MCP lifecycle, session-isolation and launch-gate proofs compiled; ${checked} requirement theorems use standard axioms only; oracles match ${corpusPaths.join(', ')} byte-for-byte.\n`
+    `Lean MCP lifecycle, session-isolation, launch-gate and agent-id proofs compiled; ${checked} requirement theorems use standard axioms only; oracles match ${corpusPaths.join(', ')} byte-for-byte.\n`
   );
 }
 

@@ -1,6 +1,6 @@
 name = "auric-verification"
 version = "0.1.0"
-defaultTargets = ["provider-policy-oracle", "launch-gate-oracle"]
+defaultTargets = ["provider-policy-oracle", "launch-gate-oracle", "agent-ids-oracle", "pm-scope-oracle"]
 
 [[lean_lib]]
 name = "AuricIDE"
@@ -12,3 +12,11 @@ root = "AuricIDE.ProviderPolicyOracle"
 [[lean_exe]]
 name = "launch-gate-oracle"
 root = "AuricIDE.LaunchGateOracle"
+
+[[lean_exe]]
+name = "agent-ids-oracle"
+root = "AuricIDE.AgentIdsOracle"
+
+[[lean_exe]]
+name = "pm-scope-oracle"
+root = "AuricIDE.PmScopeOracle"

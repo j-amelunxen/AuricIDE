@@ -43,6 +43,20 @@ connection and ancestry read from a real `project.db`. JSON/IPC adapters, the
 spawn, the working-directory rule, retries and the UI acknowledgement stay
 test obligations.
 
+`AuricIDE/AgentIds.lean` models the agent id allocator
+(`src-tauri/src/agents/ids.rs`, ids `agent-<yyMMdd>-<seq>`). Proved: the pair
+`(day, seq)` strictly increases for every clock value, a clock set back
+included; over every trace of allocations, restarts and crashes after the state
+was saved, all ids handed out are pairwise distinct; a dated id never renders
+like a legacy `agent-<n>` id, and the rendering is injective (digits plus the
+hyphen as a separator token). `AgentIdsOracle.lean` emits 48 traces (clock
+jumps, restarts, crashes) with the expected ids into
+`../contracts/agent-ids-v1.jsonl`; a Rust test in
+`src-tauri/src/agents/ids/tests.rs` replays them against the real rule,
+renderer and state file. Outside the model, tested in Rust only: the file lock
+shared by the dev and the installed build, fsync and rename, the state file's
+JSON, reseeding of a damaged file, and the `u64` saturation of `seq`.
+
 The claim boundary for the provider policy is deliberate:
 
 - Lean proves deny precedence, empty-allow openness, blank-id rejection,

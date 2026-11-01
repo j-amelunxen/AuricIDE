@@ -17,14 +17,18 @@ const launchGateCorpusPath = fileURLToPath(
   new URL('../verification/contracts/launch-gate-v1.jsonl', import.meta.url)
 );
 
+const agentIdsCorpusPath = fileURLToPath(
+  new URL('../verification/contracts/agent-ids-v1.jsonl', import.meta.url)
+);
+
 const [launchGateAxioms] = AXIOM_CHECKS;
 /** What `#print axioms` prints when every checked theorem is clean. */
-const standardAxiomOutput = launchGateAxioms.theorems
-  .map(
+const standardAxiomOutput = AXIOM_CHECKS.flatMap((check) =>
+  check.theorems.map(
     (theorem) =>
-      `'${launchGateAxioms.namespace}.${theorem}' depends on axioms: [propext, Classical.choice, Quot.sound]`
+      `'${check.namespace}.${theorem}' depends on axioms: [propext, Classical.choice, Quot.sound]`
   )
-  .join('\n');
+).join('\n');
 
 test('accepts byte-identical Lean oracle output', async () => {
   const checkedInCorpus = await readFile(corpusPath, 'utf8');
@@ -35,6 +39,7 @@ test('accepts byte-identical Lean oracle output', async () => {
 test('regenerates every oracle corpus before comparing it byte-for-byte', async () => {
   const checkedInCorpus = await readFile(corpusPath, 'utf8');
   const launchGateCorpus = await readFile(launchGateCorpusPath, 'utf8');
+  const agentIdsCorpus = await readFile(agentIdsCorpusPath, 'utf8');
   const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
   const calls = [];
 
@@ -50,7 +55,9 @@ test('regenerates every oracle corpus before comparing it byte-for-byte', async 
             ? ''
             : target === 'launch-gate-oracle'
               ? launchGateCorpus
-              : checkedInCorpus;
+              : target === 'agent-ids-oracle'
+                ? agentIdsCorpus
+                : checkedInCorpus;
       return { stdout, stderr: '' };
     },
   });
@@ -60,12 +67,13 @@ test('regenerates every oracle corpus before comparing it byte-for-byte', async 
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
   };
-  const [probeCall] = calls.splice(4, 1);
+  const [probeCall] = calls.splice(5, 2);
   assert.deepEqual(calls, [
     ['lake', ['build', 'AuricIDE.McpLifecycle'], options],
     ['lake', ['build', 'AuricIDE.McpSessionIsolation'], options],
     ['lake', ['exe', 'provider-policy-oracle'], options],
     ['lake', ['exe', 'launch-gate-oracle'], options],
+    ['lake', ['exe', 'agent-ids-oracle'], options],
   ]);
   assert.deepEqual(probeCall[1].slice(0, 2), ['env', 'lean']);
   assert.match(probeCall[1][2], /AuricIDE_LaunchGate_axioms\.lean$/);
@@ -103,7 +111,7 @@ test('rejects a one-byte oracle divergence', () => {
 
 test('accepts requirement theorems on standard axioms only', () => {
   const found = assertStandardAxioms(standardAxiomOutput, launchGateAxioms);
-  assert.equal(Object.keys(found).length, launchGateAxioms.theorems.length);
+  for (const theorem of launchGateAxioms.theorems) assert.ok(found[theorem], theorem);
   assert.doesNotThrow(() =>
     assertStandardAxioms(
       `${standardAxiomOutput}\n'AuricIDE.LaunchGate.waiting_request_example' does not depend on any axioms`,
