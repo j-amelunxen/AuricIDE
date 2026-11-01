@@ -57,6 +57,19 @@ renderer and state file. Outside the model, tested in Rust only: the file lock
 shared by the dev and the installed build, fsync and rename, the state file's
 JSON, reseeding of a damaged file, and the `u64` saturation of `seq`.
 
+`AuricIDE/PmScope.lean` models the PM gateway of a supervisor (`pm_tools`,
+`pm_call`) as a child cache behind the resolver `pm_target`. Proved for every
+trace of policy changes and calls: a call reaches a child only if the project is
+permitted and initialised by the policy in force at that step, even with a child
+cached from earlier; a refused call changes nothing and starts nothing; a name
+that fits two projects never reaches a child; the cache stays within its limit.
+`cache_first_reaches_revoked` shows the wrong order fails, `sole_match_is_reached`
+that refusing everything is not what makes these true. `AuricIDE/PmScopeOracle.lean`
+emits traces into `../contracts/pm-scope-v1.jsonl`; `src-tauri/src/supervisor/pm_target.rs`
+replays the resolver half, `src/mcp/supervisorPm.oracle.test.ts` the cache half. Not
+modelled, with tests of their own: starting and ending processes, JSON-RPC framing,
+the socket, path canonicalisation, the file check behind "initialised", concurrent calls.
+
 The claim boundary for the provider policy is deliberate:
 
 - Lean proves deny precedence, empty-allow openness, blank-id rejection,

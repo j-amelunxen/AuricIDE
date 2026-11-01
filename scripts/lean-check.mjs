@@ -14,13 +14,14 @@ const PROOF_MODELS = ['AuricIDE.McpLifecycle', 'AuricIDE.McpSessionIsolation'];
  * model and its proofs; its output must match the checked-in corpus the
  * TypeScript and Rust differential tests read.
  */
-const ORACLES = [
+export const ORACLES = [
   {
     executable: 'provider-policy-oracle',
     corpus: 'verification/contracts/provider-policy-v1.jsonl',
   },
   { executable: 'launch-gate-oracle', corpus: 'verification/contracts/launch-gate-v1.jsonl' },
   { executable: 'agent-ids-oracle', corpus: 'verification/contracts/agent-ids-v1.jsonl' },
+  { executable: 'pm-scope-oracle', corpus: 'verification/contracts/pm-scope-v1.jsonl' },
 ];
 const EXEC_OPTIONS = { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 };
 /** Lean's standard axioms; anything else (e.g. `sorryAx`) fails the check. */
@@ -68,6 +69,24 @@ export const AXIOM_CHECKS = [
       'digits_injective',
       'split_unique',
       'render_injective',
+    ],
+  },
+  {
+    module: 'AuricIDE.PmScope',
+    namespace: 'AuricIDE.PmScope',
+    theorems: [
+      'resolve_ok_permits',
+      'resolved_name_is_unique',
+      'reached_needs_permit_at_that_step',
+      'revoked_unreachable',
+      'revocation_holds_at_once',
+      'refused_changes_nothing',
+      'refused_starts_nothing',
+      'ambiguous_never_reaches',
+      'cached_child_is_reused',
+      'cache_within_limit',
+      'sole_match_is_reached',
+      'cache_first_reaches_revoked',
     ],
   },
 ];

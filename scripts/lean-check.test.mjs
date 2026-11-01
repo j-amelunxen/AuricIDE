@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import {
   AXIOM_CHECKS,
+  ORACLES,
   assertIdenticalCorpus,
   assertStandardAxioms,
   verifyLeanCorpus,
@@ -13,14 +14,6 @@ import {
 const corpusPath = fileURLToPath(
   new URL('../verification/contracts/provider-policy-v1.jsonl', import.meta.url)
 );
-const launchGateCorpusPath = fileURLToPath(
-  new URL('../verification/contracts/launch-gate-v1.jsonl', import.meta.url)
-);
-
-const agentIdsCorpusPath = fileURLToPath(
-  new URL('../verification/contracts/agent-ids-v1.jsonl', import.meta.url)
-);
-
 const [launchGateAxioms] = AXIOM_CHECKS;
 /** What `#print axioms` prints when every checked theorem is clean. */
 const standardAxiomOutput = AXIOM_CHECKS.flatMap((check) =>
@@ -37,10 +30,15 @@ test('accepts byte-identical Lean oracle output', async () => {
 });
 
 test('regenerates every oracle corpus before comparing it byte-for-byte', async () => {
-  const checkedInCorpus = await readFile(corpusPath, 'utf8');
-  const launchGateCorpus = await readFile(launchGateCorpusPath, 'utf8');
-  const agentIdsCorpus = await readFile(agentIdsCorpusPath, 'utf8');
   const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
+  const corpora = new Map(
+    await Promise.all(
+      ORACLES.map(async ({ executable, corpus }) => [
+        executable,
+        await readFile(`${repositoryRoot}${corpus}`, 'utf8'),
+      ])
+    )
+  );
   const calls = [];
 
   await verifyLeanCorpus({
@@ -49,15 +47,7 @@ test('regenerates every oracle corpus before comparing it byte-for-byte', async 
       calls.push(argumentsList);
       const [, [verb, target]] = argumentsList;
       const stdout =
-        verb === 'env'
-          ? standardAxiomOutput
-          : verb !== 'exe'
-            ? ''
-            : target === 'launch-gate-oracle'
-              ? launchGateCorpus
-              : target === 'agent-ids-oracle'
-                ? agentIdsCorpus
-                : checkedInCorpus;
+        verb === 'env' ? standardAxiomOutput : verb === 'exe' ? corpora.get(target) : '';
       return { stdout, stderr: '' };
     },
   });
@@ -67,16 +57,17 @@ test('regenerates every oracle corpus before comparing it byte-for-byte', async 
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
   };
-  const [probeCall] = calls.splice(5, 2);
-  assert.deepEqual(calls, [
-    ['lake', ['build', 'AuricIDE.McpLifecycle'], options],
-    ['lake', ['build', 'AuricIDE.McpSessionIsolation'], options],
-    ['lake', ['exe', 'provider-policy-oracle'], options],
-    ['lake', ['exe', 'launch-gate-oracle'], options],
-    ['lake', ['exe', 'agent-ids-oracle'], options],
-  ]);
-  assert.deepEqual(probeCall[1].slice(0, 2), ['env', 'lean']);
-  assert.match(probeCall[1][2], /AuricIDE_LaunchGate_axioms\.lean$/);
+  const probes = calls.filter(([, [verb]]) => verb === 'env');
+  assert.deepEqual(
+    calls.filter(([, [verb]]) => verb !== 'env'),
+    [
+      ['lake', ['build', 'AuricIDE.McpLifecycle'], options],
+      ['lake', ['build', 'AuricIDE.McpSessionIsolation'], options],
+      ...ORACLES.map(({ executable }) => ['lake', ['exe', executable], options]),
+    ]
+  );
+  assert.equal(probes.length, AXIOM_CHECKS.length);
+  assert.match(probes[0][1][2], /AuricIDE_LaunchGate_axioms\.lean$/);
 });
 
 test('rejects a launch-gate corpus that no longer matches the model', async () => {
