@@ -316,15 +316,7 @@
       "label": "better-sqlite3"
     }
   ],
-  "tour": [
-    "server",
-    "cli",
-    "toolsPm",
-    "toolsGoals",
-    "stationEvidence",
-    "db",
-    "controlClient"
-  ],
+  "tour": ["server", "cli", "toolsPm", "toolsGoals", "stationEvidence", "db", "controlClient"],
   "annotations": [
     {
       "id": "toolFiles",
