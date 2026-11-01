@@ -89,7 +89,6 @@ export function registerSupervisorTools(
   registerLinkPolicyTools(server, call);
 }
 
-/**
 const pmProject = z
   .string()
   .describe('Its absolute path or folder name; an older note may say auric-pm-<name>');
@@ -103,6 +102,7 @@ const pmCallParams = z.object({
   arguments: z.record(z.string(), z.unknown()).optional(),
 });
 
+/**
  * The PM tools of its projects, one door instead of a server per project
  * (`src/mcp/supervisorPm.ts`). Rust decides on every call whether the project may
  * be used.
