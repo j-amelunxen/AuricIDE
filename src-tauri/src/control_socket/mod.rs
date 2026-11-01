@@ -1487,3 +1487,7 @@ pub(crate) mod tests;
 
 #[cfg(test)]
 mod supervisor_attack_tests;
+#[cfg(test)]
+mod mcp_e2e_tests;
+#[cfg(test)]
+mod socket_tests;

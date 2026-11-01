@@ -584,6 +584,40 @@ mod socket {
         socket.send(Message::text(value.to_string())).unwrap();
     }
 
+    // testuuid: t_p7afd6n7 covers: el_85cp2q7y categories: negative level: integration
+    #[test]
+    fn the_link_refuses_a_worker_the_control_socket_would_let_ask() {
+        for (id, role) in [
+            ("agent-2", AgentRole::Worker),
+            ("agent-1", AgentRole::Supervisor),
+        ] {
+            let h = harness(fleet());
+            // This test process is the agent: the kernel names it, nothing it sends does.
+            h.backend
+                .agent_pids
+                .lock()
+                .unwrap()
+                .insert(std::process::id(), (id.to_string(), role));
+            let dir = tempfile::tempdir().unwrap();
+            let path = serve_in(dir.path(), h.link.clone());
+            let mut socket = connect(&path, "ws://localhost/v1").unwrap();
+            send_json(
+                &mut socket,
+                json!({ "v": 1, "id": "q", "method": "session.hello" }),
+            );
+            let refusal = next(&mut socket);
+            assert_eq!(refusal["error"]["code"], "forbidden_agent_caller", "{id}");
+            let closed = loop {
+                match socket.read() {
+                    Ok(Message::Close(frame)) => break frame,
+                    Ok(_) => continue,
+                    Err(error) => panic!("no close frame: {error}"),
+                }
+            };
+            assert_eq!(closed.unwrap().code, CloseCode::Policy);
+        }
+    }
+
     #[test]
     fn hello_subscribe_and_live_output_over_the_socket() {
         let h = harness(fleet());
