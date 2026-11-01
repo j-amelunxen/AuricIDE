@@ -20,3 +20,11 @@ root = "AuricIDE.AgentIdsOracle"
 [[lean_exe]]
 name = "pm-scope-oracle"
 root = "AuricIDE.PmScopeOracle"
+
+[[lean_exe]]
+name = "agent-questions-oracle"
+root = "AuricIDE.AgentQuestionsOracle"
+
+[[lean_exe]]
+name = "agent-report-oracle"
+root = "AuricIDE.AgentReportOracle"

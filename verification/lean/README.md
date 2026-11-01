@@ -70,6 +70,25 @@ replays the resolver half, `src/mcp/supervisorPm.oracle.test.ts` the cache half.
 modelled, with tests of their own: starting and ending processes, JSON-RPC framing,
 the socket, path canonicalisation, the file check behind "initialised", concurrent calls.
 
+`AuricIDE/AgentQuestions.lean` models the questions an agent raises for its
+supervisor (`agents/questions.rs`, `await_result`'s `sinceQuestion`). Over every
+trace of raises, reads, reads whose answer got lost and notices: a reader holds
+exactly the log up to its cursor, so each question arrives once and in order, one
+more read leaves it with all of them, a lost answer loses nothing, a full log
+refuses and keeps what it has, and there are never more notices than questions.
+`agent-questions-v1.jsonl` replays 1032 traces against the real `QuestionLog`. The
+identity of the asker, text limits, JSON and the typing of a notice stay tests.
+
+`AuricIDE/AgentReport.lean` models how a report is picked (`agent_usage/report.rs`,
+`finished_report`). A report only comes from a line that ended its turn and has
+text; no such line means none; the newest finished turn wins and a later turn still
+going does not replace it; a console tail is never a report; a failed run keeps its
+console. `agent-report-v1.jsonl` replays 647 vectors against the real functions.
+Which line of a real transcript means what is not in the model: the ignored Rust
+tests `reads_this_machines_transcripts` and
+`live_claude_tui_has_a_clean_report_while_a_background_task_runs` check that against
+real transcripts and the real CLI.
+
 The claim boundary for the provider policy is deliberate:
 
 - Lean proves deny precedence, empty-allow openness, blank-id rejection,

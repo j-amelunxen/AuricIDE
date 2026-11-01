@@ -20,8 +20,13 @@ export const ORACLES = [
     corpus: 'verification/contracts/provider-policy-v1.jsonl',
   },
   { executable: 'launch-gate-oracle', corpus: 'verification/contracts/launch-gate-v1.jsonl' },
-  { executable: 'agent-ids-oracle', corpus: 'verification/contracts/agent-ids-v1.jsonl' },
   { executable: 'pm-scope-oracle', corpus: 'verification/contracts/pm-scope-v1.jsonl' },
+  {
+    executable: 'agent-questions-oracle',
+    corpus: 'verification/contracts/agent-questions-v1.jsonl',
+  },
+  { executable: 'agent-report-oracle', corpus: 'verification/contracts/agent-report-v1.jsonl' },
+  { executable: 'agent-ids-oracle', corpus: 'verification/contracts/agent-ids-v1.jsonl' },
 ];
 const EXEC_OPTIONS = { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 };
 /** Lean's standard axioms; anything else (e.g. `sorryAx`) fails the check. */
@@ -69,6 +74,37 @@ export const AXIOM_CHECKS = [
       'digits_injective',
       'split_unique',
       'render_injective',
+    ],
+  },
+  {
+    module: 'AuricIDE.AgentQuestions',
+    namespace: 'AuricIDE.AgentQuestions',
+    theorems: [
+      'refused_keeps_the_log',
+      'accepted_gets_the_next_seq',
+      'log_only_grows',
+      'received_is_prefix',
+      'read_after_any_trace_has_everything',
+      'nothing_twice',
+      'lost_answer_changes_nothing_for_the_reader',
+      'unheard_question_is_owed',
+      'notice_clears_what_is_owed',
+      'notices_at_most_questions',
+    ],
+  },
+  {
+    module: 'AuricIDE.AgentReport',
+    namespace: 'AuricIDE.AgentReport',
+    theorems: [
+      'report_has_a_finished_turn',
+      'no_report_iff_no_finished_text',
+      'running_turn_is_no_report',
+      'turn_still_going_changes_nothing',
+      'newest_finished_turn_wins',
+      'console_tail_is_no_report',
+      'available_never_from_console',
+      'failure_keeps_console',
+      'clean_finish_uses_the_transcript',
     ],
   },
   {
