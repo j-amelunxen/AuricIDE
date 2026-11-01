@@ -49,6 +49,8 @@ for (const name of ['localStorage', 'sessionStorage'] as const) {
 // keep a view pinned to its newest content call it on every update; without a
 // stub the component crashes in tests for a reason that has nothing to do with
 // the behaviour under test.
-if (!Element.prototype.scrollIntoView) {
+// The guard on `Element` itself is for the node environment, where pure-logic
+// tests run without any DOM.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mockInvoke = vi.fn();

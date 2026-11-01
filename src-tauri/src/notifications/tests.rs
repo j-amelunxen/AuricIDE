@@ -1741,6 +1741,30 @@ fn replay_oracle_trace(trace: &serde_json::Value, mutant: OracleMutant) -> Oracl
     (decisions, world.held(), world.used())
 }
 
+/// Replays every trace, each in its own world, spread over the cores. The
+/// worlds share nothing (own temp dirs, own databases), so the order they run
+/// in cannot change an outcome; the results come back in corpus order.
+fn replay_oracle_traces(traces: &[serde_json::Value], mutant: OracleMutant) -> Vec<OracleOutcome> {
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let chunk = traces.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = traces
+            .chunks(chunk)
+            .map(|part| {
+                scope.spawn(move || {
+                    part.iter()
+                        .map(|trace| replay_oracle_trace(trace, mutant))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("replay thread"))
+            .collect()
+    })
+}
+
 fn oracle_traces() -> Vec<serde_json::Value> {
     let corpus = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1768,8 +1792,9 @@ fn oracle_expected(trace: &serde_json::Value) -> OracleOutcome {
 #[test]
 fn the_native_claim_agrees_with_the_lean_oracle_on_every_trace() {
     let traces = oracle_traces();
-    for trace in &traces {
-        let (decisions, held, used) = replay_oracle_trace(trace, OracleMutant::default());
+    let outcomes = replay_oracle_traces(&traces, OracleMutant::default());
+    assert_eq!(outcomes.len(), traces.len());
+    for (trace, (decisions, held, used)) in traces.iter().zip(outcomes) {
         let (expected, expected_held, expected_used) = oracle_expected(trace);
         let index = &trace["trace"];
         assert_eq!(decisions, expected, "decisions of trace {index}");
@@ -1805,9 +1830,12 @@ fn the_native_claim_agrees_with_the_lean_oracle_only_when_intact() {
         ),
     ];
     for (name, mutant) in mutants {
+        let outcomes = replay_oracle_traces(&traces, mutant);
+        assert_eq!(outcomes.len(), traces.len());
         let caught = traces
             .iter()
-            .filter(|trace| replay_oracle_trace(trace, mutant) != oracle_expected(trace))
+            .zip(outcomes)
+            .filter(|(trace, outcome)| *outcome != oracle_expected(trace))
             .count();
         eprintln!("oracle mutant '{name}': {caught} disagreeing traces");
         assert!(caught > 0, "mutant '{name}' survived the corpus");

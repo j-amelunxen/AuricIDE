@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
 import { useLLM } from './useLLM';
 import { describe, it, expect, vi } from 'vitest';

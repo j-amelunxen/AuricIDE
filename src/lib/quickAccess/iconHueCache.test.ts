@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// The Image mocks only run where a DOM exists; in node `loadIconHue` resolves
+// null before it builds an image, which these tests would not notice.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getCachedIconHue, loadIconHue, clearIconHueCache } from './iconHueCache';
 
@@ -27,10 +30,18 @@ describe('iconHueCache', () => {
         }, 10);
       }
     }
+    const loads: string[] = [];
+    class CountingImage extends MockImage {
+      override set src(value: string) {
+        loads.push(value);
+        super.src = value;
+      }
+    }
     // @ts-expect-error mock Image
-    globalThis.Image = MockImage;
+    globalThis.Image = CountingImage;
 
     const result = await loadIconHue('/path/to/icon.png', 'data:image/png;base64,...');
+    expect(loads).toEqual(['data:image/png;base64,...']);
     expect(result).toBeNull();
     expect(getCachedIconHue('/path/to/icon.png')).toBe(null);
   });

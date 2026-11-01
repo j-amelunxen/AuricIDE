@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyStoredSnapshot, applyTheme, clearThemeOverrides } from './apply';
 import { getBuiltinTheme } from './builtins';

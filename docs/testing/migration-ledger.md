@@ -26,6 +26,46 @@ Cancel, Escape, superseded questions and the new secondary affirmative action.
 Gate: `pnpm test:run`; the original test's full-suite failure is the baseline
 failure evidence. No production permission behavior was changed.
 
+## Test environments split by file kind, 2026-10-28
+
+No test was removed or weakened; the environment each file runs in changed.
+Every Vitest file used to start a jsdom window. For the 518 pure-logic `.ts`
+files that setup cost about six times the tests themselves, so `.ts` files now
+run in `node`, and component files (`.tsx`) in happy-dom, which sets up in
+about half the time of jsdom.
+
+- **Exceptions are explicit.** 55 `.ts` files and 9 `.tsx` files carry
+  `// @vitest-environment jsdom`. The `.ts` ones were found by running every
+  `.ts` file in node; the `.tsx` ones failed on happy-dom only where it differs
+  from browsers (`#hex` colours left unnormalised, a read-only
+  `navigator.clipboard`, unparsed gradients and transforms).
+- **Coverage evidence.** A full coverage run with the old configuration and one
+  with the new were compared per source position (statements, branches,
+  functions). Covered statements 35,783 vs 35,780. The differences: three
+  components now run their `ResizeObserver` path (happy-dom has one, jsdom has
+  none; WebKit takes that path) and no longer their no-observer fallback;
+  three spots covered only by timing accidents (a promise settling after
+  unmount, two rows in the same second, a 2 s timer firing late), asserted by
+  no test before or after; and `iconHueCache.ts`, where the test kept passing
+  in node while its `Image` mock went unused, because "no DOM" and "image
+  failed" both resolve `null`. That file is back on jsdom and its test now
+  asserts that the mock was loaded; without the jsdom line it fails.
+- **Cross-check.** `pnpm test:run:jsdom` runs every component test on jsdom.
+  Before trusting a happy-dom-only pass on a behaviour that browsers and
+  happy-dom might disagree on, run it there.
+- **Measured** on the same machine, old against new configuration back to
+  back, twice each: full suite 196 s → 107 s wall, CPU (user) 1,201 s →
+  656 s, 11,823 tests passing in both. The node split alone gave 192 s →
+  146 s; happy-dom and Vitest's `experimental.fsModuleCache` the rest. The
+  coverage run went from 233 s to 130 s.
+- **Not taken:** `isolate: false` (1,302 failures, state leaks between files),
+  the `threads` pool (6 % faster, and a segfault with the native SQLite
+  module), `css: false` (no measurable gain), userEvent without delay (no
+  measurable gain, one broken test).
+
+Gate: `verify:fast` (`pnpm test:run`). Reversal: drop the `projects` block in
+`vitest.config.mts`; the first-line comments are then harmless.
+
 ## Reversibility
 
 The only removed assertions in this pilot were presentation-coupled CSS class

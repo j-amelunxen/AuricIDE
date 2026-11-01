@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FEED_RENDER_LIMIT, FEED_REVEAL_STEP } from '@/lib/agents/feedWindow';

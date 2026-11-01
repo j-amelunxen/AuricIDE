@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

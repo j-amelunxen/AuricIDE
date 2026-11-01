@@ -70,6 +70,14 @@ pnpm test:run src/lib/store/pmSlice.test.ts
 pnpm test:run --reporter=verbose -t "epic"
 ```
 
+Vitest runs two projects (`vitest.config.mts`): `.ts` tests in `node`, `.tsx`
+tests in `happy-dom`. A file that needs jsdom says so on its first line with
+`// @vitest-environment jsdom` — a `.ts` test touching the DOM, or a component
+test that depends on something happy-dom does differently (colour
+normalisation, a writable `navigator.clipboard`, fuller CSS parsing).
+`pnpm test:run:jsdom` runs every component test on jsdom as a cross-check.
+Why, and how it was verified: `docs/testing/migration-ledger.md`.
+
 ## Code Style
 
 - **TypeScript:** strict mode, single quotes, trailing commas (es5), 100 char width
