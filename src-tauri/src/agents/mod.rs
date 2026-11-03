@@ -1,5 +1,6 @@
 pub mod awaiting_input;
 pub mod claude_mcp_guard;
+pub mod exit_log;
 pub mod human_draft;
 pub mod ids;
 pub mod launch_dir;

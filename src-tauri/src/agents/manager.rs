@@ -1150,22 +1150,34 @@ pub async fn spawn_agent_impl(
         };
         let report_exit = proc_opt.is_some();
 
-        let (exit_code, finished_info) = match proc_opt {
+        let (exit_code, raw_exit, finished_info) = match proc_opt {
             Some(mut process) => {
                 let info = process.info;
-                let code = tokio::task::spawn_blocking(move || {
-                    process
-                        .child
-                        .wait()
-                        .map(|status| if status.success() { 0 } else { 1 })
-                        .unwrap_or(-1)
+                // The UI keeps its 0 / 1 / -1; the raw status goes to the
+                // exit log, because 1 also stands for "killed by a signal".
+                let (code, raw) = tokio::task::spawn_blocking(move || match process.child.wait() {
+                    Ok(status) => (
+                        if status.success() { 0 } else { 1 },
+                        Some(super::exit_log::RawExit::new(
+                            status.exit_code(),
+                            status.signal(),
+                        )),
+                    ),
+                    Err(_) => (-1, None),
                 })
                 .await
-                .unwrap_or(-1);
-                (code, info)
+                .unwrap_or((-1, None));
+                (code, raw, info)
             }
-            None => (0, finished_info),
+            None => (0, None, finished_info),
         };
+        if report_exit {
+            let (end, raw) = match raw_exit {
+                Some(raw) => (raw.kind(), Some(raw)),
+                None => (super::exit_log::EndKind::WaitFailed, None),
+            };
+            log_agent_end(&app_clone, &finished_info, end, raw);
+        }
 
         let status = if exit_code == 0 {
             AgentStatus::Idle
@@ -1508,6 +1520,62 @@ async fn finish_run_records(
     record_task_log(app, info, finished_at, outcome, summary).await;
 }
 
+/// Writes the agent's ending to `agent-exits.jsonl` (see `exit_log`). Output
+/// size and silence are read before the console buffer is marked finished;
+/// the memory probes and the file write run off the caller's thread. A log
+/// that cannot be written is reported on stderr and never changes the ending.
+fn log_agent_end(
+    app: &AppHandle,
+    info: &AgentInfo,
+    end: super::exit_log::EndKind,
+    raw: Option<super::exit_log::RawExit>,
+) {
+    use super::exit_log;
+    let Ok(app_data) = app.path().app_data_dir() else {
+        return;
+    };
+    let (output_bytes, silent_for_ms) = app
+        .try_state::<super::output_buffer::OutputBuffersState>()
+        .map_or((0, None), |buffers| {
+            (
+                buffers.total_bytes(&info.id),
+                buffers
+                    .silent_for(&info.id)
+                    .map(|silent| silent.as_millis() as u64),
+            )
+        });
+    let info = info.clone();
+    let ended_at_ms = now_ms();
+    tauri::async_runtime::spawn_blocking(move || {
+        let role = serde_json::to_value(info.role)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let facts = exit_log::RunFacts {
+            agent_id: &info.id,
+            provider: &info.provider,
+            model: &info.model,
+            headless: info.headless,
+            role: &role,
+            project_path: info.project_path.as_deref(),
+            started_at_ms: info.started_at,
+            ended_at_ms,
+            output_bytes,
+            silent_for_ms,
+        };
+        let record = exit_log::build_record(
+            &facts,
+            end,
+            raw.as_ref(),
+            exit_log::read_system_memory(),
+            chrono::Utc::now().to_rfc3339(),
+        );
+        if let Err(error) = exit_log::append_record(&app_data, &record) {
+            eprintln!("{error}");
+        }
+    });
+}
+
 async fn record_task_log(
     app: &AppHandle,
     info: AgentInfo,
@@ -1654,6 +1722,7 @@ pub async fn kill_agent_impl(
     drop(manager);
 
     let _ = process.child.kill();
+    log_agent_end(app, &process.info, super::exit_log::EndKind::IdeKill, None);
     let buffers = app.try_state::<super::output_buffer::OutputBuffersState>();
     if let Some(results) = app.try_state::<super::run_results::RunResultsState>() {
         let console_tail = || {
@@ -1795,6 +1864,7 @@ async fn book_at_shutdown(app: &AppHandle, runs: Vec<(AgentInfo, Option<UsageCap
     let deadline = tokio::time::Instant::now() + SHUTDOWN_BOOKING_BUDGET;
     let finished_at = chrono::Utc::now();
     for (info, capture) in runs {
+        log_agent_end(app, &info, super::exit_log::EndKind::AppQuit, None);
         let usage_row = if let Some(capture) = capture {
             let read = book_usage(
                 app,

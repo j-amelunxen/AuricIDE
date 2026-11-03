@@ -97,7 +97,7 @@ Uses: IPC, store. Contract fixtures live next to it (`*.fixtures.json`).
 reviews, goal dependencies). Purpose: IPC dispatch and persistence of the work model.
 Uses: nearly everything below. Not used by anything except Tauri.
 
-**Agent runtime** — `agents/` (20 files: manager, PTY output buffer, awaiting-input
+**Agent runtime** — `agents/` (21 files: manager, exit log, PTY output buffer, awaiting-input
 detection, write sandbox, launch dir, run results, MCP guard), `agent_persistence.rs`,
 `agent_log.rs`, `task_log.rs`, `agent_window.rs`, `providers/` (provider registry, `dynamic-providers/`
 JSON), `provider_policy.rs`, `connectors/`, `extra_mcp.rs` (a project's extra MCP servers from its `.mcp.json`, named in the supervisor policy's `extraMcpServers` and merged into each agent's private MCP config). Purpose: spawn, stream, kill and persist
