@@ -50,7 +50,9 @@ function SourceBadges({ row }: { row: AgentUsageRow }) {
 function ExternalRuntime({ row }: { row: AgentUsageRow }) {
   const registered = formatExternalSpan(row.durationMs);
   const on = row.onMs === null ? 'unknown' : formatExternalSpan(row.onMs);
-  const parts = [`Figures as reported; the IDE cannot check them. Registered ${registered}, on ${on}.`];
+  const parts = [
+    `Figures as reported; the IDE cannot check them. Registered ${registered}, on ${on}.`,
+  ];
   if (row.runtimePartial) parts.push('The reporter marked the runtime as cut off.');
   if (row.closedBy === 'human') parts.push('Closed by hand, so no runtime was reported.');
   return (

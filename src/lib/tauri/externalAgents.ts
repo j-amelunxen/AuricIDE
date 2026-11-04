@@ -12,7 +12,10 @@ export async function externalAgentClose(id: string): Promise<void> {
   await invoke<unknown>('external_agent_close', { id });
 }
 
-export function onExternalAgentsChanged(callback: () => void, onListening?: () => void): () => void {
+export function onExternalAgentsChanged(
+  callback: () => void,
+  onListening?: () => void
+): () => void {
   return subscribeToTauriEvent(
     'external-agents-changed',
     callback,

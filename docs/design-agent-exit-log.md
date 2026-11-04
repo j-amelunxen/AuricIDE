@@ -8,15 +8,15 @@ SIGKILL from the kernel and a SIGHUP from a closed PTY were indistinguishable.
 (one JSON object per line, rotated to `.1` at 2 MiB). The UI is unchanged:
 status, `exit_code` in `agent-status` and the usage outcome still use 0 / 1 / -1.
 
-| Field | Meaning |
-| --- | --- |
-| `end` | `exited`, `signaled`, `ide-kill`, `app-quit`, `wait-failed` |
-| `exitCode`, `signal` | Raw values from portable-pty; `signal` is the libc text ("Killed: 9"). Both absent for `ide-kill` and `app-quit`, where the status is not read |
-| `killedByIde` | `true` only for `kill_agent_impl` |
-| `runtimeMs`, `startedAtMs`, `endedAtMs` | Run length |
-| `lastOutputOffset`, `lastOutputAtMs`, `silentForMs` | Console bytes in total, when they last grew, and the quiet time before the end |
-| `memory` | `availableBytes` (free + inactive + speculative), `swapUsedBytes`, `swapTotalBytes`, `pressureLevel` (1 normal, 2 warning, 4 critical) |
-| `provider`, `model`, `headless`, `role`, `projectPath`, `agentId` | Which run |
+| Field                                                             | Meaning                                                                                                                                        |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `end`                                                             | `exited`, `signaled`, `ide-kill`, `app-quit`, `wait-failed`                                                                                    |
+| `exitCode`, `signal`                                              | Raw values from portable-pty; `signal` is the libc text ("Killed: 9"). Both absent for `ide-kill` and `app-quit`, where the status is not read |
+| `killedByIde`                                                     | `true` only for `kill_agent_impl`                                                                                                              |
+| `runtimeMs`, `startedAtMs`, `endedAtMs`                           | Run length                                                                                                                                     |
+| `lastOutputOffset`, `lastOutputAtMs`, `silentForMs`               | Console bytes in total, when they last grew, and the quiet time before the end                                                                 |
+| `memory`                                                          | `availableBytes` (free + inactive + speculative), `swapUsedBytes`, `swapTotalBytes`, `pressureLevel` (1 normal, 2 warning, 4 critical)         |
+| `provider`, `model`, `headless`, `role`, `projectPath`, `agentId` | Which run                                                                                                                                      |
 
 No prompt, task text, console output or environment is written. A write that
 fails goes to stderr and never changes how the run ends. There is no TypeScript

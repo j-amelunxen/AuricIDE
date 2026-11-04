@@ -481,13 +481,15 @@ function barPosition(span: { start: number; end: number }) {
   };
 }
 
-const EXTERNAL_BADGE_TONE: Record<Exclude<ReturnType<typeof externalStateLabel>, 'Running'>, string> =
-  {
-    Off: 'bg-white/10 text-foreground-muted',
-    'Stale?': 'bg-amber-500/15 text-amber-300',
-    Stopped: 'bg-white/10 text-foreground-muted',
-    Failed: 'bg-red-500/15 text-red-300',
-  };
+const EXTERNAL_BADGE_TONE: Record<
+  Exclude<ReturnType<typeof externalStateLabel>, 'Running'>,
+  string
+> = {
+  Off: 'bg-white/10 text-foreground-muted',
+  'Stale?': 'bg-amber-500/15 text-amber-300',
+  Stopped: 'bg-white/10 text-foreground-muted',
+  Failed: 'bg-red-500/15 text-red-300',
+};
 
 function externalRowTitle(row: ExternalTimelineRow, now: number): string {
   const { external } = row;

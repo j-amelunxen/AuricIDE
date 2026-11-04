@@ -185,4 +185,3 @@ exposure as any supervisor spawning short agents.
 
 _The human's close._ `external_agent_close` is a Tauri command, not a socket method, so no agent
 reaches it. It books with `closedBy: "human"` and no runtime.
-

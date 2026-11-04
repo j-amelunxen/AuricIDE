@@ -136,7 +136,7 @@ describe('supervisor tools', () => {
     expect(stop.parameters.safeParse({ externalId: 'box-7', reason: 'x' }).success).toBe(false);
   });
 
-  it('passes what the model sent to the socket and answers with the socket\'s words', async () => {
+  it("passes what the model sent to the socket and answers with the socket's words", async () => {
     const answer = { agents: [] };
     const call = vi.fn(async () => answer) as unknown as ControlCaller;
     const text = await capture(call).get('list_external_agents')!.execute({});
