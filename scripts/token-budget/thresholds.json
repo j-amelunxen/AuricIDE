@@ -1,0 +1,41 @@
+{
+  "_doc": "Every threshold the tool uses. Change here, not in code. The values in use are echoed into summary.json.",
+  "chars_per_token": 3.5,
+  "image_tokens_each": 1500,
+  "envelope_chars": 450,
+  "cache_ttl_5m_s": 300,
+  "cache_ttl_1h_s": 3600,
+  "miss_read_ratio": 0.5,
+  "miss_min_prev_tokens": 2000,
+  "context_lines": [200000, 500000],
+  "post_compaction_requests": 3,
+  "candidates": {
+    "repeat_file_read_min_reads": 3,
+    "repeat_identical_call_min_calls": 3,
+    "large_tool_result_tokens": 10000,
+    "session_context_over_tokens": 200000,
+    "large_baseline_tokens": 40000,
+    "high_model_output_usd_per_mtok": 20,
+    "short_run_max_requests": 10
+  },
+  "activity_priority": [
+    [
+      "agent_control",
+      [
+        "mcp__auric-supervisor__",
+        "mcp__auric-control__",
+        "Task",
+        "Agent",
+        "SendMessage",
+        "TaskStop"
+      ]
+    ],
+    ["skill", ["Skill"]],
+    ["edit", ["Edit", "Write", "NotebookEdit", "MultiEdit"]],
+    ["shell", ["Bash", "BashOutput", "KillShell"]],
+    ["read_search", ["Read", "Grep", "Glob", "LS", "ToolSearch", "LSP"]],
+    ["web", ["WebFetch", "WebSearch", "mcp__claude-in-chrome__"]],
+    ["pm_tools", ["mcp__auric-pm"]],
+    ["other_mcp", ["mcp__"]]
+  ]
+}
