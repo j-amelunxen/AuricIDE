@@ -85,11 +85,11 @@ describe('openDatabase', () => {
     db.close();
   });
 
-  it('records all 24 migrations (ids 1-13, 15-25; 14 is Rust-only)', () => {
+  it('records all 25 migrations (ids 1-13, 15-26; 14 is Rust-only)', () => {
     const dbPath = join(tempDir, 'test.db');
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(24);
+    expect(row.cnt).toBe(25);
     const stationRow = db
       .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 15')
       .get() as { cnt: number };
@@ -141,7 +141,7 @@ describe('openDatabase', () => {
         'num_turns',
       ])
     );
-    expect(columns).toHaveLength(31);
+    expect(columns).toHaveLength(38);
     const indexes = (
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as { name: string }[]
     ).map((i) => i.name);
@@ -169,6 +169,51 @@ describe('openDatabase', () => {
     const row = db.prepare('SELECT cost_usd, headless, match_kind FROM pm_agent_usage').get();
     expect(row).toEqual({ cost_usd: null, headless: 0, match_kind: 'exact' });
     db.close();
+  });
+
+  it('adds the external run columns as nullable, in order (migration 26)', () => {
+    const db = openDatabase(join(tempDir, 'external.db'));
+    const columns = db.prepare('PRAGMA table_info(pm_agent_usage)').all() as {
+      name: string;
+      type: string;
+      notnull: number;
+    }[];
+    expect(columns.slice(-7).map((c) => [c.name, c.type, c.notnull])).toEqual([
+      ['active_ms', 'INTEGER', 0],
+      ['on_ms', 'INTEGER', 0],
+      ['agent_runs', 'INTEGER', 0],
+      ['runtime_partial', 'INTEGER', 0],
+      ['external_id', 'TEXT', 0],
+      ['external_run_id', 'TEXT', 0],
+      ['closed_by', 'TEXT', 0],
+    ]);
+    expect(db.prepare('SELECT name FROM _migrations WHERE id = 26').get()).toEqual({
+      name: 'add_agent_usage_external',
+    });
+    db.close();
+  });
+
+  it('finishes migration 26 when the columns exist without the marker', () => {
+    const path = join(tempDir, 'crashed.db');
+    const first = openDatabase(path);
+    // Rust died after a part of the DDL, before writing its marker.
+    first.exec(`
+      DELETE FROM _migrations WHERE id = 26;
+      ALTER TABLE pm_agent_usage DROP COLUMN closed_by;
+      ALTER TABLE pm_agent_usage DROP COLUMN external_run_id;
+    `);
+    first.close();
+
+    const second = openDatabase(path);
+    const names = (
+      second.prepare('PRAGMA table_info(pm_agent_usage)').all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(names).toContain('external_run_id');
+    expect(names).toContain('closed_by');
+    expect(second.prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 26').get()).toEqual({
+      cnt: 1,
+    });
+    second.close();
   });
 
   it('backfills one snapshot per existing goal (migration 24, twin of the Rust one)', () => {
@@ -281,7 +326,7 @@ describe('openDatabase', () => {
     db1.close();
     const db2 = openDatabase(dbPath);
     const row = db2.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(24);
+    expect(row.cnt).toBe(25);
     db2.close();
   });
 
@@ -328,7 +373,7 @@ describe('openDatabase', () => {
 
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(24);
+    expect(row.cnt).toBe(25);
     db.close();
   }, 20_000);
 
@@ -404,10 +449,10 @@ describe('openDatabase', () => {
     setup.close();
 
     // Now open with our migrations — the JS side applies the missing
-    // #13 and #15-#25 on top
+    // #13 and #15-#26 on top
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(24);
+    expect(row.cnt).toBe(25);
     db.close();
   });
 });

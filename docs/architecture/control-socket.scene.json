@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.control-socket",
   "title": "Control socket",
-  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, checks supervisor policy (src-tauri/src/supervisor) and keeps quota blocks (src-tauri/src/quota_blocks).",
+  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, checks supervisor policy (src-tauri/src/supervisor) keeps quota blocks (src-tauri/src/quota_blocks) and tracks external runs (src-tauri/src/external_agents).",
   "nodes": [
     {
       "id": "dispatcher",
@@ -33,7 +33,7 @@
           "value": "983"
         }
       ],
-      "position": [3.65, -16.5, 0]
+      "position": [-3.65, -16.5, 0]
     },
     {
       "id": "caller",
@@ -48,7 +48,7 @@
           "value": "280"
         }
       ],
-      "position": [-11.25, -11.2, 0]
+      "position": [-13.15, -11.2, 0]
     },
     {
       "id": "projects",
@@ -63,7 +63,7 @@
           "value": "462"
         }
       ],
-      "position": [-7.35, -11.2, 0]
+      "position": [-9.25, -11.2, 0]
     },
     {
       "id": "supervised",
@@ -78,7 +78,7 @@
           "value": "277"
         }
       ],
-      "position": [-0.35, -11.2, 0]
+      "position": [1.55, -11.2, 0]
     },
     {
       "id": "linkSpawn",
@@ -93,7 +93,7 @@
           "value": "200"
         }
       ],
-      "position": [3.65, -11.2, 0]
+      "position": [5.55, -11.2, 0]
     },
     {
       "id": "linkPolicy",
@@ -108,7 +108,7 @@
           "value": "138"
         }
       ],
-      "position": [7.45, -11.2, 0]
+      "position": [-2.45, -11.2, 0]
     },
     {
       "id": "quotaHandlers",
@@ -117,7 +117,16 @@
       "group": "supervisor scope",
       "level": 2,
       "weight": 0.4,
-      "position": [11.25, -11.2, 0]
+      "position": [9.35, -11.2, 0]
+    },
+    {
+      "id": "externalHandlers",
+      "label": "external_agents.rs",
+      "preset": "box",
+      "group": "supervisor scope",
+      "level": 2,
+      "weight": 0.4,
+      "position": [13.15, -11.2, 0]
     },
     {
       "id": "supervisorMod",
@@ -132,7 +141,7 @@
           "value": "1113"
         }
       ],
-      "position": [-3.65, -16.5, 0]
+      "position": [3.65, -16.5, 0]
     },
     {
       "id": "supervisorPmTarget",
@@ -141,7 +150,7 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [-0.75, -21.9, 0]
+      "position": [-9.35, -21.9, 0]
     },
     {
       "id": "supervisorPolicy",
@@ -157,7 +166,7 @@
           "value": "1330"
         }
       ],
-      "position": [3.35, -21.9, 0]
+      "position": [-5.25, -21.9, 0]
     },
     {
       "id": "quotaBlocks",
@@ -166,7 +175,16 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [7.45, -21.9, 0]
+      "position": [-1.15, -21.9, 0]
+    },
+    {
+      "id": "externalAgents",
+      "label": "external_agents/ (store, booking)",
+      "preset": "box",
+      "group": "policy",
+      "level": 4,
+      "weight": 0.4,
+      "position": [2.65, -21.9, 0]
     },
     {
       "id": "bridge",
@@ -199,7 +217,7 @@
       "group": "neighbours",
       "level": 4,
       "weight": 0.3,
-      "position": [-7.45, -21.9, 0]
+      "position": [9.35, -21.9, 0]
     },
     {
       "id": "supervisorLink",
@@ -403,6 +421,23 @@
       "to": "quotaBlocks",
       "kind": "dataflow",
       "label": "console tail at exit"
+    },
+    {
+      "from": "dispatcher",
+      "to": "externalHandlers",
+      "kind": "calls",
+      "label": "register, stop, list"
+    },
+    {
+      "from": "externalHandlers",
+      "to": "externalAgents",
+      "kind": "dependency"
+    },
+    {
+      "from": "externalHandlers",
+      "to": "supervisorPmTarget",
+      "kind": "dependency",
+      "label": "project check"
     }
   ],
   "tour": [
@@ -423,7 +458,7 @@
       "rows": [
         {
           "label": "control_socket modules (non-test)",
-          "value": "12"
+          "value": "13"
         },
         {
           "label": "supervisor modules",

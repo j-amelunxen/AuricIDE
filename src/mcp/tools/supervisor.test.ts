@@ -27,6 +27,9 @@ const TOOL_METHODS: Record<string, string> = {
   list_quota_blocks: 'list_quota_blocks',
   set_quota_block: 'set_quota_block',
   clear_quota_block: 'clear_quota_block',
+  register_external_agent: 'external_register',
+  stop_external_agent: 'external_stop',
+  list_external_agents: 'external_list',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;
@@ -111,6 +114,34 @@ describe('supervisor tools', () => {
       { project: 'example-project' },
     ]);
     expect(text).toBe(JSON.stringify(answer));
+  });
+
+  /* testuuid: t_h3kw9pqa covers: el_extreg01,el_extstp01,el_extlst01 categories: happy,negative level: unit */
+  it('offers the external run tools with their rules in the description, refusing a prompt', () => {
+    const tools = capture(vi.fn() as unknown as ControlCaller);
+    const register = tools.get('register_external_agent')!;
+    const stop = tools.get('stop_external_agent')!;
+    expect(register.description).toMatch(/safe to call again/i);
+    expect(register.description).toContain('new runId');
+    expect(stop.description).toMatch(/as reported/i);
+    const base = {
+      externalId: 'box-7',
+      projectPath: '/tmp/example-project',
+      name: 'Fix the parser',
+      provider: 'claude',
+      state: 'running',
+    };
+    expect(register.parameters.safeParse(base).success).toBe(true);
+    expect(register.parameters.safeParse({ ...base, prompt: 'do it' }).success).toBe(false);
+    expect(stop.parameters.safeParse({ externalId: 'box-7', reason: 'x' }).success).toBe(false);
+  });
+
+  it('passes what the model sent to the socket and answers with the socket\'s words', async () => {
+    const answer = { agents: [] };
+    const call = vi.fn(async () => answer) as unknown as ControlCaller;
+    const text = await capture(call).get('list_external_agents')!.execute({});
+    expect(vi.mocked(call).mock.lastCall).toEqual(['external_list', {}]);
+    expect(JSON.parse(text)).toEqual(answer);
   });
 
   it('report a policy refusal with its code, so the model can name it', async () => {

@@ -36,6 +36,13 @@ export function usageRow(overrides: Partial<AgentUsageRow> = {}): AgentUsageRow 
     estimateCacheWriteTokens: null,
     unpricedModels: null,
     numTurns: null,
+    activeMs: null,
+    onMs: null,
+    agentRuns: null,
+    runtimePartial: null,
+    externalId: null,
+    externalRunId: null,
+    closedBy: null,
     ...overrides,
   };
 }

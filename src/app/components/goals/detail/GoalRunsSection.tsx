@@ -1,7 +1,7 @@
 'use client';
 
 import type { PmGoalRun } from '@/lib/tauri/goals';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import type { AgentUsageRow, UsageCostSource } from '@/lib/tauri/agentUsage';
 import { formatRunCost } from '@/app/components/pm/cost/usageFormat';
 
 export const RUN_OUTCOME_STYLES: Record<string, string> = {
@@ -19,6 +19,13 @@ export interface GoalRunsSectionProps {
 }
 
 const NO_USAGE: readonly AgentUsageRow[] = [];
+
+const COST_TITLE: Record<UsageCostSource, string> = {
+  cli: 'Exact cost',
+  estimated: 'Estimated cost',
+  reported: 'Cost as reported',
+  none: 'No cost data',
+};
 
 export function GoalRunsSection({
   goalRuns,
@@ -51,7 +58,7 @@ export function GoalRunsSection({
                   {usage && (
                     <span
                       className="tabular-nums text-foreground"
-                      title={usage.costSource === 'cli' ? 'Exact cost' : 'Estimated cost'}
+                      title={COST_TITLE[usage.costSource]}
                     >
                       {formatRunCost(usage)}
                     </span>

@@ -108,7 +108,7 @@ pub fn check_key(agents: &[AgentInfo], key: &str) -> Result<(), String> {
     }
 }
 
-fn same_folder(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
     let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     a == b || canonical(a) == canonical(b)
 }

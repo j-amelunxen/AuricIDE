@@ -49,7 +49,8 @@ pub fn runs_by_provider_since(project_path: &Path, since: &str) -> BTreeMap<Stri
         conn.busy_timeout(BUSY_TIMEOUT)?;
         let mut statement = conn.prepare(
             "SELECT lower(trim(provider)), COUNT(*) FROM pm_agent_usage
-             WHERE started_at >= ?1 GROUP BY lower(trim(provider))",
+             WHERE started_at >= ?1 AND run_source != 'external'
+             GROUP BY lower(trim(provider))",
         )?;
         let rows = statement.query_map(params![since], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
@@ -63,22 +64,36 @@ pub fn runs_by_provider_since(project_path: &Path, since: &str) -> BTreeMap<Stri
 }
 
 pub fn insert(conn: &Connection, row: &UsageRecord) -> Result<(), String> {
+    insert_as(conn, "INSERT", row).map(|_| ())
+}
+
+/// For a row whose id is derived from what it books: a retry after a crash adds
+/// nothing. `true` when this call added the row.
+pub fn insert_or_ignore(conn: &Connection, row: &UsageRecord) -> Result<bool, String> {
+    insert_as(conn, "INSERT OR IGNORE", row).map(|added| added > 0)
+}
+
+fn insert_as(conn: &Connection, verb: &str, row: &UsageRecord) -> Result<usize, String> {
     let unpriced = row
         .unpriced_models
         .as_ref()
         .map(serde_json::to_string)
         .transpose()
         .map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO pm_agent_usage (
+    let sql = format!(
+        "{verb} INTO pm_agent_usage (
             id, agent_id, ticket_id, goal_id, run_kind, run_source, provider, model, headless,
             session_id, ticket_status_at_start, started_at, finished_at, duration_ms, outcome,
             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
             cost_usd, cost_source, match_kind, estimate_cost_usd, estimate_input_tokens,
             estimate_output_tokens, estimate_cache_read_tokens, estimate_cache_write_tokens,
-            unpriced_models, model_usage_json, num_turns
+            unpriced_models, model_usage_json, num_turns, active_ms, on_ms, agent_runs,
+            runtime_partial, external_id, external_run_id, closed_by
          ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
-                   ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31)",
+                   ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38)"
+    );
+    conn.execute(
+        &sql,
         params![
             row.id,
             row.agent_id,
@@ -111,10 +126,16 @@ pub fn insert(conn: &Connection, row: &UsageRecord) -> Result<(), String> {
             unpriced,
             row.model_usage_json,
             row.num_turns,
+            row.active_ms,
+            row.on_ms,
+            row.agent_runs,
+            row.runtime_partial,
+            row.external_id,
+            row.external_run_id,
+            row.closed_by,
         ],
     )
-    .map_err(|e| format!("Failed to record agent usage: {e}"))?;
-    Ok(())
+    .map_err(|e| format!("Failed to record agent usage: {e}"))
 }
 
 /// Every row, newest run first.
@@ -165,6 +186,13 @@ fn read_row(row: &Row) -> rusqlite::Result<UsageRecord> {
         unpriced_models: unpriced.and_then(|json| serde_json::from_str(&json).ok()),
         model_usage_json: row.get("model_usage_json")?,
         num_turns: row.get("num_turns")?,
+        active_ms: row.get("active_ms")?,
+        on_ms: row.get("on_ms")?,
+        agent_runs: row.get("agent_runs")?,
+        runtime_partial: row.get("runtime_partial")?,
+        external_id: row.get("external_id")?,
+        external_run_id: row.get("external_run_id")?,
+        closed_by: row.get("closed_by")?,
     })
 }
 
@@ -299,8 +327,10 @@ mod tests {
         let dir = project();
         {
             let conn = open_existing(dir.path()).unwrap().unwrap();
-            conn.execute_batch("DROP TABLE pm_agent_usage; DELETE FROM _migrations WHERE id = 25;")
-                .unwrap();
+            conn.execute_batch(
+                "DROP TABLE pm_agent_usage; DELETE FROM _migrations WHERE id IN (25, 26);",
+            )
+            .unwrap();
         }
 
         let conn = open_existing(dir.path()).unwrap().unwrap();

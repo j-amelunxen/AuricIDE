@@ -65,6 +65,31 @@ pub struct TaskLogEntry {
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
+    /// `"external"` for a run the IDE only tracks; the fields below are on such
+    /// lines alone, so the line of a normal agent stays as it was, byte for byte.
+    /// `durationMs` is registered time there (`docs/design-external-agents.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_partial: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_runs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_source: Option<crate::agent_usage::record::CostSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u64>,
 }
 
 /// Optional token and cost numbers when a run had usage evidence.
@@ -179,6 +204,17 @@ pub fn build_entry(
         cost_usd: usage.and_then(|u| u.cost_usd),
         input_tokens: usage.and_then(|u| u.input_tokens),
         output_tokens: usage.and_then(|u| u.output_tokens),
+        source: None,
+        external_id: None,
+        run_id: None,
+        on_ms: None,
+        active_ms: None,
+        runtime_partial: None,
+        agent_runs: None,
+        closed_by: None,
+        cost_source: None,
+        cache_read_tokens: None,
+        cache_write_tokens: None,
     }
 }
 
@@ -213,14 +249,32 @@ pub fn record_finished_task_in(
     status: Outcome,
     usage: Option<&TaskUsageSummary>,
 ) -> Result<Option<PathBuf>, String> {
+    let entry = build_entry(info, finished_at, status, usage);
+    append_if_enabled(app_data_dir, finished_at, &entry)
+}
+
+/// The same switch and folder for a run the IDE only tracks, which has no
+/// `AgentInfo` to build its line from.
+pub fn record_external_task_in(
+    app_data_dir: &Path,
+    entry: &TaskLogEntry,
+    finished_at: DateTime<Utc>,
+) -> Result<Option<PathBuf>, String> {
+    append_if_enabled(app_data_dir, finished_at, entry)
+}
+
+fn append_if_enabled(
+    app_data_dir: &Path,
+    finished_at: DateTime<Utc>,
+    entry: &TaskLogEntry,
+) -> Result<Option<PathBuf>, String> {
     let prefs =
         crate::webview_prefs::read_prefs(&crate::webview_prefs::prefs_path_in(app_data_dir));
     if !enabled_in(&prefs) {
         return Ok(None);
     }
     let log_dir = resolve_log_dir(&prefs, app_data_dir);
-    let entry = build_entry(info, finished_at, status, usage);
-    append_entry(&log_dir, finished_at, &entry).map(Some)
+    append_entry(&log_dir, finished_at, entry).map(Some)
 }
 
 #[cfg(test)]
@@ -247,6 +301,28 @@ mod tests {
             spawned_by_agent_id: Some("agent-1".to_string()),
             supervisor_key: None,
             extra_mcp_servers: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_line_of_a_normal_agent_has_none_of_the_external_keys() {
+        let finished_at = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
+        let entry = build_entry(&sample_agent(), finished_at, Outcome::Success, None);
+        let line = serde_json::to_value(&entry).unwrap();
+        for key in [
+            "source",
+            "externalId",
+            "runId",
+            "onMs",
+            "activeMs",
+            "runtimePartial",
+            "agentRuns",
+            "closedBy",
+            "costSource",
+            "cacheReadTokens",
+            "cacheWriteTokens",
+        ] {
+            assert!(line.get(key).is_none(), "{key}");
         }
     }
 

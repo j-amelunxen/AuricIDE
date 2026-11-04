@@ -14,6 +14,7 @@ pub mod crashlog;
 mod database;
 mod delivery;
 mod excalidraw;
+pub mod external_agents;
 mod extra_mcp;
 mod formatter;
 mod git;
@@ -219,6 +220,7 @@ pub fn run() {
                 app.path().app_data_dir().map_err(|e| e.to_string())?,
             ));
             usage_limits::install_claude_watcher(app.handle());
+            external_agents::spawn_startup_retry(app.handle().clone());
             usage_limits::spawn_usage_limits_runner(app.handle().clone());
 
             // Historical spend, read from the CLIs' own transcripts. Separate
@@ -547,6 +549,8 @@ pub fn run() {
             cc_usage::cc_usage_report,
             agent_usage::agent_usage_load,
             agent_usage::agent_usage_reprice,
+            external_agents::external_agents_list,
+            external_agents::external_agent_close,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

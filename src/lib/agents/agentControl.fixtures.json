@@ -759,6 +759,39 @@
       }
     },
     {
+      "name": "external_register",
+      "raw": "{\"id\":91,\"method\":\"external_register\",\"params\":{\"externalId\":\"box-7\",\"runId\":\"lease-42\",\"projectPath\":\"/tmp/example-project\",\"name\":\"Fix the parser\",\"provider\":\"claude\",\"model\":\"opus\",\"state\":\"running\"}}",
+      "expected": {
+        "id": 91,
+        "method": "external_register",
+        "params": {
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "model": "opus",
+          "state": "running"
+        }
+      }
+    },
+    {
+      "name": "external_stop",
+      "raw": "{\"id\":92,\"method\":\"external_stop\",\"params\":{\"externalId\":\"box-7\",\"runId\":\"lease-42\",\"outcome\":\"success\",\"activeSeconds\":9000,\"inputTokens\":1200,\"outputTokens\":800}}",
+      "expected": {
+        "id": 92,
+        "method": "external_stop",
+        "params": {
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "outcome": "success",
+          "activeSeconds": 9000,
+          "inputTokens": 1200,
+          "outputTokens": 800
+        }
+      }
+    },
+    {
       "name": "set_quota_block without a provider",
       "raw": "{\"id\":52,\"method\":\"set_quota_block\",\"params\":{\"provider\":\"  \"}}",
       "expectedError": {
@@ -782,6 +815,23 @@
       "raw": "{\"id\":54,\"method\":\"clear_quota_block\",\"params\":{\"id\":\"\"}}",
       "expectedError": {
         "id": 54,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "external_list",
+      "raw": "{\"id\":93,\"method\":\"external_list\",\"params\":{}}",
+      "expected": {
+        "id": 93,
+        "method": "external_list",
+        "params": {}
+      }
+    },
+    {
+      "name": "external_stop without externalId",
+      "raw": "{\"id\":94,\"method\":\"external_stop\",\"params\":{}}",
+      "expectedError": {
+        "id": 94,
         "code": "invalid_params"
       }
     }
@@ -1103,6 +1153,123 @@
       "error": {
         "code": "headless_no_stdin",
         "message": "agent-2 runs headless and does not read input"
+      }
+    },
+    "external_register": {
+      "id": 91,
+      "ok": true,
+      "result": {
+        "agent": {
+          "id": "ext-1a2b3c4d",
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "model": "opus",
+          "ticketId": null,
+          "ticketName": null,
+          "goalId": null,
+          "state": "running",
+          "stale": false,
+          "registeredAt": 1793750400000,
+          "lastSeenAt": 1793750400000,
+          "finishedAt": null,
+          "onSpans": [
+            {
+              "from": 1793750400000,
+              "to": null
+            }
+          ],
+          "ownerRunDir": "/tmp/runs/2026-11-03_120000",
+          "ownerAgentId": "agent-22",
+          "closedBy": null,
+          "report": null,
+          "booked": false
+        },
+        "created": true,
+        "changed": true
+      }
+    },
+    "external_stop": {
+      "id": 92,
+      "ok": true,
+      "result": {
+        "agent": {
+          "id": "ext-1a2b3c4d",
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "model": "opus",
+          "ticketId": null,
+          "ticketName": null,
+          "goalId": null,
+          "state": "stopped",
+          "stale": false,
+          "registeredAt": 1793750400000,
+          "lastSeenAt": 1793750400000,
+          "finishedAt": 1793782800000,
+          "onSpans": [
+            {
+              "from": 1793750400000,
+              "to": 1793782800000
+            }
+          ],
+          "ownerRunDir": "/tmp/runs/2026-11-03_120000",
+          "ownerAgentId": "agent-22",
+          "closedBy": null,
+          "report": {
+            "activeMs": 9000000,
+            "agentRuns": null,
+            "partial": null,
+            "inputTokens": 1200,
+            "outputTokens": 800,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "costUsd": null
+          },
+          "booked": true
+        },
+        "alreadyStopped": false,
+        "booked": true
+      }
+    },
+    "external_list": {
+      "id": 93,
+      "ok": true,
+      "result": {
+        "agents": [
+          {
+            "id": "ext-1a2b3c4d",
+            "externalId": "box-7",
+            "runId": "lease-42",
+            "projectPath": "/tmp/example-project",
+            "name": "Fix the parser",
+            "provider": "claude",
+            "model": "opus",
+            "ticketId": null,
+            "ticketName": null,
+            "goalId": null,
+            "state": "running",
+            "stale": false,
+            "registeredAt": 1793750400000,
+            "lastSeenAt": 1793750400000,
+            "finishedAt": null,
+            "onSpans": [
+              {
+                "from": 1793750400000,
+                "to": null
+              }
+            ],
+            "ownerRunDir": "/tmp/runs/2026-11-03_120000",
+            "ownerAgentId": "agent-22",
+            "closedBy": null,
+            "report": null,
+            "booked": false
+          }
+        ]
       }
     }
   },
@@ -1868,7 +2035,10 @@
           "pm_target",
           "list_quota_blocks",
           "set_quota_block",
-          "clear_quota_block"
+          "clear_quota_block",
+          "external_register",
+          "external_stop",
+          "external_list"
         ],
         "scope": "own_children",
         "outsideScope": "unknown_agent",
@@ -2232,6 +2402,69 @@
         "method": "await_result",
         "target": "own_finished_child",
         "expected": "ok"
+      },
+      {
+        "name": "external caller may not call external_register",
+        "caller": "external",
+        "method": "external_register",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "worker may not call external_register",
+        "caller": "worker",
+        "method": "external_register",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "external caller may not call external_stop",
+        "caller": "external",
+        "method": "external_stop",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "worker may not call external_stop",
+        "caller": "worker",
+        "method": "external_stop",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "external caller may not call external_list",
+        "caller": "external",
+        "method": "external_list",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "worker may not call external_list",
+        "caller": "worker",
+        "method": "external_list",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "supervisor registers an external run",
+        "caller": "supervisor",
+        "method": "external_register",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor lists its external runs",
+        "caller": "supervisor",
+        "method": "external_list",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor stopping a key it does not hold",
+        "caller": "supervisor",
+        "method": "external_stop",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor is refused an external run in a project outside its policy",
+        "caller": "supervisor",
+        "method": "external_register",
+        "params": {
+          "projectPath": "/tmp/not-in-the-policy"
+        },
+        "expected": "unknown_project"
       }
     ]
   },

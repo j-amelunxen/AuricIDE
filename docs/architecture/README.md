@@ -159,7 +159,9 @@ occurrence" writes an exception, "all occurrences" rewrites the rhythm).
 **Usage** — `cc_usage/` (what the CLIs consumed, from transcripts), `usage_limits/`
 (quota window via a Claude `--settings` statusLine sidecar and the Codex CLI),
 `agent_usage/` (cost of one run, booked into `pm_agent_usage`), `task_log.rs`
-(monthly JSONL log `tasks-YYYY-MM.jsonl` of finished agent tasks, opt-in for billing).
+(monthly JSONL log `tasks-YYYY-MM.jsonl` of finished agent tasks, opt-in for billing),
+`external_agents/` (runs the IDE tracks without a process, `external-agents.json`; they
+book through the same two records, `docs/design-external-agents.md`).
 Depends on: providers, agents, webview_prefs.
 
 **Imports and machine tools** — `video_import/` (transcription, frames), `machine/`

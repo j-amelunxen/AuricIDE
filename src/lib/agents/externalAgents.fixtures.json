@@ -1,0 +1,669 @@
+{
+  "_comment": [
+    "Contract of docs/design-external-agents.md, read by Rust and TypeScript. Change it first.",
+    "Rust decides; TypeScript uses stale, display and the parameter cases for the MCP tools."
+  ],
+  "version": 1,
+  "storeFileName": "external-agents.json",
+  "changedEvent": "external-agents-changed",
+  "commands": {
+    "list": "external_agents_list",
+    "close": "external_agent_close"
+  },
+  "methods": ["external_register", "external_stop", "external_list"],
+  "stale": {
+    "runningAfterMs": 93600000,
+    "registeredAfterMs": 259200000
+  },
+  "retention": {
+    "finalKeptMs": 604800000,
+    "maxLive": 200,
+    "maxOnSpans": 64
+  },
+  "clock": {
+    "skewMs": 300000,
+    "maxStartedAgeMs": 2592000000,
+    "rule": "startedAt lies within [now - maxStartedAgeMs, now + skewMs] and finishedAt within [registeredAt, now + skewMs], otherwise invalid_params. A call that changes nothing does not look at either."
+  },
+  "patterns": {
+    "externalId": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+    "runId": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+    "provider": "^[a-z0-9][a-z0-9._-]{0,63}$",
+    "model": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]-]{0,127}$"
+  },
+  "nameMaxChars": 80,
+  "credentialShapes": [
+    "sk-",
+    "ghp_",
+    "gho_",
+    "github_pat_",
+    "xox",
+    "AKIA",
+    "Bearer ",
+    "-----BEGIN"
+  ],
+  "ranges": {
+    "activeSecondsMax": 31622400,
+    "agentRunsMax": 1000000,
+    "tokensMax": 9007199254740991,
+    "costUsdMax": 1000000
+  },
+  "states": ["registered", "running", "stopped", "failed"],
+  "registerParams": {
+    "accept": [
+      {
+        "name": "the smallest call",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running"
+        }
+      },
+      {
+        "name": "everything",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "runId": "lease-42",
+          "model": "opus",
+          "ticketId": "1a2b",
+          "goalId": "3c4d",
+          "startedAt": 1793750400000
+        }
+      },
+      {
+        "name": "registered and off",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "registered"
+        }
+      },
+      {
+        "name": "a model with a bracket",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "model": "opus[1m]"
+        }
+      },
+      {
+        "name": "a name holding a shape inside a word",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix task-12",
+          "provider": "claude",
+          "state": "running"
+        }
+      }
+    ],
+    "reject": [
+      {
+        "name": "no externalId",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "no state",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a final state",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "stopped"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a prompt field",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "prompt": "do the work"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a space in externalId",
+        "params": {
+          "externalId": "box 7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a leading dash in runId",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "runId": "-x"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "an upper-case provider",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "Claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "an empty name",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "  ",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a name with a line break",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "line one\nline two",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a name of 81 characters",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a name shaped like a key",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "sk-ant-api03-abc",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a name holding a bearer token",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "run with Bearer abc",
+          "provider": "claude",
+          "state": "running"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a fractional startedAt",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "startedAt": 1.5
+        },
+        "code": "invalid_params"
+      }
+    ]
+  },
+  "stopParams": {
+    "accept": [
+      {
+        "name": "only the key",
+        "params": {
+          "externalId": "box-7"
+        }
+      },
+      {
+        "name": "everything",
+        "params": {
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "outcome": "failed",
+          "activeSeconds": 9000,
+          "agentRuns": 2,
+          "partial": true,
+          "inputTokens": 1200,
+          "outputTokens": 800,
+          "cacheReadTokens": 50000,
+          "cacheWriteTokens": 900,
+          "costUsd": 1.25,
+          "model": "opus",
+          "finishedAt": 1793750400000
+        }
+      },
+      {
+        "name": "zero is a figure",
+        "params": {
+          "externalId": "box-7",
+          "activeSeconds": 0,
+          "inputTokens": 0,
+          "costUsd": 0
+        }
+      },
+      {
+        "name": "the largest runtime",
+        "params": {
+          "externalId": "box-7",
+          "activeSeconds": 31622400
+        }
+      }
+    ],
+    "reject": [
+      {
+        "name": "no key",
+        "params": {
+          "activeSeconds": 1
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a negative runtime",
+        "params": {
+          "externalId": "box-7",
+          "activeSeconds": -1
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a runtime over a year",
+        "params": {
+          "externalId": "box-7",
+          "activeSeconds": 31622401
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a fractional token count",
+        "params": {
+          "externalId": "box-7",
+          "inputTokens": 1.5
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "tokens past the safe integer",
+        "params": {
+          "externalId": "box-7",
+          "outputTokens": 9007199254740992
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a negative cost",
+        "params": {
+          "externalId": "box-7",
+          "costUsd": -0.01
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a huge cost",
+        "params": {
+          "externalId": "box-7",
+          "costUsd": 1000001
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "killed is not for callers",
+        "params": {
+          "externalId": "box-7",
+          "outcome": "killed"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a free-text reason",
+        "params": {
+          "externalId": "box-7",
+          "reason": "it broke"
+        },
+        "code": "invalid_params"
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "name": "registered goes on",
+      "from": "registered",
+      "call": "register:running",
+      "to": "running",
+      "changed": true,
+      "booked": false
+    },
+    {
+      "name": "running goes off",
+      "from": "running",
+      "call": "register:registered",
+      "to": "registered",
+      "changed": true,
+      "booked": false
+    },
+    {
+      "name": "the same state is a sign of life",
+      "from": "running",
+      "call": "register:running",
+      "to": "running",
+      "changed": false,
+      "booked": false
+    },
+    {
+      "name": "a stopped run stays stopped",
+      "from": "stopped",
+      "call": "register:running",
+      "to": "stopped",
+      "changed": false,
+      "booked": false
+    },
+    {
+      "name": "a failed run stays failed",
+      "from": "failed",
+      "call": "register:running",
+      "to": "failed",
+      "changed": false,
+      "booked": false
+    },
+    {
+      "name": "stop from off",
+      "from": "registered",
+      "call": "stop:success",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "stop from on",
+      "from": "running",
+      "call": "stop:success",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "failure from on",
+      "from": "running",
+      "call": "stop:failed",
+      "to": "failed",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "a second stop",
+      "from": "stopped",
+      "call": "stop:failed",
+      "to": "stopped",
+      "changed": false,
+      "booked": false
+    },
+    {
+      "name": "the human closes a run that is on",
+      "from": "running",
+      "call": "close:human",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "the human closes a run that is off",
+      "from": "registered",
+      "call": "close:human",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "closing a final run changes nothing",
+      "from": "failed",
+      "call": "close:human",
+      "to": "failed",
+      "changed": false,
+      "booked": false
+    }
+  ],
+  "display": [
+    {
+      "name": "off and fresh",
+      "entry": {
+        "state": "registered",
+        "lastSeenAt": 1793750400000,
+        "onSpans": []
+      },
+      "now": 1794006000000,
+      "expected": {
+        "stale": false,
+        "onMs": 0,
+        "countsAsOn": false
+      }
+    },
+    {
+      "name": "off past its limit",
+      "entry": {
+        "state": "registered",
+        "lastSeenAt": 1793750400000,
+        "onSpans": []
+      },
+      "now": 1794009600001,
+      "expected": {
+        "stale": true,
+        "onMs": 0,
+        "countsAsOn": false
+      }
+    },
+    {
+      "name": "on through a night with the Mac off",
+      "entry": {
+        "state": "running",
+        "lastSeenAt": 1793750400000,
+        "onSpans": [
+          {
+            "from": 1793750400000,
+            "to": null
+          }
+        ]
+      },
+      "now": 1793786400000,
+      "expected": {
+        "stale": false,
+        "onMs": 36000000,
+        "countsAsOn": true
+      }
+    },
+    {
+      "name": "on, exactly at the limit",
+      "entry": {
+        "state": "running",
+        "lastSeenAt": 1793750400000,
+        "onSpans": [
+          {
+            "from": 1793750400000,
+            "to": null
+          }
+        ]
+      },
+      "now": 1793844000000,
+      "expected": {
+        "stale": false,
+        "onMs": 93600000,
+        "countsAsOn": true
+      }
+    },
+    {
+      "name": "on past its limit",
+      "entry": {
+        "state": "running",
+        "lastSeenAt": 1793750400000,
+        "onSpans": [
+          {
+            "from": 1793750400000,
+            "to": null
+          }
+        ]
+      },
+      "now": 1793844000001,
+      "expected": {
+        "stale": true,
+        "onMs": 93600001,
+        "countsAsOn": false
+      }
+    },
+    {
+      "name": "off between two on phases",
+      "entry": {
+        "state": "registered",
+        "lastSeenAt": 1793768400000,
+        "onSpans": [
+          {
+            "from": 1793750400000,
+            "to": 1793754000000
+          },
+          {
+            "from": 1793761200000,
+            "to": 1793768400000
+          }
+        ]
+      },
+      "now": 1793772000000,
+      "expected": {
+        "stale": false,
+        "onMs": 10800000,
+        "countsAsOn": false
+      }
+    },
+    {
+      "name": "stopped never reads stale",
+      "entry": {
+        "state": "stopped",
+        "lastSeenAt": 1793750400000,
+        "onSpans": [
+          {
+            "from": 1793750400000,
+            "to": 1793754000000
+          }
+        ]
+      },
+      "now": 1797350400000,
+      "expected": {
+        "stale": false,
+        "onMs": 3600000,
+        "countsAsOn": false
+      }
+    },
+    {
+      "name": "failed never reads stale",
+      "entry": {
+        "state": "failed",
+        "lastSeenAt": 1793750400000,
+        "onSpans": []
+      },
+      "now": 1797350400000,
+      "expected": {
+        "stale": false,
+        "onMs": 0,
+        "countsAsOn": false
+      }
+    }
+  ],
+  "usageRunMs": [
+    {
+      "name": "a normal run uses its duration",
+      "row": {
+        "runSource": "ui",
+        "durationMs": 5000,
+        "activeMs": null,
+        "onMs": null
+      },
+      "expected": 5000
+    },
+    {
+      "name": "external uses the reported runtime",
+      "row": {
+        "runSource": "external",
+        "durationMs": 32400000,
+        "activeMs": 9000000,
+        "onMs": 10800000
+      },
+      "expected": 9000000
+    },
+    {
+      "name": "a reported zero is zero",
+      "row": {
+        "runSource": "external",
+        "durationMs": 32400000,
+        "activeMs": 0,
+        "onMs": 10800000
+      },
+      "expected": 0
+    },
+    {
+      "name": "no report falls back to on time",
+      "row": {
+        "runSource": "external",
+        "durationMs": 32400000,
+        "activeMs": null,
+        "onMs": 10800000
+      },
+      "expected": 10800000
+    },
+    {
+      "name": "nothing known counts nothing",
+      "row": {
+        "runSource": "external",
+        "durationMs": 32400000,
+        "activeMs": null,
+        "onMs": null
+      },
+      "expected": 0
+    }
+  ],
+  "credentialShapeRule": "A shape counts only when no letter or digit comes directly before it."
+}

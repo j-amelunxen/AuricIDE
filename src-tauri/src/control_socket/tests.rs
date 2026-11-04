@@ -34,6 +34,8 @@ pub(crate) struct FakeBackend {
     pub(crate) drafting: Mutex<Vec<String>>,
     /// Per agent: what its transcript would give. Absent: no reader.
     pub(crate) reports: Mutex<HashMap<String, ReportLookup>>,
+    pub(crate) external_changes: Mutex<usize>,
+    pub(crate) usage_rows: Mutex<Vec<(String, crate::agent_usage::record::UsageRecord)>>,
 }
 
 impl ControlBackend for FakeBackend {
@@ -92,6 +94,17 @@ impl ControlBackend for FakeBackend {
 
     fn app_data_dir(&self) -> Option<PathBuf> {
         self.app_data.lock().unwrap().clone()
+    }
+
+    fn external_agents_changed(&self) {
+        *self.external_changes.lock().unwrap() += 1;
+    }
+
+    fn usage_recorded(&self, project_path: &str, row: &crate::agent_usage::record::UsageRecord) {
+        self.usage_rows
+            .lock()
+            .unwrap()
+            .push((project_path.to_string(), row.clone()));
     }
 
     fn notify(&self, input: crate::notifications::NotificationInput) {
@@ -1069,6 +1082,12 @@ fn every_caller_scope_case_in_the_contract_holds() {
             "await_result" => json!({ "agentId": target, "waitSeconds": 0 }),
             "list_agents" | "list_projects" | "link_policy_get" => json!({}),
             "pm_target" => json!({ "project": s.path }),
+            "external_register" => json!({
+                "externalId": "box-7", "projectPath": s.path, "name": "A run",
+                "provider": "claude", "state": "running",
+            }),
+            "external_stop" => json!({ "externalId": "box-7" }),
+            "external_list" => json!({}),
             "link_policy_propose" => json!({
                 "reason": "x",
                 "changes": [{ "op": "set_daily_limit", "dailyLimit": 7 }],
@@ -3530,3 +3549,6 @@ fn quota_blocks_control_methods_mark_catalog_skip_balancing_and_refuse_spawn() {
     );
     assert_eq!(allowed_now["ok"], true, "{allowed_now}");
 }
+
+#[path = "external_agents_tests.rs"]
+mod external_agents_tests;

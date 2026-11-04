@@ -1,11 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import {
+  externalOnMs,
+  externalStateLabel,
+  formatExternalSpan,
+  isExternalLive,
+  type ExternalAgent,
+} from '@/lib/agents/externalAgents';
 import { hasTerminal } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel, type AgentState } from '@/lib/agents/state';
+import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import {
   TIMELINE_RANGES,
+  type ExternalTimelineRow,
+  type ExternalTimelineTone,
   type SupervisorTimelineModel,
   type TimelineHandoff,
   type TimelineRangeId,
@@ -21,6 +32,15 @@ const BAR_TONE: Record<TimelineTone, string> = {
   queued: 'border-dashed border-primary/40 bg-transparent text-foreground-muted',
 };
 
+/** Time a run was reported as working is solid; only what is working now wears the accent. */
+const EXTERNAL_SEGMENT_TONE: Record<ExternalTimelineTone, string> = {
+  'external-on': BAR_TONE.running,
+  'external-off': BAR_TONE.done,
+  'external-stale': BAR_TONE.done,
+  done: BAR_TONE.done,
+  error: BAR_TONE.error,
+};
+
 const ROW_GRID =
   'grid h-10 w-full grid-cols-[11rem_minmax(0,1fr)] border-b border-white/5 text-left';
 
@@ -32,10 +52,12 @@ const ROW_GRID =
 export function SupervisorTimelineToggle({
   open,
   runningCount,
+  externalCount = 0,
   onToggle,
 }: {
   open: boolean;
   runningCount: number;
+  externalCount?: number;
   onToggle: () => void;
 }) {
   return (
@@ -57,6 +79,9 @@ export function SupervisorTimelineToggle({
       {runningCount > 0 && (
         <span className="tabular-nums text-primary-light">{runningCount} running</span>
       )}
+      {externalCount > 0 && (
+        <span className="tabular-nums text-foreground-muted">{externalCount} external</span>
+      )}
     </button>
   );
 }
@@ -68,6 +93,8 @@ export function SupervisorTimelinePanel({
   now,
   currentAgentId,
   onOpenAgent,
+  confirm,
+  onCloseExternal,
 }: {
   model: SupervisorTimelineModel;
   range: TimelineRangeId;
@@ -75,8 +102,35 @@ export function SupervisorTimelinePanel({
   now: number;
   currentAgentId: string;
   onOpenAgent: (agent: AgentInfo) => void;
+  /** With `onCloseExternal`, what puts a close control on a live external row. */
+  confirm?: (request: ConfirmRequest) => Promise<boolean>;
+  onCloseExternal?: (id: string) => Promise<void>;
 }) {
-  const onlySupervisor = model.rows.length === 1 && model.outsideCount === 0;
+  const [closeFailure, setCloseFailure] = useState<string | null>(null);
+  const onlySupervisor =
+    model.rows.length === 1 &&
+    model.outsideCount === 0 &&
+    model.externalRows.length === 0 &&
+    model.externalOutsideCount === 0;
+
+  const closeExternal = async (external: ExternalAgent) => {
+    if (!confirm || !onCloseExternal) return;
+    const go = await confirm({
+      title: 'Close this external run?',
+      message:
+        `Book ${external.name} as ended, without a runtime? ` +
+        'The IDE cannot reach it, so anything still running out there keeps running.',
+      confirmLabel: 'Close run',
+    });
+    if (!go) return;
+    setCloseFailure(null);
+    try {
+      await onCloseExternal(external.id);
+    } catch {
+      // A sentence, not the backend's words: this is a row in a panel, not a log.
+      setCloseFailure(`Could not close ${external.name}. Try again.`);
+    }
+  };
   return (
     <section
       id="supervisor-timeline"
@@ -92,6 +146,15 @@ export function SupervisorTimelinePanel({
               <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
               <span className="tabular-nums">{model.runningCount} running</span>
             </span>
+            {model.externalOnCount > 0 && (
+              <span className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 rounded-full border border-primary/70"
+                />
+                <span className="tabular-nums">{model.externalOnCount} external</span>
+              </span>
+            )}
           </div>
           <div
             role="radiogroup"
@@ -151,7 +214,7 @@ export function SupervisorTimelinePanel({
               />
             ))}
           <svg
-            viewBox={`0 0 1000 ${Math.max(model.rows.length, 1)}`}
+            viewBox={`0 0 1000 ${Math.max(model.rows.length + model.externalRows.length, 1)}`}
             preserveAspectRatio="none"
             className="absolute inset-0 h-full w-full text-foreground-muted/60"
             aria-hidden="true"
@@ -184,8 +247,25 @@ export function SupervisorTimelinePanel({
             }
           />
         ))}
+        {model.externalRows.map((row) => (
+          <ExternalRowView
+            key={row.external.id}
+            row={row}
+            now={now}
+            onClose={
+              confirm && onCloseExternal && isExternalLive(row.external)
+                ? () => void closeExternal(row.external)
+                : null
+            }
+          />
+        ))}
       </div>
 
+      {closeFailure && (
+        <p role="alert" className="px-3 py-1.5 text-[10px] text-red-300">
+          {closeFailure}
+        </p>
+      )}
       {onlySupervisor && (
         <p className="px-3 py-1.5 text-[10px] text-foreground-muted">No agents started yet.</p>
       )}
@@ -194,6 +274,13 @@ export function SupervisorTimelinePanel({
           {model.outsideCount === 1
             ? '1 agent is outside this window.'
             : `${model.outsideCount} agents are outside this window.`}
+        </p>
+      )}
+      {model.externalOutsideCount > 0 && (
+        <p className="px-3 py-1.5 text-[10px] text-foreground-muted">
+          {model.externalOutsideCount === 1
+            ? '1 external run is outside this window.'
+            : `${model.externalOutsideCount} external runs are outside this window.`}
         </p>
       )}
     </section>
@@ -284,6 +371,133 @@ function TimelineRowView({
       {body}
     </button>
   );
+}
+
+/**
+ * A row for a run the IDE has no process for. A `div` on purpose: there is no
+ * console to open, and a button would promise one. The dashed base is the time
+ * it was registered, the solid parts the time it was reported as working.
+ */
+function ExternalRowView({
+  row,
+  now,
+  onClose,
+}: {
+  row: ExternalTimelineRow;
+  now: number;
+  onClose: (() => void) | null;
+}) {
+  const { external, bar } = row;
+  const label = externalStateLabel(external, now);
+  const quiet = bar?.tone !== 'external-on';
+  return (
+    <div
+      data-testid={`timeline-external-row-${external.id}`}
+      data-elementuuid="el_extrow01"
+      title={externalRowTitle(row, now)}
+      className={ROW_GRID}
+    >
+      <span className="flex h-full min-w-0 items-center gap-2 pl-3 pr-2">
+        <ProviderMark provider={external.provider} />
+        <span className="min-w-0">
+          <span
+            className={`block truncate text-[12px] font-medium ${
+              quiet ? 'text-foreground-muted' : 'text-foreground'
+            }`}
+          >
+            {external.name}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="shrink-0 rounded border border-white/15 px-1 text-[9px] font-medium text-foreground-muted">
+              External
+            </span>
+            {label !== 'Running' && (
+              <span
+                className={`shrink-0 rounded px-1 py-px text-[9px] font-medium ${EXTERNAL_BADGE_TONE[label]}`}
+              >
+                {label}
+              </span>
+            )}
+            <span className="truncate text-[10px] text-foreground-muted">{external.model}</span>
+          </span>
+        </span>
+      </span>
+      <span className="relative h-full">
+        {bar && (
+          <>
+            <span
+              data-testid={`timeline-external-bar-${external.id}`}
+              data-tone={bar.tone}
+              className={`absolute top-1/2 h-6 -translate-y-1/2 rounded-md border border-dashed border-white/20 ${
+                bar.clippedStart ? 'rounded-l-none' : ''
+              }`}
+              style={barPosition(bar)}
+            />
+            {bar.segments.map((segment) => (
+              <span
+                key={segment.start}
+                data-testid={`timeline-external-segment-${external.id}`}
+                className={`absolute top-1/2 h-6 -translate-y-1/2 rounded-md border ${
+                  EXTERNAL_SEGMENT_TONE[bar.tone]
+                }`}
+                style={barPosition(segment)}
+              />
+            ))}
+            <span
+              className={`pointer-events-none absolute top-1/2 flex h-6 -translate-y-1/2 items-center overflow-hidden px-2 text-[10px] font-medium ${
+                bar.tone === 'error'
+                  ? 'text-red-300'
+                  : quiet
+                    ? 'text-foreground-muted'
+                    : 'text-primary-light'
+              }`}
+              style={barPosition(bar)}
+            >
+              <span className="truncate">{bar.label}</span>
+            </span>
+          </>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            data-elementuuid="el_extcls01"
+            aria-label={`Close external run ${external.name}`}
+            title="Close: book this run as ended, without a runtime"
+            onClick={onClose}
+            className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#0b0b16]/70 text-foreground-muted transition-[color,background-color,transform] duration-150 hover:bg-white/10 hover:text-foreground active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            <AuricIcon name="close" aria-hidden="true" className="text-sm" />
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function barPosition(span: { start: number; end: number }) {
+  return {
+    left: `${span.start * 100}%`,
+    width: `max(${Math.max(span.end - span.start, 0) * 100}%, 0.5rem)`,
+  };
+}
+
+const EXTERNAL_BADGE_TONE: Record<Exclude<ReturnType<typeof externalStateLabel>, 'Running'>, string> =
+  {
+    Off: 'bg-white/10 text-foreground-muted',
+    'Stale?': 'bg-amber-500/15 text-amber-300',
+    Stopped: 'bg-white/10 text-foreground-muted',
+    Failed: 'bg-red-500/15 text-red-300',
+  };
+
+function externalRowTitle(row: ExternalTimelineRow, now: number): string {
+  const { external } = row;
+  const registeredUntil = external.finishedAt ?? now;
+  const registered = formatExternalSpan(Math.max(0, registeredUntil - external.registeredAt));
+  const on = formatExternalSpan(externalOnMs(external, now));
+  const head =
+    `${external.name} · ${externalStateLabel(external, now)} · registered ${registered}, ` +
+    `on ${on}. Tracked by hand: no console, no kill.`;
+  return row.orphaned ? `${head} Owner gone.` : head;
 }
 
 function ProviderMark({ provider }: { provider: string }) {

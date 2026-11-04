@@ -14,6 +14,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { loadAppConfig } from '@/lib/config/appConfig';
 import { distinctStreamColors, supervisorFamilyColors } from '@/lib/agents/streamColors';
+import { useExternalAgents } from '@/lib/hooks/useExternalAgents';
 import { useNow } from '@/lib/hooks/useNow';
 import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
@@ -502,6 +503,7 @@ export function AgentTerminalWorkspace({
   );
 
   const now = useNow();
+  const { externals, closeExternal } = useExternalAgents();
   const state = agentState(agent, now);
   const timelineHistory = useStore((s) => s.agentTimelineHistory);
   // The chart reads the whole fleet, headless runs included, plus agents that
@@ -510,8 +512,8 @@ export function AgentTerminalWorkspace({
   const timeline = useMemo(() => {
     const fleet = mergeTimelineFleet(allAgents ?? [agent], timelineHistory);
     const root = supervisorFamilyRoots(fleet).get(agent.id);
-    return root ? buildSupervisorTimeline(fleet, root, now, timelineRange) : null;
-  }, [agent, allAgents, now, timelineRange, timelineHistory]);
+    return root ? buildSupervisorTimeline(fleet, root, now, timelineRange, externals) : null;
+  }, [agent, allAgents, now, timelineRange, timelineHistory, externals]);
 
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -568,6 +570,7 @@ export function AgentTerminalWorkspace({
             <SupervisorTimelineToggle
               open={timelineOpen}
               runningCount={timeline.runningCount}
+              externalCount={timeline.externalOnCount}
               onToggle={() => setTimelineOpen((open) => !open)}
             />
           </div>
@@ -629,6 +632,8 @@ export function AgentTerminalWorkspace({
           now={now}
           currentAgentId={agent.id}
           onOpenAgent={openTimelineAgent}
+          confirm={confirm}
+          onCloseExternal={closeExternal}
         />
       )}
 

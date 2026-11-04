@@ -13,6 +13,7 @@
 //! sandbox would not stop one — it leaves reads and network open.
 
 pub mod caller;
+mod external_agents;
 mod link_policy;
 mod link_spawn;
 pub mod pingback;
@@ -110,6 +111,10 @@ pub trait ControlBackend: Send + Sync {
     fn agent_report(&self, _agent_id: &str) -> ReportLookup {
         ReportLookup::Missing(ReportMissing::ProviderUnsupported)
     }
+    /// `external-agents.json` changed, so the timeline should read it again.
+    fn external_agents_changed(&self) {}
+    /// An external run reached the usage history.
+    fn usage_recorded(&self, _project_path: &str, _row: &crate::agent_usage::record::UsageRecord) {}
     /// Active quota blocks right now, read from `<app_data_dir>/quota-blocks.json`
     /// when `app_data_dir()` is `Some`.
     fn quota_blocks(&self) -> Vec<crate::quota_blocks::QuotaBlock> {
@@ -502,6 +507,9 @@ impl Dispatcher {
             Request::ListQuotaBlocks(_) => self.list_quota_blocks(),
             Request::SetQuotaBlock(params) => self.set_quota_block(params),
             Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
+            Request::ExternalRegister(_) | Request::ExternalStop(_) | Request::ExternalList(_) => {
+                Err(external_agents::supervisors_only())
+            }
         }
     }
 
@@ -1347,6 +1355,23 @@ impl ControlBackend for TauriBackend {
     fn app_data_dir(&self) -> Option<PathBuf> {
         use tauri::Manager;
         self.app.path().app_data_dir().ok()
+    }
+
+    fn external_agents_changed(&self) {
+        use tauri::Emitter;
+        let _ = self.app.emit(crate::external_agents::CHANGED_EVENT, ());
+    }
+
+    fn usage_recorded(&self, project_path: &str, row: &crate::agent_usage::record::UsageRecord) {
+        use crate::agent_usage::capture::{UsageRecordedEvent, USAGE_RECORDED_EVENT};
+        use tauri::Emitter;
+        let _ = self.app.emit(
+            USAGE_RECORDED_EVENT,
+            UsageRecordedEvent {
+                project_path: project_path.to_string(),
+                row: row.clone(),
+            },
+        );
     }
 
     fn notify(&self, input: crate::notifications::NotificationInput) {

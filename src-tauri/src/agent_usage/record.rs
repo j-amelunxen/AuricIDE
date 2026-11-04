@@ -35,9 +35,9 @@ macro_rules! text_enum {
 }
 
 text_enum!(RunKind { Ticket => "ticket", Goal => "goal", Review => "review", Other => "other" });
-text_enum!(RunSource { Ui => "ui", Conductor => "conductor", Schedule => "schedule", Mcp => "mcp", Other => "other" });
+text_enum!(RunSource { Ui => "ui", Conductor => "conductor", Schedule => "schedule", Mcp => "mcp", External => "external", Other => "other" });
 text_enum!(Outcome { Success => "success", Error => "error", Killed => "killed" });
-text_enum!(CostSource { Cli => "cli", Estimated => "estimated", None => "none" });
+text_enum!(CostSource { Cli => "cli", Estimated => "estimated", Reported => "reported", None => "none" });
 text_enum!(MatchKind { Exact => "exact", Heuristic => "heuristic" });
 
 impl RunKind {
@@ -108,6 +108,24 @@ pub struct UsageRecord {
     #[serde(skip_serializing, default)]
     pub model_usage_json: Option<String>,
     pub num_turns: Option<u64>,
+    /// External runs only (`docs/design-external-agents.md`). Real runtime as
+    /// reported; `None` is unknown, never 0.
+    #[serde(default)]
+    pub active_ms: Option<i64>,
+    /// The time the IDE was told the run was working.
+    #[serde(default)]
+    pub on_ms: Option<i64>,
+    #[serde(default)]
+    pub agent_runs: Option<i64>,
+    #[serde(default)]
+    pub runtime_partial: Option<bool>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub external_run_id: Option<String>,
+    /// `human` when closed by hand from the timeline.
+    #[serde(default)]
+    pub closed_by: Option<String>,
 }
 
 /// Everything known about a run before its evidence is read.
@@ -240,6 +258,13 @@ pub fn build_record(
         unpriced_models: None,
         model_usage_json: None,
         num_turns: None,
+        active_ms: None,
+        on_ms: None,
+        agent_runs: None,
+        runtime_partial: None,
+        external_id: None,
+        external_run_id: None,
+        closed_by: None,
     };
 
     let claude_estimate = evidence.claude_transcript.as_ref().map(|by_model| {

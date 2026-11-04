@@ -1,7 +1,7 @@
 import { invoke } from './invoke';
 import { subscribeToTauriEvent } from './subscribe';
 
-export type UsageCostSource = 'cli' | 'estimated' | 'none';
+export type UsageCostSource = 'cli' | 'estimated' | 'reported' | 'none';
 export type UsageRunKind = 'ticket' | 'goal' | 'review' | 'other';
 
 /** One finished agent run: what it consumed, and what it cost at list price. */
@@ -37,6 +37,16 @@ export interface AgentUsageRow {
   estimateCacheWriteTokens: number | null;
   unpricedModels: string[] | null;
   numTurns: number | null;
+  /** External runs only (`docs/design-external-agents.md`). Real runtime as reported; `null` = unknown. */
+  activeMs: number | null;
+  /** The time the IDE was told the run was working. */
+  onMs: number | null;
+  agentRuns: number | null;
+  runtimePartial: boolean | null;
+  externalId: string | null;
+  externalRunId: string | null;
+  /** `human` when closed by hand from the timeline. */
+  closedBy: string | null;
 }
 
 export interface AgentUsageRecorded {

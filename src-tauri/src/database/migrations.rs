@@ -35,6 +35,20 @@ pub(crate) fn apply_migration(
 }
 
 // code-gate: complexity-cyclomatic, complexity-function-length - one flat, ordered list of migrations; each `?` is one step, and splitting it would scatter the order that matters
+/// Migration 26: what tells an external run apart in the usage history
+/// (`docs/design-external-agents.md`). One column per statement, because
+/// `add_agent_usage_external` adds them one by one. Public to the crate so a test
+/// can hold it against the twin in `src/mcp/db.ts`.
+pub(crate) const AGENT_USAGE_EXTERNAL_MIGRATION_SQL: &str = "
+    ALTER TABLE pm_agent_usage ADD COLUMN active_ms INTEGER;
+    ALTER TABLE pm_agent_usage ADD COLUMN on_ms INTEGER;
+    ALTER TABLE pm_agent_usage ADD COLUMN agent_runs INTEGER;
+    ALTER TABLE pm_agent_usage ADD COLUMN runtime_partial INTEGER;
+    ALTER TABLE pm_agent_usage ADD COLUMN external_id TEXT;
+    ALTER TABLE pm_agent_usage ADD COLUMN external_run_id TEXT;
+    ALTER TABLE pm_agent_usage ADD COLUMN closed_by TEXT;
+";
+
 /// Migration 25. Public to the crate so a test can hold it against the twin
 /// in `src/mcp/db.ts`.
 pub(crate) const AGENT_USAGE_MIGRATION_SQL: &str = "CREATE TABLE IF NOT EXISTS pm_agent_usage (
@@ -522,7 +536,28 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     // between the DDL and the marker just runs it again.
     apply_migration(conn, 25, "create_pm_agent_usage", AGENT_USAGE_MIGRATION_SQL)?;
 
+    // Keep in sync with src/mcp/db.ts migration 26.
+    add_agent_usage_external(conn)?;
+
     Ok(())
+}
+
+/// SQLite has no `ADD COLUMN IF NOT EXISTS`, and the two sides can each die part
+/// way: a column may exist without the marker, so each one is checked.
+fn add_agent_usage_external(conn: &Connection) -> Result<(), String> {
+    let mut missing = String::new();
+    for statement in AGENT_USAGE_EXTERNAL_MIGRATION_SQL.split_inclusive(';') {
+        let column = statement
+            .split_whitespace()
+            .skip_while(|word| *word != "COLUMN")
+            .nth(1);
+        if let Some(column) = column {
+            if !column_exists(conn, "pm_agent_usage", column)? {
+                missing.push_str(statement);
+            }
+        }
+    }
+    apply_migration(conn, 26, "add_agent_usage_external", &missing)
 }
 
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {

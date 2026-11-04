@@ -147,3 +147,42 @@ _Too many processes._ At most 8 children at a time; the least recently used goes
 running in it, and if all are busy the call answers `pm_busy`. A child that does not answer in 120
 seconds is ended. A project server ends when its stdin closes, so a gateway killed outright leaves
 none behind.
+
+## register_external_agent [#el_extreg01], stop_external_agent [#el_extstp01], list_external_agents [#el_extlst01], external_agent_close [#el_extcls01]
+
+The behaviour is in `docs/design-external-agents.md`.
+
+_Touching someone else's entry._ An entry belongs to the run folder of the supervisor that made
+it. Listing shows only those. A stop on a foreign key is `unknown_agent`, a register on one
+`supervisor_denied` (`external_id_in_use`). The folder comes from the caller's agent record,
+which the PID walk found, never from a parameter. A worker, an outside client on the socket and
+the supervisor link have no way to these methods.
+
+_Reaching a project._ The project goes through the same check as `pm_target`, so a project
+outside the policy is `unknown_project`. A ticket or goal is looked up in that project only, on
+a read-only connection, as a bound parameter.
+
+_Smuggling text into the logs._ Unknown parameters are refused, ids and model names have a fixed
+alphabet, and there is no free-text field other than `name`: one line, at most 80 characters.
+A name shaped like a credential is refused. That check catches accidents and is no scanner: a
+supervisor that wants to write a secret into a name it controls can still do it in other
+words. `name` and the model are agent text and data like any other. They reach the timeline as
+React text, never as markup.
+
+_Forged figures._ Runtime, tokens and cost are what the caller reports. They are checked for range
+only and marked `reported`. **Nothing stops a supervisor from reporting a wrong runtime.**
+Billing must treat these as a report. A box agent can forge its own numbers before the
+supervisor reads them, so the same holds one level down.
+
+_Double booking._ The usage row's id derives from the entry, and the insert ignores a row that
+exists, so a retry after a crash cannot book twice. The task log is written at least once: a
+crash between its append and the next save can repeat one line. A reader should treat `agentId`
+as unique on external lines.
+
+_Filling the disk._ At most 200 live entries, 64 on-spans each. Final entries go after 7 days.
+A caller can still create and stop entries in a loop, each one a history row. That is the same
+exposure as any supervisor spawning short agents.
+
+_The human's close._ `external_agent_close` is a Tauri command, not a socket method, so no agent
+reaches it. It books with `closedBy: "human"` and no runtime.
+

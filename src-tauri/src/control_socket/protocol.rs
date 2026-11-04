@@ -4,6 +4,7 @@
 
 use crate::agents::run_results::RunResult;
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
+use crate::external_agents::{ExternalAgentView, ExternalRegisterParams, ExternalStopParams};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -257,6 +258,9 @@ pub enum Request {
     ListQuotaBlocks(EmptyParams),
     SetQuotaBlock(SetQuotaBlockParams),
     ClearQuotaBlock(ClearQuotaBlockParams),
+    ExternalRegister(ExternalRegisterParams),
+    ExternalStop(ExternalStopParams),
+    ExternalList(EmptyParams),
 }
 
 /// `pm_target`: which project folder a PM tool may run in. `project` is a path,
@@ -309,7 +313,7 @@ pub struct ClearQuotaBlockParams {
     pub id: String,
 }
 
-const METHODS: [&str; 17] = [
+const METHODS: [&str; 20] = [
     "list_agents",
     "read_output",
     "read_report",
@@ -327,6 +331,9 @@ const METHODS: [&str; 17] = [
     "list_quota_blocks",
     "set_quota_block",
     "clear_quota_block",
+    "external_register",
+    "external_stop",
+    "external_list",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -484,6 +491,14 @@ fn normalise_params(request: Request) -> Result<Request, String> {
             Err("durationMinutes must be positive".into())
         }
         Request::ClearQuotaBlock(params) if blank(&params.id) => Err("id must not be empty".into()),
+        Request::ExternalRegister(params) => {
+            crate::external_agents::model::validate_register(&params)?;
+            Ok(Request::ExternalRegister(params))
+        }
+        Request::ExternalStop(params) => {
+            crate::external_agents::model::validate_stop(&params)?;
+            Ok(Request::ExternalStop(params))
+        }
         Request::ListProjects(params) if params.project.as_deref().is_some_and(blank) => {
             Err("project must not be empty; leave it out to list every project".into())
         }
@@ -877,6 +892,30 @@ pub struct SetQuotaBlockResult {
 pub struct ClearQuotaBlockResult {
     pub id: String,
     pub cleared: bool,
+}
+
+/// `changed: false` on a stopped key, which stays stopped.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalRegisterResult {
+    pub agent: ExternalAgentView,
+    pub created: bool,
+    pub changed: bool,
+}
+
+/// `booked: false`: final, but the history write is still to be retried.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalStopResult {
+    pub agent: ExternalAgentView,
+    pub already_stopped: bool,
+    pub booked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalListResult {
+    pub agents: Vec<ExternalAgentView>,
 }
 
 #[cfg(test)]
@@ -1309,6 +1348,46 @@ pub(crate) mod tests {
                     ClearQuotaBlockResult {
                         id: "antigravity:family:claude-".into(),
                         cleared: true,
+                    },
+                ),
+            ),
+            (
+                "external_register",
+                ok_response(
+                    &json!(91),
+                    ExternalRegisterResult {
+                        agent: serde_json::from_value(
+                            expected["external_register"]["result"]["agent"].clone(),
+                        )
+                        .unwrap(),
+                        created: true,
+                        changed: true,
+                    },
+                ),
+            ),
+            (
+                "external_stop",
+                ok_response(
+                    &json!(92),
+                    ExternalStopResult {
+                        agent: serde_json::from_value(
+                            expected["external_stop"]["result"]["agent"].clone(),
+                        )
+                        .unwrap(),
+                        already_stopped: false,
+                        booked: true,
+                    },
+                ),
+            ),
+            (
+                "external_list",
+                ok_response(
+                    &json!(93),
+                    ExternalListResult {
+                        agents: serde_json::from_value(
+                            expected["external_list"]["result"]["agents"].clone(),
+                        )
+                        .unwrap(),
                     },
                 ),
             ),

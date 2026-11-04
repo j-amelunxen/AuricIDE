@@ -57,6 +57,37 @@ describe('agent usage MCP tools', () => {
   });
 
   describe('listAgentUsage', () => {
+    it('maps the external columns to camelCase and counts reported runtime in the summary', () => {
+      insertUsage(db, { id: 'plain', ticketId });
+      db.prepare(
+        `INSERT INTO pm_agent_usage (id, agent_id, ticket_id, run_kind, run_source, provider,
+           headless, started_at, finished_at, duration_ms, outcome, cost_usd, cost_source,
+           active_ms, on_ms, agent_runs, runtime_partial, external_id, external_run_id, closed_by)
+         VALUES ('box', 'ext-1', ?, 'ticket', 'external', 'claude', 1, '2026-09-29T00:00:00Z',
+           '2026-09-29T09:00:00Z', 32400000, 'killed', NULL, 'reported',
+           9000000, 10800000, 2, 1, 'box-7', 'lease-42', 'human')`
+      ).run(ticketId);
+
+      const rows = listAgentUsage(db, { ticketId });
+      const external = rows.find((row) => row.id === 'box');
+      expect(external).toMatchObject({
+        runSource: 'external',
+        costSource: 'reported',
+        activeMs: 9000000,
+        onMs: 10800000,
+        agentRuns: 2,
+        runtimePartial: true,
+        externalId: 'box-7',
+        externalRunId: 'lease-42',
+        closedBy: 'human',
+      });
+      expect(rows.find((row) => row.id === 'plain')).toMatchObject({
+        activeMs: null,
+        runtimePartial: null,
+        externalId: null,
+      });
+    });
+
     it('returns rows in the contract shape, newest first', () => {
       insertUsage(db, { id: 'old', ticketId, finishedAt: '2026-09-01T00:00:00Z', inputTokens: 5 });
       insertUsage(db, {

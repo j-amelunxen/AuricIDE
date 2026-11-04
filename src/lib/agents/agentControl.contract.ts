@@ -2,6 +2,7 @@ import { z } from 'zod';
 import fixtures from './agentControl.fixtures.json';
 import policyFixtures from '../config/supervisorPolicy.fixtures.json';
 import linkFixtures from './supervisorLink.fixtures.json';
+import externalFixtures from './externalAgents.fixtures.json';
 
 /**
  * The agent-control socket protocol, TypeScript half (`docs/design-agent-control.md`).
@@ -32,6 +33,9 @@ export const CONTROL_METHODS = [
   'list_quota_blocks',
   'set_quota_block',
   'clear_quota_block',
+  'external_register',
+  'external_stop',
+  'external_list',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -121,6 +125,9 @@ export const SUPERVISOR_DENIED_REASONS = [
   ...Object.keys(policyFixtures.reasons.checkSpawn),
   ...Object.keys(policyFixtures.reasons.modelChoice),
   ...Object.keys(policyFixtures.reasons.pmTarget),
+  // docs/design-external-agents.md: a key another supervisor holds, and the live entry bound.
+  'external_id_in_use',
+  'external_limit',
 ].filter((key) => key !== '_comment');
 
 /**
@@ -254,6 +261,101 @@ const pmTargetParams = z
   .object({ project: z.string().trim().min(1, 'project must not be empty').optional() })
   .transform((p) => (p.project ? { project: p.project } : {}));
 
+const externalPatterns = externalFixtures.patterns;
+const externalKey = z
+  .string()
+  .regex(new RegExp(externalPatterns.externalId), 'letters, digits and ._:/- only');
+const externalRunId = z
+  .string()
+  .regex(new RegExp(externalPatterns.runId), 'letters, digits and ._:/- only');
+const externalModel = z
+  .string()
+  .regex(new RegExp(externalPatterns.model), 'letters, digits and ._:/[]- only');
+const externalCount = (max: number) => z.number().int().min(0).max(max);
+const externalTokens = externalCount(externalFixtures.ranges.tokensMax);
+
+/**
+ * No letter or digit right before the shape: "task-12" holds "sk-" and is no key.
+ * The check is a net for an accident, not a scanner.
+ */
+const CREDENTIAL_SHAPE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${externalFixtures.credentialShapes
+    .map((shape) => shape.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')})`
+);
+
+const externalName = z
+  .string()
+  .refine((name) => name.trim().length > 0, 'name must not be empty')
+  .refine((name) => !/\p{Cc}/u.test(name), 'name must be one line')
+  .refine(
+    (name) => [...name].length <= externalFixtures.nameMaxChars,
+    `name must be at most ${externalFixtures.nameMaxChars} characters`
+  )
+  .refine((name) => !CREDENTIAL_SHAPE.test(name), 'name must not hold a credential');
+
+/** Rust decides; this refuses early. Unknown keys are refused so no prompt slips in by accident. */
+export const externalRegisterParams = z
+  .object({
+    externalId: externalKey.describe('Your name for the run, such as a box name'),
+    runId: externalRunId.optional().describe('Tells runs of one externalId apart, such as a lease'),
+    projectPath: z
+      .string()
+      .trim()
+      .min(1, 'projectPath must not be empty')
+      .describe('Path or name of a project from list_projects'),
+    name: externalName.describe('One line for the timeline, at most 80 characters'),
+    provider: z
+      .string()
+      .regex(new RegExp(externalPatterns.provider), 'lower-case letters, digits and ._- only')
+      .describe('For the log only; no policy check, nothing is spawned'),
+    model: externalModel.optional().describe('For the log only'),
+    ticketId: z
+      .string()
+      .min(4, 'a ticket id is at least 4 characters')
+      .optional()
+      .describe('Full id or unique prefix in that project'),
+    goalId: z
+      .string()
+      .min(4, 'a goal id is at least 4 characters')
+      .optional()
+      .describe("The same; default is the ticket's goal"),
+    state: z
+      .enum(['registered', 'running'])
+      .describe('registered: known, not working now. running: working now'),
+    startedAt: offset
+      .optional()
+      .describe('Unix ms; used only when the entry is created, default now'),
+  })
+  .strict();
+
+export const externalStopParams = z
+  .object({
+    externalId: externalKey.describe('The same key as at registration'),
+    runId: externalRunId.optional().describe('The same key as at registration'),
+    outcome: z.enum(['success', 'failed']).optional().describe('Default success'),
+    activeSeconds: externalCount(externalFixtures.ranges.activeSecondsMax)
+      .optional()
+      .describe('Real runtime as reported; leave it out when unknown, never send 0 for unknown'),
+    agentRuns: externalCount(externalFixtures.ranges.agentRunsMax)
+      .optional()
+      .describe('How often the agent was started'),
+    partial: z.boolean().optional().describe('The figures were cut off'),
+    inputTokens: externalTokens.optional(),
+    outputTokens: externalTokens.optional(),
+    cacheReadTokens: externalTokens.optional(),
+    cacheWriteTokens: externalTokens.optional(),
+    costUsd: z
+      .number()
+      .min(0)
+      .max(externalFixtures.ranges.costUsdMax)
+      .optional()
+      .describe('As reported; left out stays unknown, never 0'),
+    model: externalModel.optional().describe('Replaces the registered model'),
+    finishedAt: offset.optional().describe('Unix ms; default now'),
+  })
+  .strict();
+
 const PARAMS = {
   list_agents: noParams,
   list_projects: z
@@ -344,6 +446,9 @@ const PARAMS = {
   dismiss: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   link_policy_get: noParams,
   pm_target: pmTargetParams,
+  external_register: externalRegisterParams,
+  external_stop: externalStopParams,
+  external_list: noParams,
   /**
    * Only the op is checked here; Rust checks every field against the policy
    * rules and answers `invalid_params` naming the change that broke one.
@@ -612,6 +717,42 @@ const runResult = z.object({
 const linkJobLimits = z.object({ dailyLimit: offset, perProjectDailyLimit: offset.nullable() });
 const linkOrigin = z.enum(['global', 'project', 'override']);
 
+/** One tracked run; the fixture view `ExternalAgent` (`externalAgents.ts`) is this shape. */
+const externalAgent = z.object({
+  id: z.string(),
+  externalId: z.string(),
+  runId: z.string().nullable(),
+  projectPath: z.string(),
+  name: z.string(),
+  provider: z.string(),
+  model: z.string().nullable(),
+  ticketId: z.string().nullable(),
+  ticketName: z.string().nullable(),
+  goalId: z.string().nullable(),
+  state: z.enum(externalFixtures.states as ['registered', 'running', 'stopped', 'failed']),
+  stale: z.boolean(),
+  registeredAt: offset,
+  lastSeenAt: offset,
+  finishedAt: offset.nullable(),
+  onSpans: z.array(z.object({ from: offset, to: offset.nullable() })),
+  ownerRunDir: z.string(),
+  ownerAgentId: z.string().nullable(),
+  closedBy: z.string().nullable(),
+  report: z
+    .object({
+      activeMs: offset.nullable(),
+      agentRuns: offset.nullable(),
+      partial: z.boolean().nullable(),
+      inputTokens: offset.nullable(),
+      outputTokens: offset.nullable(),
+      cacheReadTokens: offset.nullable(),
+      cacheWriteTokens: offset.nullable(),
+      costUsd: z.number().nullable(),
+    })
+    .nullable(),
+  booked: z.boolean(),
+});
+
 const RESULTS = {
   list_agents: z.object({ agents: z.array(agentSummary) }),
   read_output: z.object({
@@ -715,6 +856,19 @@ const RESULTS = {
     expiresAt: offset,
     diff: z.array(z.string()),
   }),
+  /** Safe to repeat: `changed: false` on a stopped key, which stays stopped. */
+  external_register: z.object({
+    agent: externalAgent,
+    created: z.boolean(),
+    changed: z.boolean(),
+  }),
+  /** The first stop wins. `booked: false`: final, but the history write is still to be retried. */
+  external_stop: z.object({
+    agent: externalAgent,
+    alreadyStopped: z.boolean(),
+    booked: z.boolean(),
+  }),
+  external_list: z.object({ agents: z.array(externalAgent) }),
   /** `removed: false` is an answer: the worktree holds work and stays for a person. */
   remove_worktree: z.object({
     agentId: z.string(),

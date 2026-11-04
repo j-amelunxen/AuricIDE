@@ -39,7 +39,7 @@
       "group": "cc_usage",
       "level": 2,
       "weight": 0.6,
-      "position": [-6.15, -10.5, 0]
+      "position": [-8.25, -10.5, 0]
     },
     {
       "id": "report",
@@ -51,7 +51,7 @@
       "params": {
         "layers": 2
       },
-      "position": [-2.05, -10.5, 0]
+      "position": [-4.15, -10.5, 0]
     },
     {
       "id": "auCapture",
@@ -70,7 +70,7 @@
       "group": "agent_usage",
       "level": 2,
       "weight": 0.6,
-      "position": [5.05, -10.5, 0]
+      "position": [2.95, -10.5, 0]
     },
     {
       "id": "auRecord",
@@ -79,7 +79,7 @@
       "group": "agent_usage",
       "level": 2,
       "weight": 0.5,
-      "position": [9.15, -10.5, 0]
+      "position": [7.05, -10.5, 0]
     },
     {
       "id": "auStore",
@@ -88,7 +88,16 @@
       "group": "agent_usage",
       "level": 2,
       "weight": 0.6,
-      "position": [13.25, -10.5, 0]
+      "position": [15.35, -10.5, 0]
+    },
+    {
+      "id": "externalAgents",
+      "label": "external_agents/ (booking)",
+      "preset": "box",
+      "group": "agent_usage",
+      "level": 2,
+      "weight": 0.6,
+      "position": [11.15, -10.5, 0]
     },
     {
       "id": "auReprice",
@@ -115,7 +124,7 @@
       "group": "usage_limits",
       "level": 2,
       "weight": 0.5,
-      "position": [-13.25, -10.5, 0]
+      "position": [-15.35, -10.5, 0]
     },
     {
       "id": "ulContract",
@@ -292,9 +301,31 @@
       "to": "ulContract",
       "kind": "dataflow",
       "label": "snapshots"
+    },
+    {
+      "from": "externalAgents",
+      "to": "auStore",
+      "kind": "dataflow",
+      "label": "reported figures"
+    },
+    {
+      "from": "backend",
+      "to": "externalAgents",
+      "kind": "calls",
+      "label": "close, retry at start"
     }
   ],
-  "tour": ["ccMod", "scan", "pricing", "report", "auCapture", "auStore", "ulMod", "ulReaders"],
+  "tour": [
+    "ccMod",
+    "scan",
+    "pricing",
+    "report",
+    "auCapture",
+    "auStore",
+    "externalAgents",
+    "ulMod",
+    "ulReaders"
+  ],
   "annotations": [
     {
       "id": "facts",

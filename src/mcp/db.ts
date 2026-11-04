@@ -405,7 +405,33 @@ function applyMigrations(db: Database.Database): void {
     db.exec(AGENT_USAGE_MIGRATION);
     record(25, 'create_pm_agent_usage');
   }
+
+  // Migration #26: what tells an external run apart in the usage history. Keep in
+  // sync with src-tauri/src/database/migrations.rs. A column may already exist
+  // without the marker when the Rust side died part way, so each one is checked:
+  // SQLite has no ADD COLUMN IF NOT EXISTS. Contract: docs/design-external-agents.md.
+  if (!applied(26)) {
+    const columns = db.prepare('PRAGMA table_info(pm_agent_usage)').all() as Array<{
+      name: string;
+    }>;
+    const existing = new Set(columns.map((c) => c.name));
+    for (const statement of AGENT_USAGE_EXTERNAL_MIGRATION.split(';')) {
+      const column = /ADD COLUMN (\w+)/.exec(statement)?.[1];
+      if (column && !existing.has(column)) db.exec(statement);
+    }
+    record(26, 'add_agent_usage_external');
+  }
 }
+
+const AGENT_USAGE_EXTERNAL_MIGRATION = `
+  ALTER TABLE pm_agent_usage ADD COLUMN active_ms INTEGER;
+  ALTER TABLE pm_agent_usage ADD COLUMN on_ms INTEGER;
+  ALTER TABLE pm_agent_usage ADD COLUMN agent_runs INTEGER;
+  ALTER TABLE pm_agent_usage ADD COLUMN runtime_partial INTEGER;
+  ALTER TABLE pm_agent_usage ADD COLUMN external_id TEXT;
+  ALTER TABLE pm_agent_usage ADD COLUMN external_run_id TEXT;
+  ALTER TABLE pm_agent_usage ADD COLUMN closed_by TEXT;
+`;
 
 const AGENT_USAGE_MIGRATION = `
   CREATE TABLE IF NOT EXISTS pm_agent_usage (

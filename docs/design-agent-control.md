@@ -405,6 +405,7 @@ half is `supervisors` in `agentControl.fixtures.json`
 | `send_input`                                                | its own children only                                                                     |
 | `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                    |
 | `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                  |
+| `external_register`, `external_stop`, `external_list`       | entries of its own run folder only; `docs/design-external-agents.md`                      |
 
 - **Quota blocks are facts about a provider, not about a scope.** `<app_data_dir>/quota-blocks.json`
   holds temporary blocks on a provider, a model family (`claude-*`) or one model. Rust writes one
@@ -779,23 +780,26 @@ stays in the Git panel's worktree list for a person.
 
 ### Tools (`auric-mcp --supervisor`)
 
-| tool                 | socket method       |
-| -------------------- | ------------------- |
-| `list_projects`      | `list_projects`     |
-| `spawn_agent`        | `spawn`             |
-| `list_my_agents`     | `list_agents`       |
-| `read_agent_output`  | `read_output`       |
-| `read_agent_report`  | `read_report`       |
-| `await_agent_result` | `await_result`      |
-| `send_agent_input`   | `send_input`        |
-| `kill_agent`         | `kill`              |
-| `remove_worktree`    | `remove_worktree`   |
-| `dismiss_agent`      | `dismiss`           |
-| `pm_tools`           | `pm_target`         |
-| `pm_call`            | `pm_target`         |
-| `list_quota_blocks`  | `list_quota_blocks` |
-| `set_quota_block`    | `set_quota_block`   |
-| `clear_quota_block`  | `clear_quota_block` |
+| tool                      | socket method       |
+| ------------------------- | ------------------- |
+| `list_projects`           | `list_projects`     |
+| `spawn_agent`             | `spawn`             |
+| `list_my_agents`          | `list_agents`       |
+| `read_agent_output`       | `read_output`       |
+| `read_agent_report`       | `read_report`       |
+| `await_agent_result`      | `await_result`      |
+| `send_agent_input`        | `send_input`        |
+| `kill_agent`              | `kill`              |
+| `remove_worktree`         | `remove_worktree`   |
+| `dismiss_agent`           | `dismiss`           |
+| `pm_tools`                | `pm_target`         |
+| `pm_call`                 | `pm_target`         |
+| `list_quota_blocks`       | `list_quota_blocks` |
+| `set_quota_block`         | `set_quota_block`   |
+| `clear_quota_block`       | `clear_quota_block` |
+| `register_external_agent` | `external_register` |
+| `stop_external_agent`     | `external_stop`     |
+| `list_external_agents`    | `external_list`     |
 
 `pm_tools` and `pm_call` ask `pm_target` first and then use a project's own server.
 `src/mcp/supervisorPm.ts` keeps at most 8 of those `--project-root` children, one per

@@ -134,7 +134,7 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.5,
-      "position": [5.35, -22.6, 0]
+      "position": [3.55, -22.6, 0]
     },
     {
       "id": "quotaBlocks",
@@ -143,7 +143,16 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.3,
-      "position": [1.55, -22.6, 0]
+      "position": [-0.25, -22.6, 0]
+    },
+    {
+      "id": "externalAgents",
+      "label": "External agents",
+      "preset": "box",
+      "group": "fleet",
+      "level": 4,
+      "weight": 0.3,
+      "position": [7.35, -22.6, 0]
     },
     {
       "id": "mcp",
@@ -189,7 +198,7 @@
       "level": 4,
       "weight": 0.4,
       "detail": "./usage.scene.json",
-      "position": [-8.75, -22.6, 0]
+      "position": [-6.95, -22.6, 0]
     },
     {
       "id": "imports",
@@ -198,7 +207,7 @@
       "group": "backend",
       "level": 4,
       "weight": 0.3,
-      "position": [-12.45, -22.6, 0]
+      "position": [-14.25, -22.6, 0]
     },
     {
       "id": "platform",
@@ -207,7 +216,7 @@
       "group": "backend",
       "level": 4,
       "weight": 0.3,
-      "position": [-5.05, -22.6, 0]
+      "position": [-10.65, -22.6, 0]
     },
     {
       "id": "projectDb",
@@ -234,7 +243,7 @@
       "group": "external",
       "level": 4,
       "weight": 0.6,
-      "position": [12.45, -22.6, 0]
+      "position": [14.25, -22.6, 0]
     }
   ],
   "edges": [
@@ -449,6 +458,30 @@
       "to": "appData",
       "kind": "dataflow",
       "label": "quota-blocks.json"
+    },
+    {
+      "from": "controlSocket",
+      "to": "externalAgents",
+      "kind": "dependency",
+      "label": "register, stop, list"
+    },
+    {
+      "from": "commands",
+      "to": "externalAgents",
+      "kind": "calls",
+      "label": "list, close"
+    },
+    {
+      "from": "externalAgents",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "external-agents.json"
+    },
+    {
+      "from": "externalAgents",
+      "to": "usage",
+      "kind": "dataflow",
+      "label": "books a run"
     }
   ],
   "tour": [
@@ -473,7 +506,7 @@
         },
         {
           "label": "Rust files (non-test)",
-          "value": "191"
+          "value": "210"
         },
         {
           "label": "MCP tool files",

@@ -7,8 +7,10 @@ import {
   sumUsage,
   usageForGoalSubtree,
   usageForTicket,
+  usageRunMs,
   withinWindow,
 } from './aggregate';
+import externalFixtures from '@/lib/agents/externalAgents.fixtures.json';
 import { usageRow } from './testRow';
 
 function goal(id: string, parentId: string | null = null): PmGoal {
@@ -86,6 +88,23 @@ describe('sumUsage', () => {
       usageRow({ costSource: 'none', costUsd: null }),
     ]);
     expect(totals.estimatedRuns).toBe(1);
+  });
+});
+
+describe('usageRunMs', () => {
+  for (const { name, row, expected } of externalFixtures.usageRunMs) {
+    it(name, () => {
+      expect(usageRunMs(row)).toBe(expected);
+    });
+  }
+
+  it('a parked night does not add ten hours to a total', () => {
+    const totals = sumUsage([
+      usageRow({ durationMs: 1000 }),
+      usageRow({ runSource: 'external', durationMs: 36_000_000, activeMs: 2000, onMs: 9000 }),
+      usageRow({ runSource: 'external', durationMs: 36_000_000, activeMs: null, onMs: 4000 }),
+    ]);
+    expect(totals.durationMs).toBe(7000);
   });
 });
 

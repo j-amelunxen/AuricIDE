@@ -47,6 +47,13 @@ interface UsageDbRow {
   estimate_cache_write_tokens: number | null;
   unpriced_models: string | null;
   num_turns: number | null;
+  active_ms: number | null;
+  on_ms: number | null;
+  agent_runs: number | null;
+  runtime_partial: number | null;
+  external_id: string | null;
+  external_run_id: string | null;
+  closed_by: string | null;
 }
 
 /** The camelCase shape the frontend's `agent_usage_load` returns, so both read one vocabulary. */
@@ -82,6 +89,13 @@ function toUsageRow(row: UsageDbRow): AgentUsageRow {
     estimateCacheWriteTokens: row.estimate_cache_write_tokens,
     unpricedModels: row.unpriced_models === null ? null : JSON.parse(row.unpriced_models),
     numTurns: row.num_turns,
+    activeMs: row.active_ms,
+    onMs: row.on_ms,
+    agentRuns: row.agent_runs,
+    runtimePartial: row.runtime_partial === null ? null : row.runtime_partial !== 0,
+    externalId: row.external_id,
+    externalRunId: row.external_run_id,
+    closedBy: row.closed_by,
   };
 }
 

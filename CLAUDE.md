@@ -794,6 +794,33 @@ or `ProjectManager*`: both already mean the tickets.
   (`AURIC_DENY_CONTROL=1` runs it without the rules and expects the edit to
   land).
 
+### External agents: runs the IDE tracks but does not run
+
+A supervisor can tell the IDE about a run it has no process for, such as a
+sandbox: `register_external_agent`, `stop_external_agent`, `list_external_agents`.
+The run shows on the supervisor's timeline and books into the usual two records.
+The contract is `docs/design-external-agents.md`, the machine-checkable half
+`src/lib/agents/externalAgents.fixtures.json` (read by Rust and TS — change it
+first).
+
+- **Not in the agent list, on purpose.** `<app_data_dir>/external-agents.json`
+  (`external_agents/`, serialised by a file lock, so two builds cannot lose an
+  entry) holds them. No limit, watchdog, attention count, kill or
+  console needs an exception, and a restart cannot mark them interrupted.
+- **Owned by the run folder**, not the agent id, so a resume keeps them with no
+  adoption. Only a supervisor calls these, only for its own entries.
+- **The key is `externalId` + `runId`,** so a sync can repeat every call. A
+  stopped key stays stopped; the first stop wins and books once. `booked: false`
+  means the entry is final but the history write failed; every later call and the
+  next app start try again, and the row id comes from the entry, so that cannot
+  double-book.
+- **`durationMs` is registered time on these rows.** The real runtime is
+  `activeMs`, as reported, absent when unknown and never 0. Anything that sums time
+  goes through `usageRunMs`; a billing reader needs the same rule.
+- **Stale is a reading, not a state:** 26 h on or 72 h off with no call reads
+  "Stale?". The human can close a live entry from its row, which books it with no
+  runtime.
+
 ### The terminals in a window of their own
 
 The terminal modal can be detached into a second OS window (label `agents`,
@@ -1197,6 +1224,7 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 | Recent creations          | `recent_creations.rs`                                                                                      | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                     |
 | Themes                    | `themes.rs`                                                                                                | Custom theme JSON scanner and theme list API                                                                                                                         |
 | Utilities                 | `utf8_stream.rs`, `ansi.rs`, `clipboard.rs`, `webview_prefs.rs`                                            | UTF-8 PTY chunk reassembly, ANSI stripping, clipboard image helpers, cross-origin webview preferences sync                                                           |
+| External agents           | `external_agents/`, `control_socket/external_agents.rs`                                                    | Runs the IDE tracks without a process (`external-agents.json`); books them into `pm_agent_usage` and the task log. See "External agents" above                       |
 | Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)                                                   | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                |
 
 ## Two usage features, two different questions
@@ -1282,7 +1310,7 @@ against what it actually is rather than against our idea of it.
 ### A third one: what a ticket or goal cost (`agent_usage`)
 
 Every agent run in a project is booked when it ends — exit, kill or app quit — as one
-row in `pm_agent_usage` (migration 25, twinned in `src/mcp/db.ts` and guarded by a
+row in `pm_agent_usage` (migrations 25 and 26, twinned in `src/mcp/db.ts` and guarded by a
 test that compares the SQL). The row carries the ticket and goal the run was for, so
 the PM views can sum per ticket, per goal subtree and per status. Contract and
 captured CLI facts: `docs/design-agent-usage.md`. The rules worth knowing:

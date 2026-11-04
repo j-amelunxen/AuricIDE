@@ -40,7 +40,7 @@ fn test_run_migrations_creates_tables() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 25);
+    assert_eq!(count, 26);
 
     // kv_store table should exist
     let table_exists: bool = conn
@@ -62,7 +62,7 @@ fn test_run_migrations_idempotent() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 25);
+    assert_eq!(count, 26);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_init_db_creates_db_file() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 25);
+    assert_eq!(count, 26);
 }
 
 // --- pm_goal_reviews (migration 21) ---
@@ -502,6 +502,13 @@ fn migration_25_creates_the_usage_table_the_contract_describes() {
             "unpriced_models",
             "model_usage_json",
             "num_turns",
+            "active_ms",
+            "on_ms",
+            "agent_runs",
+            "runtime_partial",
+            "external_id",
+            "external_run_id",
+            "closed_by",
         ]
     );
     let column = |name: &str| columns.iter().find(|c| c.0 == name).unwrap().clone();
@@ -605,4 +612,63 @@ fn migration_25_sql_is_identical_in_the_typescript_twin() {
         normalise(twin),
         normalise(crate::database::migrations::AGENT_USAGE_MIGRATION_SQL)
     );
+}
+
+#[test]
+fn migration_26_sql_is_identical_in_the_typescript_twin() {
+    const DB_TS: &str = include_str!("../../../../src/mcp/db.ts");
+    const DECLARATION: &str = "const AGENT_USAGE_EXTERNAL_MIGRATION = `";
+    let start = DB_TS
+        .find(DECLARATION)
+        .expect("the twin declares AGENT_USAGE_EXTERNAL_MIGRATION")
+        + DECLARATION.len();
+    let twin = &DB_TS[start..start + DB_TS[start..].find('`').expect("a closing backtick")];
+    let normalise = |sql: &str| sql.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    assert_eq!(
+        normalise(twin),
+        normalise(crate::database::migrations::AGENT_USAGE_EXTERNAL_MIGRATION_SQL)
+    );
+}
+
+#[test]
+fn migration_26_finishes_when_columns_exist_without_the_marker() {
+    let conn = Connection::open_in_memory().unwrap();
+    crate::database::run_migrations(&conn).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE pm_agent_usage DROP COLUMN closed_by;
+         ALTER TABLE pm_agent_usage DROP COLUMN external_run_id;
+         DELETE FROM _migrations WHERE id = 26;",
+    )
+    .unwrap();
+
+    crate::database::run_migrations(&conn).unwrap();
+    crate::database::run_migrations(&conn).unwrap();
+
+    let marked: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM _migrations WHERE id = 26 AND name = 'add_agent_usage_external'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marked, 1);
+    for column in [
+        "active_ms",
+        "on_ms",
+        "agent_runs",
+        "runtime_partial",
+        "external_id",
+        "external_run_id",
+        "closed_by",
+    ] {
+        let found: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('pm_agent_usage') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(found, 1, "{column}");
+    }
 }

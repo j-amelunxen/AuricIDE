@@ -183,6 +183,17 @@ exists. Agents outside a project are not recorded here.
 
 Kill counts: a killed run still reads its transcript. Tokens spent before a kill were spent.
 
+### Migration 26: runs the IDE only tracks
+
+A supervisor can report a run the IDE has no process for
+(`docs/design-external-agents.md`). Those rows have `run_source: "external"` and
+`cost_source: "reported"` (`none` when no figures came), and fill columns that stay `NULL`
+on every other row: `active_ms`, `on_ms`, `agent_runs`, `runtime_partial`, `external_id`,
+`external_run_id`, `closed_by`. On such a row `duration_ms` is the registered time, off phases
+included. `usageRunMs` (`src/lib/pm/usage/aggregate.ts`) picks the time to sum:
+`active_ms`, else `on_ms`, else 0. Pricing a run later skips them, and they do not count
+towards load balancing.
+
 ## Attribution
 
 Rust `AgentConfig` gains three optional camelCase fields, sent by the frontend:

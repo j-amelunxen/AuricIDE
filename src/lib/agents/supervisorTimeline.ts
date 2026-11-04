@@ -1,4 +1,10 @@
 import type { AgentInfo } from '../tauri/agents';
+import {
+  externalCountsAsOn,
+  isExternalLive,
+  isExternalStale,
+  type ExternalAgent,
+} from './externalAgents';
 import { supervisorFamilyRoots } from './supervisorFamily';
 
 /**
@@ -13,6 +19,10 @@ import { supervisorFamilyRoots } from './supervisorFamily';
  * A dotted hand-off is the spawn itself. It leaves the parent that was alive
  * when the child started, and it is omitted when that moment sits outside the
  * window — the curve would otherwise point at a time the chart does not show.
+ *
+ * External runs (`docs/design-external-agents.md`) get rows of their own and
+ * figures of their own. They are not agents, so they stay out of `rows`,
+ * `runningCount`, `outsideCount` and `handoffs`.
  */
 
 const MINUTE = 60_000;
@@ -63,6 +73,27 @@ export interface TimelineRow {
   bar: TimelineBar | null;
 }
 
+export type ExternalTimelineTone =
+  'external-on' | 'external-off' | 'external-stale' | 'done' | 'error';
+
+export interface ExternalTimelineBar {
+  start: number;
+  end: number;
+  clippedStart: boolean;
+  /** The on-spans cut to the window, on the same 0..1 scale as the bar. */
+  segments: { start: number; end: number }[];
+  tone: ExternalTimelineTone;
+  label: string;
+}
+
+export interface ExternalTimelineRow {
+  external: ExternalAgent;
+  /** Its owner has left the fleet; shown so that somebody can still close it. */
+  orphaned: boolean;
+  stale: boolean;
+  bar: ExternalTimelineBar | null;
+}
+
 export interface TimelineHandoff {
   fromId: string;
   toId: string;
@@ -88,6 +119,11 @@ export interface SupervisorTimelineModel {
   rows: TimelineRow[];
   handoffs: TimelineHandoff[];
   ticks: TimelineTick[];
+  externalRows: ExternalTimelineRow[];
+  /** Entries reported as working and still heard from. */
+  externalOnCount: number;
+  /** Finished external runs of this timeline whose whole run sits outside the window. */
+  externalOutsideCount: number;
 }
 
 export function timelineBarLabel(agent: Pick<AgentInfo, 'name' | 'currentTask'>): string {
@@ -100,7 +136,8 @@ export function buildSupervisorTimeline(
   agents: readonly AgentInfo[],
   supervisorId: string,
   now: number,
-  range: TimelineRangeId
+  range: TimelineRangeId,
+  externals: readonly ExternalAgent[] = []
 ): SupervisorTimelineModel | null {
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   const supervisor = byId.get(supervisorId);
@@ -109,7 +146,12 @@ export function buildSupervisorTimeline(
   const roots = supervisorFamilyRoots(agents);
   const family = agents.filter((agent) => roots.get(agent.id) === supervisorId);
   const ordered = [...family].sort((a, b) => compareRows(a, b, supervisorId));
-  const window = timelineWindow(range, now, ordered);
+  const own = externalsOf(externals, agents, family);
+  const starts = [
+    ...ordered.map((agent) => agent.startedAt),
+    ...own.map((entry) => entry.external.registeredAt),
+  ];
+  const window = timelineWindow(range, now, starts);
   const rows = ordered
     .filter((agent) => agent.id === supervisorId || overlaps(agent, window.start, window.end, now))
     .map((agent) => ({
@@ -117,6 +159,18 @@ export function buildSupervisorTimeline(
       depth: depthOf(agent, byId, supervisorId),
       bar: placeBar(agent, window.start, window.end, now),
     }));
+  const externalRows = own
+    .map((entry) => ({
+      ...entry,
+      stale: isExternalStale(entry.external, now),
+      bar: placeExternalBar(entry.external, window.start, window.end, now),
+    }))
+    .filter((row) => row.bar !== null)
+    .sort(
+      (a, b) =>
+        a.external.registeredAt - b.external.registeredAt ||
+        a.external.id.localeCompare(b.external.id)
+    );
 
   return {
     supervisorId,
@@ -128,7 +182,31 @@ export function buildSupervisorTimeline(
     rows,
     handoffs: handoffsFor(rows, supervisorId),
     ticks: timelineTicks(window.start, window.end),
+    externalRows,
+    externalOnCount: externalRows.filter((row) => externalCountsAsOn(row.external, now)).length,
+    externalOutsideCount: own.length - externalRows.length,
   };
+}
+
+/**
+ * Entries of this family's supervisors, plus live ones nobody owns any more. The
+ * family counts rather than the top supervisor alone: a supervisor started by
+ * another shares its timeline, and its entries would otherwise show nowhere.
+ */
+function externalsOf(
+  externals: readonly ExternalAgent[],
+  agents: readonly AgentInfo[],
+  family: readonly AgentInfo[]
+): Pick<ExternalTimelineRow, 'external' | 'orphaned'>[] {
+  const supervisorDirs = (list: readonly AgentInfo[]) =>
+    new Set(list.filter((agent) => agent.role === 'supervisor').map((agent) => agent.repoPath));
+  const familyDirs = supervisorDirs(family);
+  const allDirs = supervisorDirs(agents);
+  return externals.flatMap((external): Pick<ExternalTimelineRow, 'external' | 'orphaned'>[] => {
+    if (familyDirs.has(external.ownerRunDir)) return [{ external, orphaned: false }];
+    const orphaned = isExternalLive(external) && !allDirs.has(external.ownerRunDir);
+    return orphaned ? [{ external, orphaned }] : [];
+  });
 }
 
 function compareRows(a: AgentInfo, b: AgentInfo, supervisorId: string): number {
@@ -140,11 +218,11 @@ function compareRows(a: AgentInfo, b: AgentInfo, supervisorId: string): number {
 function timelineWindow(
   range: TimelineRangeId,
   now: number,
-  family: readonly AgentInfo[]
+  starts: readonly number[]
 ): { start: number; end: number } {
   const spec = TIMELINE_RANGES.find((item) => item.id === range) ?? TIMELINE_RANGES[0];
   if (spec.ms !== null) return { start: now - spec.ms, end: now };
-  const earliest = family.reduce((min, agent) => Math.min(min, agent.startedAt), now);
+  const earliest = starts.reduce((min, start) => Math.min(min, start), now);
   const start = Math.min(earliest, now);
   if (now - start < MIN_ALL_SPAN) return { start: now - MIN_ALL_SPAN, end: now };
   return { start, end: now };
@@ -184,6 +262,43 @@ function placeBar(
     clippedStart: agent.startedAt < windowStart,
     tone: barTone(agent),
     label: timelineBarLabel(agent),
+  };
+}
+
+function externalEnd(external: ExternalAgent, now: number): number {
+  if (isExternalLive(external)) return Math.max(now, external.registeredAt);
+  const ended = external.finishedAt ?? external.lastSeenAt;
+  return Math.max(ended, external.registeredAt);
+}
+
+function externalTone(external: ExternalAgent, now: number): ExternalTimelineTone {
+  if (external.state === 'failed') return 'error';
+  if (external.state === 'stopped') return 'done';
+  if (isExternalStale(external, now)) return 'external-stale';
+  return external.state === 'running' ? 'external-on' : 'external-off';
+}
+
+function placeExternalBar(
+  external: ExternalAgent,
+  windowStart: number,
+  windowEnd: number,
+  now: number
+): ExternalTimelineBar | null {
+  const span = windowEnd - windowStart;
+  const ended = externalEnd(external, now);
+  if (span <= 0 || ended <= windowStart || external.registeredAt >= windowEnd) return null;
+  const toWindow = (at: number) => Math.min(1, Math.max(0, (at - windowStart) / span));
+  const segments = external.onSpans
+    .map((on) => ({ from: on.from, to: on.to ?? ended }))
+    .filter((on) => on.to > windowStart && on.from < windowEnd && on.to > on.from)
+    .map((on) => ({ start: toWindow(on.from), end: toWindow(on.to) }));
+  return {
+    start: toWindow(external.registeredAt),
+    end: toWindow(ended),
+    clippedStart: external.registeredAt < windowStart,
+    segments,
+    tone: externalTone(external, now),
+    label: external.ticketName ? `${external.ticketName} · ${external.name}` : external.name,
   };
 }
 

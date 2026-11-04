@@ -1,5 +1,6 @@
 'use client';
 
+import { formatExternalSpan } from '@/lib/agents/externalAgents';
 import { formatDuration } from '@/lib/pm/metrics';
 import type { AgentUsageRow, UsageCostSource } from '@/lib/tauri/agentUsage';
 import { formatDate } from '../ticketEdit/types';
@@ -8,6 +9,10 @@ import { formatRunCost, formatTokens, rowTokens } from './usageFormat';
 const SOURCE_BADGE: Record<UsageCostSource, { label: string; className: string }> = {
   cli: { label: 'exact', className: 'bg-emerald-500/15 text-emerald-300' },
   estimated: { label: 'estimated', className: 'bg-amber-500/15 text-amber-300' },
+  reported: {
+    label: 'reported',
+    className: 'bg-primary/15 text-primary-light',
+  },
   none: { label: 'no data', className: 'bg-white/10 text-foreground-muted' },
 };
 
@@ -37,6 +42,22 @@ function SourceBadges({ row }: { row: AgentUsageRow }) {
           heuristic match
         </span>
       )}
+    </span>
+  );
+}
+
+/** On an external row the registered time is not working time, so it is never the figure alone. */
+function ExternalRuntime({ row }: { row: AgentUsageRow }) {
+  const registered = formatExternalSpan(row.durationMs);
+  const on = row.onMs === null ? 'unknown' : formatExternalSpan(row.onMs);
+  const parts = [`Figures as reported; the IDE cannot check them. Registered ${registered}, on ${on}.`];
+  if (row.runtimePartial) parts.push('The reporter marked the runtime as cut off.');
+  if (row.closedBy === 'human') parts.push('Closed by hand, so no runtime was reported.');
+  return (
+    <span title={parts.join(' ')}>
+      {row.activeMs === null
+        ? 'runtime unknown'
+        : `active ${formatExternalSpan(row.activeMs)} of ${registered}`}
     </span>
   );
 }
@@ -87,7 +108,11 @@ export function UsageRunLog({ rows }: { rows: readonly AgentUsageRow[] }) {
                 {formatRunCost(row)}
               </td>
               <td className="py-1 pr-2 text-right tabular-nums text-foreground-muted">
-                {formatDuration(row.durationMs)}
+                {row.runSource === 'external' ? (
+                  <ExternalRuntime row={row} />
+                ) : (
+                  formatDuration(row.durationMs)
+                )}
               </td>
               <td className={`py-1 ${OUTCOME_CLASS[row.outcome]}`}>{row.outcome}</td>
             </tr>

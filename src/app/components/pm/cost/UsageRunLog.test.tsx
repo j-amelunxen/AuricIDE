@@ -78,4 +78,39 @@ describe('UsageRunLog', () => {
     expect(row.queryByText('$0.00')).toBeNull();
     expect(row.getByText('no data')).toBeDefined();
   });
+
+  describe('an external run', () => {
+    const external = {
+      runSource: 'external',
+      costSource: 'reported',
+      costUsd: null,
+      durationMs: 9 * 3_600_000,
+      onMs: 3 * 3_600_000,
+    } as const;
+
+    it('shows the reported runtime of the registered time, and a reported badge', () => {
+      render(<UsageRunLog rows={[usageRow({ ...external, activeMs: 2.5 * 3_600_000 })]} />);
+      const row = within(bodyRows()[0]);
+      expect(row.getByText('reported')).toBeDefined();
+      const time = row.getByText('active 2h 30m of 9h');
+      expect(time.getAttribute('title')).toMatch(/as reported/i);
+    });
+
+    it('says the runtime is unknown rather than showing the parked time', () => {
+      render(<UsageRunLog rows={[usageRow({ ...external, activeMs: null })]} />);
+      const row = within(bodyRows()[0]);
+      expect(row.getByText('runtime unknown')).toBeDefined();
+      expect(row.queryByText('9h 0m')).toBeNull();
+    });
+
+    it('shows a reported zero as zero', () => {
+      render(<UsageRunLog rows={[usageRow({ ...external, activeMs: 0 })]} />);
+      expect(within(bodyRows()[0]).getByText('active 0s of 9h')).toBeDefined();
+    });
+
+    it('leaves a normal run as it was', () => {
+      render(<UsageRunLog rows={[usageRow({ durationMs: 125_000 })]} />);
+      expect(within(bodyRows()[0]).getByText('2m')).toBeDefined();
+    });
+  });
 });

@@ -60,6 +60,18 @@ const UNATTRIBUTED = '—';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_DAYS: Record<Exclude<UsageWindow, 'all'>, number> = { '7d': 7, '30d': 30 };
 
+/**
+ * The working time of a run. On an external run `durationMs` is the registered
+ * time, off phases included, so a box parked overnight would add ten hours to a
+ * ticket. A reported zero is a figure; only an absent one falls back.
+ */
+export function usageRunMs(
+  row: Pick<AgentUsageRow, 'runSource' | 'durationMs' | 'activeMs' | 'onMs'>
+): number {
+  if (row.runSource !== 'external') return row.durationMs;
+  return row.activeMs ?? row.onMs ?? 0;
+}
+
 export function sumUsage(rows: readonly AgentUsageRow[]): UsageTotals {
   const totals: UsageTotals = {
     runs: 0,
@@ -87,7 +99,7 @@ export function sumUsage(rows: readonly AgentUsageRow[]): UsageTotals {
     totals.outputTokens += row.outputTokens;
     totals.cacheReadTokens += row.cacheReadTokens;
     totals.cacheWriteTokens += row.cacheWriteTokens;
-    totals.durationMs += row.durationMs;
+    totals.durationMs += usageRunMs(row);
   }
   totals.totalTokens =
     totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheWriteTokens;

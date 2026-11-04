@@ -40,19 +40,25 @@ describe('the supervisor tool surface', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual([
       'await_agent_result',
+      'clear_quota_block',
       'dismiss_agent',
       'kill_agent',
       'link_policy_get',
       'link_policy_propose',
+      'list_external_agents',
       'list_my_agents',
       'list_projects',
+      'list_quota_blocks',
       'pm_call',
       'pm_tools',
       'read_agent_output',
       'read_agent_report',
+      'register_external_agent',
       'remove_worktree',
       'send_agent_input',
+      'set_quota_block',
       'spawn_agent',
+      'stop_external_agent',
     ]);
     const spawn = tools.get('spawn_agent')!.parameters;
     const parsed = spawn.parse({

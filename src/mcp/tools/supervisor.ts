@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
-import type { ControlParamsInput } from '../../lib/agents/agentControl.contract';
+import {
+  externalRegisterParams,
+  externalStopParams,
+  type ControlParamsInput,
+} from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
 import { createPmGateway, type PmGateway } from '../supervisorPm';
 import {
@@ -93,6 +97,56 @@ export function registerSupervisorTools(
   server.addTool(setQuotaBlockTool(call));
   server.addTool(clearQuotaBlockTool(call));
   registerLinkPolicyTools(server, call);
+  registerExternalAgentTools(server, call);
+}
+
+/**
+ * Runs the IDE tracks but has no process for (`docs/design-external-agents.md`).
+ * Only here, never in `--control`: an entry belongs to the calling supervisor's
+ * run folder, and an outside client has none.
+ */
+function registerExternalAgentTools(server: FastMCP, call: ControlCaller): void {
+  // elementuuid=el_extreg01 kind=mcp security=docs/security/supervisor-tools.md validation=zod:externalRegisterParams
+  server.addTool({
+    name: 'register_external_agent',
+    description:
+      'Tell the IDE about a run it has no process for, such as an agent you started in a ' +
+      'sandbox or on another machine, so it shows on your timeline and in the usage history. ' +
+      'It is tracking only: no console, no input and no kill. state is registered (known, not ' +
+      'working now) or running (working now). Safe to call again at any time: the key is ' +
+      'externalId + runId, a repeat moves the state, updates what you pass and counts as a sign ' +
+      'of life. A stopped key stays stopped (changed: false); use a new runId for a new run. ' +
+      'Never put a prompt or a secret in name. Returns { agent, created, changed }.',
+    parameters: externalRegisterParams,
+    execute: async (args: ControlParamsInput<'external_register'>) =>
+      runControl(call, 'external_register', args),
+  });
+
+  // elementuuid=el_extstp01 kind=mcp security=docs/security/supervisor-tools.md validation=zod:externalStopParams
+  server.addTool({
+    name: 'stop_external_agent',
+    description:
+      'End a run you registered and book it in the usage history, with the same externalId + ' +
+      'runId. The figures are stored as reported; the IDE cannot check them. Leave out what you ' +
+      'do not know: an absent runtime or cost stays unknown, never 0. This records the end; it ' +
+      'does not stop anything on the other machine. The first stop wins and a repeat changes ' +
+      'nothing. Returns { agent, alreadyStopped, booked }; booked: false means the IDE retries ' +
+      'the history write itself.',
+    parameters: externalStopParams,
+    execute: async (args: ControlParamsInput<'external_stop'>) =>
+      runControl(call, 'external_stop', args),
+  });
+
+  // elementuuid=el_extlst01 kind=mcp security=docs/security/supervisor-tools.md validation=zod:noParams+externalAgent
+  server.addTool({
+    name: 'list_external_agents',
+    description:
+      'List the external runs you registered, also those from before a resume, so you can see ' +
+      'what you left open. Each has state (registered | running | stopped | failed) and stale, ' +
+      'true when nothing was heard for a long time. Returns { agents }.',
+    parameters: z.object({}),
+    execute: async () => runControl(call, 'external_list', {}),
+  });
 }
 
 const pmProject = z

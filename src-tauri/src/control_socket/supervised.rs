@@ -13,7 +13,7 @@ use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::providers::ModelOption;
-use crate::supervisor::pm_target::{pm_facts, resolve_pm_target, PmRefusal};
+use crate::supervisor::pm_target::{pm_facts, resolve_pm_target, PmRefusal, PmTarget};
 use crate::supervisor::policy::{
     balancing_with_blocks, check_spawn_with_blocks, normalize_provider_id, resolve_model,
     visible_projects, Balancing, ModelChoice, ModelRequest, SpawnRequest, VisibleProject,
@@ -72,6 +72,9 @@ impl Dispatcher {
             Request::ListQuotaBlocks(_) => self.list_quota_blocks(),
             Request::SetQuotaBlock(params) => self.set_quota_block(params),
             Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
+            Request::ExternalRegister(params) => self.external_register(supervisor, params),
+            Request::ExternalStop(params) => self.external_stop(supervisor, params),
+            Request::ExternalList(_) => self.external_list(supervisor),
         }
     }
 
@@ -424,14 +427,20 @@ impl Dispatcher {
     /// (`supervisor::pm_target`; fixture `callerScope.supervisor.pmTarget`).
     // elementuuid=el_ff0j17a0 kind=api security=docs/security/supervisor-tools.md validation=serde:PmTargetParams
     fn pm_target(&self, wanted: Option<&str>) -> Outcome {
-        let policy = self.backend.supervisor_policy();
-        let facts = pm_facts(&policy, wanted);
-        let target = resolve_pm_target(&policy, wanted, &facts)
+        let target = self
+            .pm_target_of(wanted)
             .map_err(|refusal| pm_refusal(refusal, wanted.unwrap_or_default()))?;
         to_value(PmTargetResult {
             path: target.path,
             name: target.name,
         })
+    }
+
+    /// The project `wanted` means, by the policy as it stands now.
+    pub(super) fn pm_target_of(&self, wanted: Option<&str>) -> Result<PmTarget, PmRefusal> {
+        let policy = self.backend.supervisor_policy();
+        let facts = pm_facts(&policy, wanted);
+        resolve_pm_target(&policy, wanted, &facts)
     }
 
     /// The provider a supervisor is told to take in `project`: the balancing
@@ -480,7 +489,7 @@ pub(super) fn names_project(entry: &ProjectEntry, wanted: &str) -> bool {
     entry.name.eq_ignore_ascii_case(wanted)
 }
 
-fn pm_refusal(refusal: PmRefusal, wanted: &str) -> ControlError {
+pub(super) fn pm_refusal(refusal: PmRefusal, wanted: &str) -> ControlError {
     let denied = |reason: &str, message: String| {
         ControlError::new(ErrorCode::SupervisorDenied, message).with_reason(reason)
     };
