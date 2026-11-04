@@ -6,12 +6,15 @@ import { createPmGateway, type PmGateway } from '../supervisorPm';
 import {
   agentIdParam,
   awaitAgentResultTool,
+  clearQuotaBlockTool,
   dismissAgentTool,
+  listQuotaBlocksTool,
   readAgentOutputTool,
   readAgentReportTool,
   removeWorktreeTool,
   runControl,
   sendAgentInputTool,
+  setQuotaBlockTool,
   worktreeParam,
   type ControlCaller,
 } from './agentControl';
@@ -86,6 +89,9 @@ export function registerSupervisorTools(
 
   server.addTool(removeWorktreeTool(call, OWN_CHILDREN));
   server.addTool(dismissAgentTool(call, OWN_CHILDREN));
+  server.addTool(listQuotaBlocksTool(call));
+  server.addTool(setQuotaBlockTool(call));
+  server.addTool(clearQuotaBlockTool(call));
   registerLinkPolicyTools(server, call);
 }
 
@@ -248,11 +254,14 @@ function listProjectsTool(call: ControlCaller) {
       'note }], ' +
       'allowInteractive, runningChildren, maxRunning. models is "all" or a list of model ids; ' +
       'the top-level catalog describes each model once per provider: { id, label, rank, ' +
-      'useFor, relativeCost }. rank is the size within its provider (1 small … 4 largest, ' +
+      'useFor, relativeCost, blocked }. rank is the size within its provider (1 small … 4 largest, ' +
       'null unknown), useFor says what work it is enough for, relativeCost is its price ' +
-      'against the cheapest model of that provider (1). balancing is null, or the load ' +
+      'against the cheapest model of that provider (1), and blocked ({ reason, until }, when ' +
+      'present) marks a model temporarily unavailable due to quota/rate-limit exhaustion or ' +
+      'silent fallback until that timestamp — do not pick a blocked model. balancing is null, or the load ' +
       'balancing the human set: { windowDays, next, providers [{ id, weight, spawns, ' +
-      'targetPercent, actualPercent }] }; next is the provider furthest behind its share, ' +
+      'targetPercent, actualPercent }] }; next is the provider furthest behind its share ' +
+      'that still has at least one unblocked allowed model, ' +
       'take it unless the task needs a model only another provider has. note (absent when ' +
       "none is set) is the human's routing rule for this provider in this project; read it " +
       'before choosing a provider: a task the note excludes goes to another provider even ' +
@@ -290,9 +299,10 @@ function spawnAgentTool(call: ControlCaller) {
       'headless: false for long or ' +
       'multi-step work a human may need to answer, only where allowInteractive is true; ' +
       'report its id and do not wait. The permission mode comes from the policy, not from ' +
-      'you. A refusal is supervisor_denied with a reason (model_not_allowed, ' +
-      'project_limit_reached, …) or provider_denied: report it, never switch provider or ' +
-      'model to get around it. The agent cannot see this conversation: the prompt must stand ' +
+      'you. A refusal is supervisor_denied with a reason (model_not_allowed, quota_blocked ' +
+      'with expiresAt, project_limit_reached, …) or provider_denied: report policy refusals ' +
+      'instead of switching around them, except on quota_blocked where you should pick another ' +
+      'unblocked allowed model or provider from list_projects. The agent cannot see this conversation: the prompt must stand ' +
       'alone. Returns { agentId }.',
     parameters: z.object({
       projectPath: z.string().describe('path of a project from list_projects'),

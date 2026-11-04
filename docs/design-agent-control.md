@@ -392,19 +392,28 @@ half is `supervisors` in `agentControl.fixtures.json`
 
 ### Methods for a supervisor caller
 
-| method            | what a supervisor gets                                                                    |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `list_projects`   | only projects its policy allows, each with a `supervisor` block, plus one model `catalog` |
-| `spawn`           | `headless` required; provider and model default (below); checked against the policy       |
-| `list_agents`     | its own children only, live and finished                                                  |
-| `read_output`     | its own children only                                                                     |
-| `await_result`    | its own children only                                                                     |
-| `kill`            | its own children only                                                                     |
-| `remove_worktree` | its own children only                                                                     |
-| `dismiss`         | its own finished children only                                                            |
-| `send_input`      | its own children only                                                                     |
-| `pm_target`       | the one folder a PM tool may run in now, by the current policy (below)                    |
+| method                                                      | what a supervisor gets                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `list_projects`                                             | only projects its policy allows, each with a `supervisor` block, plus one model `catalog` |
+| `spawn`                                                     | `headless` required; provider and model default (below); checked against the policy       |
+| `list_agents`                                               | its own children only, live and finished                                                  |
+| `read_output`                                               | its own children only                                                                     |
+| `await_result`                                              | its own children only                                                                     |
+| `kill`                                                      | its own children only                                                                     |
+| `remove_worktree`                                           | its own children only                                                                     |
+| `dismiss`                                                   | its own finished children only                                                            |
+| `send_input`                                                | its own children only                                                                     |
+| `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                    |
+| `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                  |
 
+- **Quota blocks are facts about a provider, not about a scope.** `<app_data_dir>/quota-blocks.json`
+  holds temporary blocks on a provider, a model family (`claude-*`) or one model. Rust writes one
+  when an agent ends with a quota or rate-limit message, or with the CLI's switch to another model,
+  in the last 8 KiB of its console (`agents/quota_detection.rs`, never shortening a longer block), and
+  when a caller uses `set_quota_block`. While it lasts, a supervisor's spawn of that model is
+  `supervisor_denied` with reason `quota_blocked` and `expiresAt`, `list_projects` marks the model
+  `blocked` in `catalog`, and `balancing.next` skips a provider with no unblocked allowed model.
+  Spawns without a supervisor and link jobs are not checked.
 - **`pm_target` reads the policy on every call.** Fixture
   `callerScope.supervisor.pmTarget` has the rules: a path (canonicalised), a folder name
   or an old server name `auric-pm-<slug>`. Outside the policy is `unknown_project`.
@@ -770,20 +779,23 @@ stays in the Git panel's worktree list for a person.
 
 ### Tools (`auric-mcp --supervisor`)
 
-| tool                 | socket method     |
-| -------------------- | ----------------- |
-| `list_projects`      | `list_projects`   |
-| `spawn_agent`        | `spawn`           |
-| `list_my_agents`     | `list_agents`     |
-| `read_agent_output`  | `read_output`     |
-| `read_agent_report`  | `read_report`     |
-| `await_agent_result` | `await_result`    |
-| `send_agent_input`   | `send_input`      |
-| `kill_agent`         | `kill`            |
-| `remove_worktree`    | `remove_worktree` |
-| `dismiss_agent`      | `dismiss`         |
-| `pm_tools`           | `pm_target`       |
-| `pm_call`            | `pm_target`       |
+| tool                 | socket method       |
+| -------------------- | ------------------- |
+| `list_projects`      | `list_projects`     |
+| `spawn_agent`        | `spawn`             |
+| `list_my_agents`     | `list_agents`       |
+| `read_agent_output`  | `read_output`       |
+| `read_agent_report`  | `read_report`       |
+| `await_agent_result` | `await_result`      |
+| `send_agent_input`   | `send_input`        |
+| `kill_agent`         | `kill`              |
+| `remove_worktree`    | `remove_worktree`   |
+| `dismiss_agent`      | `dismiss`           |
+| `pm_tools`           | `pm_target`         |
+| `pm_call`            | `pm_target`         |
+| `list_quota_blocks`  | `list_quota_blocks` |
+| `set_quota_block`    | `set_quota_block`   |
+| `clear_quota_block`  | `clear_quota_block` |
 
 `pm_tools` and `pm_call` ask `pm_target` first and then use a project's own server.
 `src/mcp/supervisorPm.ts` keeps at most 8 of those `--project-root` children, one per

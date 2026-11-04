@@ -50,6 +50,7 @@
       "provider_has_no_models": "The policy lists an empty model list for this provider.",
       "model_not_allowed": "The model is not on the policy's model list for this provider.",
       "model_not_offered": "The provider does not offer this model (any more).",
+      "quota_blocked": "The provider or model is temporarily blocked due to quota or rate-limit exhaustion.",
       "permission_mode_unattended": "The permission mode the child would run under (the policy's, or the provider's default when the policy names none) skips permission prompts.",
       "interactive_not_allowed": "An interactive run was requested and the project has allowInteractive: false.",
       "project_limit_reached": "The supervisor already has maxRunning children running in this project.",
@@ -77,6 +78,7 @@
     "provider_has_no_models",
     "model_not_allowed",
     "model_not_offered",
+    "quota_blocked",
     "permission_mode_unattended",
     "interactive_not_allowed",
     "project_limit_reached",
@@ -4404,6 +4406,128 @@
         "ok": false,
         "code": "supervisor_denied",
         "reason": "model_not_offered"
+      }
+    },
+    {
+      "name": "a model in a quota-blocked family is refused with quota_blocked and expiresAt",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus",
+          "chrome": false
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["antigravity"],
+            "models": {},
+            "permissionMode": {
+              "antigravity": "plan"
+            },
+            "providerWeights": {},
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "antigravity": ["claude-sonnet-5-5-high", "gemini-3.8-flash-medium"]
+      },
+      "quotaBlocks": [
+        {
+          "id": "antigravity:family:claude-",
+          "provider": "antigravity",
+          "scope": {
+            "kind": "family",
+            "prefix": "claude-"
+          },
+          "reason": "silent_model_fallback",
+          "detail": "Fell back from claude-sonnet-5-5-high to Gemini 3.8 Flash (Medium)",
+          "detectedAt": "2026-10-23T17:50:00Z",
+          "expiresAt": "2099-01-01T00:00:00Z"
+        }
+      ],
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "antigravity",
+        "model": "claude-sonnet-5-5-high",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "quota_blocked",
+        "expiresAt": "2099-01-01T00:00:00Z"
+      }
+    },
+    {
+      "name": "an unblocked model family on the same provider passes when another family is quota-blocked",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus",
+          "chrome": false
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["antigravity"],
+            "models": {},
+            "permissionMode": {
+              "antigravity": "plan"
+            },
+            "providerWeights": {},
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "antigravity": ["claude-sonnet-5-5-high", "gemini-3.8-flash-medium"]
+      },
+      "quotaBlocks": [
+        {
+          "id": "antigravity:family:claude-",
+          "provider": "antigravity",
+          "scope": {
+            "kind": "family",
+            "prefix": "claude-"
+          },
+          "reason": "silent_model_fallback",
+          "detail": "Fell back from claude-sonnet-5-5-high to Gemini 3.8 Flash (Medium)",
+          "detectedAt": "2026-10-23T17:50:00Z",
+          "expiresAt": "2099-01-01T00:00:00Z"
+        }
+      ],
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "antigravity",
+        "model": "gemini-3.8-flash-medium",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "plan"
       }
     }
   ],

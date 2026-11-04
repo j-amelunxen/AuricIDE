@@ -10,14 +10,17 @@ import { registerAgentControlTools, type ControlCaller } from './agentControl';
 
 const CONTROL_TOOLS = [
   'await_agent_result',
+  'clear_quota_block',
   'dismiss_agent',
   'kill_agent',
   'list_agents',
   'list_projects',
+  'list_quota_blocks',
   'read_agent_output',
   'read_agent_report',
   'remove_worktree',
   'send_agent_input',
+  'set_quota_block',
   'spawn_agent',
 ];
 

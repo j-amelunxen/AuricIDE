@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.control-socket",
   "title": "Control socket",
-  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, and checks supervisor policy (src-tauri/src/supervisor).",
+  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, checks supervisor policy (src-tauri/src/supervisor) and keeps quota blocks (src-tauri/src/quota_blocks).",
   "nodes": [
     {
       "id": "dispatcher",
@@ -48,7 +48,7 @@
           "value": "280"
         }
       ],
-      "position": [-9.35, -11.2, 0]
+      "position": [-11.25, -11.2, 0]
     },
     {
       "id": "projects",
@@ -63,7 +63,7 @@
           "value": "462"
         }
       ],
-      "position": [-5.45, -11.2, 0]
+      "position": [-7.35, -11.2, 0]
     },
     {
       "id": "supervised",
@@ -78,7 +78,7 @@
           "value": "277"
         }
       ],
-      "position": [1.55, -11.2, 0]
+      "position": [-0.35, -11.2, 0]
     },
     {
       "id": "linkSpawn",
@@ -93,7 +93,7 @@
           "value": "200"
         }
       ],
-      "position": [5.55, -11.2, 0]
+      "position": [3.65, -11.2, 0]
     },
     {
       "id": "linkPolicy",
@@ -108,7 +108,16 @@
           "value": "138"
         }
       ],
-      "position": [9.35, -11.2, 0]
+      "position": [7.45, -11.2, 0]
+    },
+    {
+      "id": "quotaHandlers",
+      "label": "quota_blocks.rs",
+      "preset": "box",
+      "group": "supervisor scope",
+      "level": 2,
+      "weight": 0.4,
+      "position": [11.25, -11.2, 0]
     },
     {
       "id": "supervisorMod",
@@ -132,7 +141,7 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [1.3, -21.9, 0]
+      "position": [-0.75, -21.9, 0]
     },
     {
       "id": "supervisorPolicy",
@@ -148,7 +157,16 @@
           "value": "1330"
         }
       ],
-      "position": [5.4, -21.9, 0]
+      "position": [3.35, -21.9, 0]
+    },
+    {
+      "id": "quotaBlocks",
+      "label": "quota_blocks/ (store, matcher)",
+      "preset": "box",
+      "group": "policy",
+      "level": 4,
+      "weight": 0.4,
+      "position": [7.45, -21.9, 0]
     },
     {
       "id": "bridge",
@@ -181,7 +199,7 @@
       "group": "neighbours",
       "level": 4,
       "weight": 0.3,
-      "position": [-5.4, -21.9, 0]
+      "position": [-7.45, -21.9, 0]
     },
     {
       "id": "supervisorLink",
@@ -362,6 +380,29 @@
       "to": "linkSpawn",
       "kind": "calls",
       "label": "job spawn"
+    },
+    {
+      "from": "dispatcher",
+      "to": "quotaHandlers",
+      "kind": "calls",
+      "label": "list, set, clear"
+    },
+    {
+      "from": "quotaHandlers",
+      "to": "quotaBlocks",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "quotaBlocks",
+      "kind": "dataflow",
+      "label": "active blocks"
+    },
+    {
+      "from": "agents",
+      "to": "quotaBlocks",
+      "kind": "dataflow",
+      "label": "console tail at exit"
     }
   ],
   "tour": [
@@ -382,7 +423,7 @@
       "rows": [
         {
           "label": "control_socket modules (non-test)",
-          "value": "7"
+          "value": "12"
         },
         {
           "label": "supervisor modules",

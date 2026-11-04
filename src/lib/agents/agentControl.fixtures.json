@@ -734,6 +734,56 @@
         "id": 46,
         "code": "supervisor_key_invalid"
       }
+    },
+    {
+      "name": "list_quota_blocks",
+      "raw": "{\"id\":50,\"method\":\"list_quota_blocks\"}",
+      "expected": {
+        "id": 50,
+        "method": "list_quota_blocks",
+        "params": {}
+      }
+    },
+    {
+      "name": "set_quota_block for a model family until a clock time",
+      "raw": "{\"id\":51,\"method\":\"set_quota_block\",\"params\":{\"provider\":\"antigravity\",\"scope\":\"claude-*\",\"until\":\"20:00\",\"detail\":\"Anthropic quota exhausted\"}}",
+      "expected": {
+        "id": 51,
+        "method": "set_quota_block",
+        "params": {
+          "provider": "antigravity",
+          "scope": "claude-*",
+          "until": "20:00",
+          "detail": "Anthropic quota exhausted"
+        }
+      }
+    },
+    {
+      "name": "set_quota_block without a provider",
+      "raw": "{\"id\":52,\"method\":\"set_quota_block\",\"params\":{\"provider\":\"  \"}}",
+      "expectedError": {
+        "id": 52,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "clear_quota_block",
+      "raw": "{\"id\":53,\"method\":\"clear_quota_block\",\"params\":{\"id\":\"antigravity:family:claude-\"}}",
+      "expected": {
+        "id": 53,
+        "method": "clear_quota_block",
+        "params": {
+          "id": "antigravity:family:claude-"
+        }
+      }
+    },
+    {
+      "name": "clear_quota_block without an id",
+      "raw": "{\"id\":54,\"method\":\"clear_quota_block\",\"params\":{\"id\":\"\"}}",
+      "expectedError": {
+        "id": 54,
+        "code": "invalid_params"
+      }
     }
   ],
   "responses": {
@@ -997,6 +1047,54 @@
       "result": {
         "agentId": "agent-5",
         "seq": 1
+      }
+    },
+    "list_quota_blocks": {
+      "id": 50,
+      "ok": true,
+      "result": {
+        "blocks": [
+          {
+            "id": "antigravity:family:claude-",
+            "provider": "antigravity",
+            "scope": {
+              "kind": "family",
+              "prefix": "claude-"
+            },
+            "reason": "quota_exhausted",
+            "detail": "Anthropic quota exceeded",
+            "detectedAt": "2026-10-23T18:00:00Z",
+            "expiresAt": "2026-10-23T20:00:00Z",
+            "sourceAgentId": "agent-1"
+          }
+        ],
+        "defaultTtlMinutes": 60
+      }
+    },
+    "set_quota_block": {
+      "id": 51,
+      "ok": true,
+      "result": {
+        "block": {
+          "id": "antigravity:family:claude-",
+          "provider": "antigravity",
+          "scope": {
+            "kind": "family",
+            "prefix": "claude-"
+          },
+          "reason": "manual",
+          "detail": "Anthropic quota exhausted",
+          "detectedAt": "2026-10-23T18:00:00Z",
+          "expiresAt": "2026-10-23T20:00:00Z"
+        }
+      }
+    },
+    "clear_quota_block": {
+      "id": 53,
+      "ok": true,
+      "result": {
+        "id": "antigravity:family:claude-",
+        "cleared": true
       }
     },
     "error": {
@@ -1703,6 +1801,20 @@
           "message": "'mail-triage' is already the key of a running supervisor (agent-3)."
         }
       }
+    },
+    {
+      "name": "spawn refused because the model is quota-blocked carries expiresAt",
+      "method": "spawn",
+      "raw": {
+        "id": 7,
+        "ok": false,
+        "error": {
+          "code": "supervisor_denied",
+          "message": "Model 'claude-opus-4-6-thinking' (family 'claude-*' on provider 'antigravity') is quota-blocked until 2026-10-23T20:00:00Z (quota_exhausted: Anthropic quota exceeded).",
+          "reason": "quota_blocked",
+          "expiresAt": "2026-10-23T20:00:00Z"
+        }
+      }
     }
   ],
   "callerScope": {
@@ -1725,7 +1837,10 @@
           "list_projects",
           "await_result",
           "remove_worktree",
-          "dismiss"
+          "dismiss",
+          "list_quota_blocks",
+          "set_quota_block",
+          "clear_quota_block"
         ],
         "scope": "all_agents",
         "mayPass": ["role", "permissionMode"],
@@ -1750,7 +1865,10 @@
           "dismiss",
           "link_policy_get",
           "link_policy_propose",
-          "pm_target"
+          "pm_target",
+          "list_quota_blocks",
+          "set_quota_block",
+          "clear_quota_block"
         ],
         "scope": "own_children",
         "outsideScope": "unknown_agent",

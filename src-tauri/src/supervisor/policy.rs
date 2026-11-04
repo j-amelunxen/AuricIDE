@@ -13,6 +13,7 @@
 
 use crate::provider_policy::{is_provider_allowed, ProviderPolicy};
 use crate::providers::ModelOption;
+use crate::quota_blocks::{find_block_for_model, QuotaBlock};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -920,28 +921,44 @@ fn percent(part: u32, total: u32) -> u32 {
 /// agents each actually got (`spawns`, by provider id). `None` when no usable
 /// provider has a share above 0. `next` is the provider with the fewest spawns
 /// per share; a tie goes to the larger share, then to the first by id.
+#[cfg(test)]
 pub fn balancing(
     providers: &[VisibleProvider],
     spawns: &BTreeMap<String, u32>,
 ) -> Option<Balancing> {
-    let weighted: Vec<(&str, u32, u32)> = providers
+    balancing_with_blocks(providers, spawns, &[])
+}
+
+/// Like [`balancing`], but `next` skips any provider whose allowed models are
+/// all currently quota-blocked in `blocks`.
+pub fn balancing_with_blocks(
+    providers: &[VisibleProvider],
+    spawns: &BTreeMap<String, u32>,
+    blocks: &[QuotaBlock],
+) -> Option<Balancing> {
+    let weighted: Vec<(&str, u32, u32, bool)> = providers
         .iter()
         .map(|p| {
             let weight = p.weight.unwrap_or(0);
+            let has_unblocked = p
+                .models
+                .iter()
+                .any(|model| find_block_for_model(blocks, &p.id, model).is_none());
             (
                 p.id.as_str(),
                 weight,
                 spawns.get(&p.id).copied().unwrap_or(0),
+                has_unblocked,
             )
         })
         .collect();
-    let total_weight: u32 = weighted.iter().map(|(_, weight, _)| weight).sum();
+    let total_weight: u32 = weighted.iter().map(|(_, weight, _, _)| weight).sum();
     if total_weight == 0 {
         return None;
     }
-    let total_spawns: u32 = weighted.iter().map(|(_, _, count)| count).sum();
+    let total_spawns: u32 = weighted.iter().map(|(_, _, count, _)| count).sum();
     // a is further behind than b when a.count / a.weight < b.count / b.weight.
-    let behind = |a: &(&str, u32, u32), b: &(&str, u32, u32)| {
+    let behind = |a: &(&str, u32, u32, bool), b: &(&str, u32, u32, bool)| {
         let (lhs, rhs) = (
             u64::from(a.2) * u64::from(b.1),
             u64::from(b.2) * u64::from(a.1),
@@ -950,21 +967,21 @@ pub fn balancing(
     };
     let next = weighted
         .iter()
-        .filter(|(_, weight, _)| *weight > 0)
+        .filter(|(_, weight, _, has_unblocked)| *weight > 0 && *has_unblocked)
         .fold(
             None,
-            |best: Option<&(&str, u32, u32)>, candidate| match best {
+            |best: Option<&(&str, u32, u32, bool)>, candidate| match best {
                 Some(best) if !behind(candidate, best) => Some(best),
                 _ => Some(candidate),
             },
         )
-        .map(|(id, _, _)| id.to_string());
+        .map(|(id, _, _, _)| id.to_string());
     Some(Balancing {
         window_days: BALANCING_WINDOW_DAYS,
         next,
         providers: weighted
             .iter()
-            .map(|(id, weight, count)| ProviderBalance {
+            .map(|(id, weight, count, _)| ProviderBalance {
                 id: id.to_string(),
                 weight: *weight,
                 spawns: *count,
@@ -988,6 +1005,7 @@ pub enum DenyReason {
     ProviderHasNoModels,
     ModelNotAllowed,
     ModelNotOffered,
+    QuotaBlocked,
     PermissionModeUnattended,
     InteractiveNotAllowed,
     ProjectLimitReached,
@@ -1024,22 +1042,49 @@ pub struct Denied {
     pub reason: DenyReason,
     /// For a person; the reason key is what callers match on.
     pub message: String,
+    /// ISO-8601 expiry timestamp when `reason` is [`DenyReason::QuotaBlocked`].
+    pub expires_at: Option<String>,
 }
 
 fn deny(reason: DenyReason, message: String) -> Denied {
-    Denied { reason, message }
+    Denied {
+        reason,
+        message,
+        expires_at: None,
+    }
 }
 
 /// Runs the checks in the fixture's `checkOrder`; the first that fails is the
 /// answer. On success, the permission mode the child runs under: the
 /// policy's value for that provider, or `None` for the provider's own default.
-// code-gate: complexity-cyclomatic, complexity-function-length - one branch per fixture checkOrder entry, in that order; splitting them would hide the order
 pub fn check_spawn(
     policy: &SupervisorPolicy,
     project_policy: &ProviderPolicy,
     offered: &BTreeMap<String, Vec<String>>,
     modes: &BTreeMap<String, ProviderModes>,
     running: &RunningChildren,
+    request: &SpawnRequest<'_>,
+) -> Result<Option<String>, Denied> {
+    check_spawn_with_blocks(
+        policy,
+        project_policy,
+        offered,
+        modes,
+        running,
+        &[],
+        request,
+    )
+}
+
+/// Like [`check_spawn`], also enforcing active [`QuotaBlock`]s in `checkOrder`.
+// code-gate: complexity-cyclomatic, complexity-function-length - one branch per fixture checkOrder entry, in that order; splitting them would hide the order
+pub fn check_spawn_with_blocks(
+    policy: &SupervisorPolicy,
+    project_policy: &ProviderPolicy,
+    offered: &BTreeMap<String, Vec<String>>,
+    modes: &BTreeMap<String, ProviderModes>,
+    running: &RunningChildren,
+    blocks: &[QuotaBlock],
     request: &SpawnRequest<'_>,
 ) -> Result<Option<String>, Denied> {
     let path = normalize_project_path(request.project_path);
@@ -1104,6 +1149,13 @@ pub fn check_spawn(
             DenyReason::ModelNotOffered,
             format!("Provider '{provider}' does not offer model '{model}'."),
         ));
+    }
+    if let Some(block) = find_block_for_model(blocks, &provider, model) {
+        return Err(Denied {
+            reason: DenyReason::QuotaBlocked,
+            message: block.refusal_message(model),
+            expires_at: Some(block.expires_at.clone()),
+        });
     }
     let (permission_mode, unattended) = effective_mode(rules, modes, &provider);
     if unattended {
@@ -1432,6 +1484,7 @@ pub(crate) mod tests {
             DenyReason::ProviderHasNoModels,
             DenyReason::ModelNotAllowed,
             DenyReason::ModelNotOffered,
+            DenyReason::QuotaBlocked,
             DenyReason::PermissionModeUnattended,
             DenyReason::InteractiveNotAllowed,
             DenyReason::ProjectLimitReached,
@@ -1506,7 +1559,11 @@ pub(crate) mod tests {
             let name = case["name"].as_str().unwrap();
             let request = &case["request"];
             let running = &case["running"];
-            let outcome = check_spawn(
+            let quota_blocks: Vec<crate::quota_blocks::QuotaBlock> = case
+                .get("quotaBlocks")
+                .map(|v| serde_json::from_value(v.clone()).unwrap())
+                .unwrap_or_default();
+            let outcome = check_spawn_with_blocks(
                 &policy_from(&case["policy"]),
                 &provider_policy_from(&case["projectPolicy"]),
                 &offered_from(&case["offeredModels"]),
@@ -1515,6 +1572,7 @@ pub(crate) mod tests {
                     total: running["total"].as_u64().unwrap() as u32,
                     by_project: serde_json::from_value(running["byProject"].clone()).unwrap(),
                 },
+                &quota_blocks,
                 &SpawnRequest {
                     project_path: request["projectPath"].as_str().unwrap(),
                     provider: request["provider"].as_str().unwrap(),
@@ -1527,7 +1585,11 @@ pub(crate) mod tests {
                 Ok(mode) => json!({ "ok": true, "permissionMode": mode }),
                 Err(denied) => {
                     assert!(!denied.message.is_empty(), "{name}: message");
-                    json!({ "ok": false, "code": "supervisor_denied", "reason": denied.reason.key() })
+                    let mut obj = json!({ "ok": false, "code": "supervisor_denied", "reason": denied.reason.key() });
+                    if let Some(exp) = denied.expires_at {
+                        obj["expiresAt"] = json!(exp);
+                    }
+                    obj
                 }
             };
             assert_eq!(&actual, expected, "{name}");
@@ -1683,6 +1745,59 @@ pub(crate) mod tests {
         let providers = usable(&[("claude", Some(1)), ("codex", Some(1))]);
         let tie = balancing(&providers, &counts(&[("claude", 1), ("codex", 1)])).unwrap();
         assert_eq!(tie.next.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn balancing_with_blocks_skips_provider_when_all_allowed_models_are_blocked() {
+        let providers = vec![
+            VisibleProvider {
+                id: "antigravity".to_string(),
+                models: vec!["claude-opus-4-6-thinking".into(), "gemini-3-flash".into()],
+                permission_mode: None,
+                weight: Some(2),
+                note: None,
+            },
+            VisibleProvider {
+                id: "codex".to_string(),
+                models: vec!["gpt-5.3-codex".into()],
+                permission_mode: None,
+                weight: Some(1),
+                note: None,
+            },
+        ];
+        let claude_block = crate::quota_blocks::QuotaBlock {
+            id: "antigravity:claude-*".into(),
+            provider: "antigravity".into(),
+            scope: crate::quota_blocks::QuotaBlockScope::Family {
+                prefix: "claude-".into(),
+            },
+            reason: crate::quota_blocks::QuotaBlockReason::QuotaExhausted,
+            detail: "quota exceeded".into(),
+            detected_at: "2026-10-23T18:00:00Z".into(),
+            expires_at: "2099-10-23T19:00:00Z".into(),
+            source_agent_id: None,
+        };
+        // Only claude-* blocked on antigravity: gemini-3-flash is still available -> antigravity is picked
+        let partial =
+            balancing_with_blocks(&providers, &counts(&[]), &[claude_block.clone()]).unwrap();
+        assert_eq!(partial.next.as_deref(), Some("antigravity"));
+
+        // Both families blocked on antigravity -> balancing.next skips antigravity and picks codex
+        let gemini_block = crate::quota_blocks::QuotaBlock {
+            id: "antigravity:gemini-*".into(),
+            provider: "antigravity".into(),
+            scope: crate::quota_blocks::QuotaBlockScope::Family {
+                prefix: "gemini-".into(),
+            },
+            reason: crate::quota_blocks::QuotaBlockReason::QuotaExhausted,
+            detail: "quota exceeded".into(),
+            detected_at: "2026-10-23T18:00:00Z".into(),
+            expires_at: "2099-10-23T19:00:00Z".into(),
+            source_agent_id: None,
+        };
+        let all_blocked =
+            balancing_with_blocks(&providers, &counts(&[]), &[claude_block, gemini_block]).unwrap();
+        assert_eq!(all_blocked.next.as_deref(), Some("codex"));
     }
 
     #[test]

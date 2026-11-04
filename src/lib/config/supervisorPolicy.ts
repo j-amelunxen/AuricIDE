@@ -2,6 +2,7 @@ import { connectorPolicySchema, type ConnectorPolicy } from './connectorPolicy';
 import fixtures from './supervisorPolicy.fixtures.json';
 import type { ModelOption, ProviderInfo } from '../tauri/providers';
 import { isProviderAllowed, type ProviderPolicy, DEFAULT_PROVIDER_POLICY } from './providerPolicy';
+import { findBlockForModel, type QuotaBlock } from './quotaBlocks';
 export { supervisorProvidersOf } from './supervisorProviders';
 
 /**
@@ -119,6 +120,7 @@ export type SupervisorDeniedReason =
   | 'provider_has_no_models'
   | 'model_not_allowed'
   | 'model_not_offered'
+  | 'quota_blocked'
   | 'permission_mode_unattended'
   | 'interactive_not_allowed'
   | 'project_limit_reached'
@@ -728,11 +730,13 @@ export interface SupervisorSpawnContext {
   running: { total: number; byProject: Record<string, number> };
   /** Absent: no provider has a default mode or an unattended one. */
   permissionModes?: ProviderPermissionModes;
+  /** Active provider/model-family quota blocks. */
+  quotaBlocks?: readonly QuotaBlock[];
 }
 
 export type SupervisorSpawnDecision =
   | { ok: true; permissionMode: string | null }
-  | { ok: false; code: 'supervisor_denied'; reason: SupervisorDeniedReason };
+  | { ok: false; code: 'supervisor_denied'; reason: SupervisorDeniedReason; expiresAt?: string };
 
 /**
  * Would the socket start this child? Checks run in the fixtures' `checkOrder`
@@ -749,6 +753,7 @@ export function checkSupervisorSpawn(
   const entry = policy.projects[path];
   const offered = context.offeredModels[provider];
   const listedModels = entry?.models[provider];
+  const matchedBlock = findBlockForModel(context.quotaBlocks ?? [], provider, request.model);
 
   // Each check may assume every check before it passed (an entry exists, the
   // provider is installed), which is why the order is part of the contract.
@@ -761,6 +766,7 @@ export function checkSupervisorSpawn(
     provider_has_no_models: () => listedModels !== undefined && listedModels.length === 0,
     model_not_allowed: () => listedModels !== undefined && !listedModels.includes(request.model),
     model_not_offered: () => !offered.includes(request.model),
+    quota_blocked: () => matchedBlock !== null,
     permission_mode_unattended: () =>
       runsUnattended(entry, provider, context.permissionModes ?? {}),
     interactive_not_allowed: () => !request.headless && !entry.allowInteractive,
@@ -768,7 +774,14 @@ export function checkSupervisorSpawn(
     global_limit_reached: () => context.running.total >= policy.maxRunningChildren,
   };
   const failed = CHECK_ORDER.find((reason) => fails[reason]());
-  if (failed) return { ok: false, code: 'supervisor_denied', reason: failed };
+  if (failed) {
+    return {
+      ok: false,
+      code: 'supervisor_denied',
+      reason: failed,
+      ...(failed === 'quota_blocked' && matchedBlock ? { expiresAt: matchedBlock.expiresAt } : {}),
+    };
+  }
   return { ok: true, permissionMode: entry.permissionMode[provider] ?? null };
 }
 

@@ -568,7 +568,9 @@ pub fn admit_spawn(
     let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {
         return Ok(config);
     };
-    let policy = crate::supervisor::current_policy(needs_app_data()?);
+    let app_data = needs_app_data()?;
+    let policy = crate::supervisor::current_policy(app_data);
+    let quota_blocks = crate::quota_blocks::store::active_blocks(app_data);
     let project = config
         .project_path
         .as_deref()
@@ -579,7 +581,7 @@ pub fn admit_spawn(
         .unwrap_or_default();
     let running = crate::supervisor::running_children(agents, &supervisor_id);
     let modes = modes_for(&policy);
-    crate::supervisor::check_child_config(
+    crate::supervisor::check_child_config_with_blocks(
         &config,
         project.as_deref(),
         &crate::supervisor::ChildCheckInputs {
@@ -589,6 +591,7 @@ pub fn admit_spawn(
             project_policy: &project_policy,
             running: &running,
         },
+        &quota_blocks,
     )?;
     // Booked as the supervisor's, whatever the frontend said.
     config.run_source = Some(crate::control_socket::protocol::RUN_SOURCE_SUPERVISOR.to_string());
@@ -1184,6 +1187,11 @@ pub async fn spawn_agent_impl(
         } else {
             AgentStatus::Error
         };
+        // Before anyone is told the agent ended, so a supervisor that wakes on
+        // the result and starts a retry already meets the block.
+        if let Some(buffers) = &output_buffers {
+            super::quota_detection::record_quota_block(&app_clone, &finished_info, buffers);
+        }
         // Before the buffer is marked finished, so a waiter that sees the
         // finished buffer always finds the result next to it. A kill got
         // there first when the agent is gone from the manager, and its

@@ -3371,3 +3371,162 @@ fn a_caller_without_cursors_is_not_woken_at_once_and_still_gets_everything() {
     assert_eq!(reply["result"]["questions"][0]["question"], "Which branch?");
     assert_eq!(reply["result"]["newReport"], true);
 }
+
+#[test]
+fn quota_blocks_control_methods_mark_catalog_skip_balancing_and_refuse_spawn() {
+    let s = supervised_scope();
+    let app = tempfile::tempdir().unwrap();
+    *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
+
+    // Configure antigravity (claude + gemini families) and codex with load balancing
+    let mut policy = scope_policy(&s.path);
+    if let Some(rules) = policy.projects.get_mut(&s.path) {
+        rules.providers = Some(vec!["antigravity".into(), "codex".into()]);
+        rules.models.clear();
+        rules.provider_weights.insert("antigravity".into(), 2);
+        rules.provider_weights.insert("codex".into(), 1);
+    }
+    *s.h.backend.policy.lock().unwrap() = policy;
+    s.h.backend.offered.lock().unwrap().insert(
+        "antigravity".into(),
+        vec![
+            model("claude-sonnet-4-6", Some(2)),
+            model("gemini-3-flash", Some(1)),
+        ],
+    );
+
+    // 1. Set a manual family quota block on antigravity claude-* via control socket
+    let set_resp = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({
+            "id": 51,
+            "method": "set_quota_block",
+            "params": {
+                "provider": "antigravity",
+                "scope": "claude-*",
+                "durationMinutes": 60,
+                "detail": "Anthropic family quota exhausted"
+            }
+        }),
+    );
+    assert_eq!(set_resp["ok"], true, "{set_resp}");
+    assert_eq!(
+        set_resp["result"]["block"]["id"],
+        "antigravity:family:claude-"
+    );
+    let expires_at = set_resp["result"]["block"]["expiresAt"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // 2. list_quota_blocks returns the active block
+    let list_resp = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 50, "method": "list_quota_blocks" }),
+    );
+    assert_eq!(list_resp["ok"], true, "{list_resp}");
+    assert_eq!(list_resp["result"]["blocks"].as_array().unwrap().len(), 1);
+
+    // 3. list_projects marks claude-sonnet-4-6 as blocked in catalog, leaves gemini-3-flash unblocked,
+    // and keeps antigravity as balancing.next because gemini-3-flash is still available
+    let proj_resp = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "a", "method": "list_projects" }),
+    );
+    assert_eq!(proj_resp["ok"], true, "{proj_resp}");
+    let agy_catalog = proj_resp["result"]["catalog"]["antigravity"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        agy_catalog[0]["blocked"],
+        json!({
+            "reason": "manual: Anthropic family quota exhausted",
+            "until": expires_at
+        })
+    );
+    assert!(agy_catalog[1].get("blocked").is_none());
+    assert_eq!(
+        proj_resp["result"]["projects"][0]["supervisor"]["balancing"]["next"],
+        "antigravity"
+    );
+
+    // 4. Spawning the blocked model is refused with supervisor_denied, reason quota_blocked, and expiresAt
+    let refused = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({
+            "id": 7,
+            "method": "spawn",
+            "params": {
+                "projectPath": s.path,
+                "prompt": "fix bug",
+                "provider": "antigravity",
+                "model": "claude-sonnet-4-6",
+                "headless": true
+            }
+        }),
+    );
+    assert_eq!(error_code(&refused), "supervisor_denied");
+    assert_eq!(refused["error"]["reason"], "quota_blocked");
+    assert_eq!(refused["error"]["expiresAt"], expires_at);
+
+    // 5. Block gemini-* on antigravity too: now all antigravity models are blocked, so balancing.next skips antigravity and picks codex
+    let set_gemini = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({
+            "id": 52,
+            "method": "set_quota_block",
+            "params": {
+                "provider": "antigravity",
+                "scope": "gemini-*",
+                "durationMinutes": 60,
+                "detail": "Gemini family quota exhausted"
+            }
+        }),
+    );
+    assert_eq!(set_gemini["ok"], true, "{set_gemini}");
+    let proj_resp_after = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "b", "method": "list_projects" }),
+    );
+    assert_eq!(
+        proj_resp_after["result"]["projects"][0]["supervisor"]["balancing"]["next"],
+        "codex"
+    );
+
+    // 6. Clear the claude-* block via clear_quota_block
+    let clear_resp = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({
+            "id": 53,
+            "method": "clear_quota_block",
+            "params": { "id": "antigravity:family:claude-" }
+        }),
+    );
+    assert_eq!(clear_resp["ok"], true, "{clear_resp}");
+    assert_eq!(clear_resp["result"]["cleared"], true);
+
+    // 7. Spawning claude-sonnet-4-6 now succeeds
+    let allowed_now = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({
+            "id": 8,
+            "method": "spawn",
+            "params": {
+                "projectPath": s.path,
+                "prompt": "fix bug",
+                "provider": "antigravity",
+                "model": "claude-sonnet-4-6",
+                "headless": true
+            }
+        }),
+    );
+    assert_eq!(allowed_now["ok"], true, "{allowed_now}");
+}

@@ -19,6 +19,7 @@ pub mod pingback;
 mod process_activity;
 pub mod projects;
 pub mod protocol;
+mod quota_blocks;
 pub mod spawn_log;
 mod stall_watchdog;
 mod supervised;
@@ -108,6 +109,13 @@ pub trait ControlBackend: Send + Sync {
     /// every provider keeps one we can read; the default says so.
     fn agent_report(&self, _agent_id: &str) -> ReportLookup {
         ReportLookup::Missing(ReportMissing::ProviderUnsupported)
+    }
+    /// Active quota blocks right now, read from `<app_data_dir>/quota-blocks.json`
+    /// when `app_data_dir()` is `Some`.
+    fn quota_blocks(&self) -> Vec<crate::quota_blocks::QuotaBlock> {
+        self.app_data_dir()
+            .map(|dir| crate::quota_blocks::store::active_blocks(&dir))
+            .unwrap_or_default()
     }
 }
 
@@ -491,6 +499,9 @@ impl Dispatcher {
                 ErrorCode::OutsideSupervisorScope,
                 "pm_target is for supervisors; an outside client has its own auric-pm server",
             )),
+            Request::ListQuotaBlocks(_) => self.list_quota_blocks(),
+            Request::SetQuotaBlock(params) => self.set_quota_block(params),
+            Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
         }
     }
 

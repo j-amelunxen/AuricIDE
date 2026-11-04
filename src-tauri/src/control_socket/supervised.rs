@@ -15,9 +15,9 @@ use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::providers::ModelOption;
 use crate::supervisor::pm_target::{pm_facts, resolve_pm_target, PmRefusal};
 use crate::supervisor::policy::{
-    balancing, check_spawn, normalize_provider_id, resolve_model, visible_projects, Balancing,
-    ModelChoice, ModelRequest, SpawnRequest, VisibleProject, VisibleProvider,
-    BALANCING_WINDOW_DAYS,
+    balancing_with_blocks, check_spawn_with_blocks, normalize_provider_id, resolve_model,
+    visible_projects, Balancing, ModelChoice, ModelRequest, SpawnRequest, VisibleProject,
+    VisibleProvider, BALANCING_WINDOW_DAYS,
 };
 use crate::supervisor::{
     canonical_project_path, live_runs_by_provider, model_names, running_children,
@@ -69,6 +69,9 @@ impl Dispatcher {
             Request::LinkPolicyGet(_) => self.link_policy_get(),
             Request::LinkPolicyPropose(params) => self.link_policy_propose(supervisor, params),
             Request::PmTarget(params) => self.pm_target(params.project.as_deref()),
+            Request::ListQuotaBlocks(_) => self.list_quota_blocks(),
+            Request::SetQuotaBlock(params) => self.set_quota_block(params),
+            Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
         }
     }
 
@@ -251,10 +254,22 @@ impl Dispatcher {
             .map(|visible| visible.models.clone())
             .unwrap_or_default();
         let options: &[ModelOption] = offered.get(&provider).map_or(&[], Vec::as_slice);
-        if params.model.is_none() && allowed.is_empty() {
-            // Nothing this supervisor may use there to pick from: the policy
-            // check names why, as it would for a model that was named.
-            let placeholder = options.first().map(|o| o.value.clone()).unwrap_or_default();
+        let quota_blocks = self.backend.quota_blocks();
+        let unblocked_allowed: Vec<String> = allowed
+            .iter()
+            .filter(|m| {
+                crate::quota_blocks::find_block_for_model(&quota_blocks, &provider, m).is_none()
+            })
+            .cloned()
+            .collect();
+        if params.model.is_none() && (allowed.is_empty() || unblocked_allowed.is_empty()) {
+            // Nothing this supervisor may use there to pick from (or every
+            // allowed model is quota-blocked): the policy check names why.
+            let placeholder = allowed
+                .first()
+                .cloned()
+                .or_else(|| options.first().map(|o| o.value.clone()))
+                .unwrap_or_default();
             self.check_supervised_spawn(
                 supervisor,
                 &SpawnRequest {
@@ -265,9 +280,30 @@ impl Dispatcher {
                 },
             )?;
         }
+        if let Some(named_model) = params.model.as_deref() {
+            if allowed.iter().any(|m| m == named_model)
+                && crate::quota_blocks::find_block_for_model(&quota_blocks, &provider, named_model)
+                    .is_some()
+            {
+                self.check_supervised_spawn(
+                    supervisor,
+                    &SpawnRequest {
+                        project_path,
+                        provider: &provider,
+                        model: named_model,
+                        headless: params.headless.unwrap_or(true),
+                    },
+                )?;
+            }
+        }
+        let choice_pool = if unblocked_allowed.is_empty() {
+            &allowed
+        } else {
+            &unblocked_allowed
+        };
         let choice = resolve_model(
             options,
-            &allowed,
+            choice_pool,
             &ModelRequest {
                 provider: &provider,
                 project_path,
@@ -282,8 +318,8 @@ impl Dispatcher {
         Ok((provider, choice))
     }
 
-    /// `check_spawn` against the policy, the offer and the running children
-    /// as they are now.
+    /// `check_spawn_with_blocks` against the policy, the offer, the active
+    /// quota blocks and the running children as they are now.
     fn check_supervised_spawn(
         &self,
         supervisor: &str,
@@ -296,17 +332,20 @@ impl Dispatcher {
             .backend
             .project_provider_policy(Path::new(request.project_path));
         let running = running_children(&self.backend.agents(), supervisor);
-        check_spawn(
+        let quota_blocks = self.backend.quota_blocks();
+        check_spawn_with_blocks(
             &policy,
             &project_policy,
             &offered,
             &modes,
             &running,
+            &quota_blocks,
             request,
         )
         .map_err(|denied| {
             ControlError::new(ErrorCode::SupervisorDenied, denied.message)
                 .with_reason(denied.reason.key())
+                .with_expires_at(denied.expires_at)
         })
     }
 
@@ -327,6 +366,7 @@ impl Dispatcher {
         let agents = self.backend.agents();
         let running = running_children(&agents, supervisor);
         let listed = self.backend.projects();
+        let quota_blocks = self.backend.quota_blocks();
         let since = balancing_since();
         let entries: Vec<(ProjectEntry, VisibleProject)> = visible
             .into_iter()
@@ -345,7 +385,11 @@ impl Dispatcher {
                 return Err(unknown_project(wanted));
             }
         }
-        let catalog = model_catalog(&offered, entries.iter().map(|(_, project)| project));
+        let catalog = model_catalog(
+            &offered,
+            entries.iter().map(|(_, project)| project),
+            &quota_blocks,
+        );
         let projects = entries
             .into_iter()
             .map(|(mut entry, project)| {
@@ -391,13 +435,20 @@ impl Dispatcher {
     }
 
     /// The provider a supervisor is told to take in `project`: the balancing
-    /// `next`, else its own provider when the project allows it, else the
-    /// first one the project allows.
+    /// `next`, else its own provider when the project allows it (and it has an
+    /// unblocked model), else the first provider with an unblocked model.
     pub(super) fn preferred_provider<'p>(
         &self,
         project: &'p VisibleProject,
     ) -> Option<&'p VisibleProvider> {
         let agents = self.backend.agents();
+        let quota_blocks = self.backend.quota_blocks();
+        let has_unblocked = |provider: &&VisibleProvider| {
+            provider.models.iter().any(|model| {
+                crate::quota_blocks::find_block_for_model(&quota_blocks, &provider.id, model)
+                    .is_none()
+            })
+        };
         let next = self
             .project_balancing(project, &agents, &balancing_since())
             .and_then(|balancing| balancing.next);
@@ -407,6 +458,14 @@ impl Dispatcher {
             .providers
             .iter()
             .find(|provider| provider.id == preferred)
+            .filter(has_unblocked)
+            .or_else(|| project.providers.iter().find(has_unblocked))
+            .or_else(|| {
+                project
+                    .providers
+                    .iter()
+                    .find(|provider| provider.id == preferred)
+            })
             .or_else(|| project.providers.first())
     }
 }
@@ -457,6 +516,7 @@ pub(super) fn unknown_project(wanted: &str) -> ControlError {
 fn model_catalog<'p>(
     offered: &BTreeMap<String, Vec<ModelOption>>,
     projects: impl Iterator<Item = &'p VisibleProject>,
+    quota_blocks: &[crate::quota_blocks::QuotaBlock],
 ) -> ModelCatalog {
     let mut allowed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for provider in projects.flat_map(|project| &project.providers) {
@@ -470,17 +530,21 @@ fn model_catalog<'p>(
             let mut entries: Vec<SupervisorModelEntry> = options
                 .iter()
                 .filter(|option| ids.contains(&option.value.as_str()))
-                .map(catalog_entry)
+                .map(|option| catalog_entry(provider, option, quota_blocks))
                 .collect();
             // A model the policy keeps but the provider no longer describes.
             for id in ids {
                 if !entries.iter().any(|entry| entry.id == id) {
+                    let blocked =
+                        crate::quota_blocks::find_block_for_model(quota_blocks, provider, id)
+                            .map(|b| b.to_model_block_info());
                     entries.push(SupervisorModelEntry {
                         id: id.to_string(),
                         label: id.to_string(),
                         rank: None,
                         use_for: None,
                         relative_cost: None,
+                        blocked,
                     });
                 }
             }
@@ -489,13 +553,20 @@ fn model_catalog<'p>(
         .collect()
 }
 
-fn catalog_entry(option: &ModelOption) -> SupervisorModelEntry {
+fn catalog_entry(
+    provider: &str,
+    option: &ModelOption,
+    quota_blocks: &[crate::quota_blocks::QuotaBlock],
+) -> SupervisorModelEntry {
+    let blocked = crate::quota_blocks::find_block_for_model(quota_blocks, provider, &option.value)
+        .map(|b| b.to_model_block_info());
     SupervisorModelEntry {
         id: option.value.clone(),
         label: option.label.clone(),
         rank: option.rank,
         use_for: option.use_for.clone(),
         relative_cost: option.relative_cost,
+        blocked,
     }
 }
 
@@ -539,7 +610,8 @@ impl Dispatcher {
         for (id, live) in live_runs_by_provider(agents, &project.path) {
             *runs.entry(id).or_default() += live;
         }
-        balancing(&project.providers, &runs)
+        let quota_blocks = self.backend.quota_blocks();
+        balancing_with_blocks(&project.providers, &runs, &quota_blocks)
     }
 }
 

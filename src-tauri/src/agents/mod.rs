@@ -11,6 +11,7 @@ pub mod persistence;
 pub mod progress_output;
 pub mod project_binding;
 pub mod questions;
+mod quota_detection;
 pub mod run_results;
 pub mod shell_env;
 pub mod terminal_input;

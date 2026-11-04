@@ -104,6 +104,19 @@ this supervisor started. `questionCount` is a number, so no text from an agent g
 `name` and `currentTask` are agent text and data like any other, and `answerPreview` holds at most
 300 characters of an agent's last ANSWER line.
 
+## list_quota_blocks, set_quota_block and clear_quota_block
+
+_Lifting a block to spend a provider anyway._ Any supervisor or outside client can clear a block,
+and nothing records who did. A block protects no secret: it saves a run that would fail, and the
+provider's own limit still holds. A worker is refused at the socket like on every other method.
+
+_Starving a provider._ A supervisor can block every provider and so stop other supervisors' spawns
+until the block expires. `until` and `durationMinutes` have no upper limit. A human can clear it.
+
+_A block from an agent's text._ Detection reads what an agent printed, so an agent that prints a
+matching sentence at the end of its run sets a block on its own provider, 60 minutes by default or
+until a reset time named in that line. It widens nothing; the worst case is fewer spawn choices.
+
 ## pm_tools [#el_d93xrgtp], pm_call [#el_h6np2qvy] and pm_target [#el_ff0j17a0]
 
 _Reaching a project outside the policy._ The gateway asks Rust on every call, before it looks at

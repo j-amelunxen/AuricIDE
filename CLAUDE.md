@@ -536,6 +536,16 @@ ADR 0004.
   `src-tauri/src/supervisor/policy.rs`, both on
   `supervisorPolicy.fixtures.json` — change the fixtures first. Settings →
   Supervisor edits it.
+- **A provider that ran out of quota is blocked for a while, for supervisors.**
+  `quota_blocks/` keeps blocks on a provider, a model family or a model in
+  `<app_data_dir>/quota-blocks.json`. Written when any agent ends with a matching
+  line in the last 8 KiB of its console (`agents/quota_detection.rs`, on the exit
+  path, before the run result is booked), or by `set_quota_block` (socket and MCP).
+  Only a supervisor's spawn is refused (`quota_blocked`,
+  `check_child_config_with_blocks`); `list_projects` marks the model and
+  `balancing.next` skips a provider with nothing left. The UI, the conductor,
+  outside clients and link jobs do not consult blocks, and no screen shows them.
+  `src/lib/config/quotaBlocks.ts` is the rule twin, fixture-tested only.
 - **Load balancing per project is a hint, not a gate.** `providerWeights`
   (Settings → Supervisor, "Load-balancing share") becomes `balancing` in a
   supervisor's `list_projects`: target vs. actual share of agents started
@@ -1175,6 +1185,7 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 | Inbox & Missions          | `inbox/`, `missions/`                                                                                      | App-level GTD inbox (`inbox.db`, assigning writes a ticket into `.auric/project.db`) and repository-owned markdown missions (`.auric/missions/`)                     |
 | Machine & Connectors      | `machine/`, `connectors.rs`                                                                                | Declared machine dependencies (`ffmpeg`, `ffprobe`, `go`, `okf`) resolved via login shell, and owner-approved stdio MCP connectors                                   |
 | Machine credentials       | `app_config.rs`                                                                                            | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                          |
+| Quota blocks              | `quota_blocks/`, `agents/quota_detection.rs`                                                               | Temporary provider/model-family blocks after quota exhaustion; refuses a supervisor's spawn                                                                          |
 | Provider policy           | `provider_policy.rs`                                                                                       | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                            |
 | LLM & Providers           | `llm.rs`, `providers/`                                                                                     | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`, plus `dynamic-providers/*.json`)                                 |
 | MCP                       | `mcp.rs`, `node_runtime.rs`                                                                                | Write per-agent MCP configs (absolute Node matching the bundle ABI) and start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)        |

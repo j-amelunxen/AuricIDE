@@ -24,6 +24,9 @@ const TOOL_METHODS: Record<string, string> = {
   link_policy_propose: 'link_policy_propose',
   pm_tools: 'pm_target',
   pm_call: 'pm_target',
+  list_quota_blocks: 'list_quota_blocks',
+  set_quota_block: 'set_quota_block',
+  clear_quota_block: 'clear_quota_block',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;

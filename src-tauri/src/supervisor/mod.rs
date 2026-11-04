@@ -21,8 +21,8 @@ use crate::agents::{AgentConfig, AgentInfo, AgentRole, AgentStatus};
 use crate::provider_policy::ProviderPolicy;
 use crate::providers::{ModelOption, ProviderRegistry};
 use policy::{
-    check_spawn, insert_stricter, normalize_project_path, parse, ParseReason, ParsedPolicy,
-    ProviderModes, RunningChildren, SpawnRequest, SupervisorPolicy, POLICY_VERSION,
+    insert_stricter, normalize_project_path, parse, ParseReason, ParsedPolicy, ProviderModes,
+    RunningChildren, SpawnRequest, SupervisorPolicy, POLICY_VERSION,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -291,11 +291,21 @@ pub struct ChildCheckInputs<'a> {
 /// The second check, in `spawn_agent_impl`, of a spawn that names the
 /// supervisor that asked for it. The dispatcher already ran `check_spawn`;
 /// this one holds even if a spawn reached the frontend some other way.
-// code-gate: complexity-cyclomatic - each early return is one condition a supervisor's child must meet; listed flat so none is missed
+#[cfg(test)]
 pub fn check_child_config(
     config: &AgentConfig,
     canonical_project: Option<&str>,
     inputs: &ChildCheckInputs<'_>,
+) -> Result<(), String> {
+    check_child_config_with_blocks(config, canonical_project, inputs, &[])
+}
+
+// code-gate: complexity-cyclomatic - each early return is one condition a supervisor's child must meet; listed flat so none is missed
+pub fn check_child_config_with_blocks(
+    config: &AgentConfig,
+    canonical_project: Option<&str>,
+    inputs: &ChildCheckInputs<'_>,
+    quota_blocks: &[crate::quota_blocks::QuotaBlock],
 ) -> Result<(), String> {
     if config.role() == AgentRole::Supervisor {
         return Err("A supervisor cannot start another supervisor.".to_string());
@@ -309,12 +319,13 @@ pub fn check_child_config(
         .map(str::trim)
         .filter(|id| !id.is_empty())
         .ok_or_else(|| "An agent started by a supervisor needs a named provider.".to_string())?;
-    let permission_mode = check_spawn(
+    let permission_mode = policy::check_spawn_with_blocks(
         inputs.policy,
         inputs.project_policy,
         inputs.offered,
         inputs.modes,
         inputs.running,
+        quota_blocks,
         &SpawnRequest {
             project_path: project,
             provider,

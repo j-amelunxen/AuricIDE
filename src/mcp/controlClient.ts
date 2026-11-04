@@ -130,8 +130,8 @@ export function callControl<M extends ControlMethod>(
         const response = parseControlResponse(method, value, request.id);
         if (response.ok) finish(() => resolve(response.result));
         else {
-          const { code, message, reason } = response.error;
-          fail(new ControlError(code, message, reason));
+          const { code, message, reason, expiresAt } = response.error;
+          fail(new ControlError(code, message, reason, expiresAt));
         }
       } catch (error) {
         fail(error as ControlError);

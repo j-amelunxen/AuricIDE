@@ -33,6 +33,7 @@ mod project_icons;
 mod project_skills;
 mod provider_policy;
 mod providers;
+pub mod quota_blocks;
 mod recent_creations;
 mod recent_projects;
 mod schedules;

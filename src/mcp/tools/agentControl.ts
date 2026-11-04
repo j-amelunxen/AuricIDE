@@ -152,6 +152,71 @@ export function dismissAgentTool(call: ControlCaller, scopeNote = '') {
   };
 }
 
+/** `list_quota_blocks`, the same for the control and the supervisor server. */
+export function listQuotaBlocksTool(call: ControlCaller) {
+  return {
+    name: 'list_quota_blocks',
+    description:
+      'List active temporary quota/rate-limit blocks across providers, model families and ' +
+      'models, plus defaultTtlMinutes. Expired blocks are pruned automatically. Each block ' +
+      'carries { id, provider, scope, reason, detail, detectedAt, expiresAt, sourceAgentId }.',
+    parameters: z.object({}),
+    execute: async () => runControl(call, 'list_quota_blocks', {}),
+  };
+}
+
+/** `set_quota_block`, the same for the control and the supervisor server. */
+export function setQuotaBlockTool(call: ControlCaller) {
+  return {
+    name: 'set_quota_block',
+    description:
+      'Record or extend a temporary quota block for a provider, model family (e.g. ' +
+      '"claude-*") or single model so spawn_agent and balancing skip it until expiry. ' +
+      'Pass until (ISO-8601 timestamp or local HH:MM such as "20:00") or durationMinutes; ' +
+      'when both are omitted, defaultTtlMinutes (default 60) is used. Returns { block }.',
+    parameters: z.object({
+      provider: z.string().describe('Provider id, e.g. "antigravity" or "claude"'),
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          'Scope pattern: omit or "*" for the whole provider, "<prefix>-*" (e.g. "claude-*") ' +
+            'for a model family, or an exact model id'
+        ),
+      until: z
+        .string()
+        .optional()
+        .describe('Expiry as RFC 3339 timestamp or local clock time HH:MM (e.g. "20:00")'),
+      durationMinutes: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('Block duration in minutes when until is not given'),
+      detail: z.string().optional().describe('Human-readable reason or note for the block'),
+    }),
+    execute: async (args: ControlParamsInput<'set_quota_block'>) =>
+      runControl(call, 'set_quota_block', args),
+  };
+}
+
+/** `clear_quota_block`, the same for the control and the supervisor server. */
+export function clearQuotaBlockTool(call: ControlCaller) {
+  return {
+    name: 'clear_quota_block',
+    description:
+      'Clear an active quota block by id (from list_quota_blocks, e.g. "antigravity:claude-*") ' +
+      'before its timer expires. Returns { id, cleared }.',
+    parameters: z.object({
+      id: z
+        .string()
+        .describe('Block id as list_quota_blocks reports it, e.g. "antigravity:claude-*"'),
+    }),
+    execute: async (args: ControlParamsInput<'clear_quota_block'>) =>
+      runControl(call, 'clear_quota_block', args),
+  };
+}
+
 /** `await_agent_result`, the same for the control and the supervisor server. */
 // elementuuid=el_rqg3vpjg kind=mcp security=docs/security/supervisor-tools.md validation=zod:awaitResultParams+raisedQuestion+runResult
 export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
@@ -370,4 +435,7 @@ export function registerAgentControlTools(
 
   server.addTool(removeWorktreeTool(call));
   server.addTool(dismissAgentTool(call));
+  server.addTool(listQuotaBlocksTool(call));
+  server.addTool(setQuotaBlockTool(call));
+  server.addTool(clearQuotaBlockTool(call));
 }

@@ -43,6 +43,7 @@ pub enum ErrorCode {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ControlError {
     pub code: ErrorCode,
     pub message: String,
@@ -50,6 +51,9 @@ pub struct ControlError {
     /// `supervisor_denied` only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// ISO-8601 UTC timestamp when a `quota_blocked` refusal expires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
 }
 
 impl ControlError {
@@ -58,11 +62,17 @@ impl ControlError {
             code,
             message: message.into(),
             reason: None,
+            expires_at: None,
         }
     }
 
     pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
         self.reason = Some(reason.into());
+        self
+    }
+
+    pub fn with_expires_at(mut self, expires_at: Option<String>) -> Self {
+        self.expires_at = expires_at;
         self
     }
 }
@@ -244,6 +254,9 @@ pub enum Request {
     LinkPolicyGet(EmptyParams),
     LinkPolicyPropose(LinkPolicyProposeParams),
     PmTarget(PmTargetParams),
+    ListQuotaBlocks(EmptyParams),
+    SetQuotaBlock(SetQuotaBlockParams),
+    ClearQuotaBlock(ClearQuotaBlockParams),
 }
 
 /// `pm_target`: which project folder a PM tool may run in. `project` is a path,
@@ -272,7 +285,31 @@ pub struct PmTargetResult {
     pub name: String,
 }
 
-const METHODS: [&str; 14] = [
+/// `set_quota_block`: manually block a provider, model family (`"claude-*"`),
+/// or single model until a clock time (`"20:00"`), ISO timestamp, or duration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetQuotaBlockParams {
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_minutes: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// `clear_quota_block`: remove an active quota block by its id (`<provider>:family:<prefix>`,
+/// `<provider>:provider`, `<provider>:model:<id>`, or shorthand `<provider>:<pattern>`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClearQuotaBlockParams {
+    pub id: String,
+}
+
+const METHODS: [&str; 17] = [
     "list_agents",
     "read_output",
     "read_report",
@@ -287,6 +324,9 @@ const METHODS: [&str; 14] = [
     "link_policy_get",
     "link_policy_propose",
     "pm_target",
+    "list_quota_blocks",
+    "set_quota_block",
+    "clear_quota_block",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -437,6 +477,13 @@ fn normalise_params(request: Request) -> Result<Request, String> {
         Request::PmTarget(params) if params.project.as_deref().is_some_and(blank) => {
             Err("project must not be empty; leave it out for the first usable project".into())
         }
+        Request::SetQuotaBlock(params) if blank(&params.provider) => {
+            Err("provider must not be empty".into())
+        }
+        Request::SetQuotaBlock(params) if params.duration_minutes == Some(0) => {
+            Err("durationMinutes must be positive".into())
+        }
+        Request::ClearQuotaBlock(params) if blank(&params.id) => Err("id must not be empty".into()),
         Request::ListProjects(params) if params.project.as_deref().is_some_and(blank) => {
             Err("project must not be empty; leave it out to list every project".into())
         }
@@ -751,6 +798,9 @@ pub struct SupervisorModelEntry {
         skip_serializing_if = "Option::is_none"
     )]
     pub relative_cost: Option<f64>,
+    /// Present while a quota block covers this model on this provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<crate::quota_blocks::ModelBlockInfo>,
 }
 
 /// The models a provider allows in one project: `"all"` for every model the
@@ -807,6 +857,26 @@ pub struct ListProjectsResult {
     /// Only in a supervisor's `list_projects`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog: Option<ModelCatalog>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaBlocksResult {
+    pub blocks: Vec<crate::quota_blocks::QuotaBlock>,
+    pub default_ttl_minutes: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetQuotaBlockResult {
+    pub block: crate::quota_blocks::QuotaBlock,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearQuotaBlockResult {
+    pub id: String,
+    pub cleared: bool,
 }
 
 #[cfg(test)]
@@ -1192,6 +1262,57 @@ pub(crate) mod tests {
                 ),
             ),
             (
+                "list_quota_blocks",
+                ok_response(
+                    &json!(50),
+                    QuotaBlocksResult {
+                        blocks: vec![crate::quota_blocks::QuotaBlock {
+                            id: "antigravity:family:claude-".into(),
+                            provider: "antigravity".into(),
+                            scope: crate::quota_blocks::QuotaBlockScope::Family {
+                                prefix: "claude-".into(),
+                            },
+                            reason: crate::quota_blocks::QuotaBlockReason::QuotaExhausted,
+                            detail: "Anthropic quota exceeded".into(),
+                            detected_at: "2026-10-23T18:00:00Z".into(),
+                            expires_at: "2026-10-23T20:00:00Z".into(),
+                            source_agent_id: Some("agent-1".into()),
+                        }],
+                        default_ttl_minutes: 60,
+                    },
+                ),
+            ),
+            (
+                "set_quota_block",
+                ok_response(
+                    &json!(51),
+                    SetQuotaBlockResult {
+                        block: crate::quota_blocks::QuotaBlock {
+                            id: "antigravity:family:claude-".into(),
+                            provider: "antigravity".into(),
+                            scope: crate::quota_blocks::QuotaBlockScope::Family {
+                                prefix: "claude-".into(),
+                            },
+                            reason: crate::quota_blocks::QuotaBlockReason::Manual,
+                            detail: "Anthropic quota exhausted".into(),
+                            detected_at: "2026-10-23T18:00:00Z".into(),
+                            expires_at: "2026-10-23T20:00:00Z".into(),
+                            source_agent_id: None,
+                        },
+                    },
+                ),
+            ),
+            (
+                "clear_quota_block",
+                ok_response(
+                    &json!(53),
+                    ClearQuotaBlockResult {
+                        id: "antigravity:family:claude-".into(),
+                        cleared: true,
+                    },
+                ),
+            ),
+            (
                 "error",
                 error_response(
                     &json!(5),
@@ -1251,6 +1372,7 @@ pub(crate) mod tests {
             rank,
             use_for: None,
             relative_cost: None,
+            blocked: None,
         };
         let described =
             |entry: SupervisorModelEntry, use_for: &str, cost: f64| SupervisorModelEntry {
@@ -1510,6 +1632,18 @@ pub(crate) mod tests {
                         ErrorCode::SupervisorKeyInUse,
                         crate::supervisor::several::key_in_use_message("mail-triage", "agent-3"),
                     ),
+                ),
+            ),
+            (
+                "spawn refused because the model is quota-blocked carries expiresAt",
+                error_response(
+                    &json!(7),
+                    &ControlError::new(
+                        ErrorCode::SupervisorDenied,
+                        "Model 'claude-opus-4-6-thinking' (family 'claude-*' on provider 'antigravity') is quota-blocked until 2026-10-23T20:00:00Z (quota_exhausted: Anthropic quota exceeded).",
+                    )
+                    .with_reason("quota_blocked")
+                    .with_expires_at(Some("2026-10-23T20:00:00Z".into())),
                 ),
             ),
         ];

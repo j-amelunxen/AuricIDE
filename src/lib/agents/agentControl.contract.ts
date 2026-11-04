@@ -29,6 +29,9 @@ export const CONTROL_METHODS = [
   'link_policy_get',
   'link_policy_propose',
   'pm_target',
+  'list_quota_blocks',
+  'set_quota_block',
+  'clear_quota_block',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -149,7 +152,9 @@ export class ControlError extends Error {
     readonly code: ControlErrorCode | ClientErrorCode,
     message: string,
     /** The stable reason key of a `supervisor_denied` refusal. */
-    readonly reason?: string
+    readonly reason?: string,
+    /** RFC 3339 expiry timestamp when `reason` is `quota_blocked`. */
+    readonly expiresAt?: string
   ) {
     super(message);
     this.name = 'ControlError';
@@ -350,6 +355,29 @@ const PARAMS = {
       .min(1, 'changes must hold at least one change')
       .max(linkFixtures.proposals.maxChanges),
   }),
+  list_quota_blocks: noParams,
+  set_quota_block: z
+    .object({
+      provider: z.string().trim().min(1, 'provider must not be empty'),
+      scope: optionalText,
+      until: optionalText,
+      durationMinutes: z.number().int().positive().nullish(),
+      detail: optionalText,
+    })
+    .transform((p) => ({
+      provider: p.provider,
+      ...(p.scope ? { scope: p.scope } : {}),
+      ...(p.until ? { until: p.until } : {}),
+      ...(p.durationMinutes !== null && p.durationMinutes !== undefined
+        ? { durationMinutes: p.durationMinutes }
+        : {}),
+      ...(p.detail ? { detail: p.detail } : {}),
+    })),
+  clear_quota_block: z
+    .object({
+      id: z.string().trim().min(1, 'id must not be empty'),
+    })
+    .transform((p) => ({ id: p.id })),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 type ControlParamsSchemas = typeof PARAMS;
@@ -529,6 +557,36 @@ const catalogModel = z.object({
   rank: z.number().int().nullable(),
   useFor: z.string().optional(),
   relativeCost: z.number().positive().optional(),
+  blocked: z
+    .object({
+      reason: z.string(),
+      until: z.string(),
+    })
+    .optional(),
+});
+
+const quotaBlockScope = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('provider') }),
+  z.object({ kind: z.literal('family'), prefix: z.string() }),
+  z.object({ kind: z.literal('model'), model: z.string() }),
+]);
+
+const quotaBlockReason = z.enum([
+  'quota_exhausted',
+  'rate_limited',
+  'silent_model_fallback',
+  'manual',
+]);
+
+const quotaBlockItem = z.object({
+  id: z.string(),
+  provider: z.string(),
+  scope: quotaBlockScope,
+  reason: quotaBlockReason,
+  detail: z.string(),
+  detectedAt: z.string(),
+  expiresAt: z.string(),
+  sourceAgentId: z.string().nullable().optional(),
 });
 
 /** One question an agent raised for whoever started it. */
@@ -667,6 +725,17 @@ const RESULTS = {
     dirty: z.boolean(),
     branchAhead: z.boolean(),
   }),
+  list_quota_blocks: z.object({
+    blocks: z.array(quotaBlockItem),
+    defaultTtlMinutes: z.number().int().positive(),
+  }),
+  set_quota_block: z.object({
+    block: quotaBlockItem,
+  }),
+  clear_quota_block: z.object({
+    id: z.string(),
+    cleared: z.boolean(),
+  }),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 export type ControlResult<M extends ControlMethod> = z.output<(typeof RESULTS)[M]>;
@@ -676,6 +745,7 @@ const errorBody = z
     code: z.enum(CONTROL_ERROR_CODES),
     message: z.string(),
     reason: z.string().optional(),
+    expiresAt: z.string().optional(),
   })
   .refine(
     (body) =>
@@ -689,6 +759,7 @@ interface ControlResponseError {
   code: ControlErrorCode;
   message: string;
   reason?: string;
+  expiresAt?: string;
 }
 
 export type ControlResponse<M extends ControlMethod> =

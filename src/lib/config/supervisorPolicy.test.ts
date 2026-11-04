@@ -68,6 +68,9 @@ describe('supervisor policy — shared contract', () => {
           permissionModes: ('permissionModes' in testCase
             ? testCase.permissionModes
             : {}) as ProviderPermissionModes,
+          quotaBlocks: ('quotaBlocks' in testCase
+            ? testCase.quotaBlocks
+            : []) as SupervisorSpawnContext['quotaBlocks'],
         };
         expect(
           checkSupervisorSpawn(

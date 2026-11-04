@@ -97,17 +97,24 @@ Uses: IPC, store. Contract fixtures live next to it (`*.fixtures.json`).
 reviews, goal dependencies). Purpose: IPC dispatch and persistence of the work model.
 Uses: nearly everything below. Not used by anything except Tauri.
 
-**Agent runtime** — `agents/` (21 files: manager, exit log, PTY output buffer, awaiting-input
+**Agent runtime** — `agents/` (24 files: manager, exit log, PTY output buffer, awaiting-input
 detection, write sandbox, launch dir, run results, MCP guard), `agent_persistence.rs`,
 `agent_log.rs`, `task_log.rs`, `agent_window.rs`, `providers/` (provider registry, `dynamic-providers/`
 JSON), `provider_policy.rs`, `connectors/`, `extra_mcp.rs` (a project's extra MCP servers from its `.mcp.json`, named in the supervisor policy's `extraMcpServers` and merged into each agent's private MCP config). Purpose: spawn, stream, kill and persist
 agent processes. Depends on: providers (35 references), supervisor (32), mcp (9),
 notifications (8), agent_usage (7). It is the most connected module in the backend.
 
-**Control socket** — `control_socket/` (14 files; `caller.rs` PID walk, `protocol.rs`,
+**Control socket** — `control_socket/` (16 files; `caller.rs` PID walk, `protocol.rs`,
 `link_spawn.rs`, `pingback.rs`, `stall_watchdog.rs`). Purpose: NDJSON unix socket
 `control.sock` plus the shared `Dispatcher` that both outside doors use. Depends on:
 agents (17), supervisor (9), supervisor_link (5).
+
+**Quota blocks** — `quota_blocks/` (matcher, store, reset time), `agents/quota_detection.rs`,
+`control_socket/quota_blocks.rs` and `src/lib/config/quotaBlocks.ts` (types and matching
+rules, no UI). Purpose: remember for a limited time that a provider or model family ran
+out of quota, in `quota-blocks.json`. An agent's console tail is scanned when it ends; a
+block can also be set over the control socket. Only a supervisor's spawns are refused.
+Depends on: supervisor (provider id normalising, atomic writes).
 
 **Supervisor** — `supervisor/` (policy, runs, managers, memory, several, attachments)
 and `src/lib/config/supervisorPolicy.ts` (twin). Purpose: the policy
