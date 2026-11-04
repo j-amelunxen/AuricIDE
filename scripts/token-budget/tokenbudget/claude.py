@@ -208,6 +208,19 @@ def digest(obj) -> str:
     return hashlib.blake2b(raw, digest_size=6).hexdigest()
 
 
+_EXT = re.compile(r"^\.[a-z0-9]{1,8}$")
+
+
+def file_ext(fp) -> str:
+    """The extension of a path and nothing else: '.py', '(none)' or '<other>'."""
+    if not isinstance(fp, str):
+        return "(none)"
+    ext = os.path.splitext(fp.rsplit("/", 1)[-1])[1].lower()
+    if not ext:
+        return "(none)"
+    return ext if _EXT.match(ext) else "<other>"
+
+
 def text_len(v) -> int:
     """Characters of a content value; images are counted separately by the caller."""
     if isinstance(v, str):
@@ -253,10 +266,12 @@ class Item:
 
 
 class ToolUse:
-    __slots__ = ("id", "name", "ihash", "skill", "bash", "phash", "path")
+    __slots__ = ("id", "name", "ihash", "skill", "bash", "phash", "path", "nhash", "ext")
 
-    def __init__(self, id_, name, ihash, skill="", bash="", phash="", path=""):
+    def __init__(self, id_, name, ihash, skill="", bash="", phash="", path="", nhash="", ext=""):
         self.id, self.name, self.ihash, self.skill, self.bash, self.phash, self.path = id_, name, ihash, skill, bash, phash, path
+        self.nhash = nhash or ihash   # normalised input hash: Bash = command, Read = path/offset/limit/pages
+        self.ext = ext                # Read only: file extension, nothing else of the path
 
 
 class ReqRec:
@@ -455,7 +470,13 @@ def _assistant(d, tr: Trace, cov, source):
                 if isinstance(fp, str):
                     phash = hashlib.blake2b(fp.encode("utf-8", "replace"), digest_size=6).hexdigest()
                     path = fp
-                tu = ToolUse(tid, name, digest([name, inp]), skill, bash, phash, path)
+                nhash, ext = "", ""
+                if name == "Bash":
+                    nhash = digest(["Bash", inp.get("command")])
+                elif name == "Read":
+                    nhash = digest(["Read", fp, inp.get("offset"), inp.get("limit"), inp.get("pages")])
+                    ext = file_ext(fp)
+                tu = ToolUse(tid, name, digest([name, inp]), skill, bash, phash, path, nhash, ext)
                 r.tools.append(tu)
                 if tid:
                     tr.tool_by_id[tid] = tu

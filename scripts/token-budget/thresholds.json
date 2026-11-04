@@ -18,6 +18,8 @@
     "high_model_output_usd_per_mtok": 20,
     "short_run_max_requests": 10
   },
+  "large_result_bands_tokens": [25000, 50000, 100000],
+  "result_caps_chars": [15000, 30000, 50000],
   "activity_priority": [
     [
       "agent_control",

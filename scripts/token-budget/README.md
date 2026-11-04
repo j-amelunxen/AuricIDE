@@ -66,3 +66,12 @@ heuristic. Thresholds live in `thresholds.json` and are echoed into the summary.
   and do not change the lifetime.
 - **Reconciliation** leaves out runs whose recorded cost is empty and counts them separately; sessions with several
   runs are compared once.
+- **Large tool results** (`large_results_*` tables, a section in `report.md`) split the `large_tool_result` rule
+  by class: tool, Bash by first command word, Read by file extension only, MCP by server and tool name. They add
+  size bands, concentration (classes making up 50 % and 80 % of the cost, spread over project, role and skill
+  phase) and repetition: a one-way hash of the normalised call (Bash: the command; Read: path, offset, limit,
+  pages) among the large results tells repeated-in-the-same-session, identical-in-another-session and unique
+  apart. Only counts and costs are written, never a hash value. The repetition is a heuristic (a call whose other
+  runs were small is invisible, and the same command in two folders hashes alike). The cap table
+  (`result_caps_chars`) counts every tool result above 15k, 30k and 50k characters and is an estimate: a capped
+  agent may read again. Bands and caps are in `thresholds.json`. All tables sum to the rule's totals.

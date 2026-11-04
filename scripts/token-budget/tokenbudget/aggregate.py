@@ -41,6 +41,8 @@ class Agg:
         self.session_cost: Dict[str, float] = defaultdict(float)    # claude session id -> list-price cost
         self.session_tokens: Dict[str, list] = defaultdict(lambda: [0, 0, 0, 0])  # in,out,cr,cw
         self.unpriced_models: Dict[str, int] = defaultdict(int)
+        self.large_rows: list = []   # one dict per large tool result, no content
+        self.caps: Dict[int, dict] = defaultdict(lambda: {"results": 0, "tokens": 0.0, "cost": 0.0, "removed": 0.0, "large": 0})
         self.over_line: Dict[str, list] = defaultdict(lambda: [0, 0, 0.0, 0.0])   # role -> requests, over, cost, cost over
 
     def add_request(self, labels: Dict[str, str], vals, count=True):

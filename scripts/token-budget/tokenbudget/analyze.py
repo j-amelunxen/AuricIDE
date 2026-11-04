@@ -18,12 +18,13 @@ import statistics
 from typing import Optional
 
 from .claude import Item, ToolUse
+from . import largeresults
 from .config import activity_of
 
 MEASURED, ESTIMATED = "measured", "estimated"
 
 
-def _flush(item: Item, tr, agg, cfg):
+def _flush(item: Item, tr, agg, cfg, info):
     cost = item.cw + item.cr
     key = (item.cat, item.name)
     c = agg.cause[key]
@@ -59,6 +60,8 @@ def _flush(item: Item, tr, agg, cfg):
             cd["count"] += 1
             cd["tokens"] += item.tok
             cd["cost_usd"] += cost
+        if item.counted:
+            largeresults.record(agg, item, tu, info, cost, cfg)
 
 
 def analyze_trace(tr, info: dict, ctx) -> None:
@@ -138,7 +141,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
                 c[MEASURED] += 1
         elif r.compact is not None:
             for it in live:
-                _flush(it, tr, agg, cfg)
+                _flush(it, tr, agg, cfg, info)
             live = []
             rb = min(base, float(r.cr))
             c_rb = c_read * (rb / r.cr) if r.cr else 0.0
@@ -286,7 +289,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
             ctx.phases.setdefault(info["session"], []).append((r.t, label))
 
     for it in live:
-        _flush(it, tr, agg, cfg)
+        _flush(it, tr, agg, cfg, info)
     # items that never made it into `live` (arrivals after the last request) are not billed
     # ---- compactions -------------------------------------------------------------
     for m in compaction_marks:

@@ -7,7 +7,7 @@ import os
 import statistics
 from typing import Dict, List
 
-from . import SCHEMA_VERSION
+from . import SCHEMA_VERSION, largeresults
 from .aggregate import (CR, CW1, CW5, COST, COST_OUT, COST_REAS, INP, OUT, REAS, REQ, STAT_FIELDS, UNPRICED)
 
 NOTE_COST = "list-price equivalent from the repo price tables, not a bill"
@@ -152,6 +152,7 @@ def build(res) -> dict:
     # ---- subagents
     S["tables"]["subagents"] = subagent_table(agg)
     S["tables"]["candidates"] = candidate_table(agg)
+    S["tables"].update(clean(largeresults.build(agg, res.cfg)))
     S["reconciliation"] = reconcile(res)
     S["tables"]["runs_without_token_data"] = [
         {"provider": k[0], "run_source": k[1], "runs": v["runs"], "duration_s": r6(v["duration_ms"] / 1000), "tokens": "unknown"}
@@ -483,6 +484,18 @@ def markdown(S) -> str:
     L.append(f"Context-growth writes (normal, separate from misses): {S['context_growth_writes']['tokens']:,.0f} tokens, {S['context_growth_writes']['cost']:.2f} USD.\n")
     L.append("## 4. Candidates (rule-based, no verdict)\n")
     L.append(md_table(T["candidates"], ["rule_id", "threshold", "unit", "count", "tokens", "cost_usd", "quality"], 10))
+    L.append("### Large tool results\n")
+    L.append("Which single results above the large-result threshold they are, and whether they are the same calls again. "
+             "Every table sums to the `large_tool_result` row above. Repetition is a hash of tool plus normalised input "
+             "(Bash: the command, Read: path, offset, limit) among the large results only; it is a heuristic. "
+             "The cap table is an estimate: a capped agent may read again.\n")
+    L.append(md_table(T["large_results_by_class"], ["class", "count", "tokens", "avg_tokens", "max_tokens", "carry_cost_usd", "share", "quality"], 15))
+    L.append(md_table(T["large_results_size_bands"], ["class", "band", "count", "tokens", "carry_cost_usd", "quality"], 12))
+    L.append(md_table(T["large_results_concentration"], ["metric", "value", "quality"], 5))
+    L.append(md_table(T["large_results_by_dimension"], ["dimension", "label", "count", "carry_cost_usd", "share", "quality"], 15))
+    L.append(md_table(T["large_results_repetition"], ["group", "count", "carry_cost_usd", "share", "quality"], 5))
+    L.append(md_table(T["large_results_repeat_by_class"], ["class", "count", "sessions", "distinct_hashes", "top_repeat_counts", "same_session_repeat", "other_sessions", "unique", "quality"], 15))
+    L.append(md_table(T["large_results_cap_effect"], ["cap_chars", "results_above_cap", "of_which_large_results", "carry_cost_usd", "cost_removed_by_cap_usd", "quality"], 5))
     L.append("## 5. Boxes\n")
     L.append(f"Leases: {S['box']['leases']}. Survival: `{json.dumps(S['box']['survival'], sort_keys=True)}`\n")
     L.append("## 6. Not covered\n")
