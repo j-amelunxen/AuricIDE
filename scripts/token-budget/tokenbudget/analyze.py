@@ -80,6 +80,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
     compaction_marks = []
     models = set()
     idle_events = 0
+    lifetime = ""     # cache lifetime in force: "1h", "5m" or "mixed", taken from the last request that wrote
     session_cost = 0.0
     tok_totals = [0, 0, 0, 0]
     overall_skill = {}
@@ -89,7 +90,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
         p_in, p_out, p_rd, p_w5, p_w1 = pu if pu else (0, 0, 0, 0, 0)
         counted = r.counted
         if r.human:
-            phase = None
+            phase = r.slash or None
         label = r.skill_attr or phase or info.get("inherit") or "(none)"
         win = r.w5 + r.w1 + r.i
         c_win = r.w5 * p_w5 + r.w1 * p_w1 + r.i * p_in
@@ -106,7 +107,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
             labels = {
                 "project": info["project"], "session": info["session_label"], "role": info["role"],
                 "model": r.model, "ticket": info["ticket"], "goal": info["goal"], "skill": label,
-                "activity": activity, "day": r.ts[:10], "source": info["source"],
+                "request_tool_group": activity, "day": r.ts[:10], "source": info["source"],
             }
             agg.add_request(labels, [r.i, r.o, r.think, r.cr, r.w5, r.w1, req_cost, c_out_all - c_reas, c_reas])
             if not pu:
@@ -175,7 +176,7 @@ def analyze_trace(tr, info: dict, ctx) -> None:
                 if miss:
                     rewritten = min(win, max(0, ctx_p - r.cr))
                     gap = (r.t - p.t) if (r.t and p.t) else 0.0
-                    ttl = cfg["cache_ttl_1h_s"] if p.w1 > 0 else cfg["cache_ttl_5m_s"]
+                    ttl = cfg["cache_ttl_1h_s"] if lifetime == "1h" else cfg["cache_ttl_5m_s"]
                     if gap > ttl:
                         reason = "idle_gap"
                     elif r.model != p.model:
@@ -191,7 +192,8 @@ def analyze_trace(tr, info: dict, ctx) -> None:
             if rewritten and counted:
                 excess = rewritten * (((c_win / win) if win else 0.0) - p_rd)
                 agg.rewrites.append({"skey": skey, "reason": reason, "tokens": rewritten, "cost": rew_cost,
-                                     "excess": excess, "day": r.ts[:10], "gap_s": round(r.t - p.t) if (r.t and p.t) else 0})
+                                     "excess": excess, "day": r.ts[:10], "gap_s": round(r.t - p.t) if (r.t and p.t) else 0,
+                                     "role": info["role"], "lifetime": lifetime or "5m"})
                 c = agg.cause[("cache_rewrite", reason)]
                 c["items"] += 1
                 c["tokens"] += rewritten
@@ -270,6 +272,12 @@ def analyze_trace(tr, info: dict, ctx) -> None:
             live.extend(items)
             if out_item:
                 live.append(out_item)
+        if r.w1 > 0 and r.w5 > 0:
+            lifetime = "mixed"
+        elif r.w1 > 0:
+            lifetime = "1h"
+        elif r.w5 > 0:
+            lifetime = "5m"
         # phase for the *next* request
         for tu in r.tools:
             if tu.name == "Skill" and tu.skill:
@@ -303,6 +311,8 @@ def analyze_trace(tr, info: dict, ctx) -> None:
         cur["n_over"].append(len(sel))
         cur["tokens_over"].append(sum(c for c, _ in sel))
         cur["share_over"].append((sum(k for _, k in sel) / total_c) if total_c else 0.0)
+    ol = agg.over_line[info["role"]]
+    ol[0] += len(ctxs); ol[1] += cur["n_over"][0]; ol[2] += total_c; ol[3] += sum(k for c, k in zip(ctxs, costs) if c > lines[0])
     agg.baselines.append({"skey": skey, "role": info["role"], "model": reqs[0].model, "tokens": base,
                           "first_request_cache_read": first.cr, "requests": n_counted, "lifetime_cost": base_cost,
                           "first_counted": reqs[0].counted})

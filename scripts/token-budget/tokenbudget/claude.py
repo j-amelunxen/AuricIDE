@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional
@@ -46,16 +47,157 @@ def norm_ts(ts: str) -> str:
         return ""
 
 
+CONTAINERS = ("WebstormProjects", "open-source", "customers", "Projects", "repos", "workspace", "Developer",
+              "GitHub", "github")
+_PROJ: dict = {"prefixes": {}, "aliases": {}, "containers": CONTAINERS}
+_GIT_CACHE: Dict[str, Optional[str]] = {}
+
+
+def configure_projects(mapping: Optional[dict]) -> None:
+    """Optional local mapping: {"prefixes": {path: name}, "aliases": {folder: name}, "containers": [...]}.
+
+    The real mapping lives outside the repository and is passed with --project-map."""
+    m = mapping or {}
+    _PROJ["prefixes"] = {k.rstrip("/"): v for k, v in (m.get("prefixes") or {}).items()}
+    _PROJ["aliases"] = dict(m.get("aliases") or {})
+    _PROJ["containers"] = tuple(m.get("containers") or CONTAINERS)
+    _GIT_CACHE.clear()
+
+
+def _git_root_name(cwd: str) -> Optional[str]:
+    """Name of the repository a folder belongs to, when the folder still exists. A worktree maps to its main repo."""
+    d = cwd
+    walked = []
+    found: Optional[str] = None
+    while d and d != "/" and len(walked) < 16:
+        if d in _GIT_CACHE:
+            found = _GIT_CACHE[d]
+            break
+        walked.append(d)
+        g = os.path.join(d, ".git")
+        try:
+            if os.path.isdir(g):
+                found = os.path.basename(d)
+                break
+            if os.path.isfile(g):
+                with open(g, "r", encoding="utf-8", errors="replace") as fh:
+                    head = fh.read(512).strip()
+                ptr = head[len("gitdir:"):].strip() if head.startswith("gitdir:") else ""
+                i = ptr.rfind("/.git/worktrees/")
+                found = os.path.basename(ptr[:i]) if i > 0 else os.path.basename(d)
+                break
+        except OSError:
+            pass
+        d = os.path.dirname(d)
+    for w in walked:
+        _GIT_CACHE[w] = found
+    return found
+
+
 def project_label(cwd: str) -> str:
+    """Repository-level project name for a working directory (see README, "Project names")."""
     if not cwd:
         return "(unknown)"
+    for pre in sorted(_PROJ["prefixes"], key=len, reverse=True):
+        if cwd == pre or cwd.startswith(pre + "/"):
+            return _PROJ["prefixes"][pre]
     if "/.auric/supervisors/" in cwd:
         return "(supervisor)"
     parts = [p for p in cwd.split("/") if p]
+    if not parts:
+        return "(unknown)"
+    for p in parts:
+        if p in _PROJ["aliases"]:
+            return _PROJ["aliases"][p]
     for p in parts:
         if p.endswith(".auric-wt"):
             return p[: -len(".auric-wt")]
-    return parts[-1] if parts else "(unknown)"
+    for k in range(1, len(parts) - 1):
+        if parts[k] == ".claude" and parts[k + 1] == "worktrees":
+            return parts[k - 1]
+    for k in range(1, len(parts)):
+        if parts[k] == ".worktrees":
+            return parts[k - 1]
+    g = _git_root_name(cwd)
+    if g:
+        return _PROJ["aliases"].get(g, g)
+    for k in range(len(parts) - 2, -1, -1):
+        if parts[k] in _PROJ["containers"]:
+            return parts[k + 1]
+    return parts[-1]
+
+
+_SEPS = {"&&", "||", ";", "(", ")", "|", "&", "{", "}", "!", ";;", "&;"}
+_WRAPPERS = {"sudo", "time", "nice", "nohup", "env", "command", "exec", "builtin", "timeout", "stdbuf",
+             "caffeinate", "export", "unset", "set", "ionice"}
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_NUMERIC = re.compile(r"^\d+(\.\d+)?[smhd]?$")
+
+
+def bash_first_word(cmd) -> str:
+    """The first real command word of a shell command, nothing else.
+
+    Skips leading ``cd X &&``, env assignments and wrappers like sudo/env/nice/timeout. At most one short
+    plain word is returned; anything else is ``<other>``."""
+    import shlex
+    if not isinstance(cmd, str) or not cmd.strip():
+        return ""
+    head = cmd[:2000]
+    try:
+        lx = shlex.shlex(head, posix=True, punctuation_chars=True)
+        lx.whitespace_split = True
+        toks = list(lx)
+    except ValueError:
+        toks = head.split()
+    first = ""
+    assign_only = False
+    i, n = 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if t in _SEPS or (t and set(t) <= set("();&|{}")):
+            i += 1
+            continue
+        if _ASSIGN.match(t):
+            assign_only = assign_only or not first
+            i += 1
+            continue
+        base = t.rsplit("/", 1)[-1]
+        first = first or base
+        if base in ("cd", "pushd", "popd"):
+            i += 1
+            while i < n and toks[i] not in _SEPS:
+                i += 1
+            continue
+        if base in _WRAPPERS:
+            i += 1
+            while i < n and (toks[i].startswith("-") or _NUMERIC.match(toks[i]) or _ASSIGN.match(toks[i])):
+                i += 1
+            continue
+        return base if BASH_WORD.match(base) else "<other>"
+    if first:
+        return first if BASH_WORD.match(first) else "<other>"
+    return "<env-assign>" if assign_only else "<other>"
+
+
+BUILTIN_SLASH = ("clear", "compact", "model", "help", "config", "resume", "login", "logout", "exit", "quit",
+                 "status", "usage", "cost", "init", "memory", "permissions", "mcp", "agents", "hooks", "ide",
+                 "doctor", "bug", "vim", "terminal-setup", "theme", "context", "export", "add-dir", "rewind",
+                 "fast", "output-style", "release-notes", "upgrade", "plugin", "plugins", "todos", "color")
+_SLASH_TAG = re.compile(r"^\s*(?:<command-message>[^<]{0,100}</command-message>\s*)?<command-name>\s*/?"
+                        r"([A-Za-z0-9_.:@-]{1,60})\s*</command-name>")
+_SLASH_RAW = re.compile(r"^\s*/([A-Za-z0-9_.:@-]{1,60})(?=\s|$)")
+
+
+def slash_command(text, builtin=BUILTIN_SLASH) -> str:
+    """Command name of a prompt that starts with a slash command; the rest of the prompt is never kept."""
+    if not isinstance(text, str):
+        return ""
+    head = text[:400]
+    m = _SLASH_TAG.match(head) or _SLASH_RAW.match(head)
+    if not m:
+        return ""
+    name = m.group(1)
+    return "" if name in builtin else name
 
 
 def digest(obj) -> str:
@@ -119,7 +261,7 @@ class ToolUse:
 
 class ReqRec:
     __slots__ = ("key", "ts", "t", "model", "fast", "i", "o", "think", "cr", "w5", "w1", "arrivals", "tools",
-                 "skill_attr", "compact", "human", "miss_reason", "counted", "dup", "web")
+                 "skill_attr", "compact", "human", "miss_reason", "counted", "dup", "web", "slash")
 
     def __init__(self):
         self.arrivals: List[Item] = []
@@ -131,6 +273,7 @@ class ReqRec:
         self.counted = False
         self.dup = False
         self.web = 0
+        self.slash = ""
 
     @property
     def ctx(self) -> int:
@@ -149,6 +292,7 @@ class Trace:
         self.pending: List[Item] = []
         self.pending_compact = None
         self.pending_human = False
+        self.pending_slash = ""
         self.tool_by_id: Dict[str, ToolUse] = {}
         self.item_by_tuid: Dict[str, Item] = {}
         self.sidechain = False
@@ -261,6 +405,7 @@ def _assistant(d, tr: Trace, cov, source):
         tr.pending = []
         r.compact, tr.pending_compact = tr.pending_compact, None
         r.human, tr.pending_human = tr.pending_human, False
+        r.slash, tr.pending_slash = tr.pending_slash, ""
         diag = msg.get("diagnostics")
         if isinstance(diag, dict) and isinstance(diag.get("cache_miss_reason"), dict):
             t = diag["cache_miss_reason"].get("type")
@@ -305,10 +450,7 @@ def _assistant(d, tr: Trace, cov, source):
                     s = inp.get("skill")
                     skill = s if isinstance(s, str) and IDENT.match(s) else "<other-skill>"
                 elif name == "Bash":
-                    c = inp.get("command")
-                    first = c.split(None, 1)[0] if isinstance(c, str) and c.strip() else ""
-                    first = first.rsplit("/", 1)[-1]
-                    bash = first if BASH_WORD.match(first) else ("<env-assign>" if "=" in first else "<other>")
+                    bash = bash_first_word(inp.get("command"))
                 fp = inp.get("file_path") or inp.get("path") or inp.get("notebook_path")
                 if isinstance(fp, str):
                     phash = hashlib.blake2b(fp.encode("utf-8", "replace"), digest_size=6).hexdigest()
@@ -328,8 +470,10 @@ def _user(d, tr: Trace, cov, source, cfg):
     if d.get("isCompactSummary"):
         return  # sized through the compact_boundary record, not as an item
     ratio_img = cfg["image_tokens_each"] * cfg["chars_per_token"]
+    first_text = ""
     if isinstance(content, str):
         chars, imgs, results, texts = len(content), 0, [], 1
+        first_text = content[:400]
     elif isinstance(content, list):
         results, chars, imgs, texts = [], 0, 0, 0
         for b in content:
@@ -339,6 +483,8 @@ def _user(d, tr: Trace, cov, source, cfg):
                 tid = b.get("tool_use_id") if isinstance(b.get("tool_use_id"), str) else ""
                 results.append((tid, text_len(b.get("content")), image_count(b.get("content"))))
             elif b.get("type") == "text":
+                if not first_text and isinstance(b.get("text"), str):
+                    first_text = b["text"][:400]
                 chars += len(b.get("text") or "")
                 texts += 1
             elif b.get("type") == "image":
@@ -362,6 +508,7 @@ def _user(d, tr: Trace, cov, source, cfg):
         else:
             tr.pending.append(Item("user_prompt", "human", chars + int(imgs * ratio_img)))
             tr.pending_human = True
+            tr.pending_slash = slash_command(first_text, tuple(cfg.get("builtin_slash_commands") or BUILTIN_SLASH))
 
 
 def _attachment(d, tr: Trace, raw: bytes, env: int, cov, source):

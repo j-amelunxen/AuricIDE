@@ -8,7 +8,7 @@ from typing import Dict
 REQ, INP, OUT, REAS, CR, CW5, CW1, COST, UNPRICED, COST_OUT, COST_REAS = range(11)
 STAT_FIELDS = ["requests", "input", "output", "reasoning", "cache_read", "cache_write_5m", "cache_write_1h",
                "cost_usd", "unpriced_requests", "cost_output_usd", "cost_reasoning_usd"]
-DIMENSIONS = ["project", "session", "role", "model", "ticket", "goal", "skill", "activity", "day", "source"]
+DIMENSIONS = ["project", "session", "role", "model", "ticket", "goal", "skill", "request_tool_group", "day", "source"]
 
 
 def _stat():
@@ -41,6 +41,7 @@ class Agg:
         self.session_cost: Dict[str, float] = defaultdict(float)    # claude session id -> list-price cost
         self.session_tokens: Dict[str, list] = defaultdict(lambda: [0, 0, 0, 0])  # in,out,cr,cw
         self.unpriced_models: Dict[str, int] = defaultdict(int)
+        self.over_line: Dict[str, list] = defaultdict(lambda: [0, 0, 0.0, 0.0])   # role -> requests, over, cost, cost over
 
     def add_request(self, labels: Dict[str, str], vals, count=True):
         """vals: [input, output, reasoning, cr, w5, w1, cost|None, cost_out, cost_reas]"""

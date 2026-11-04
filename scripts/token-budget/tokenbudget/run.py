@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -9,7 +10,7 @@ from typing import Dict, List, Optional
 from . import config as config_mod
 from .aggregate import Agg
 from .analyze import analyze_trace
-from .claude import parse_lines
+from .claude import configure_projects, parse_lines
 from .model import Coverage
 from .pricing import PriceBook
 
@@ -35,6 +36,7 @@ class Options:
         self.project_db = list(kw.get("project_db") or [])
         self.task_log_dir = kw.get("task_log_dir")
         self.repo_root = kw.get("repo_root")
+        self.project_map = kw.get("project_map")
         self.skip = set(kw.get("skip") or [])   # claude, codex, box, auric
 
 
@@ -87,6 +89,7 @@ def run(opts: Options) -> Result:
     here = os.path.dirname(os.path.abspath(__file__))
     repo_root = opts.repo_root or os.path.abspath(os.path.join(here, "..", "..", ".."))
     pb = PriceBook.load(repo_root)
+    configure_projects(_load_project_map(opts.project_map))
     res.pb = pb
     agg, cov = res.agg, res.cov
     ctx = Ctx(cfg, pb, agg, opts.paths)
@@ -111,6 +114,7 @@ def run(opts: Options) -> Result:
     def process(source, lines, path_kind, default_agent=""):
         file_traces = list(parse_lines(lines, source, cov, cfg, want, default_agent, res.cost_states))
         new_hashes = []
+        in_file: set = set()
         for tr in file_traces:
             if not tr.reqs:
                 continue
@@ -121,7 +125,8 @@ def run(opts: Options) -> Result:
                 continue
             for r in tr.reqs:
                 h = _h(r.key)
-                r.dup = h in seen
+                r.dup = h in seen or h in in_file     # earlier file, or another trace of this same file
+                in_file.add(h)
                 new_hashes.append(h)
                 day = r.ts[:10]
                 if r.dup:
@@ -206,6 +211,13 @@ def run(opts: Options) -> Result:
     return res
 
 
+def _load_project_map(path):
+    if not path:
+        return None
+    with open(os.path.expanduser(path), "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def _phase_at(timeline, t):
     label = None
     for ts, lab in timeline:
@@ -237,7 +249,7 @@ def _book_codex(res, ctx, r, since, until, want):
     res.codex_rows += 1
     labels = {"project": r.project, "session": r.session + ("/" + r.agent if r.agent else ""), "role": r.role,
               "model": r.model, "ticket": "(unlinked)", "goal": "(unlinked)", "skill": "(no transcript content read)",
-              "activity": "(not derivable)", "day": day, "source": "codex"}
+              "request_tool_group": "(not derivable)", "day": day, "source": "codex"}
     pu = ctx.pb.unit_prices(r.model, day)
     c_out = r.output * pu[1] if pu else 0.0
     c_reas = r.reasoning * pu[1] if pu else 0.0
@@ -257,6 +269,10 @@ def _book_codex(res, ctx, r, since, until, want):
     s["input"] += r.input; s["output"] += r.output; s["cache_read"] += r.cache_read; s["cache_write"] += r.cache_write
     s["cost_usd"] += r.cost or 0.0
     s["_ctx"].append(r.context); s["_cost"].append(r.cost or 0.0)
+    ol = agg.over_line[r.role]
+    line0 = ctx.cfg["context_lines"][0]
+    ol[0] += 1; ol[1] += 1 if r.context > line0 else 0; ol[2] += r.cost or 0.0
+    ol[3] += (r.cost or 0.0) if r.context > line0 else 0.0
     if r.model not in s["models"].split("+"):
         s["models"] = "+".join(sorted(set(s["models"].split("+")) | {r.model}))
 
@@ -281,7 +297,7 @@ def _book_recorded_only(res, agg):
                 day = run.get("day") or "(unknown)"
                 labels = {"project": lease.get("project") or "(unknown)", "session": "box:" + str(lease.get("lease")),
                           "role": "box", "model": model, "ticket": "(unlinked)", "goal": "(unlinked)",
-                          "skill": "(no transcript)", "activity": "(no transcript)", "day": day,
+                          "skill": "(no transcript)", "request_tool_group": "(no transcript)", "day": day,
                           "source": "box_recorded_cost_only"}
                 agg.add_request(labels, [m.get("input_tokens", 0), m.get("output_tokens", 0), 0,
                                          m.get("cache_read_tokens", 0), m.get("cache_write_tokens", 0), 0,

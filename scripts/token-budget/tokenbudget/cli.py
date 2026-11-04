@@ -16,6 +16,7 @@ def main(argv=None) -> int:
     ap.add_argument("--project-db", action="append", help="additional project dir whose .auric/project.db to read")
     ap.add_argument("--skip", action="append", choices=["claude", "codex", "box", "auric"])
     ap.add_argument("--repo-root")
+    ap.add_argument("--project-map", help="optional local JSON mapping folders to project names (kept outside the repo)")
     a = ap.parse_args(argv)
     try:
         os.nice(10)

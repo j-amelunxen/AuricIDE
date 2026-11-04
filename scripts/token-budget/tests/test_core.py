@@ -49,7 +49,7 @@ class CoreTests(unittest.TestCase):
         res, S = build(self.root, os.path.join(self.root, "o"))
         total = S["totals"]["cost_usd"]
         self.assertGreater(total, 0)
-        for dim in ("project", "session", "role", "model", "ticket", "goal", "skill", "activity", "day", "source"):
+        for dim in ("project", "session", "role", "model", "ticket", "goal", "skill", "request_tool_group", "day", "source"):
             self.assertAlmostEqual(sum(r["cost_usd"] for r in S["tables"][dim]), total, places=5, msg=dim)
             self.assertEqual(sum(r["requests"] for r in S["tables"][dim]), S["totals"]["requests"], dim)
         self.assertAlmostEqual(sum(r["cost_usd"] for r in S["budget_view"]["cause"]), total, places=5)

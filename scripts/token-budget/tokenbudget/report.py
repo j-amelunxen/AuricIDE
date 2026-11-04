@@ -12,7 +12,7 @@ from .aggregate import (CR, CW1, CW5, COST, COST_OUT, COST_REAS, INP, OUT, REAS,
 
 NOTE_COST = "list-price equivalent from the repo price tables, not a bill"
 DIM_QUALITY = {"project": "measured", "session": "measured", "role": "heuristic", "model": "measured",
-               "ticket": "measured", "goal": "measured", "skill": "heuristic", "activity": "heuristic",
+               "ticket": "measured", "goal": "measured", "skill": "heuristic", "request_tool_group": "heuristic",
                "day": "measured", "source": "measured"}
 RULES = [("repeat_file_read", "extra reads"), ("large_tool_result", "tool results"),
          ("session_context_over_threshold", "sessions"), ("idle_gap_cache_miss", "requests"),
@@ -233,35 +233,56 @@ def candidate_table(agg):
 
 
 def reconcile(res):
+    """Compare our list-price cost with what AuricIDE recorded, per transcript session.
+
+    A session enters a comparison only when every figure it needs is recorded: a run whose cost (or token
+    field) is empty is counted in ``runs_without_recorded_cost`` and left out of both sides, never read as 0.
+    Several runs of one session (a resume) are summed on the recorded side and our session counted once."""
     agg = res.agg
-    rows = []
-    ours_c, rec_c = 0.0, 0.0
-    tot = {"input": [0, 0], "output": [0, 0], "cache_read": [0, 0], "cache_write": [0, 0]}
-    matched = unmatched = 0
-    per_run = []
+    by_sid: Dict[str, list] = {}
+    unmatched = 0
     for row in res.auric_rows:
         sid = row.get("session_id")
         if sid and sid in agg.session_cost:
-            matched += 1
-            oc = agg.session_cost[sid]
-            ot = agg.session_tokens[sid]
-            rc = row.get("cost_usd")
-            ours_c += oc
-            rec_c += rc or 0.0
-            for i, (k, rk) in enumerate((("input", "input_tokens"), ("output", "output_tokens"),
-                                          ("cache_read", "cache_read_tokens"), ("cache_write", "cache_write_tokens"))):
-                tot[k][0] += ot[i]; tot[k][1] += row.get(rk) or 0
-            per_run.append({"run_id": row.get("id"), "provider": row.get("provider"), "cost_source": row.get("cost_source"),
-                            "ours_cost_usd": oc, "recorded_cost_usd": rc, "diff_usd": oc - (rc or 0.0),
-                            "ours_output": ot[1], "recorded_output": row.get("output_tokens") or 0})
+            by_sid.setdefault(sid, []).append(row)
         elif row.get("run_source") != "external":
             unmatched += 1
+    ours_c = rec_c = 0.0
+    tot = {"input": [0, 0], "output": [0, 0], "cache_read": [0, 0], "cache_write": [0, 0]}
+    tok_n = {k: 0 for k in tot}
+    no_cost_runs = 0
+    cost_sessions = 0
+    per_run = []
+    fields = (("input", "input_tokens"), ("output", "output_tokens"),
+              ("cache_read", "cache_read_tokens"), ("cache_write", "cache_write_tokens"))
+    for sid in sorted(by_sid):
+        rows_s = by_sid[sid]
+        oc, ot = agg.session_cost[sid], agg.session_tokens[sid]
+        costs = [r.get("cost_usd") for r in rows_s]
+        missing = sum(1 for c in costs if not isinstance(c, (int, float)))
+        no_cost_runs += missing
+        rc = sum(c for c in costs if isinstance(c, (int, float))) if not missing else None
+        if rc is not None:
+            cost_sessions += 1
+            ours_c += oc
+            rec_c += rc
+        for i, (k, rk) in enumerate(fields):
+            vals = [r.get(rk) for r in rows_s]
+            if all(isinstance(v, (int, float)) for v in vals):
+                tok_n[k] += 1
+                tot[k][0] += ot[i]; tot[k][1] += sum(vals)
+        per_run.append({"run_id": "+".join(str(r.get("id")) for r in rows_s), "provider": rows_s[0].get("provider"),
+                        "cost_source": rows_s[0].get("cost_source"), "ours_cost_usd": oc, "recorded_cost_usd": rc,
+                        "diff_usd": (oc - rc) if rc is not None else None,
+                        "ours_output": ot[1], "recorded_output": sum(r.get("output_tokens") or 0 for r in rows_s)})
+
     def line(scope, ours, rec):
         return {"scope": scope, "ours": ours, "recorded": rec, "diff": ours - rec,
                 "diff_pct": ((ours - rec) / rec * 100) if rec else None}
-    rows.append(line("cost_usd (matched AuricIDE runs, ours = transcripts incl. sub-agents)", ours_c, rec_c))
+    rows = [line("cost_usd (sessions whose runs all have a recorded cost, ours = transcripts incl. sub-agents)",
+                 ours_c, rec_c)]
     for k, (o, r) in tot.items():
-        rows.append(line("tokens_" + k + " (matched runs)", o, r))
+        rows.append(line("tokens_" + k + f" ({tok_n[k]} sessions with the field recorded)", o, r))
     cs_o = cs_r = 0.0
     cs_n = 0
     for sid, d in sorted(res.cost_states.items()):
@@ -269,11 +290,13 @@ def reconcile(res):
             cs_n += 1
             cs_o += agg.session_cost[sid]; cs_r += d["totalCostUSD"]
     rows.append(line("cost_usd (sessions with a CLI cost-state record, ours vs CLI's own total)", cs_o, cs_r))
-    per_run.sort(key=lambda r: (-abs(r["diff_usd"]), str(r["run_id"])))
-    return clean({"rows": rows, "matched_runs": matched, "auric_runs_without_transcript": unmatched,
+    per_run.sort(key=lambda r: (-abs(r["diff_usd"] or 0.0), str(r["run_id"])))
+    return clean({"rows": rows, "matched_runs": sum(len(v) for v in by_sid.values()), "sessions_compared": cost_sessions,
+                  "runs_without_recorded_cost": no_cost_runs, "auric_runs_without_transcript": unmatched,
                   "cost_state_sessions_compared": cs_n,
                   "note": "Both references are other estimates of the same spend, not ground truth. Differences are "
-                          "shown as found; with --since/--until/--project the transcript side is a subset.",
+                          "shown as found; with --since/--until/--project the transcript side is a subset. Runs with an "
+                          "empty recorded cost are counted separately and left out of the cost comparison.",
                   "per_run_top": per_run[:50], "per_run_all": per_run})
 
 
@@ -294,7 +317,7 @@ def box_section(res):
 def budget_view(res, S, total_cost):
     agg = res.agg
     out = {"total_cost_usd": total_cost, "note": NOTE_COST + "; recorded-only box cost is as sandboxctl recorded it"}
-    for d in ("project", "role", "skill", "activity", "source"):
+    for d in ("project", "role", "skill", "request_tool_group", "source"):
         out[d] = [{"bucket": r["bucket"], "cost_usd": r["cost_usd"], "share": r["share"], "quality": r["quality"]}
                   for r in S["tables"][d]]
     claude_like = sum(s[COST] for k, s in agg.dims["source"].items() if k[0] in ("claude", "box"))
@@ -311,6 +334,32 @@ def budget_view(res, S, total_cost):
     causes.sort(key=lambda r: (-r["cost_usd"], r["bucket"]))
     out["cause"] = causes
     out["cause_residual_usd"] = resid
+    line0 = res.cfg["context_lines"][0]
+    out["context_over_line_by_role"] = [
+        {"role": role, "line_tokens": line0, "requests": v[0], "requests_over_line": v[1], "cost_usd": v[2],
+         "cost_over_line_usd": v[3], "share_over_line": (v[3] / v[2]) if v[2] else 0.0, "quality": "measured"}
+        for role, v in sorted(agg.over_line.items(), key=lambda kv: (-kv[1][3], kv[0]))]
+    ttl1 = res.cfg["cache_ttl_1h_s"]
+    idle: Dict[tuple, dict] = {}
+    paused: Dict[str, dict] = {}
+    for e in agg.rewrites:
+        if e["reason"] != "idle_gap":
+            continue
+        z = idle.setdefault((e["role"], e["lifetime"]), {"role": e["role"], "lifetime": e["lifetime"], "count": 0,
+                            "tokens_rewritten": 0, "cost_usd": 0.0, "excess_over_read_usd": 0.0, "quality": "measured"})
+        z["count"] += 1; z["tokens_rewritten"] += e["tokens"]; z["cost_usd"] += e["cost"]; z["excess_over_read_usd"] += e["excess"]
+        if e["gap_s"] > ttl1:
+            q = paused.setdefault(e["role"], {"role": e["role"], "count": 0, "sessions": set(), "tokens_rewritten": 0,
+                                              "cost_usd": 0.0, "excess_over_read_usd": 0.0, "quality": "measured"})
+            q["count"] += 1; q["sessions"].add(e["skey"]); q["tokens_rewritten"] += e["tokens"]
+            q["cost_usd"] += e["cost"]; q["excess_over_read_usd"] += e["excess"]
+    out["idle_gap_by_role_lifetime"] = sorted(idle.values(), key=lambda r: (-r["cost_usd"], r["role"], r["lifetime"]))
+    for q in paused.values():
+        q["sessions"] = len(q["sessions"])
+    out["resumed_after_pause"] = sorted(paused.values(), key=lambda r: (-r["cost_usd"], r["role"]))
+    out["resumed_after_pause_note"] = (f"idle-gap rewrites where the gap was longer than {ttl1} s, so no cache lifetime "
+                                       "could have survived: a session picked up again after a pause. A session whose "
+                                       "first request is the first line of its file has no earlier request to compare with.")
     return out
 
 
@@ -397,13 +446,22 @@ def markdown(S) -> str:
     L.append("### Reconciliation against recorded totals\n")
     R = S["reconciliation"]
     L.append(md_table(R["rows"], ["scope", "ours", "recorded", "diff", "diff_pct"], 20))
-    L.append(f"{R['matched_runs']} AuricIDE runs matched a transcript session; {R['auric_runs_without_transcript']} runs without transcript. {R['note']}\n")
+    L.append(f"{R['matched_runs']} AuricIDE runs matched a transcript session ({R['sessions_compared']} sessions in the cost comparison, {R['runs_without_recorded_cost']} runs without a recorded cost left out); {R['auric_runs_without_transcript']} runs without transcript. {R['note']}\n")
     L.append(f"Prices used: " + "; ".join(f"{p['model']} in {p['input_per_mtok']}/out {p['output_per_mtok']} USD/Mtok ({p['table']})" for p in S["prices_used"]) + "\n")
     L.append(f"## 2. Budget view (total {B['total_cost_usd']:,.2f} USD list price)\n")
     for d, title in (("cause", "By cause"), ("project", "By area (project)"), ("skill", "By skill phase (heuristic)"),
-                     ("activity", "By activity (heuristic)"), ("role", "By role"), ("source", "By source")):
+                     ("request_tool_group", "Requests by the tool group they issued (heuristic, see rule below)"), ("role", "By role"), ("source", "By source")):
         L.append(f"### {title}\n")
         L.append(md_table(B[d], ["bucket", "cost_usd", "share", "quality"], 15))
+    L.append("### Share of cost in requests above the context line, per role\n")
+    L.append(md_table(B["context_over_line_by_role"], ["role", "line_tokens", "requests", "requests_over_line", "cost_usd", "cost_over_line_usd", "share_over_line"], 10))
+    L.append("### Idle-gap cache misses by role and cache lifetime\n")
+    L.append("Lifetime = what the last writing request used (5m, 1h, or mixed when it wrote both). A gap longer than the lifetime "
+             "in force (5m, or 1h only when the cache is a pure 1h one) counts as idle.\n")
+    L.append(md_table(B["idle_gap_by_role_lifetime"], ["role", "lifetime", "count", "tokens_rewritten", "cost_usd", "excess_over_read_usd"], 12))
+    L.append("### Sessions picked up again after a long pause\n")
+    L.append(B["resumed_after_pause_note"] + "\n")
+    L.append(md_table(B["resumed_after_pause"], ["role", "count", "sessions", "tokens_rewritten", "cost_usd", "excess_over_read_usd"], 10))
     L.append("## 3. Tables\n")
     for name, cols, title in (
         ("model", ["bucket", "requests", "output", "reasoning", "cache_read", "cost_usd", "share"], "By model"),
@@ -430,6 +488,10 @@ def markdown(S) -> str:
     L.append("## 6. Not covered\n")
     L.extend("- " + x for x in S["not_covered"])
     L.append("\n## 7. Definitions\n")
+    L.append("- Requests by tool group: every request is put in the group of the tools it issued (agent control > skill > edit > shell > read/search > web > PM tools > other MCP; no tool = respond), "
+             "and the request's **whole** cost goes there, including all the context it carries. This is not the cost of the tool's work: "
+             "a request that runs one shell command is billed for the entire context it reads, so a large shell share says shell is the last step most turns end on, not that shell work costs that much. "
+             "For what a tool's own output costs, read the tool-result carry table.\n")
     L.append("- Request = one deduplicated API response (largest figure per field wins across repeated lines).\n"
              "- Skill phase (heuristic): from a Skill tool call (or attributionSkill) until the next real human message; "
              "sub-agents inherit the parent's phase at their first request.\n"
