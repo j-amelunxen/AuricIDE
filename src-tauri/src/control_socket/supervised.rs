@@ -78,6 +78,8 @@ impl Dispatcher {
             }
             Request::ExternalStop(params) => self.external_stop(supervisor, params),
             Request::ExternalList(_) => self.external_list(supervisor),
+            Request::MarkWaiting(params) => self.mark_waiting(supervisor, params),
+            Request::ClearWaiting(params) => self.clear_waiting(supervisor, params),
         }
     }
 
@@ -132,7 +134,11 @@ impl Dispatcher {
     }
 
     /// `Ok` only for an agent `supervisor` started, live or finished.
-    fn ensure_child(&self, supervisor: &str, agent_id: &str) -> Result<(), ControlError> {
+    pub(super) fn ensure_child(
+        &self,
+        supervisor: &str,
+        agent_id: &str,
+    ) -> Result<(), ControlError> {
         let live_child = self
             .find_agent(agent_id)
             .is_some_and(|agent| agent.spawned_by_agent_id.as_deref() == Some(supervisor));

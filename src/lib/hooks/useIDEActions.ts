@@ -19,6 +19,7 @@ import { installSupervisorAdoption } from '@/lib/agents/supervisorAdoption';
 import { subscribeReviewPersistence } from '@/lib/git/review/reviewPersistence';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useBatchedAgentEvents } from '@/lib/hooks/useAgentEvents';
+import { useAgentWaiting } from '@/lib/hooks/useAgentWaiting';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
 import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
@@ -239,6 +240,8 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
     useCallback((event) => fsRouterRef.current?.handle(event), [])
   );
 
+  // Agents a supervisor parked on purpose
+  useAgentWaiting();
   // Agent event subscriptions
   const { updateAgentStatus } = state;
   // Output reaches the store once per frame, and before any status change.

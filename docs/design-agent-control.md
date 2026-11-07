@@ -405,6 +405,7 @@ half is `supervisors` in `agentControl.fixtures.json`
 | `send_input`                                                | its own children only                                                                                                                                                                     |
 | `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                                                                                                                    |
 | `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                                                                                                                  |
+| `mark_waiting`, `clear_waiting`                             | its own running children only ("Waiting on purpose" below)                                                                                                                         |
 | `external_register`, `external_stop`, `external_list`       | entries of its own run folder only; `docs/design-external-agents.md`. `external_stop` with a run's capability token is also open to external callers (`docs/design-capability-tokens.md`) |
 
 - **Quota blocks are facts about a provider, not about a scope.** `<app_data_dir>/quota-blocks.json`
@@ -778,6 +779,43 @@ before it ends. The socket's spawn note lives in memory only, so a worktree
 from before an app restart is found through the agent list or not at all; it
 stays in the Git panel's worktree list for a person.
 
+### Waiting on purpose
+
+A supervisor parks one of its running agents (an interactive agent waiting for a
+deploy or a human) with `mark_waiting { agentId, reason, until? }`, so the stall
+watchdog stops repeating itself. `reason` is one line of at most 200 characters.
+`until` is an ISO 8601 time or a duration (`90m`, `2h`, `1h30m`); left out it is 2 h,
+and more than 24 h, a time in the past or anything unreadable is `invalid_params`
+(refused, not shortened). The answer is `{ agentId, reason, until }` with `until`
+as an ISO time. `clear_waiting { agentId }` answers `{ agentId, cleared }`;
+`cleared: false` means there was no mark, which includes one that ended by itself.
+
+- **Scope.** Own children only, same check as `send_input` (`ensure_child`): another
+  supervisor's child or one the human started is `unknown_agent`; a finished child is
+  `invalid_params` (only a running agent can be parked). An external caller gets
+  `outside_supervisor_scope`, a worker `forbidden_agent_caller`. Marking again
+  replaces the earlier mark.
+- **While marked.** The watchdog (`control_socket/stall_watchdog.rs`) sends no
+  nudge and no `Stalled` / `Stall escalated` notice, to the supervisor or to the
+  human inbox, and a notice still waiting for delivery is dropped. The frontend reads
+  the same mark: no "Stalled?" chip, no Enter nudge, no entry in the attention
+  count; the card shows `waiting: <reason> (until HH:MM)`.
+- **It ends by itself** at `until`; when the agent produces output that counts as
+  progress (the watchdog's own signal, `design-stall-watchdog.md`); when it raises a
+  question (`ask_supervisor`) or shows a prompt (`awaits_input`); when it finishes or
+  disappears. Checked each watchdog tick (5 s), so it can lag by that much. Normal
+  stall detection then starts a fresh inactivity window; the one-nudge budget of the
+  run is untouched. The baseline for "new output" is taken when the mark is set. A
+  mark restored after an IDE restart takes it on its first tick.
+- **Persistence.** `<app_data_dir>/agent-waiting.json` (`agent_waiting.rs`, version 1,
+  written atomically); expired marks are dropped on read. A missing or unreadable
+  file means no marks. The Tauri command `agent_waiting_list` and the event
+  `agent-waiting-changed` feed the cards (`useAgentWaiting`).
+- **In listings.** `list_agents` carries `waitingReason` and `waitingUntil` on a parked
+  agent, absent otherwise.
+- **Tools.** `mark_agent_waiting` → `mark_waiting`, `clear_agent_waiting` →
+  `clear_waiting`; supervisor server only.
+
 ### Tools (`auric-mcp --supervisor`)
 
 | tool                      | socket method       |
@@ -800,6 +838,8 @@ stays in the Git panel's worktree list for a person.
 | `register_external_agent` | `external_register` |
 | `stop_external_agent`     | `external_stop`     |
 | `list_external_agents`    | `external_list`     |
+| `mark_agent_waiting`      | `mark_waiting`      |
+| `clear_agent_waiting`     | `clear_waiting`     |
 
 `pm_tools` and `pm_call` ask `pm_target` first and then use a project's own server.
 `src/mcp/supervisorPm.ts` keeps at most 8 of those `--project-root` children, one per

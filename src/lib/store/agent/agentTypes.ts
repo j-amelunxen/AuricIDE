@@ -5,6 +5,7 @@ import type { GridCells } from '@/lib/agents/terminalGrid';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { PersistedAgentEvent } from '@/lib/tauri/agentLog';
 import type { AgentConfig, AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
+import type { AgentWaiting } from '@/lib/tauri/agentWaiting';
 
 export const MAX_AGENT_LOGS = 5_000;
 export const MAX_AGENT_LOG_BYTES = 2_000_000;
@@ -304,6 +305,11 @@ export interface AgentSlice {
    * one" from a list (the Agent Console) must not do.
    */
   markAgentReviewed: (agentId: string) => void;
+  /**
+   * Stamps the supervisor's waiting marks onto the agents (`mark_agent_waiting`);
+   * an agent without a mark loses an old one. Writes nothing when nothing changed.
+   */
+  applyAgentWaiting: (marks: AgentWaiting[]) => void;
   killAgentsForRepoPath: (repoPath: string) => Promise<void>;
   loadInterruptedAgents: () => Promise<void>;
   resumeInterruptedAgent: (agentId: string) => Promise<AgentInfo>;

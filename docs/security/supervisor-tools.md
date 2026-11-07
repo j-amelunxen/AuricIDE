@@ -148,6 +148,24 @@ running in it, and if all are busy the call answers `pm_busy`. A child that does
 seconds is ended. A project server ends when its stdin closes, so a gateway killed outright leaves
 none behind.
 
+## mark_agent_waiting [#el_markwt01], clear_agent_waiting [#el_clrwt001]
+
+The behaviour is in `docs/design-agent-control.md`, "Waiting on purpose".
+
+_Silencing the watchdog on someone else's agent._ Both go through `ensure_child`, the check
+`send_input` and `kill` use: only the supervisor that started the agent, and only while it runs.
+Another supervisor's child and one the human started are `unknown_agent`. A worker is refused at
+admission, an outside client and the link socket get `outside_supervisor_scope`.
+
+_Hiding a stuck agent for good._ This is the point of the tool and also its risk: a supervisor can
+mute stall notices for its own agent. The limits are a mark of 24 h at most (longer is refused,
+not shortened), one mark per agent, and the end on any new output, question, prompt or exit. The
+mark only changes notices: it does not stop the agent, give it input or grant anything. An agent
+that stays silent for 24 h simply stalls again afterwards.
+
+_Smuggling text._ `reason` is one trimmed line of at most 200 characters, shown to the human as
+React text on the card, never as markup. Unknown parameters are refused.
+
 ## register_external_agent [#el_extreg01], stop_external_agent [#el_extstp01], list_external_agents [#el_extlst01], external_agent_close [#el_extcls01]
 
 The behaviour is in `docs/design-external-agents.md`.

@@ -566,7 +566,10 @@ export function buildSupervisorLaunchPrompt(
       '(or the configured interval) unchanged, without waiting for input or a running tool, ' +
       'the IDE nudges an interactive child once; never duplicate that nudge. For headless ' +
       'children read the output and decide. If still unchanged after another interval, ' +
-      'escalate to the human; never repeat nudges or block on waits.',
+      'escalate to the human; never repeat nudges or block on waits. An agent you park on ' +
+      'purpose (waiting for a deploy or for the human) gets mark_agent_waiting with a reason ' +
+      'and a time: the IDE then sends no stall notices for it until that time, its next ' +
+      'output, a question or its end; clear_agent_waiting ends it early.',
     '## Working with your agents',
     CHILD_RULES,
     '## Cleaning up',

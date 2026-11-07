@@ -617,6 +617,30 @@
       }
     },
     {
+      "name": "mark_waiting without a reason",
+      "raw": "{\"id\":97,\"method\":\"mark_waiting\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expectedError": {
+        "id": 97,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "mark_waiting with a blank reason",
+      "raw": "{\"id\":98,\"method\":\"mark_waiting\",\"params\":{\"agentId\":\"agent-5\",\"reason\":\"  \"}}",
+      "expectedError": {
+        "id": 98,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "clear_waiting without agentId",
+      "raw": "{\"id\":99,\"method\":\"clear_waiting\",\"params\":{}}",
+      "expectedError": {
+        "id": 99,
+        "code": "invalid_params"
+      }
+    },
+    {
       "name": "dismiss without agentId",
       "raw": "{\"id\":28,\"method\":\"dismiss\",\"params\":{}}",
       "expectedError": {
@@ -826,6 +850,42 @@
         "id": 93,
         "method": "external_list",
         "params": {}
+      }
+    },
+    {
+      "name": "mark_waiting",
+      "raw": "{\"id\":94,\"method\":\"mark_waiting\",\"params\":{\"agentId\":\"agent-5\",\"reason\":\"waiting for the deploy\",\"until\":\"2h\"}}",
+      "expected": {
+        "id": 94,
+        "method": "mark_waiting",
+        "params": {
+          "agentId": "agent-5",
+          "reason": "waiting for the deploy",
+          "until": "2h"
+        }
+      }
+    },
+    {
+      "name": "mark_waiting without until",
+      "raw": "{\"id\":95,\"method\":\"mark_waiting\",\"params\":{\"agentId\":\"agent-5\",\"reason\":\"human\"}}",
+      "expected": {
+        "id": 95,
+        "method": "mark_waiting",
+        "params": {
+          "agentId": "agent-5",
+          "reason": "human"
+        }
+      }
+    },
+    {
+      "name": "clear_waiting",
+      "raw": "{\"id\":96,\"method\":\"clear_waiting\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expected": {
+        "id": 96,
+        "method": "clear_waiting",
+        "params": {
+          "agentId": "agent-5"
+        }
       }
     },
     {
@@ -1235,6 +1295,23 @@
         },
         "alreadyStopped": false,
         "booked": true
+      }
+    },
+    "mark_waiting": {
+      "id": 94,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "reason": "waiting for the deploy",
+        "until": "2026-11-07T18:00:00Z"
+      }
+    },
+    "clear_waiting": {
+      "id": 96,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "cleared": true
       }
     },
     "external_list": {
@@ -2016,6 +2093,8 @@
           "link_policy_get": "outside_supervisor_scope",
           "link_policy_propose": "outside_supervisor_scope",
           "pm_target": "outside_supervisor_scope",
+          "mark_waiting": "outside_supervisor_scope",
+          "clear_waiting": "outside_supervisor_scope",
           "raise_question": "forbidden_agent_caller"
         },
         "withToken": {
@@ -2042,7 +2121,9 @@
           "clear_quota_block",
           "external_register",
           "external_stop",
-          "external_list"
+          "external_list",
+          "mark_waiting",
+          "clear_waiting"
         ],
         "scope": "own_children",
         "outsideScope": "unknown_agent",
@@ -2442,6 +2523,60 @@
         "caller": "worker",
         "method": "external_list",
         "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "external caller may not call mark_waiting",
+        "caller": "external",
+        "method": "mark_waiting",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "worker may not call mark_waiting",
+        "caller": "worker",
+        "method": "mark_waiting",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "supervisor parks its running child",
+        "caller": "supervisor",
+        "method": "mark_waiting",
+        "target": "own_child",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor clears the mark on its child",
+        "caller": "supervisor",
+        "method": "clear_waiting",
+        "target": "own_child",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor cannot park another supervisor's child",
+        "caller": "supervisor",
+        "method": "mark_waiting",
+        "target": "other_supervisors_child",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor cannot park an agent the human started",
+        "caller": "supervisor",
+        "method": "mark_waiting",
+        "target": "unrelated_agent",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor cannot clear another supervisor's mark",
+        "caller": "supervisor",
+        "method": "clear_waiting",
+        "target": "other_supervisors_child",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "a finished child cannot be parked",
+        "caller": "supervisor",
+        "method": "mark_waiting",
+        "target": "own_finished_child",
+        "expected": "invalid_params"
       },
       {
         "name": "supervisor registers an external run",

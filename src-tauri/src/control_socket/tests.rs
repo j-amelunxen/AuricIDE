@@ -1088,6 +1088,7 @@ fn every_caller_scope_case_in_the_contract_holds() {
             }),
             "external_stop" => json!({ "externalId": "box-7" }),
             "external_list" => json!({}),
+            "mark_waiting" => json!({ "agentId": target, "reason": "waiting for the deploy" }),
             "link_policy_propose" => json!({
                 "reason": "x",
                 "changes": [{ "op": "set_daily_limit", "dailyLimit": 7 }],
@@ -3552,3 +3553,6 @@ fn quota_blocks_control_methods_mark_catalog_skip_balancing_and_refuse_spawn() {
 
 #[path = "external_agents_tests.rs"]
 mod external_agents_tests;
+
+#[path = "waiting_tests.rs"]
+mod waiting_tests;

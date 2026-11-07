@@ -24,6 +24,7 @@ mod quota_blocks;
 pub mod spawn_log;
 mod stall_watchdog;
 mod supervised;
+mod waiting;
 pub(crate) use link_spawn::LinkSpawn;
 
 use crate::agent_usage::report::{AgentReport, ReportLookup, ReportMissing, ReportSource};
@@ -111,6 +112,8 @@ pub trait ControlBackend: Send + Sync {
     fn agent_report(&self, _agent_id: &str) -> ReportLookup {
         ReportLookup::Missing(ReportMissing::ProviderUnsupported)
     }
+    /// The waiting marks changed (`agent-waiting.json`); the UI reads them again.
+    fn waiting_changed(&self) {}
     /// `external-agents.json` changed, so the timeline should read it again.
     fn external_agents_changed(&self) {}
     /// An external run reached the usage history.
@@ -262,6 +265,8 @@ pub struct Dispatcher {
     input_quiet: Duration,
     watchdog: Mutex<stall_watchdog::Watchdog>,
     questions: QuestionLog,
+    /// Agents a supervisor parked on purpose (`waiting.rs`).
+    waiting: Mutex<crate::agent_waiting::WaitingMarks>,
 }
 
 pub(crate) type Outcome = Result<Value, ControlError>;
@@ -290,6 +295,7 @@ impl Dispatcher {
             worktrees: Mutex::new(HashMap::new()),
             input_quiet: Duration::from_secs(INPUT_QUIET_SECONDS),
             watchdog: Mutex::new(stall_watchdog::Watchdog::default()),
+            waiting: Mutex::new(Default::default()),
             questions: QuestionLog::default(),
         }
     }
@@ -514,6 +520,7 @@ impl Dispatcher {
             Request::ExternalRegister(_) | Request::ExternalStop(_) | Request::ExternalList(_) => {
                 Err(external_agents::supervisors_only())
             }
+            Request::MarkWaiting(_) | Request::ClearWaiting(_) => Err(waiting::supervisors_only()),
         }
     }
 
@@ -551,7 +558,7 @@ impl Dispatcher {
                 stall: if info.status == AgentStatus::Running
                     && self.run_results.get(&info.id).is_none()
                 {
-                    self.stall_metrics(&info.id)
+                    self.waiting_view(&info.id, self.stall_metrics(&info.id))
                 } else {
                     Default::default()
                 },
@@ -1359,6 +1366,11 @@ impl ControlBackend for TauriBackend {
     fn app_data_dir(&self) -> Option<PathBuf> {
         use tauri::Manager;
         self.app.path().app_data_dir().ok()
+    }
+
+    fn waiting_changed(&self) {
+        use tauri::Emitter;
+        let _ = self.app.emit(crate::agent_waiting::CHANGED_EVENT, ());
     }
 
     fn external_agents_changed(&self) {

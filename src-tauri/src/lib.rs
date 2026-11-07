@@ -1,6 +1,7 @@
 mod agent_log;
 mod agent_persistence;
 mod agent_usage;
+pub mod agent_waiting;
 mod agent_window;
 mod agents;
 mod ansi;
@@ -552,6 +553,7 @@ pub fn run() {
             agent_usage::agent_usage_load,
             agent_usage::agent_usage_reprice,
             external_agents::external_agents_list,
+            agent_waiting::agent_waiting_list,
             external_agents::external_agent_close,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,

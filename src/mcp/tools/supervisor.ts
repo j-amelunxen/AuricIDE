@@ -3,6 +3,7 @@ import type { FastMCP } from 'fastmcp';
 import {
   externalRegisterParams,
   externalStopParams,
+  markWaitingParams,
   type ControlParamsInput,
 } from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
@@ -57,7 +58,8 @@ export function registerSupervisorTools(
       'supervisor started are not listed. idleForMs is the IDE-observed inactivity duration; ' +
       'stalledSinceMs is its stall onset (Unix ms), both nullable. questionCount (absent at ' +
       'zero) is how many questions it raised; await_agent_result delivers them. The IDE nudges once and ' +
-      'escalates automatically; do not send another stall nudge.',
+      'escalates automatically; do not send another stall nudge. waitingReason and waitingUntil ' +
+      '(absent normally) show an agent you parked with mark_agent_waiting.',
     parameters: z.object({}),
     execute: async () => runControl(call, 'list_agents', {}),
   });
@@ -98,6 +100,46 @@ export function registerSupervisorTools(
   server.addTool(clearQuotaBlockTool(call));
   registerLinkPolicyTools(server, call);
   registerExternalAgentTools(server, call);
+  registerWaitingTools(server, call);
+}
+
+/**
+ * Park an agent on purpose (`docs/design-agent-control.md`, "Waiting on purpose").
+ * Only here, never in `--control`: a mark belongs to the supervisor that set it.
+ */
+function registerWaitingTools(server: FastMCP, call: ControlCaller): void {
+  // elementuuid=el_markwt01 kind=mcp security=docs/security/supervisor-tools.md validation=zod:markWaitingParams
+  server.addTool({
+    name: 'mark_agent_waiting',
+    description:
+      'Tell the IDE that one of your running agents is waiting on purpose, for example for a ' +
+      'deploy or for the human, so it stops sending stall notices for it. While the mark is ' +
+      'on there is no status-check nudge and no "Stalled" or "Stall escalated" notice, to you ' +
+      'or to the human, and its card reads "waiting: <reason> (until HH:MM)". The mark ends ' +
+      'by itself at until, when the agent prints something new, when it asks a question or ' +
+      'shows a prompt, and when it finishes; normal stall detection then starts a fresh ' +
+      'inactivity window. reason is one short line (200 characters at most). until is an ISO ' +
+      '8601 time (2026-11-07T18:00:00Z) or a duration (90m, 2h, 1h30m); left out it is 2 h, ' +
+      'and more than 24 h is refused. Marking again replaces the earlier mark. Only your own ' +
+      'running agents; any other id is unknown_agent. Returns { agentId, reason, until } with ' +
+      'until as an ISO time.' +
+      OWN_CHILDREN,
+    parameters: markWaitingParams,
+    execute: async (args: ControlParamsInput<'mark_waiting'>) =>
+      runControl(call, 'mark_waiting', args),
+  });
+
+  // elementuuid=el_clrwt001 kind=mcp security=docs/security/supervisor-tools.md validation=zod:agentId
+  server.addTool({
+    name: 'clear_agent_waiting',
+    description:
+      'End the waiting mark on one of your agents before it runs out, so stall detection ' +
+      'watches it again from now. Returns { agentId, cleared }; cleared: false means there was ' +
+      'no mark, which also happens once it ended by itself.' +
+      OWN_CHILDREN,
+    parameters: z.object({ agentId: agentIdParam }),
+    execute: async (args) => runControl(call, 'clear_waiting', args),
+  });
 }
 
 /**

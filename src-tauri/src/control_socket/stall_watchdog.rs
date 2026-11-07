@@ -14,6 +14,11 @@ use std::time::{Duration, Instant};
 pub struct StallMetrics {
     pub idle_for_ms: Option<u64>,
     pub stalled_since_ms: Option<u64>,
+    /// Set while a supervisor has parked the agent on purpose (`waiting.rs`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_until: Option<String>,
 }
 
 struct Watch {
@@ -69,6 +74,7 @@ impl Dispatcher {
         watchdog
             .entries
             .retain(|id, _| agents.iter().any(|a| &a.id == id));
+        self.waiting_prune(&agents);
         for agent in &agents {
             let Some(parent) = agent.spawned_by_agent_id.as_deref() else {
                 continue;
@@ -96,6 +102,18 @@ impl Dispatcher {
                     .buffers
                     .read(&agent.id, 4096, None)
                     .is_some_and(|slice| awaits_input(&slice.text));
+            // A supervisor parked it on purpose: no nudge, no notice, and the
+            // inactivity window starts over when the mark ends.
+            if self.waiting_holds(&agent.id, generation, waiting, epoch_ms) {
+                watch.generation = generation;
+                watch.changed = now;
+                watch.warned = None;
+                watch.escalated = false;
+                watch.pending = None;
+                watch.metrics.idle_for_ms = Some(0);
+                watch.metrics.stalled_since_ms = None;
+                continue;
+            }
             if generation != watch.generation
                 || busy.contains(&agent.id)
                 || waiting
