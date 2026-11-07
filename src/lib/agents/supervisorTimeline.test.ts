@@ -393,6 +393,27 @@ describe('buildSupervisorTimeline: external runs', () => {
     expect(model.outsideCount).toBe(0);
   });
 
+  it('leaves a dismissed final run out of the counts but never a live one', () => {
+    const finished = external({
+      id: 'ext-old',
+      state: 'stopped',
+      registeredAt: NOW - 3 * 60 * MIN,
+      finishedAt: NOW - 2 * 60 * MIN,
+      onSpans: [],
+    });
+    const live = external({ id: 'ext-live', state: 'registered', onSpans: [] });
+    const open = build([finished, live]);
+    expect(open.externalFinishedIds).toEqual(['ext-old']);
+    expect(open.externalOutsideCount).toBe(1);
+
+    const dismissed = buildSupervisorTimeline([owner], 'owner', NOW, '30m', [finished, live], {
+      dismissedExternalIds: new Set(['ext-old', 'ext-live']),
+    })!;
+    expect(dismissed.externalFinishedIds).toEqual([]);
+    expect(dismissed.externalOutsideCount).toBe(0);
+    expect(dismissed.externalRows.map((row) => row.external.id)).toEqual(['ext-live']);
+  });
+
   it('reaches back to the earliest registration when the range is All', () => {
     const early = external({ registeredAt: NOW - 500 * MIN, onSpans: [] });
     const model = buildSupervisorTimeline([owner], 'owner', NOW, 'all', [early])!;

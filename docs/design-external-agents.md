@@ -227,7 +227,7 @@ An unreadable file or an unknown version is never overwritten: calls answer
 
 Bounds (`retention` in the fixtures): at most 200 live entries
 (`supervisor_denied`, `external_limit`), 64 on-spans per entry (further changes
-extend the last span), and final, booked entries are dropped after 7 days. The
+extend the last span), and final, booked entries are dropped after 24 hours. The
 history keeps them; only the timeline row goes.
 
 **What is stored.** The fields above and nothing else. Unknown parameters are

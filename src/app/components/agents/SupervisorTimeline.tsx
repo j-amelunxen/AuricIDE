@@ -97,6 +97,7 @@ export function SupervisorTimelinePanel({
   onOpenAgent,
   confirm,
   onCloseExternal,
+  onDismissExternals,
 }: {
   model: SupervisorTimelineModel;
   range: TimelineRangeId;
@@ -107,7 +108,10 @@ export function SupervisorTimelinePanel({
   /** With `onCloseExternal`, what puts a close control on a live external row. */
   confirm?: (request: ConfirmRequest) => Promise<boolean>;
   onCloseExternal?: (id: string, options?: ExternalAgentCloseOptions) => Promise<void>;
+  /** Hides finished external runs from the chart (view only; nothing is deleted or booked). */
+  onDismissExternals?: (ids: readonly string[]) => void;
 }) {
+  const rangeLabel = TIMELINE_RANGES.find((item) => item.id === range)?.label ?? 'this range';
   const [closeFailure, setCloseFailure] = useState<string | null>(null);
   const onlySupervisor =
     model.rows.length === 1 &&
@@ -285,18 +289,42 @@ export function SupervisorTimelinePanel({
       {onlySupervisor && (
         <p className="px-3 py-1.5 text-[10px] text-foreground-muted">No agents started yet.</p>
       )}
-      {model.outsideCount > 0 && (
-        <p className="px-3 py-1.5 text-[10px] text-foreground-muted">
-          {model.outsideCount === 1
-            ? '1 agent is outside this window.'
-            : `${model.outsideCount} agents are outside this window.`}
+      {(model.outsideCount > 0 || model.externalOutsideCount > 0) && (
+        <p className="flex flex-wrap items-center gap-x-2 px-3 py-1.5 text-[10px] text-foreground-muted">
+          <span>
+            {[
+              model.outsideCount > 0 &&
+                `${model.outsideCount} ${model.outsideCount === 1 ? 'agent' : 'agents'}`,
+              model.externalOutsideCount > 0 &&
+                `${model.externalOutsideCount} ${
+                  model.externalOutsideCount === 1 ? 'external run' : 'external runs'
+                }`,
+            ]
+              .filter(Boolean)
+              .join(' and ')}{' '}
+            finished before {rangeLabel.toLowerCase()}.
+          </span>
+          {range !== 'all' && (
+            <button
+              type="button"
+              onClick={() => onRange('all')}
+              className="underline hover:text-foreground"
+            >
+              Show all
+            </button>
+          )}
         </p>
       )}
-      {model.externalOutsideCount > 0 && (
+      {onDismissExternals && model.externalFinishedIds.length > 0 && (
         <p className="px-3 py-1.5 text-[10px] text-foreground-muted">
-          {model.externalOutsideCount === 1
-            ? '1 external run is outside this window.'
-            : `${model.externalOutsideCount} external runs are outside this window.`}
+          <button
+            type="button"
+            onClick={() => onDismissExternals(model.externalFinishedIds)}
+            className="underline hover:text-foreground"
+          >
+            Hide {model.externalFinishedIds.length} finished external{' '}
+            {model.externalFinishedIds.length === 1 ? 'run' : 'runs'}
+          </button>
         </p>
       )}
     </section>

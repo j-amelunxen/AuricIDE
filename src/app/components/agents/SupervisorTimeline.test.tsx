@@ -90,7 +90,7 @@ describe('SupervisorTimelinePanel', () => {
     expect(screen.getByTestId('timeline-bar-sup')).toHaveAttribute('data-tone', 'running');
     expect(screen.getByText('Failed')).toBeInTheDocument();
     expect(screen.queryByTestId('timeline-row-old')).not.toBeInTheDocument();
-    expect(screen.getByText('1 agent is outside this window.')).toBeInTheDocument();
+    expect(screen.getByText('1 agent finished before last 30m.')).toBeInTheDocument();
     expect(screen.getByTestId('timeline-handoff-sup-writer')).toBeInTheDocument();
   });
 
@@ -101,7 +101,7 @@ describe('SupervisorTimelinePanel', () => {
     expect(screen.getByTestId('timeline-row-old')).toBeInTheDocument();
     expect(screen.getByTestId('timeline-bar-old')).toHaveAttribute('data-tone', 'done');
     expect(screen.getByText('Done')).toBeInTheDocument();
-    expect(screen.queryByText(/outside this window/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/finished before/)).not.toBeInTheDocument();
   });
 
   it('opens an agent that has a terminal and leaves a headless run as a row only', async () => {
@@ -345,6 +345,22 @@ describe('SupervisorTimelinePanel: external runs', () => {
     expect(rowOf('ext-2')).toBeInTheDocument();
   });
 
+  it('offers Show all and Hide finished for runs that ended before the range', async () => {
+    const finished = external({
+      state: 'stopped',
+      registeredAt: NOW - 200 * MIN,
+      finishedAt: NOW - 100 * MIN,
+      onSpans: [],
+    });
+    const onRange = vi.fn();
+    const onDismissExternals = vi.fn();
+    render(panel([finished], { onRange, onDismissExternals }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
+    expect(onRange).toHaveBeenCalledWith('all');
+    await userEvent.click(screen.getByRole('button', { name: 'Hide 1 finished external run' }));
+    expect(onDismissExternals).toHaveBeenCalledWith(['ext-1']);
+  });
+
   it('does not say no agents started while it has only external runs', () => {
     const { rerender } = render(panel([external()]));
     expect(screen.queryByText('No agents started yet.')).toBeNull();
@@ -357,7 +373,8 @@ describe('SupervisorTimelinePanel: external runs', () => {
     });
     rerender(panel([finished]));
     expect(screen.queryByText('No agents started yet.')).toBeNull();
-    expect(screen.getByText('1 external run is outside this window.')).toBeInTheDocument();
+    expect(screen.getByText('1 external run finished before last 30m.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all' })).toBeInTheDocument();
   });
 
   it('scales the hand-off curves over all rows, external ones included', () => {

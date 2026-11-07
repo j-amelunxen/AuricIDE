@@ -368,6 +368,12 @@ export function AgentTerminalWorkspace({
   const [maximizedPick, setMaximizedPick] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineRange, setTimelineRange] = useState<TimelineRangeId>('30m');
+  // A view state like parking: finished external runs the human cleared from the chart.
+  const [dismissedExternals, setDismissedExternals] = useState<ReadonlySet<string>>(new Set());
+  const dismissExternals = useCallback(
+    (ids: readonly string[]) => setDismissedExternals((prev) => new Set([...prev, ...ids])),
+    []
+  );
   const { place } = grid;
   const dropOnGrid = useCallback(
     (agentId: string, zone: DropZone) => {
@@ -512,8 +518,12 @@ export function AgentTerminalWorkspace({
   const timeline = useMemo(() => {
     const fleet = mergeTimelineFleet(allAgents ?? [agent], timelineHistory);
     const root = supervisorFamilyRoots(fleet).get(agent.id);
-    return root ? buildSupervisorTimeline(fleet, root, now, timelineRange, externals) : null;
-  }, [agent, allAgents, now, timelineRange, timelineHistory, externals]);
+    return root
+      ? buildSupervisorTimeline(fleet, root, now, timelineRange, externals, {
+          dismissedExternalIds: dismissedExternals,
+        })
+      : null;
+  }, [agent, allAgents, now, timelineRange, timelineHistory, externals, dismissedExternals]);
 
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -634,6 +644,7 @@ export function AgentTerminalWorkspace({
           onOpenAgent={openTimelineAgent}
           confirm={confirm}
           onCloseExternal={closeExternal}
+          onDismissExternals={dismissExternals}
         />
       )}
 

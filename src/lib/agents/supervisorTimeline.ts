@@ -122,8 +122,18 @@ export interface SupervisorTimelineModel {
   externalRows: ExternalTimelineRow[];
   /** Entries reported as working and still heard from. */
   externalOnCount: number;
-  /** Finished external runs of this timeline whose whole run sits outside the window. */
+  /**
+   * Finished external runs of this timeline whose whole run sits outside the
+   * window (only final entries are ever filtered; a live one always shows).
+   */
   externalOutsideCount: number;
+  /** Final (finished) external runs still listed, inside the window or not. */
+  externalFinishedIds: string[];
+}
+
+export interface TimelineOptions {
+  /** Final external runs the human hid. A live run is never hidden, whatever is in here. */
+  dismissedExternalIds?: ReadonlySet<string>;
 }
 
 export function timelineBarLabel(agent: Pick<AgentInfo, 'name' | 'currentTask'>): string {
@@ -137,7 +147,8 @@ export function buildSupervisorTimeline(
   supervisorId: string,
   now: number,
   range: TimelineRangeId,
-  externals: readonly ExternalAgent[] = []
+  externals: readonly ExternalAgent[] = [],
+  options: TimelineOptions = {}
 ): SupervisorTimelineModel | null {
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   const supervisor = byId.get(supervisorId);
@@ -146,7 +157,10 @@ export function buildSupervisorTimeline(
   const roots = supervisorFamilyRoots(agents);
   const family = agents.filter((agent) => roots.get(agent.id) === supervisorId);
   const ordered = [...family].sort((a, b) => compareRows(a, b, supervisorId));
-  const own = externalsOf(externals, agents, family);
+  const dismissed = options.dismissedExternalIds;
+  const own = externalsOf(externals, agents, family).filter(
+    (entry) => isExternalLive(entry.external) || !dismissed?.has(entry.external.id)
+  );
   const starts = [
     ...ordered.map((agent) => agent.startedAt),
     ...own.map((entry) => entry.external.registeredAt),
@@ -185,6 +199,9 @@ export function buildSupervisorTimeline(
     externalRows,
     externalOnCount: externalRows.filter((row) => externalCountsAsOn(row.external, now)).length,
     externalOutsideCount: own.length - externalRows.length,
+    externalFinishedIds: own
+      .filter((entry) => !isExternalLive(entry.external))
+      .map((entry) => entry.external.id),
   };
 }
 

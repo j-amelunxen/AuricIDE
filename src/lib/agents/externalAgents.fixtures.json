@@ -17,7 +17,7 @@
     "registeredAfterMs": 259200000
   },
   "retention": {
-    "finalKeptMs": 604800000,
+    "finalKeptMs": 86400000,
     "maxLive": 200,
     "maxOnSpans": 64
   },
