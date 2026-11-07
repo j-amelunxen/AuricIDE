@@ -14,6 +14,7 @@ pub mod store;
 
 pub use booking::{settle, Booked};
 pub use lookup::resolve_links;
+use model::{CloseOptions, EndReason, TOKEN_KIND};
 pub use model::{
     ExternalAgentView, ExternalError, ExternalRegisterParams, ExternalStopParams, CHANGED_EVENT,
 };
@@ -59,9 +60,18 @@ pub fn external_agents_list(app: tauri::AppHandle) -> Result<Vec<ExternalAgentVi
 pub fn external_agent_close(
     app: tauri::AppHandle,
     id: String,
+    force: Option<bool>,
+    finished_at: Option<u64>,
+    end_reason: Option<EndReason>,
 ) -> Result<ExternalAgentView, String> {
     let dir = app_data(&app)?;
-    let (view, booked, changed) = close(&dir, &id, now_ms()).map_err(|error| error.to_string())?;
+    let options = CloseOptions {
+        force: force == Some(true),
+        finished_at,
+        end_reason,
+    };
+    let (view, booked, changed) =
+        close(&dir, &id, options, now_ms()).map_err(|error| error.to_string())?;
     announce(&app, booked, changed);
     Ok(view)
 }
@@ -70,13 +80,15 @@ pub fn external_agent_close(
 fn close(
     dir: &std::path::Path,
     id: &str,
+    options: CloseOptions,
     now: u64,
 ) -> Result<(ExternalAgentView, Vec<Booked>, bool), ExternalError> {
     let (agent, closed) = store::update(dir, now, |file| {
-        let answer = model::apply_close(file, id, now)?;
+        let answer = model::apply_close(file, id, options, now)?;
         let touched = answer.1;
         Ok((answer, touched))
     })?;
+    revoke_tokens(dir, &agent, now);
     let (booked, marked) = settle(dir, now)?;
     let current = store::read(dir)?
         .agents
@@ -84,6 +96,21 @@ fn close(
         .find(|entry| entry.id == agent.id)
         .unwrap_or(agent);
     Ok((current.view(now), booked, closed || marked))
+}
+
+/// A final entry's tokens end with it. Called after every change that can make
+/// an entry final; a failure here leaves a token that the model still refuses
+/// to let past a final entry, so it is reported and not raised.
+pub(crate) fn revoke_tokens(dir: &std::path::Path, agent: &model::ExternalAgent, now: u64) {
+    if agent.is_live() {
+        return;
+    }
+    if let Err(error) = crate::capability_tokens::revoke_resource(dir, TOKEN_KIND, &agent.id, now) {
+        eprintln!(
+            "External agents: tokens of {} not revoked: {error}",
+            agent.id
+        );
+    }
 }
 
 /// A history write that failed before the last quit gets its next try here,

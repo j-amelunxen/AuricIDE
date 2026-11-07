@@ -90,6 +90,12 @@ pub struct TaskLogEntry {
     pub cache_read_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<String>,
+    /// A later line for the same `agentId` that replaces an earlier one: the
+    /// run's end was corrected after it was booked. The last line wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corrected: Option<bool>,
 }
 
 /// Optional token and cost numbers when a run had usage evidence.
@@ -212,6 +218,8 @@ pub fn build_entry(
         runtime_partial: None,
         agent_runs: None,
         closed_by: None,
+        end_reason: None,
+        corrected: None,
         cost_source: None,
         cache_read_tokens: None,
         cache_write_tokens: None,

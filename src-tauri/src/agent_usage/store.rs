@@ -73,6 +73,12 @@ pub fn insert_or_ignore(conn: &Connection, row: &UsageRecord) -> Result<bool, St
     insert_as(conn, "INSERT OR IGNORE", row).map(|added| added > 0)
 }
 
+/// For a booking that was corrected after it was written: the row with that
+/// id is replaced. `true` when a row was written.
+pub fn insert_or_replace(conn: &Connection, row: &UsageRecord) -> Result<bool, String> {
+    insert_as(conn, "INSERT OR REPLACE", row).map(|written| written > 0)
+}
+
 fn insert_as(conn: &Connection, verb: &str, row: &UsageRecord) -> Result<usize, String> {
     let unpriced = row
         .unpriced_models

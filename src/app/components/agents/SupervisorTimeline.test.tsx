@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { ExternalAgent } from '@/lib/agents/externalAgents';
+import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { buildSupervisorTimeline, type TimelineRangeId } from '@/lib/agents/supervisorTimeline';
 import { SupervisorTimelinePanel, SupervisorTimelineToggle } from './SupervisorTimeline';
 
@@ -289,6 +290,37 @@ describe('SupervisorTimelinePanel: external runs', () => {
     rerender(panel([external()], { confirm: yes, onCloseExternal }));
     await user.click(screen.getByRole('button', { name: 'Close external run Fix the parser' }));
     expect(onCloseExternal).toHaveBeenCalledWith('ext-1');
+    // A run still heard from ends now: no forced end, no end reason.
+    expect(onCloseExternal.mock.calls[0]).toEqual(['ext-1']);
+  });
+
+  it('books a stale run as lost at its last sign of life, and says so first', async () => {
+    const user = userEvent.setup();
+    const lastSeenAt = NOW - 27 * 60 * MIN;
+    const stale = external({
+      registeredAt: NOW - 30 * 60 * MIN,
+      lastSeenAt,
+      onSpans: [{ from: NOW - 30 * 60 * MIN, to: null }],
+    });
+    const onCloseExternal = vi.fn(async () => {});
+    const confirm = vi.fn(async (_request: ConfirmRequest) => true);
+    render(panel([stale], { confirm, onCloseExternal }));
+
+    await user.click(screen.getByRole('button', { name: 'Close external run Fix the parser' }));
+    const shown = new Date(lastSeenAt).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    expect(confirm.mock.calls[0][0].message).toContain(`last sign of life, ${shown}`);
+    expect(onCloseExternal).toHaveBeenCalledWith('ext-1', {
+      finishedAt: lastSeenAt,
+      endReason: 'lost',
+    });
+  });
+
+  it('names the end reason in the row title', () => {
+    render(panel([external({ state: 'stopped', finishedAt: NOW - MIN, endReason: 'reaped' })]));
+    expect(rowOf().getAttribute('title')).toContain('Stopped (reaped)');
   });
 
   /* testuuid: t_u5ti0bnm covers: el_extcls01 categories: negative level: unit */

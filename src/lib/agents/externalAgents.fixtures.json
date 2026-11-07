@@ -1,7 +1,8 @@
 {
   "_comment": [
     "Contract of docs/design-external-agents.md, read by Rust and TypeScript. Change it first.",
-    "Rust decides; TypeScript uses stale, display and the parameter cases for the MCP tools."
+    "Rust decides; TypeScript uses stale, display and the parameter cases for the MCP tools.",
+    "Tokens: capabilityTokens.fixtures.json (scope external_run). Force and corrections: the 'force' and 'corrections' blocks below."
   ],
   "version": 1,
   "storeFileName": "external-agents.json",
@@ -49,6 +50,24 @@
     "costUsdMax": 1000000
   },
   "states": ["registered", "running", "stopped", "failed"],
+  "endReasons": ["completed", "error", "timeout", "cancelled", "reaped", "lost"],
+  "closedBy": {
+    "absent": "stopped by the owning supervisor (as before)",
+    "token": "stopped by a holder of the run's capability token",
+    "human": "closed by hand from the timeline"
+  },
+  "token": {
+    "scope": "external_run",
+    "action": "external_stop",
+    "defaultTtlSeconds": 259200,
+    "issuedWhen": "created, or newToken: true on a live entry",
+    "neverWith": "force"
+  },
+  "corrections": {
+    "max": 16,
+    "forcedBy": ["supervisor", "human"],
+    "fields": ["state", "finishedAt", "closedBy", "endReason", "report", "model"]
+  },
   "registerParams": {
     "accept": [
       {
@@ -105,6 +124,28 @@
           "name": "Fix task-12",
           "provider": "claude",
           "state": "running"
+        }
+      },
+      {
+        "name": "a token for a week",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "tokenTtlSeconds": 604800
+        }
+      },
+      {
+        "name": "a further token for a live run",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "newToken": true
         }
       }
     ],
@@ -252,6 +293,30 @@
           "startedAt": 1.5
         },
         "code": "invalid_params"
+      },
+      {
+        "name": "a token for under a minute",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "tokenTtlSeconds": 59
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a token for over 30 days",
+        "params": {
+          "externalId": "box-7",
+          "projectPath": "/tmp/example-project",
+          "name": "Fix the parser",
+          "provider": "claude",
+          "state": "running",
+          "tokenTtlSeconds": 2592001
+        },
+        "code": "invalid_params"
       }
     ]
   },
@@ -295,6 +360,26 @@
         "params": {
           "externalId": "box-7",
           "activeSeconds": 31622400
+        }
+      },
+      {
+        "name": "a token stop",
+        "params": {
+          "externalId": "box-7",
+          "runId": "lease-42",
+          "token": "auric_cap_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "outcome": "failed",
+          "endReason": "timeout"
+        }
+      },
+      {
+        "name": "a forced correction",
+        "params": {
+          "externalId": "box-7",
+          "force": true,
+          "finishedAt": 1793750400000,
+          "activeSeconds": 120,
+          "endReason": "lost"
         }
       }
     ],
@@ -367,6 +452,31 @@
         "params": {
           "externalId": "box-7",
           "reason": "it broke"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "an end reason outside the list",
+        "params": {
+          "externalId": "box-7",
+          "endReason": "it broke"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a malformed token",
+        "params": {
+          "externalId": "box-7",
+          "token": "auric_cap_short"
+        },
+        "code": "invalid_params"
+      },
+      {
+        "name": "a token cannot force",
+        "params": {
+          "externalId": "box-7",
+          "token": "auric_cap_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "force": true
         },
         "code": "invalid_params"
       }
@@ -468,6 +578,54 @@
       "to": "failed",
       "changed": false,
       "booked": false
+    },
+    {
+      "name": "force closes a live run",
+      "from": "running",
+      "call": "stop:force",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "force corrects a stopped run",
+      "from": "stopped",
+      "call": "stop:force",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "force turns a stopped run failed",
+      "from": "stopped",
+      "call": "stop:force-failed",
+      "to": "failed",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "a token stop",
+      "from": "running",
+      "call": "stop:token",
+      "to": "stopped",
+      "changed": true,
+      "booked": true
+    },
+    {
+      "name": "a token stop after the end",
+      "from": "stopped",
+      "call": "stop:token",
+      "to": "stopped",
+      "changed": false,
+      "booked": false
+    },
+    {
+      "name": "the human corrects a final run",
+      "from": "failed",
+      "call": "close:force",
+      "to": "failed",
+      "changed": true,
+      "booked": true
     }
   ],
   "display": [

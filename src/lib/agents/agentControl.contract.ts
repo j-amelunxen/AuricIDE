@@ -3,6 +3,7 @@ import fixtures from './agentControl.fixtures.json';
 import policyFixtures from '../config/supervisorPolicy.fixtures.json';
 import linkFixtures from './supervisorLink.fixtures.json';
 import externalFixtures from './externalAgents.fixtures.json';
+import tokenFixtures from './capabilityTokens.fixtures.json';
 
 /**
  * The agent-control socket protocol, TypeScript half (`docs/design-agent-control.md`).
@@ -61,6 +62,7 @@ export const CONTROL_ERROR_CODES = [
   'manager_key_foreign_folder',
   'instructions_too_large',
   'registry_unreadable',
+  'token_denied',
   'internal',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];
@@ -131,6 +133,12 @@ export const SUPERVISOR_DENIED_REASONS = [
 ].filter((key) => key !== '_comment');
 
 /**
+ * The stable keys a `token_denied` refusal names in `error.reason`
+ * (`capabilityTokens.fixtures.json`, `error.reasons`).
+ */
+export const TOKEN_DENIED_REASONS: readonly string[] = Object.keys(tokenFixtures.error.reasons);
+
+/**
  * Set on every agent process the IDE spawns, and so inherited by any MCP
  * server that agent starts. `auric-mcp --control` refuses to start under it.
  */
@@ -158,7 +166,7 @@ export class ControlError extends Error {
   constructor(
     readonly code: ControlErrorCode | ClientErrorCode,
     message: string,
-    /** The stable reason key of a `supervisor_denied` refusal. */
+    /** The stable reason key of a `supervisor_denied` or `token_denied` refusal. */
     readonly reason?: string,
     /** RFC 3339 expiry timestamp when `reason` is `quota_blocked`. */
     readonly expiresAt?: string
@@ -273,6 +281,17 @@ const externalModel = z
   .regex(new RegExp(externalPatterns.model), 'letters, digits and ._:/[]- only');
 const externalCount = (max: number) => z.number().int().min(0).max(max);
 const externalTokens = externalCount(externalFixtures.ranges.tokensMax);
+const externalEndReason = z.enum(
+  externalFixtures.endReasons as ['completed', 'error', 'timeout', 'cancelled', 'reaped', 'lost']
+);
+const externalState = z.enum(
+  externalFixtures.states as ['registered', 'running', 'stopped', 'failed']
+);
+
+/** A capability token as issued (`capabilityTokens.fixtures.json`, `token.pattern`). */
+export const capabilityToken = z
+  .string()
+  .regex(new RegExp(tokenFixtures.token.pattern), 'not a capability token');
 
 /**
  * No letter or digit right before the shape: "task-12" holds "sk-" and is no key.
@@ -326,6 +345,17 @@ export const externalRegisterParams = z
     startedAt: offset
       .optional()
       .describe('Unix ms; used only when the entry is created, default now'),
+    tokenTtlSeconds: z
+      .number()
+      .int()
+      .min(tokenFixtures.limits.ttlMinSeconds)
+      .max(tokenFixtures.limits.ttlMaxSeconds)
+      .optional()
+      .describe('Lifetime of the capability token issued with it; default 72 h'),
+    newToken: z
+      .boolean()
+      .optional()
+      .describe('true: issue a further token for a run that is still live'),
   })
   .strict();
 
@@ -353,8 +383,20 @@ export const externalStopParams = z
       .describe('As reported; left out stays unknown, never 0'),
     model: externalModel.optional().describe('Replaces the registered model'),
     finishedAt: offset.optional().describe('Unix ms; default now'),
+    endReason: externalEndReason.optional().describe('Why the run ended, from a fixed list'),
+    token: capabilityToken
+      .optional()
+      .describe("The run's capability token, for a caller that does not own the run"),
+    force: z
+      .boolean()
+      .optional()
+      .describe('Owner only: close a stale run or correct a final one; audited'),
   })
-  .strict();
+  .strict()
+  .refine((p) => !(p.token !== undefined && p.force === true), {
+    message: 'a token cannot force; only the owning supervisor can',
+    path: ['force'],
+  });
 
 const PARAMS = {
   list_agents: noParams,
@@ -717,6 +759,19 @@ const runResult = z.object({
 const linkJobLimits = z.object({ dailyLimit: offset, perProjectDailyLimit: offset.nullable() });
 const linkOrigin = z.enum(['global', 'project', 'override']);
 
+const externalReport = z.object({
+  activeMs: offset.nullable(),
+  agentRuns: offset.nullable(),
+  partial: z.boolean().nullable(),
+  inputTokens: offset.nullable(),
+  outputTokens: offset.nullable(),
+  cacheReadTokens: offset.nullable(),
+  cacheWriteTokens: offset.nullable(),
+  costUsd: z.number().nullable(),
+});
+/** Who ended a run other than its owner (`externalAgents.fixtures.json`, `closedBy`). */
+const externalClosedBy = z.enum(['token', 'human']);
+
 /** One tracked run; the fixture view `ExternalAgent` (`externalAgents.ts`) is this shape. */
 const externalAgent = z.object({
   id: z.string(),
@@ -729,7 +784,7 @@ const externalAgent = z.object({
   ticketId: z.string().nullable(),
   ticketName: z.string().nullable(),
   goalId: z.string().nullable(),
-  state: z.enum(externalFixtures.states as ['registered', 'running', 'stopped', 'failed']),
+  state: externalState,
   stale: z.boolean(),
   registeredAt: offset,
   lastSeenAt: offset,
@@ -737,20 +792,31 @@ const externalAgent = z.object({
   onSpans: z.array(z.object({ from: offset, to: offset.nullable() })),
   ownerRunDir: z.string(),
   ownerAgentId: z.string().nullable(),
-  closedBy: z.string().nullable(),
-  report: z
-    .object({
-      activeMs: offset.nullable(),
-      agentRuns: offset.nullable(),
-      partial: z.boolean().nullable(),
-      inputTokens: offset.nullable(),
-      outputTokens: offset.nullable(),
-      cacheReadTokens: offset.nullable(),
-      cacheWriteTokens: offset.nullable(),
-      costUsd: z.number().nullable(),
-    })
-    .nullable(),
+  /** null: the owning supervisor. */
+  closedBy: externalClosedBy.nullable(),
+  /** Absent when unset. */
+  endReason: externalEndReason.optional(),
+  report: externalReport.nullable(),
   booked: z.boolean(),
+  /** Forced changes to a run, oldest first; absent when there are none. */
+  corrections: z
+    .array(
+      z.object({
+        at: offset,
+        forcedBy: z.enum(externalFixtures.corrections.forcedBy as ['supervisor', 'human']),
+        agentId: z.string().nullable(),
+        wasBooked: z.boolean(),
+        previous: z.object({
+          state: externalState,
+          finishedAt: offset.nullable(),
+          closedBy: externalClosedBy.nullable(),
+          endReason: externalEndReason.optional(),
+          report: externalReport.nullable(),
+          model: z.string().nullable(),
+        }),
+      })
+    )
+    .optional(),
 });
 
 const RESULTS = {
@@ -861,6 +927,16 @@ const RESULTS = {
     agent: externalAgent,
     created: z.boolean(),
     changed: z.boolean(),
+    /** Issued on creation or with `newToken`; shown once, the IDE keeps only its hash. */
+    token: z
+      .object({
+        token: capabilityToken,
+        kind: z.string(),
+        resourceId: z.string(),
+        actions: z.array(z.string()),
+        expiresAt: offset,
+      })
+      .optional(),
   }),
   /** The first stop wins. `booked: false`: final, but the history write is still to be retried. */
   external_stop: z.object({
@@ -906,6 +982,12 @@ const errorBody = z
       body.code !== 'supervisor_denied' ||
       (body.reason !== undefined && SUPERVISOR_DENIED_REASONS.includes(body.reason)),
     { message: 'supervisor_denied must carry a known reason key', path: ['reason'] }
+  )
+  .refine(
+    (body) =>
+      body.code !== 'token_denied' ||
+      (body.reason !== undefined && TOKEN_DENIED_REASONS.includes(body.reason)),
+    { message: 'token_denied must carry a known reason key', path: ['reason'] }
   );
 const responseId = z.union([z.string(), z.number()]).nullable();
 

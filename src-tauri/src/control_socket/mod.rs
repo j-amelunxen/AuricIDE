@@ -507,6 +507,10 @@ impl Dispatcher {
             Request::ListQuotaBlocks(_) => self.list_quota_blocks(),
             Request::SetQuotaBlock(params) => self.set_quota_block(params),
             Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
+            // The one external method a capability token opens.
+            Request::ExternalStop(params) if params.token.is_some() => {
+                self.external_stop_with_token(params)
+            }
             Request::ExternalRegister(_) | Request::ExternalStop(_) | Request::ExternalList(_) => {
                 Err(external_agents::supervisors_only())
             }

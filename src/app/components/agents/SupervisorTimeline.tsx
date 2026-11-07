@@ -8,11 +8,13 @@ import {
   externalStateLabel,
   formatExternalSpan,
   isExternalLive,
+  isExternalStale,
   type ExternalAgent,
 } from '@/lib/agents/externalAgents';
 import { hasTerminal } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel, type AgentState } from '@/lib/agents/state';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
+import type { ExternalAgentCloseOptions } from '@/lib/tauri/externalAgents';
 import {
   TIMELINE_RANGES,
   type ExternalTimelineRow,
@@ -104,7 +106,7 @@ export function SupervisorTimelinePanel({
   onOpenAgent: (agent: AgentInfo) => void;
   /** With `onCloseExternal`, what puts a close control on a live external row. */
   confirm?: (request: ConfirmRequest) => Promise<boolean>;
-  onCloseExternal?: (id: string) => Promise<void>;
+  onCloseExternal?: (id: string, options?: ExternalAgentCloseOptions) => Promise<void>;
 }) {
   const [closeFailure, setCloseFailure] = useState<string | null>(null);
   const onlySupervisor =
@@ -115,17 +117,31 @@ export function SupervisorTimelinePanel({
 
   const closeExternal = async (external: ExternalAgent) => {
     if (!confirm || !onCloseExternal) return;
+    // A stale run did not end now: its last sign of life is the best end there is.
+    const lost = isExternalStale(external, now);
+    const ended = lost
+      ? `as ended at its last sign of life, ${formatLastSeen(external.lastSeenAt)}, without a runtime?`
+      : 'as ended, without a runtime?';
     const go = await confirm({
       title: 'Close this external run?',
       message:
-        `Book ${external.name} as ended, without a runtime? ` +
+        `Book ${external.name} ${ended} ` +
         'The IDE cannot reach it, so anything still running out there keeps running.',
       confirmLabel: 'Close run',
     });
     if (!go) return;
     setCloseFailure(null);
     try {
-      await onCloseExternal(external.id);
+      if (lost) {
+        // No force: should the run have ended while the dialog was open, its
+        // real end stays and this close changes nothing.
+        await onCloseExternal(external.id, {
+          finishedAt: external.lastSeenAt,
+          endReason: 'lost',
+        });
+      } else {
+        await onCloseExternal(external.id);
+      }
     } catch {
       // A sentence, not the backend's words: this is a row in a panel, not a log.
       setCloseFailure(`Could not close ${external.name}. Try again.`);
@@ -491,13 +507,19 @@ const EXTERNAL_BADGE_TONE: Record<
   Failed: 'bg-red-500/15 text-red-300',
 };
 
+function formatLastSeen(at: number): string {
+  return new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function externalRowTitle(row: ExternalTimelineRow, now: number): string {
   const { external } = row;
   const registeredUntil = external.finishedAt ?? now;
   const registered = formatExternalSpan(Math.max(0, registeredUntil - external.registeredAt));
   const on = formatExternalSpan(externalOnMs(external, now));
+  const state = externalStateLabel(external, now);
+  const reason = external.endReason ? ` (${external.endReason})` : '';
   const head =
-    `${external.name} · ${externalStateLabel(external, now)} · registered ${registered}, ` +
+    `${external.name} · ${state}${reason} · registered ${registered}, ` +
     `on ${on}. Tracked by hand: no console, no kill.`;
   return row.orphaned ? `${head} Owner gone.` : head;
 }

@@ -2,6 +2,7 @@
 //! store arrive as arguments, so every transition in the contract is tested
 //! without a file.
 
+use crate::capability_tokens::{self, Grant, SecretToken, TokenError};
 use crate::supervisor::several::same_folder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,14 @@ pub const MAX_LIVE: usize = 200;
 pub const MAX_ON_SPANS: usize = 64;
 pub const CLOCK_SKEW_MS: u64 = 300_000;
 pub const MAX_STARTED_AGE_MS: u64 = 30 * 24 * HOUR_MS;
+pub const MAX_CORRECTIONS: usize = 16;
+
+/// The capability-token scope of an external run (`capabilityTokens.fixtures.json`).
+pub const TOKEN_KIND: &str = "external_run";
+pub const TOKEN_ACTION_STOP: &str = "external_stop";
+pub const TOKEN_DEFAULT_TTL_SECONDS: u64 = 259_200;
+pub const CLOSED_BY_TOKEN: &str = "token";
+pub const CLOSED_BY_HUMAN: &str = "human";
 
 const KEY_PATTERN: &str = "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$";
 const PROVIDER_PATTERN: &str = "^[a-z0-9][a-z0-9._-]{0,63}$";
@@ -77,6 +86,18 @@ pub enum StopOutcome {
     Failed,
 }
 
+/// Why a run ended, from a short fixed list; there is no free-text reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EndReason {
+    Completed,
+    Error,
+    Timeout,
+    Cancelled,
+    Reaped,
+    Lost,
+}
+
 /// Unknown fields are refused so a prompt cannot reach the store by accident.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -96,6 +117,12 @@ pub struct ExternalRegisterParams {
     pub state: LiveState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<u64>,
+    /// How long the token issued with this call lives; default 72 h.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_ttl_seconds: Option<u64>,
+    /// A further token for a run that is live already.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_token: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,6 +153,14 @@ pub struct ExternalStopParams {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<EndReason>,
+    /// The run's capability token, for a caller outside the owner's tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<SecretToken>,
+    /// The owner (or the human) may close a stale run or correct a final one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force: Option<bool>,
 }
 
 fn matches(cell: &'static OnceLock<Regex>, pattern: &str, value: &str) -> bool {
@@ -207,7 +242,19 @@ pub fn validate_register(params: &ExternalRegisterParams) -> Result<(), String> 
     }
     check_model(params.model.as_deref())?;
     check_reference("ticketId", params.ticket_id.as_deref())?;
-    check_reference("goalId", params.goal_id.as_deref())
+    check_reference("goalId", params.goal_id.as_deref())?;
+    let ttl = capability_tokens::TTL_MIN_SECONDS..=capability_tokens::TTL_MAX_SECONDS;
+    if params
+        .token_ttl_seconds
+        .is_some_and(|seconds| !ttl.contains(&seconds))
+    {
+        return Err(format!(
+            "tokenTtlSeconds must be between {} and {}",
+            ttl.start(),
+            ttl.end()
+        ));
+    }
+    Ok(())
 }
 
 fn check_max(field: &str, value: Option<u64>, max: u64) -> Result<(), String> {
@@ -220,6 +267,14 @@ fn check_max(field: &str, value: Option<u64>, max: u64) -> Result<(), String> {
 /// Reported figures are stored as reported; only the range is ours to check.
 pub fn validate_stop(params: &ExternalStopParams) -> Result<(), String> {
     check_key(&params.external_id, params.run_id.as_deref())?;
+    if let Some(token) = &params.token {
+        if !capability_tokens::valid_shape(token.expose()) {
+            return Err("token is not a capability token".into());
+        }
+        if params.force == Some(true) {
+            return Err("a token cannot force; force is for the owning supervisor".into());
+        }
+    }
     check_model(params.model.as_deref())?;
     check_max("activeSeconds", params.active_seconds, ACTIVE_SECONDS_MAX)?;
     check_max("agentRuns", params.agent_runs, AGENT_RUNS_MAX)?;
@@ -307,6 +362,44 @@ pub struct ExternalAgent {
     pub closed_by: Option<String>,
     pub report: Option<ExternalReport>,
     pub booked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<EndReason>,
+    /// The audit trail of forced closes and corrections, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub corrections: Vec<Correction>,
+}
+
+/// Who forced a change: the owning supervisor or the human.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ForcedBy {
+    Supervisor,
+    Human,
+}
+
+/// The end data a forced call replaced.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EndData {
+    pub state: ExternalState,
+    pub finished_at: Option<u64>,
+    pub closed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<EndReason>,
+    pub report: Option<ExternalReport>,
+    pub model: Option<String>,
+}
+
+/// One forced close or correction: when, by whom, and what was there before.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Correction {
+    pub at: u64,
+    pub forced_by: ForcedBy,
+    pub agent_id: Option<String>,
+    /// The entry was in the history already, so the booking is replaced.
+    pub was_booked: bool,
+    pub previous: EndData,
 }
 
 /// Stale is worked out when asked for, never stored.
@@ -382,6 +475,58 @@ impl ExternalAgent {
         self.booked = false;
     }
 
+    fn end_data(&self) -> EndData {
+        EndData {
+            state: self.state,
+            finished_at: self.finished_at,
+            closed_by: self.closed_by.clone(),
+            end_reason: self.end_reason,
+            report: self.report.clone(),
+            model: self.model.clone(),
+        }
+    }
+
+    /// Keeps the on-spans inside a moved end: a span that ended at the old end
+    /// ends at the new one, and nothing runs past it.
+    fn retime(&mut self, finished_at: u64) {
+        let old_end = self.finished_at;
+        self.on_spans.retain(|span| span.from <= finished_at);
+        for span in &mut self.on_spans {
+            let to = span.to.unwrap_or(finished_at);
+            let to = if Some(to) == old_end {
+                finished_at
+            } else {
+                to.min(finished_at)
+            };
+            span.to = Some(to.max(span.from));
+        }
+        self.finished_at = Some(finished_at);
+    }
+
+    /// The trail is bounded so a loop of corrections cannot grow the file.
+    fn audit(
+        &mut self,
+        previous: EndData,
+        was_booked: bool,
+        forced_by: ForcedBy,
+        agent_id: Option<String>,
+        now: u64,
+    ) -> Result<(), ExternalError> {
+        if self.corrections.len() >= MAX_CORRECTIONS {
+            return Err(ExternalError::InvalidParams(format!(
+                "this run holds {MAX_CORRECTIONS} corrections already"
+            )));
+        }
+        self.corrections.push(Correction {
+            at: now,
+            forced_by,
+            agent_id,
+            was_booked,
+            previous,
+        });
+        Ok(())
+    }
+
     fn matches_key(&self, external_id: &str, run_id: Option<&str>) -> bool {
         self.external_id == external_id && self.run_id.as_deref() == run_id
     }
@@ -436,6 +581,7 @@ pub enum ExternalError {
     UnknownKey(String),
     UnknownId(String),
     InvalidParams(String),
+    Token(TokenError),
 }
 
 impl fmt::Display for ExternalError {
@@ -450,6 +596,7 @@ impl fmt::Display for ExternalError {
             Self::UnknownKey(key) => write!(f, "you have no external run {key}"),
             Self::UnknownId(id) => write!(f, "no external run has the id {id}"),
             Self::InvalidParams(reason) => f.write_str(reason),
+            Self::Token(error) => error.fmt(f),
         }
     }
 }
@@ -586,6 +733,8 @@ fn new_entry(
         closed_by: None,
         report: None,
         booked: false,
+        end_reason: None,
+        corrections: Vec::new(),
     };
     if agent.state == ExternalState::Running {
         agent.turn_on(registered_at);
@@ -636,60 +785,220 @@ fn refresh_live(
     changed
 }
 
+/// Who stops a run: the owner the PID walk found, or the holder of a token
+/// the owner was given for it.
+pub enum StopBy<'a> {
+    Owner(&'a Owner),
+    Token(&'a Grant),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StopAnswer {
     pub agent: ExternalAgent,
     pub already_stopped: bool,
+    /// A forced call changed an entry that was final already.
+    pub corrected: bool,
 }
 
-/// The first stop wins, whatever figures a later one carries.
-pub fn apply_stop(
-    file: &mut ExternalFile,
-    params: &ExternalStopParams,
-    owner: &Owner,
-    now: u64,
-) -> Result<StopAnswer, ExternalError> {
-    let run_id = params.run_id.as_deref();
-    let key = display_key(&params.external_id, run_id);
-    let agent = file
-        .find_key(&params.external_id, run_id)
-        .filter(|agent| owner.holds(agent))
-        .ok_or(ExternalError::UnknownKey(key))?;
-    if !agent.is_live() {
-        return Ok(StopAnswer {
-            agent: agent.clone(),
-            already_stopped: true,
-        });
-    }
-    // Without a stated end, a start reported slightly ahead of this clock must
-    // not leave the run ending before it began.
-    let finished_at = params.finished_at.unwrap_or(now.max(agent.registered_at));
+fn check_finished(agent: &ExternalAgent, finished_at: u64, now: u64) -> Result<(), ExternalError> {
     if finished_at < agent.registered_at || finished_at > now + CLOCK_SKEW_MS {
         return Err(ExternalError::InvalidParams(
             "finishedAt lies before the registration or too far ahead of now".into(),
         ));
     }
-    let state = match params.outcome.unwrap_or(StopOutcome::Success) {
+    Ok(())
+}
+
+fn stop_state(outcome: StopOutcome) -> ExternalState {
+    match outcome {
         StopOutcome::Success => ExternalState::Stopped,
         StopOutcome::Failed => ExternalState::Failed,
+    }
+}
+
+/// Given figures win field by field; what was not given stays.
+fn merge_report(
+    base: Option<ExternalReport>,
+    given: Option<ExternalReport>,
+) -> Option<ExternalReport> {
+    let Some(given) = given else { return base };
+    let base = base.unwrap_or_default();
+    Some(ExternalReport {
+        active_ms: given.active_ms.or(base.active_ms),
+        agent_runs: given.agent_runs.or(base.agent_runs),
+        partial: given.partial.or(base.partial),
+        input_tokens: given.input_tokens.or(base.input_tokens),
+        output_tokens: given.output_tokens.or(base.output_tokens),
+        cache_read_tokens: given.cache_read_tokens.or(base.cache_read_tokens),
+        cache_write_tokens: given.cache_write_tokens.or(base.cache_write_tokens),
+        cost_usd: given.cost_usd.or(base.cost_usd),
+    })
+}
+
+/// What a forced call on a final entry replaces. Absent fields stay.
+#[derive(Debug, Clone, Default)]
+pub struct Amend {
+    pub finished_at: Option<u64>,
+    pub state: Option<ExternalState>,
+    pub report: Option<ExternalReport>,
+    pub model: Option<String>,
+    pub end_reason: Option<EndReason>,
+}
+
+/// Corrects a final entry and books it again. `false`, with no audit record,
+/// when the values given are the values there.
+fn correct(
+    agent: &mut ExternalAgent,
+    amend: Amend,
+    forced_by: ForcedBy,
+    by_agent: Option<String>,
+    now: u64,
+) -> Result<bool, ExternalError> {
+    let previous = agent.end_data();
+    let mut next = agent.clone();
+    if let Some(at) = amend.finished_at {
+        check_finished(&next, at, now)?;
+        next.retime(at);
+    }
+    if let Some(state) = amend.state {
+        next.state = state;
+    }
+    next.report = merge_report(next.report.take(), amend.report);
+    if amend.model.is_some() {
+        next.model = amend.model;
+    }
+    if amend.end_reason.is_some() {
+        next.end_reason = amend.end_reason;
+    }
+    if next.end_data() == previous && next.on_spans == agent.on_spans {
+        return Ok(false);
+    }
+    next.audit(previous, agent.booked, forced_by, by_agent, now)?;
+    next.booked = false;
+    next.last_seen_at = next.last_seen_at.max(now);
+    *agent = next;
+    Ok(true)
+}
+
+/// The first stop wins, whatever figures a later one carries, unless the
+/// owner forces: then the given values replace the end data, audited.
+pub fn apply_stop(
+    file: &mut ExternalFile,
+    params: &ExternalStopParams,
+    by: &StopBy<'_>,
+    now: u64,
+) -> Result<StopAnswer, ExternalError> {
+    let run_id = params.run_id.as_deref();
+    let key = display_key(&params.external_id, run_id);
+    let found = file.find_key(&params.external_id, run_id);
+    let agent = match by {
+        StopBy::Owner(owner) => found
+            .filter(|agent| owner.holds(agent))
+            .ok_or(ExternalError::UnknownKey(key))?,
+        // A valid token for a key it was not issued on is out of scope,
+        // whether or not that key exists.
+        StopBy::Token(grant) => {
+            let agent = found.ok_or(ExternalError::Token(TokenError::Scope))?;
+            grant
+                .check(TOKEN_KIND, &agent.id, TOKEN_ACTION_STOP, now)
+                .map_err(ExternalError::Token)?;
+            if !same_folder(
+                Path::new(&grant.owner_run_dir),
+                Path::new(&agent.owner_run_dir),
+            ) {
+                return Err(ExternalError::Token(TokenError::Scope));
+            }
+            agent
+        }
     };
-    agent.finish(state, finished_at, now);
+    let forcing_owner = match (params.force == Some(true), by) {
+        (false, _) => None,
+        (true, StopBy::Owner(owner)) => Some(*owner),
+        (true, StopBy::Token(_)) => {
+            return Err(ExternalError::InvalidParams(
+                "a token cannot force; force is for the owning supervisor".into(),
+            ))
+        }
+    };
+    if !agent.is_live() {
+        let corrected = match forcing_owner {
+            None => false,
+            Some(owner) => {
+                let amend = Amend {
+                    finished_at: params.finished_at,
+                    state: params.outcome.map(stop_state),
+                    report: ExternalReport::from_stop(params),
+                    model: params.model.clone(),
+                    end_reason: params.end_reason,
+                };
+                correct(
+                    agent,
+                    amend,
+                    ForcedBy::Supervisor,
+                    Some(owner.agent_id.clone()),
+                    now,
+                )?
+            }
+        };
+        return Ok(StopAnswer {
+            agent: agent.clone(),
+            already_stopped: true,
+            corrected,
+        });
+    }
+    // Without a stated end, a start reported slightly ahead of this clock must
+    // not leave the run ending before it began.
+    let finished_at = params.finished_at.unwrap_or(now.max(agent.registered_at));
+    check_finished(agent, finished_at, now)?;
+    if let Some(owner) = forcing_owner {
+        let previous = agent.end_data();
+        let booked = agent.booked;
+        agent.audit(
+            previous,
+            booked,
+            ForcedBy::Supervisor,
+            Some(owner.agent_id.clone()),
+            now,
+        )?;
+    }
+    agent.finish(
+        stop_state(params.outcome.unwrap_or(StopOutcome::Success)),
+        finished_at,
+        now,
+    );
     agent.report = ExternalReport::from_stop(params);
     if params.model.is_some() {
         agent.model = params.model.clone();
     }
-    owner.refresh(agent);
+    agent.end_reason = params.end_reason;
+    match by {
+        StopBy::Owner(owner) => owner.refresh(agent),
+        StopBy::Token(_) => agent.closed_by = Some(CLOSED_BY_TOKEN.to_string()),
+    }
     Ok(StopAnswer {
         agent: agent.clone(),
         already_stopped: false,
+        corrected: false,
     })
 }
 
+/// What the human's close may carry besides the id.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct CloseOptions {
+    pub force: bool,
+    pub finished_at: Option<u64>,
+    pub end_reason: Option<EndReason>,
+}
+
 /// The human's way out for a stop that never comes. Booked with no runtime; the
-/// owner stays as it was, because a person is not one.
+/// owner stays as it was, because a person is not one. The end defaults to now;
+/// a stale run is better closed at its last sign of life (audited, no force
+/// needed). With `force` a final entry's end time and reason are corrected,
+/// audited; without it a final entry stays as it is.
 pub fn apply_close(
     file: &mut ExternalFile,
     id: &str,
+    options: CloseOptions,
     now: u64,
 ) -> Result<(ExternalAgent, bool), ExternalError> {
     let agent = file
@@ -698,10 +1007,30 @@ pub fn apply_close(
         .find(|agent| agent.id == id)
         .ok_or_else(|| ExternalError::UnknownId(id.to_string()))?;
     if !agent.is_live() {
-        return Ok((agent.clone(), false));
+        if !options.force {
+            return Ok((agent.clone(), false));
+        }
+        let amend = Amend {
+            finished_at: options.finished_at,
+            end_reason: options.end_reason,
+            ..Amend::default()
+        };
+        let changed = correct(agent, amend, ForcedBy::Human, None, now)?;
+        return Ok((agent.clone(), changed));
     }
-    agent.finish(ExternalState::Stopped, now.max(agent.registered_at), now);
-    agent.closed_by = Some("human".to_string());
+    let finished_at = options.finished_at.unwrap_or(now.max(agent.registered_at));
+    check_finished(agent, finished_at, now)?;
+    // An end set by hand is not one the IDE observed, so it is audited even
+    // without force; the UI closes a stale run that way, so a stop that lands
+    // while its dialog is open is never overwritten.
+    if options.force || options.finished_at.is_some() {
+        let previous = agent.end_data();
+        let booked = agent.booked;
+        agent.audit(previous, booked, ForcedBy::Human, None, now)?;
+    }
+    agent.finish(ExternalState::Stopped, finished_at, now);
+    agent.closed_by = Some(CLOSED_BY_HUMAN.to_string());
+    agent.end_reason = options.end_reason;
     Ok((agent.clone(), true))
 }
 

@@ -116,7 +116,13 @@ function registerExternalAgentTools(server: FastMCP, call: ControlCaller): void 
       'working now) or running (working now). Safe to call again at any time: the key is ' +
       'externalId + runId, a repeat moves the state, updates what you pass and counts as a sign ' +
       'of life. A stopped key stays stopped (changed: false); use a new runId for a new run. ' +
-      'Never put a prompt or a secret in name. Returns { agent, created, changed }.',
+      'Never put a prompt or a secret in name. When the entry is created it also returns a ' +
+      'capability token, shown once: the IDE keeps only its hash. Hand it to the process that ' +
+      'will end the run, such as a detached reaper, and never log it or store it in a file ' +
+      'others can read. It allows only stop_external_agent for this one run and is revoked ' +
+      'when the run ends or the token expires (default 72 h; tokenTtlSeconds to change). ' +
+      'newToken: true on a live run issues another one. ' +
+      'Returns { agent, created, changed, token? }.',
     parameters: externalRegisterParams,
     execute: async (args: ControlParamsInput<'external_register'>) =>
       runControl(call, 'external_register', args),
@@ -130,8 +136,13 @@ function registerExternalAgentTools(server: FastMCP, call: ControlCaller): void 
       'runId. The figures are stored as reported; the IDE cannot check them. Leave out what you ' +
       'do not know: an absent runtime or cost stays unknown, never 0. This records the end; it ' +
       'does not stop anything on the other machine. The first stop wins and a repeat changes ' +
-      'nothing. Returns { agent, alreadyStopped, booked }; booked: false means the IDE retries ' +
-      'the history write itself.',
+      'nothing. endReason says why it ended (completed, error, timeout, cancelled, reaped, ' +
+      'lost). token is for a holder outside your process tree, such as a reaper you handed it ' +
+      'to; you do not need to pass it yourself. force is for you as the owner only: close a ' +
+      'stale run, or correct the finishedAt, outcome, figures or endReason of a run that is ' +
+      'already final with the values you pass. A forced change is audited on the entry and is ' +
+      'never accepted with a token. Returns { agent, alreadyStopped, booked }; booked: false ' +
+      'means the IDE retries the history write itself.',
     parameters: externalStopParams,
     execute: async (args: ControlParamsInput<'external_stop'>) =>
       runControl(call, 'external_stop', args),

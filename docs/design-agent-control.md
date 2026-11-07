@@ -392,20 +392,20 @@ half is `supervisors` in `agentControl.fixtures.json`
 
 ### Methods for a supervisor caller
 
-| method                                                      | what a supervisor gets                                                                    |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `list_projects`                                             | only projects its policy allows, each with a `supervisor` block, plus one model `catalog` |
-| `spawn`                                                     | `headless` required; provider and model default (below); checked against the policy       |
-| `list_agents`                                               | its own children only, live and finished                                                  |
-| `read_output`                                               | its own children only                                                                     |
-| `await_result`                                              | its own children only                                                                     |
-| `kill`                                                      | its own children only                                                                     |
-| `remove_worktree`                                           | its own children only                                                                     |
-| `dismiss`                                                   | its own finished children only                                                            |
-| `send_input`                                                | its own children only                                                                     |
-| `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                    |
-| `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                  |
-| `external_register`, `external_stop`, `external_list`       | entries of its own run folder only; `docs/design-external-agents.md`                      |
+| method                                                      | what a supervisor gets                                                                                                                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_projects`                                             | only projects its policy allows, each with a `supervisor` block, plus one model `catalog`                                                                                                 |
+| `spawn`                                                     | `headless` required; provider and model default (below); checked against the policy                                                                                                       |
+| `list_agents`                                               | its own children only, live and finished                                                                                                                                                  |
+| `read_output`                                               | its own children only                                                                                                                                                                     |
+| `await_result`                                              | its own children only                                                                                                                                                                     |
+| `kill`                                                      | its own children only                                                                                                                                                                     |
+| `remove_worktree`                                           | its own children only                                                                                                                                                                     |
+| `dismiss`                                                   | its own finished children only                                                                                                                                                            |
+| `send_input`                                                | its own children only                                                                                                                                                                     |
+| `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                                                                                                                    |
+| `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                                                                                                                  |
+| `external_register`, `external_stop`, `external_list`       | entries of its own run folder only; `docs/design-external-agents.md`. `external_stop` with a run's capability token is also open to external callers (`docs/design-capability-tokens.md`) |
 
 - **Quota blocks are facts about a provider, not about a scope.** `<app_data_dir>/quota-blocks.json`
   holds temporary blocks on a provider, a model family (`claude-*`) or one model. Rust writes one
@@ -815,7 +815,9 @@ write may have happened. With 8 calls running at once a ninth project gets `pm_b
 `agent_not_running`, `headless_no_stdin`, `provider_denied`,
 `frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
 `outside_supervisor_scope`, `unknown_project`, `supervisor_key_invalid`,
-`supervisor_key_in_use`, `unknown_supervisor`, `internal`.
+`supervisor_key_in_use`, `unknown_supervisor`, `manager_archived`,
+`manager_key_mismatch`, `manager_key_foreign_folder`, `instructions_too_large`,
+`registry_unreadable`, `token_denied`, `internal`.
 
 - `supervisor_denied`: the supervisor policy refuses this spawn. The error
   body carries `reason`, a stable key from `supervisorPolicy.fixtures.json`.
@@ -825,6 +827,10 @@ write may have happened. With 8 calls running at once a ninth project gets `pm_b
   may see. For a supervisor that includes a project its policy does not allow.
 - `supervisor_key_invalid`, `supervisor_key_in_use`, `unknown_supervisor`: see
   "Several supervisors".
+- `token_denied`: a capability token was refused. `reason` is `token_unknown`
+  (unknown, malformed or expired), `token_revoked` (its resource has ended),
+  `token_scope` (not for this action or resource) or `token_limit` (none could be
+  issued). `docs/design-capability-tokens.md`.
 
 The client adds three of its own: `app_not_running` when the socket does not
 exist or refuses the connection, `timeout` when no answer arrives in time, and

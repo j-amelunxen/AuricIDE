@@ -134,7 +134,7 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.5,
-      "position": [3.55, -22.6, 0]
+      "position": [1.85, -22.6, 0]
     },
     {
       "id": "quotaBlocks",
@@ -143,7 +143,7 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.3,
-      "position": [-0.25, -22.6, 0]
+      "position": [-1.95, -22.6, 0]
     },
     {
       "id": "externalAgents",
@@ -152,7 +152,16 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.3,
-      "position": [7.35, -22.6, 0]
+      "position": [5.65, -22.6, 0]
+    },
+    {
+      "id": "capabilityTokens",
+      "label": "Capability tokens",
+      "preset": "box",
+      "group": "fleet",
+      "level": 4,
+      "weight": 0.2,
+      "position": [9.15, -22.6, 0]
     },
     {
       "id": "mcp",
@@ -198,7 +207,7 @@
       "level": 4,
       "weight": 0.4,
       "detail": "./usage.scene.json",
-      "position": [-6.95, -22.6, 0]
+      "position": [-8.65, -22.6, 0]
     },
     {
       "id": "imports",
@@ -207,7 +216,7 @@
       "group": "backend",
       "level": 4,
       "weight": 0.3,
-      "position": [-14.25, -22.6, 0]
+      "position": [-15.95, -22.6, 0]
     },
     {
       "id": "platform",
@@ -216,7 +225,7 @@
       "group": "backend",
       "level": 4,
       "weight": 0.3,
-      "position": [-10.65, -22.6, 0]
+      "position": [-12.35, -22.6, 0]
     },
     {
       "id": "projectDb",
@@ -243,7 +252,7 @@
       "group": "external",
       "level": 4,
       "weight": 0.6,
-      "position": [14.25, -22.6, 0]
+      "position": [15.95, -22.6, 0]
     }
   ],
   "edges": [
@@ -482,6 +491,18 @@
       "to": "usage",
       "kind": "dataflow",
       "label": "books a run"
+    },
+    {
+      "from": "externalAgents",
+      "to": "capabilityTokens",
+      "kind": "dependency",
+      "label": "token per run"
+    },
+    {
+      "from": "capabilityTokens",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "capability-tokens.json"
     }
   ],
   "tour": [

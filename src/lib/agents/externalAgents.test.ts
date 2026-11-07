@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ControlError, parseControlParams } from './agentControl.contract';
+import {
+  ControlError,
+  TOKEN_DENIED_REASONS,
+  capabilityToken,
+  parseControlParams,
+  parseControlResponse,
+} from './agentControl.contract';
+import controlFixtures from './agentControl.fixtures.json';
+import tokenFixtures from './capabilityTokens.fixtures.json';
 import {
   EXTERNAL_STALE_REGISTERED_AFTER_MS,
   EXTERNAL_STALE_RUNNING_AFTER_MS,
@@ -111,5 +119,96 @@ describe('external agents: display', () => {
     expect(formatExternalSpan(9 * 3_600_000)).toBe('9h');
     expect(formatExternalSpan(2.5 * 3_600_000)).toBe('2h 30m');
     expect(formatExternalSpan(48 * 3_600_000)).toBe('2d');
+  });
+});
+
+describe('external agents: capability tokens', () => {
+  it('accepts exactly the token shapes the fixtures accept', () => {
+    for (const token of tokenFixtures.tokenShape.accept) {
+      expect(capabilityToken.safeParse(token).success, token).toBe(true);
+    }
+    for (const token of tokenFixtures.tokenShape.reject) {
+      expect(capabilityToken.safeParse(token).success, token).toBe(false);
+    }
+  });
+
+  it('builds a token of the length the fixtures describe', () => {
+    // 32 random bytes in base64url without padding are 43 characters.
+    const body = 'A'.repeat(Math.ceil((tokenFixtures.token.randomBytes * 4) / 3));
+    expect(capabilityToken.safeParse(`${tokenFixtures.token.prefix}${body}`).success).toBe(true);
+  });
+
+  it('knows every token_denied reason and refuses one without a known reason', () => {
+    expect(controlFixtures.errorCodes).toContain(tokenFixtures.error.code);
+    expect([...TOKEN_DENIED_REASONS].sort()).toEqual(
+      Object.keys(tokenFixtures.error.reasons).sort()
+    );
+    for (const reason of TOKEN_DENIED_REASONS) {
+      const answer = parseControlResponse('external_stop', {
+        id: 1,
+        ok: false,
+        error: { code: 'token_denied', message: 'no', reason },
+      });
+      expect(answer).toEqual({
+        ok: false,
+        error: { code: 'token_denied', message: 'no', reason },
+      });
+    }
+    for (const error of [
+      { code: 'token_denied', message: 'no' },
+      { code: 'token_denied', message: 'no', reason: 'token_stolen' },
+    ]) {
+      expect(() => parseControlResponse('external_stop', { id: 1, ok: false, error })).toThrow(
+        /token_denied must carry a known reason key/
+      );
+    }
+  });
+});
+
+describe('external agents: the view', () => {
+  const base = controlFixtures.responses.external_stop.result;
+  const parse = (agent: object) =>
+    parseControlResponse('external_stop', {
+      id: 1,
+      ok: true,
+      result: { ...base, agent: { ...base.agent, ...agent } },
+    });
+
+  it('takes every end reason and closedBy value the fixtures name, and nothing else', () => {
+    for (const endReason of fixtures.endReasons) {
+      expect(parse({ endReason }).ok, endReason).toBe(true);
+    }
+    expect(() => parse({ endReason: 'it broke' })).toThrow(/agent\.endReason/);
+    for (const closedBy of Object.keys(fixtures.closedBy).filter((key) => key !== 'absent')) {
+      expect(parse({ closedBy }).ok, closedBy).toBe(true);
+    }
+    expect(parse({ closedBy: null }).ok).toBe(true);
+    expect(() => parse({ closedBy: 'someone' })).toThrow(/agent\.closedBy/);
+  });
+
+  it('takes a correction with the earlier values', () => {
+    const correction = {
+      at: 1_793_750_500_000,
+      forcedBy: 'human',
+      agentId: null,
+      wasBooked: true,
+      previous: {
+        state: 'stopped',
+        finishedAt: 1_793_750_400_000,
+        closedBy: 'token',
+        endReason: 'completed',
+        report: null,
+        model: 'opus',
+      },
+    };
+    expect(parse({ corrections: [correction] }).ok).toBe(true);
+    for (const forcedBy of fixtures.corrections.forcedBy) {
+      expect(parse({ corrections: [{ ...correction, forcedBy }] }).ok, forcedBy).toBe(true);
+    }
+    expect(() => parse({ corrections: [{ ...correction, forcedBy: 'token' }] })).toThrow(
+      /forcedBy/
+    );
+    const { endReason: _unset, ...withoutReason } = correction.previous;
+    expect(parse({ corrections: [{ ...correction, previous: withoutReason }] }).ok).toBe(true);
   });
 });

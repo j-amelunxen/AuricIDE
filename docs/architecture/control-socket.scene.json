@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.control-socket",
   "title": "Control socket",
-  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, checks supervisor policy (src-tauri/src/supervisor) keeps quota blocks (src-tauri/src/quota_blocks) and tracks external runs (src-tauri/src/external_agents).",
+  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, checks supervisor policy (src-tauri/src/supervisor) keeps quota blocks (src-tauri/src/quota_blocks) tracks external runs (src-tauri/src/external_agents) and checks their capability tokens (src-tauri/src/capability_tokens).",
   "nodes": [
     {
       "id": "dispatcher",
@@ -150,7 +150,7 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [-9.35, -21.9, 0]
+      "position": [-11.15, -21.9, 0]
     },
     {
       "id": "supervisorPolicy",
@@ -166,7 +166,7 @@
           "value": "1330"
         }
       ],
-      "position": [-5.25, -21.9, 0]
+      "position": [-3.25, -21.9, 0]
     },
     {
       "id": "quotaBlocks",
@@ -175,7 +175,7 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [-1.15, -21.9, 0]
+      "position": [-7.35, -21.9, 0]
     },
     {
       "id": "externalAgents",
@@ -184,7 +184,16 @@
       "group": "policy",
       "level": 4,
       "weight": 0.4,
-      "position": [2.65, -21.9, 0]
+      "position": [0.85, -21.9, 0]
+    },
+    {
+      "id": "capabilityTokens",
+      "label": "capability_tokens/ (hash-only grants)",
+      "preset": "box",
+      "group": "policy",
+      "level": 4,
+      "weight": 0.3,
+      "position": [4.55, -21.9, 0]
     },
     {
       "id": "bridge",
@@ -217,7 +226,7 @@
       "group": "neighbours",
       "level": 4,
       "weight": 0.3,
-      "position": [9.35, -21.9, 0]
+      "position": [11.15, -21.9, 0]
     },
     {
       "id": "supervisorLink",
@@ -438,6 +447,18 @@
       "to": "supervisorPmTarget",
       "kind": "dependency",
       "label": "project check"
+    },
+    {
+      "from": "externalHandlers",
+      "to": "capabilityTokens",
+      "kind": "calls",
+      "label": "issue, lookup, revoke"
+    },
+    {
+      "from": "externalAgents",
+      "to": "capabilityTokens",
+      "kind": "calls",
+      "label": "revoke on close"
     }
   ],
   "tour": [

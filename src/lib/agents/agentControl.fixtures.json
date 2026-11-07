@@ -28,6 +28,7 @@
     "manager_key_foreign_folder",
     "instructions_too_large",
     "registry_unreadable",
+    "token_denied",
     "internal"
   ],
   "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
@@ -2016,6 +2017,9 @@
           "link_policy_propose": "outside_supervisor_scope",
           "pm_target": "outside_supervisor_scope",
           "raise_question": "forbidden_agent_caller"
+        },
+        "withToken": {
+          "external_stop": "Allowed with a capability token for that run (capabilityTokens.fixtures.json, scope external_run). Without a token: outside_supervisor_scope. A bad token: token_denied with reason token_unknown, token_revoked or token_scope. force is never accepted with a token."
         }
       },
       "supervisor": {

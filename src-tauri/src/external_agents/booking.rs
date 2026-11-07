@@ -6,7 +6,7 @@
 //! from the entry and the insert ignores a row that exists, so that retry
 //! cannot book twice.
 
-use super::model::{ExternalAgent, ExternalError, ExternalState};
+use super::model::{ExternalAgent, ExternalError, ExternalState, CLOSED_BY_HUMAN};
 use super::store;
 use crate::agent_usage::record::{CostSource, MatchKind, Outcome, RunKind, RunSource, UsageRecord};
 use crate::agent_usage::store as usage_store;
@@ -28,7 +28,7 @@ fn rfc3339(ms: u64) -> String {
 }
 
 fn outcome(agent: &ExternalAgent) -> Outcome {
-    if agent.closed_by.is_some() {
+    if agent.closed_by.as_deref() == Some(CLOSED_BY_HUMAN) {
         Outcome::Killed
     } else if agent.state == ExternalState::Failed {
         Outcome::Error
@@ -135,6 +135,15 @@ fn task_line(agent: &ExternalAgent) -> TaskLogEntry {
         cost_source: Some(cost_source(agent)),
         cache_read_tokens: report.cache_read_tokens,
         cache_write_tokens: report.cache_write_tokens,
+        end_reason: agent
+            .end_reason
+            .and_then(|reason| serde_json::to_value(reason).ok())
+            .and_then(|value| value.as_str().map(str::to_string)),
+        corrected: agent
+            .corrections
+            .iter()
+            .any(|correction| correction.was_booked)
+            .then_some(true),
     }
 }
 
@@ -146,7 +155,12 @@ fn write_history(app_data: &Path, agent: &ExternalAgent) -> Result<Option<UsageR
     let conn = usage_store::open_existing(project)?
         .ok_or_else(|| format!("{} has no project database", agent.project_path))?;
     let row = usage_row(agent);
-    let added = usage_store::insert_or_ignore(&conn, &row)?;
+    // A corrected entry replaces its row; anything else is booked once.
+    let added = if agent.corrections.is_empty() {
+        usage_store::insert_or_ignore(&conn, &row)?
+    } else {
+        usage_store::insert_or_replace(&conn, &row)?
+    };
     task_log::record_external_task_in(app_data, &task_line(agent), at(finished_at(agent)))?;
     Ok(added.then_some(row))
 }

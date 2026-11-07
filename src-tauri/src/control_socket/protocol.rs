@@ -40,6 +40,9 @@ pub enum ErrorCode {
     ManagerKeyForeignFolder,
     InstructionsTooLarge,
     RegistryUnreadable,
+    /// A capability token was refused; `reason` says why
+    /// (`capabilityTokens.fixtures.json`, `error.reasons`).
+    TokenDenied,
     Internal,
 }
 
@@ -901,6 +904,20 @@ pub struct ExternalRegisterResult {
     pub agent: ExternalAgentView,
     pub created: bool,
     pub changed: bool,
+    /// Only in the answer that issued it; the IDE keeps its hash alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<IssuedToken>,
+}
+
+/// A capability token as it is handed out, once.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuedToken {
+    pub token: crate::capability_tokens::SecretToken,
+    pub kind: String,
+    pub resource_id: String,
+    pub actions: Vec<String>,
+    pub expires_at: u64,
 }
 
 /// `booked: false`: final, but the history write is still to be retried.
@@ -982,6 +999,7 @@ pub(crate) mod tests {
             ErrorCode::ManagerKeyForeignFolder,
             ErrorCode::InstructionsTooLarge,
             ErrorCode::RegistryUnreadable,
+            ErrorCode::TokenDenied,
             ErrorCode::Internal,
         ];
         let ours: Vec<Value> = codes
@@ -1362,6 +1380,7 @@ pub(crate) mod tests {
                         .unwrap(),
                         created: true,
                         changed: true,
+                        token: None,
                     },
                 ),
             ),

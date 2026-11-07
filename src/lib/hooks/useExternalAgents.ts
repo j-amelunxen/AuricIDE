@@ -5,6 +5,7 @@ import type { ExternalAgent } from '@/lib/agents/externalAgents';
 import {
   externalAgentClose,
   externalAgentsList,
+  type ExternalAgentCloseOptions,
   onExternalAgentsChanged,
 } from '@/lib/tauri/externalAgents';
 
@@ -20,7 +21,7 @@ const NONE: ExternalAgent[] = [];
  */
 export function useExternalAgents(): {
   externals: ExternalAgent[];
-  closeExternal: (id: string) => Promise<void>;
+  closeExternal: (id: string, options?: ExternalAgentCloseOptions) => Promise<void>;
 } {
   const [externals, setExternals] = useState(NONE);
   const latestRead = useRef(0);
@@ -54,8 +55,8 @@ export function useExternalAgents(): {
   }, [reload]);
 
   const closeExternal = useCallback(
-    async (id: string) => {
-      await externalAgentClose(id);
+    async (id: string, options?: ExternalAgentCloseOptions) => {
+      await externalAgentClose(id, options);
       await reload();
     },
     [reload]

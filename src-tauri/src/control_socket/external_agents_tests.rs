@@ -393,3 +393,224 @@ fn over_a_real_socket_the_kernel_decides_who_may_call() {
         "{worker}"
     );
 }
+
+const EXTERNAL: Caller = Caller::External;
+
+fn token_of(registered: &Value) -> String {
+    registered["result"]["token"]["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no token in {registered}"))
+        .to_string()
+}
+
+// testuuid: t_extcap01 covers: el_extreg01,el_extstp01 categories: happy,security level: integration
+#[test]
+fn register_hands_out_a_token_once_and_keeps_only_its_hash() {
+    let w = world();
+    let registered = w.register();
+    let issued = &registered["result"]["token"];
+    let token = token_of(&registered);
+    assert!(crate::capability_tokens::valid_shape(&token), "{token}");
+    assert_eq!(issued["kind"], "external_run");
+    assert_eq!(issued["resourceId"], registered["result"]["agent"]["id"]);
+    assert_eq!(issued["actions"], json!(["external_stop"]));
+    let ttl = issued["expiresAt"].as_u64().unwrap()
+        - registered["result"]["agent"]["lastSeenAt"]
+            .as_u64()
+            .unwrap();
+    assert!((259_190_000..=259_210_000).contains(&ttl), "{ttl}");
+
+    let stored =
+        std::fs::read_to_string(crate::capability_tokens::store_path_in(&w.app_path)).unwrap();
+    assert!(!stored.contains(&token));
+    assert!(!stored.contains(&token["auric_cap_".len()..]));
+
+    // A repeat is a sign of life, not a second token, unless one is asked for.
+    let repeat = w.register();
+    assert!(repeat["result"].get("token").is_none(), "{repeat}");
+    let mut params = w.register_params();
+    params["newToken"] = json!(true);
+    params["tokenTtlSeconds"] = json!(600);
+    let further = call_as(&w.h, &w.supervisor, request("external_register", params));
+    let second = token_of(&further);
+    assert_ne!(second, token);
+    let expires = further["result"]["token"]["expiresAt"].as_u64().unwrap();
+    assert!(expires < issued["expiresAt"].as_u64().unwrap());
+}
+
+// testuuid: t_extcap02 covers: el_extstp01 categories: happy,security level: integration
+#[test]
+fn an_outside_caller_with_the_token_stops_that_run_and_the_token_dies_with_it() {
+    let w = world();
+    let token = token_of(&w.register());
+
+    let without = w.stop(&EXTERNAL, json!({}));
+    assert_eq!(
+        without["error"]["code"], "outside_supervisor_scope",
+        "{without}"
+    );
+
+    let stopped = w.stop(
+        &EXTERNAL,
+        json!({ "token": token, "outcome": "failed", "endReason": "timeout", "activeSeconds": 30 }),
+    );
+    assert_eq!(stopped["ok"], true, "{stopped}");
+    let agent = &stopped["result"]["agent"];
+    assert_eq!(agent["state"], "failed");
+    assert_eq!(agent["closedBy"], "token");
+    assert_eq!(agent["endReason"], "timeout");
+    assert_eq!(stopped["result"]["booked"], true);
+    let row = &w.rows()[0];
+    assert_eq!(row.closed_by.as_deref(), Some("token"));
+    assert_eq!(
+        row.outcome,
+        crate::agent_usage::record::Outcome::Error,
+        "not a kill"
+    );
+
+    // Revoked with the run: the holder hears it ended.
+    let again = w.stop(&EXTERNAL, json!({ "token": token }));
+    assert_eq!(again["error"]["code"], "token_denied", "{again}");
+    assert_eq!(again["error"]["reason"], "token_revoked");
+    // The owner's own second stop is still the old no-op.
+    let owner_again = w.stop(&w.supervisor, json!({}));
+    assert_eq!(
+        owner_again["result"]["alreadyStopped"], true,
+        "{owner_again}"
+    );
+}
+
+// testuuid: t_extcap03 covers: el_extstp01 categories: security level: integration
+#[test]
+fn a_token_opens_nothing_but_the_stop_of_its_own_run() {
+    let w = world();
+    let token = token_of(&w.register());
+    let mut other = w.register_params();
+    other["runId"] = json!("lease-43");
+    let other_token = token_of(&call_as(
+        &w.h,
+        &w.supervisor,
+        request("external_register", other),
+    ));
+
+    // The other run's key with this run's token.
+    let wrong_run = call_as(
+        &w.h,
+        &EXTERNAL,
+        request(
+            "external_stop",
+            json!({ "externalId": "box-7", "runId": "lease-43", "token": token }),
+        ),
+    );
+    assert_eq!(wrong_run["error"]["reason"], "token_scope", "{wrong_run}");
+    // Unknown and malformed tokens.
+    let forged = format!("auric_cap_{}", "B".repeat(43));
+    let unknown = w.stop(&EXTERNAL, json!({ "token": forged }));
+    assert_eq!(unknown["error"]["reason"], "token_unknown", "{unknown}");
+    let malformed = w.stop(&EXTERNAL, json!({ "token": "auric_cap_short" }));
+    assert_eq!(malformed["error"]["code"], "invalid_params", "{malformed}");
+    // No force with a token, not even for a supervisor holding one.
+    let forced = w.stop(&w.supervisor, json!({ "token": token, "force": true }));
+    assert_eq!(forced["error"]["code"], "invalid_params", "{forced}");
+    // Register and list stay closed to an outside caller, token or not.
+    let mut register = w.register_params();
+    register["runId"] = json!("lease-44");
+    let refused = call_as(&w.h, &EXTERNAL, request("external_register", register));
+    assert_eq!(refused["error"]["code"], "outside_supervisor_scope");
+    let listed = call_as(&w.h, &EXTERNAL, request("external_list", json!({})));
+    assert_eq!(listed["error"]["code"], "outside_supervisor_scope");
+
+    let file = store::read(&w.app_path).unwrap();
+    assert!(
+        file.agents.iter().all(|agent| agent.is_live()),
+        "nothing moved"
+    );
+    let own = w.stop(&EXTERNAL, json!({ "token": token }));
+    assert_eq!(own["ok"], true, "{own}");
+    assert!(!other_token.is_empty());
+}
+
+// testuuid: t_extcap04 covers: el_extstp01 categories: happy level: integration
+#[test]
+fn the_owner_forces_a_correction_that_is_booked_again_with_an_audit_record() {
+    let w = world();
+    let token = token_of(&w.register());
+    let registered_at = store::read(&w.app_path).unwrap().agents[0].registered_at;
+    w.stop(&w.supervisor, json!({ "activeSeconds": 50 }));
+    assert_eq!(w.rows()[0].active_ms, Some(50_000));
+
+    let fixed = w.stop(
+        &w.supervisor,
+        json!({ "force": true, "finishedAt": registered_at + 1_000, "activeSeconds": 1,
+                "endReason": "reaped" }),
+    );
+    assert_eq!(fixed["ok"], true, "{fixed}");
+    let agent = &fixed["result"]["agent"];
+    assert_eq!(agent["finishedAt"], registered_at + 1_000);
+    assert_eq!(agent["corrections"][0]["forcedBy"], "supervisor");
+    assert_eq!(agent["corrections"][0]["agentId"], "agent-sup");
+    assert_eq!(agent["corrections"][0]["wasBooked"], true);
+    assert_eq!(
+        agent["corrections"][0]["previous"]["report"]["activeMs"],
+        50_000
+    );
+    assert_eq!(fixed["result"]["booked"], true);
+    let rows = w.rows();
+    assert_eq!(rows.len(), 1, "replaced, not added");
+    assert_eq!(rows[0].active_ms, Some(1_000));
+    assert_eq!(rows[0].duration_ms, 1_000);
+
+    // Another supervisor cannot force, and the token is long gone.
+    let foreign = w.stop(
+        &w.second,
+        json!({ "force": true, "finishedAt": registered_at + 5 }),
+    );
+    assert_eq!(foreign["error"]["code"], "unknown_agent", "{foreign}");
+    let late = w.stop(&EXTERNAL, json!({ "token": token }));
+    assert_eq!(late["error"]["reason"], "token_revoked");
+}
+
+// testuuid: t_extcap05 covers: el_extstp01 categories: security level: integration
+#[test]
+fn over_a_real_socket_a_detached_process_stops_its_run_with_the_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_path_in(dir.path());
+    let listener = bind(&socket).unwrap();
+    let w = world();
+    let params = w.register_params();
+    let backend = w.h.backend.clone();
+    let dispatcher = Arc::new(w.h.dispatcher);
+    std::thread::spawn(move || serve(listener, dispatcher, Duration::from_secs(5)));
+    let roundtrip_once = |line: String| -> Value {
+        let mut stream = UnixStream::connect(&socket).unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        roundtrip(&mut stream, &mut reader, &line)
+    };
+
+    backend.agent_pids.lock().unwrap().insert(
+        std::process::id(),
+        ("agent-sup".to_string(), AgentRole::Supervisor),
+    );
+    let registered = roundtrip_once(
+        json!({ "id": 1, "method": "external_register", "params": params }).to_string(),
+    );
+    let token = token_of(&registered);
+
+    // The same process, now outside every agent's tree, like a reaper.
+    backend.agent_pids.lock().unwrap().clear();
+    let stop = json!({ "id": 2, "method": "external_stop",
+        "params": { "externalId": "box-7", "runId": "lease-42", "token": token, "endReason": "reaped" } });
+    let stopped = roundtrip_once(stop.to_string());
+    assert_eq!(stopped["result"]["agent"]["closedBy"], "token", "{stopped}");
+
+    // A worker gets nothing for a token: agents stay out.
+    backend.agent_pids.lock().unwrap().insert(
+        std::process::id(),
+        ("agent-worker".to_string(), AgentRole::Worker),
+    );
+    let worker = roundtrip_once(stop.to_string());
+    assert_eq!(
+        worker["error"]["code"], "forbidden_agent_caller",
+        "{worker}"
+    );
+}

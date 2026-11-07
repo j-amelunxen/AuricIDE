@@ -6,12 +6,21 @@
 //! that folder comes from its agent record, which the PID walk found, never
 //! from a parameter. So an outside client, and through it the supervisor link,
 //! has nothing to act as and is refused.
+//!
+//! One exception, by capability: `external_register` hands its caller a token
+//! for the new run (`capability_tokens`), and `external_stop` with that token is
+//! accepted from any caller the socket admits, because the process that ends a
+//! run (a detached reaper, a timeout) is often not in the supervisor's tree. The
+//! token stops that one run and nothing else; it cannot force.
 
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
+use crate::capability_tokens::{self, GrantRequest};
 use crate::external_agents::model::{
     self, apply_register, apply_stop, display_key, ExternalAgent, Links, Owner, RegisterInput,
+    StopBy, TOKEN_ACTION_STOP, TOKEN_DEFAULT_TTL_SECONDS, TOKEN_KIND,
 };
+use crate::external_agents::revoke_tokens;
 use crate::external_agents::{
     resolve_links, settle, store, ExternalError, ExternalRegisterParams, ExternalStopParams,
 };
@@ -40,6 +49,22 @@ fn control_error(error: ExternalError) -> ControlError {
             ControlError::new(ErrorCode::UnknownAgent, message)
         }
         ExternalError::InvalidParams(_) => ControlError::new(ErrorCode::InvalidParams, message),
+        ExternalError::Token(error) => token_error(error),
+    }
+}
+
+/// `token_denied` with its reason for what is about the token; storage and
+/// readability keep their usual codes.
+fn token_error(error: capability_tokens::TokenError) -> ControlError {
+    use capability_tokens::TokenError;
+    let message = error.to_string();
+    match error.reason() {
+        Some(reason) => ControlError::new(ErrorCode::TokenDenied, message).with_reason(reason),
+        None => match error {
+            TokenError::Unreadable(_) => ControlError::new(ErrorCode::RegistryUnreadable, message),
+            TokenError::InvalidTtl => ControlError::new(ErrorCode::InvalidParams, message),
+            _ => ControlError::new(ErrorCode::Internal, message),
+        },
     }
 }
 
@@ -153,25 +178,91 @@ impl Dispatcher {
         if touched {
             self.backend.external_agents_changed();
         }
+        let wants_token = answer.created || params.new_token == Some(true);
+        let mut token = if wants_token && answer.agent.is_live() {
+            Some(self.external_issue_token(&dir, &answer.agent, &params, now)?)
+        } else {
+            None
+        };
+        // A stop between the registration and the grant has revoked already;
+        // a token issued after it would outlive its run.
+        if token.is_some() && !self.external_current(&dir, &answer.agent)?.is_live() {
+            revoke_tokens(&dir, &self.external_current(&dir, &answer.agent)?, now);
+            token = None;
+        }
         to_value(ExternalRegisterResult {
             agent: answer.agent.view(now),
             created: answer.created,
             changed: answer.changed,
+            token,
+        })
+    }
+
+    /// The registration already stands when this runs, so a failure says how
+    /// to get a token without registering twice.
+    fn external_issue_token(
+        &self,
+        dir: &Path,
+        agent: &ExternalAgent,
+        params: &ExternalRegisterParams,
+        now: u64,
+    ) -> Result<IssuedToken, ControlError> {
+        let request = GrantRequest {
+            kind: TOKEN_KIND,
+            resource_id: &agent.id,
+            actions: &[TOKEN_ACTION_STOP],
+            owner_run_dir: &agent.owner_run_dir,
+            ttl_seconds: params
+                .token_ttl_seconds
+                .unwrap_or(TOKEN_DEFAULT_TTL_SECONDS),
+        };
+        let issued = capability_tokens::issue(dir, request, now).map_err(|error| {
+            let mut refusal = token_error(error);
+            refusal.message = format!(
+                "{} is registered, but no token was issued ({}); repeat the call with newToken: true",
+                agent.id, refusal.message
+            );
+            refusal
+        })?;
+        Ok(IssuedToken {
+            token: issued.token,
+            kind: issued.grant.kind,
+            resource_id: issued.grant.resource_id,
+            actions: issued.grant.actions,
+            expires_at: issued.grant.expires_at,
         })
     }
 
     pub(super) fn external_stop(&self, supervisor: &str, params: ExternalStopParams) -> Outcome {
+        let owner = self.external_owner(supervisor)?;
+        self.external_stop_by(&StopBy::Owner(&owner), &params)
+    }
+
+    /// `external_stop` for a token holder, whoever the socket says it is. The
+    /// grant names the run; the model checks it against the key in `params`.
+    pub(super) fn external_stop_with_token(&self, params: ExternalStopParams) -> Outcome {
+        let dir = self.external_app_data()?;
+        let token = params
+            .token
+            .as_ref()
+            .ok_or_else(|| ControlError::new(ErrorCode::InvalidParams, "token is required"))?;
+        let grant =
+            capability_tokens::lookup(&dir, token.expose(), now_ms()).map_err(token_error)?;
+        self.external_stop_by(&StopBy::Token(&grant), &params)
+    }
+
+    fn external_stop_by(&self, by: &StopBy<'_>, params: &ExternalStopParams) -> Outcome {
         let dir = self.external_app_data()?;
         let now = now_ms();
         self.external_settle(&dir, now)?;
-        let owner = self.external_owner(supervisor)?;
         let answer = store::update(&dir, now, |file| {
-            let answer = apply_stop(file, &params, &owner, now)?;
-            let touched = !answer.already_stopped;
+            let answer = apply_stop(file, params, by, now)?;
+            let touched = !answer.already_stopped || answer.corrected;
             Ok((answer, touched))
         })
         .map_err(control_error)?;
-        if !answer.already_stopped {
+        revoke_tokens(&dir, &answer.agent, now);
+        if !answer.already_stopped || answer.corrected {
             self.backend.external_agents_changed();
         }
         self.external_settle(&dir, now)?;

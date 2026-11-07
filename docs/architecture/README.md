@@ -162,6 +162,10 @@ occurrence" writes an exception, "all occurrences" rewrites the rhythm).
 (monthly JSONL log `tasks-YYYY-MM.jsonl` of finished agent tasks, opt-in for billing),
 `external_agents/` (runs the IDE tracks without a process, `external-agents.json`; they
 book through the same two records, `docs/design-external-agents.md`).
+`capability_tokens/` (scoped capability tokens: a grant on one resource for named
+actions, hash-only in `capability-tokens.json`; first scope `external_run` /
+`external_stop`, `docs/design-capability-tokens.md`) and `file_lock.rs` (the advisory
+lock both stores share).
 Depends on: providers, agents, webview_prefs.
 
 **Imports and machine tools** — `video_import/` (transcription, frames), `machine/`

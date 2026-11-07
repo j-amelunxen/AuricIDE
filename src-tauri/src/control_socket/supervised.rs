@@ -73,6 +73,9 @@ impl Dispatcher {
             Request::SetQuotaBlock(params) => self.set_quota_block(params),
             Request::ClearQuotaBlock(params) => self.clear_quota_block(params),
             Request::ExternalRegister(params) => self.external_register(supervisor, params),
+            Request::ExternalStop(params) if params.token.is_some() => {
+                self.external_stop_with_token(params)
+            }
             Request::ExternalStop(params) => self.external_stop(supervisor, params),
             Request::ExternalList(_) => self.external_list(supervisor),
         }

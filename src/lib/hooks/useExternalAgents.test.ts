@@ -83,6 +83,14 @@ describe('useExternalAgents', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(1, fixtures.commands.close, { id: 'ext-1' });
     expect(invokeMock).toHaveBeenNthCalledWith(2, fixtures.commands.list, undefined);
 
+    invokeMock.mockClear();
+    const options = { force: true, finishedAt: 1_000, endReason: 'lost' as const };
+    await act(() => result.current.closeExternal('ext-1', options));
+    expect(invokeMock).toHaveBeenNthCalledWith(1, fixtures.commands.close, {
+      id: 'ext-1',
+      ...options,
+    });
+
     invokeMock.mockRejectedValueOnce(new Error('nope'));
     await expect(result.current.closeExternal('ext-1')).rejects.toThrow('nope');
   });

@@ -1,6 +1,6 @@
 use super::model::{
     apply_register, apply_stop, ExternalFile, ExternalReport, ExternalState, Links, LiveState,
-    Owner, RegisterInput,
+    Owner, RegisterInput, StopBy,
 };
 use super::*;
 use crate::agent_usage::record::{CostSource, Outcome, RunKind, RunSource};
@@ -35,6 +35,8 @@ fn register_params(project: &Path, run: &str) -> ExternalRegisterParams {
         goal_id: None,
         state: LiveState::Running,
         started_at: None,
+        token_ttl_seconds: None,
+        new_token: None,
     }
 }
 
@@ -58,7 +60,7 @@ fn register(dir: &Path, params: &ExternalRegisterParams, at: u64) -> String {
 fn stop(dir: &Path, stop: Value, at: u64) {
     let params: ExternalStopParams = serde_json::from_value(stop).unwrap();
     store::update(dir, at, |file| {
-        apply_stop(file, &params, &owner(), at)?;
+        apply_stop(file, &params, &StopBy::Owner(&owner()), at)?;
         Ok(((), true))
     })
     .unwrap();
@@ -198,7 +200,8 @@ fn closing_by_hand_books_killed_with_no_runtime() {
     let project = project();
     let id = register(app.path(), &register_params(project.path(), "a"), NOW);
 
-    let (view, booked, changed) = close(app.path(), &id, NOW + 60_000).unwrap();
+    let (view, booked, changed) =
+        close(app.path(), &id, CloseOptions::default(), NOW + 60_000).unwrap();
 
     assert!(changed);
     assert_eq!(booked.len(), 1);
@@ -211,7 +214,8 @@ fn closing_by_hand_books_killed_with_no_runtime() {
     assert_eq!(row.on_ms, Some(60_000));
     assert_eq!(row.cost_source, CostSource::None);
 
-    let (_, booked, changed) = close(app.path(), &id, NOW + 120_000).unwrap();
+    let (_, booked, changed) =
+        close(app.path(), &id, CloseOptions::default(), NOW + 120_000).unwrap();
     assert!(
         booked.is_empty() && !changed,
         "a final entry stays as it was"
@@ -486,4 +490,55 @@ fn a_report_round_trips_through_the_store() {
     })
     .unwrap();
     assert_eq!(store::read(app.path()).unwrap().agents, vec![entry]);
+}
+
+#[test]
+fn a_corrected_run_replaces_its_row_and_adds_a_line_that_says_so() {
+    let app = tempfile::tempdir().unwrap();
+    let project = project();
+    crate::webview_prefs::write_prefs_atomic(
+        &crate::webview_prefs::prefs_path_in(app.path()),
+        &std::collections::BTreeMap::from([(
+            crate::task_log::ENABLED_PREF_KEY.to_string(),
+            "true".to_string(),
+        )]),
+    )
+    .unwrap();
+    register(app.path(), &register_params(project.path(), "a"), NOW);
+    stop(
+        app.path(),
+        json!({ "externalId": "box-7", "runId": "a" }),
+        NOW + 9_000,
+    );
+    settle(app.path(), NOW + 9_000).unwrap();
+    stop(
+        app.path(),
+        json!({ "externalId": "box-7", "runId": "a", "force": true, "finishedAt": NOW + 2_000,
+                "endReason": "lost" }),
+        NOW + 10_000,
+    );
+    let (booked, _) = settle(app.path(), NOW + 10_000).unwrap();
+    assert_eq!(booked.len(), 1);
+
+    let all = rows(project.path());
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].duration_ms, 2_000);
+    let logs = app.path().join(crate::task_log::DEFAULT_SUBDIR);
+    let name = std::fs::read_dir(&logs)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let text = std::fs::read_to_string(name).unwrap();
+    let lines: Vec<Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].get("corrected").is_none() && lines[0].get("endReason").is_none());
+    assert_eq!(lines[1]["corrected"], true);
+    assert_eq!(lines[1]["endReason"], "lost");
+    assert_eq!(lines[1]["durationMs"], 2_000);
+    assert_eq!(lines[1]["agentId"], lines[0]["agentId"]);
 }

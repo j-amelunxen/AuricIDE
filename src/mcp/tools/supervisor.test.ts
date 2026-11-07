@@ -3,7 +3,8 @@ import { FastMCP, UserError } from 'fastmcp';
 import type { z } from 'zod';
 import fixtures from '../../lib/agents/agentControl.fixtures.json';
 import linkFixtures from '../../lib/agents/supervisorLink.fixtures.json';
-import { ControlError } from '../../lib/agents/agentControl.contract';
+import tokenFixtures from '../../lib/agents/capabilityTokens.fixtures.json';
+import { ControlError, parseControlResponse } from '../../lib/agents/agentControl.contract';
 import { createSupervisorServer } from '../server';
 import type { ControlCaller } from './agentControl';
 import { registerSupervisorTools } from './supervisor';
@@ -134,6 +135,55 @@ describe('supervisor tools', () => {
     expect(register.parameters.safeParse(base).success).toBe(true);
     expect(register.parameters.safeParse({ ...base, prompt: 'do it' }).success).toBe(false);
     expect(stop.parameters.safeParse({ externalId: 'box-7', reason: 'x' }).success).toBe(false);
+  });
+
+  it('documents and checks the capability token, force and end reason', () => {
+    const tools = capture(vi.fn() as unknown as ControlCaller);
+    const register = tools.get('register_external_agent')!;
+    const stop = tools.get('stop_external_agent')!;
+    expect(register.description).toMatch(/capability token, shown once/);
+    expect(register.description).toContain('tokenTtlSeconds');
+    expect(register.description).toContain('newToken');
+    expect(stop.description).toMatch(/never accepted with a token/);
+    expect(stop.description).toContain('endReason');
+
+    const token = `auric_cap_${'A'.repeat(43)}`;
+    const ok = (params: object) => stop.parameters.safeParse(params).success;
+    expect(ok({ externalId: 'box-7', token, endReason: 'reaped' })).toBe(true);
+    expect(ok({ externalId: 'box-7', force: true, finishedAt: 1, endReason: 'lost' })).toBe(true);
+    expect(ok({ externalId: 'box-7', token, force: true })).toBe(false);
+    const malformed = tokenFixtures.tokenShape.reject[2];
+    expect(ok({ externalId: 'box-7', token: malformed })).toBe(false);
+    expect(ok({ externalId: 'box-7', endReason: 'it broke' })).toBe(false);
+  });
+
+  it('passes an issued token through to the model unchanged', async () => {
+    const answer = fixtures.responses.external_register.result;
+    const issued = {
+      ...answer,
+      token: {
+        token: `auric_cap_${'b'.repeat(43)}`,
+        kind: 'external_run',
+        resourceId: answer.agent.id,
+        actions: ['external_stop'],
+        expiresAt: 1_800_000_000_000,
+      },
+    };
+    expect(parseControlResponse('external_register', { id: 1, ok: true, result: issued })).toEqual({
+      ok: true,
+      result: issued,
+    });
+    const call = vi.fn(async () => issued) as unknown as ControlCaller;
+    const text = await capture(call).get('register_external_agent')!.execute({
+      externalId: 'box-7',
+      projectPath: '/tmp/example-project',
+      name: 'Fix the parser',
+      provider: 'claude',
+      state: 'running',
+      tokenTtlSeconds: 3600,
+    });
+    expect(vi.mocked(call).mock.lastCall?.[1]).toMatchObject({ tokenTtlSeconds: 3600 });
+    expect(JSON.parse(text)).toEqual(issued);
   });
 
   it("passes what the model sent to the socket and answers with the socket's words", async () => {

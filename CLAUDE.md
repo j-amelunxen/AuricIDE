@@ -819,7 +819,19 @@ first).
   goes through `usageRunMs`; a billing reader needs the same rule.
 - **Stale is a reading, not a state:** 26 h on or 72 h off with no call reads
   "Stale?". The human can close a live entry from its row, which books it with no
-  runtime.
+  runtime; a stale one is closed at its last sign of life, not now (without force, so a
+  stop that lands meanwhile is never overwritten).
+- **A detached process stops a run with a token, not a PID.** `external_register`
+  returns a capability token (`capability_tokens/`, `docs/design-capability-tokens.md`,
+  fixtures `capabilityTokens.fixtures.json`): random, shown once, stored as a SHA-256
+  only, scoped to `external_stop` of that one run, revoked when the run ends. Any
+  external caller may send it; it never registers, lists, touches another run or
+  forces. The module is generic: a new scope is a `kind` and action names, no new
+  plumbing.
+- **`force` corrects, audited.** The owner (stop) or the human (close) may close a
+  stale run or correct a final run's end; each change appends the old values to
+  `corrections`, the usage row is replaced and the task log gets a `corrected`
+  line (last line per `agentId` wins). Without `force` a second stop is a no-op.
 
 ### The terminals in a window of their own
 

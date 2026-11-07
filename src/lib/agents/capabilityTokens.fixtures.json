@@ -1,0 +1,150 @@
+{
+  "_comment": [
+    "Contract of docs/design-capability-tokens.md, read by Rust and TypeScript. Change it first.",
+    "A capability token lets a process that is not in the caller's process tree do exactly one",
+    "named thing to exactly one resource. Rust issues, stores (hash only) and checks them;",
+    "TypeScript only knows the token's shape for its MCP parameter checks."
+  ],
+  "version": 1,
+  "storeFileName": "capability-tokens.json",
+  "lockFileName": "capability-tokens.lock",
+  "token": {
+    "prefix": "auric_cap_",
+    "randomBytes": 32,
+    "encoding": "base64url, no padding",
+    "pattern": "^auric_cap_[A-Za-z0-9_-]{43}$",
+    "hash": "sha256 of the whole token string, lower-case hex"
+  },
+  "limits": {
+    "ttlMinSeconds": 60,
+    "ttlMaxSeconds": 2592000,
+    "maxPerResource": 8,
+    "maxGrants": 2000
+  },
+  "error": {
+    "code": "token_denied",
+    "reasons": {
+      "token_unknown": "Unknown, malformed or expired. The three are not told apart on purpose.",
+      "token_revoked": "The resource reached a final state; the token was revoked with it.",
+      "token_scope": "The token is valid, but not for this action or this resource.",
+      "token_limit": "No token could be issued: too many grants are stored."
+    }
+  },
+  "scopes": [
+    {
+      "kind": "external_run",
+      "resourceId": "the entry id of an external run (ext-…)",
+      "actions": ["external_stop"],
+      "issuedBy": "external_register",
+      "defaultTtlSeconds": 259200,
+      "revokedWhen": "the entry becomes stopped or failed (stop, token stop, human close, forced close)"
+    }
+  ],
+  "authorize": [
+    {
+      "name": "the granted action on the granted resource",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 2000,
+        "revokedAt": null
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-1", "action": "external_stop" },
+      "now": 1000,
+      "result": "ok"
+    },
+    {
+      "name": "another run",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 2000,
+        "revokedAt": null
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-2", "action": "external_stop" },
+      "now": 1000,
+      "result": "token_scope"
+    },
+    {
+      "name": "an action the token does not carry",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 2000,
+        "revokedAt": null
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-1", "action": "external_register" },
+      "now": 1000,
+      "result": "token_scope"
+    },
+    {
+      "name": "another kind of resource with the same id",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 2000,
+        "revokedAt": null
+      },
+      "ask": { "kind": "job", "resourceId": "ext-1", "action": "external_stop" },
+      "now": 1000,
+      "result": "token_scope"
+    },
+    {
+      "name": "expired at the stroke",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 1000,
+        "revokedAt": null
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-1", "action": "external_stop" },
+      "now": 1000,
+      "result": "token_unknown"
+    },
+    {
+      "name": "revoked beats scope",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 2000,
+        "revokedAt": 900
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-1", "action": "external_stop" },
+      "now": 1000,
+      "result": "token_revoked"
+    },
+    {
+      "name": "a tombstone past its expiry is unknown",
+      "grant": {
+        "kind": "external_run",
+        "resourceId": "ext-1",
+        "actions": ["external_stop"],
+        "expiresAt": 1000,
+        "revokedAt": 900
+      },
+      "ask": { "kind": "external_run", "resourceId": "ext-1", "action": "external_stop" },
+      "now": 1000,
+      "result": "token_unknown"
+    }
+  ],
+  "tokenShape": {
+    "accept": [
+      "auric_cap_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "auric_cap_abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE"
+    ],
+    "reject": [
+      "",
+      "auric_cap_",
+      "auric_cap_short",
+      "AURIC_CAP_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "auric_cap_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "auric_cap_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    ]
+  }
+}
