@@ -210,6 +210,26 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     set({ selectedAgentId: agentId, reviewedAgentIds: nowReviewed });
   },
 
+  applyAgentWaiting: (marks) => {
+    const byAgent = new Map(marks.map((mark) => [mark.agentId, mark]));
+    let changed = false;
+    const agents = get().agents.map((agent) => {
+      const next = byAgent.get(agent.id);
+      const now = agent.waiting;
+      const same =
+        now === next ||
+        (now !== undefined &&
+          next !== undefined &&
+          now.reason === next.reason &&
+          now.untilMs === next.untilMs &&
+          now.markedAtMs === next.markedAtMs);
+      if (same) return agent;
+      changed = true;
+      return { ...agent, waiting: next };
+    });
+    if (changed) set({ agents });
+  },
+
   markAgentReviewed: (agentId) => {
     const state = get();
     const agent = state.agents.find((a) => a.id === agentId);

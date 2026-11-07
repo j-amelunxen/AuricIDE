@@ -37,6 +37,8 @@ export const CONTROL_METHODS = [
   'external_register',
   'external_stop',
   'external_list',
+  'mark_waiting',
+  'clear_waiting',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -194,6 +196,24 @@ export const WORKER_PROJECT_PATH_MESSAGE =
   'projectPath must not be empty: a worker runs in a project; only role "supervisor" starts without one';
 
 const noParams = z.object({}).transform(() => ({}));
+
+/**
+ * `mark_waiting`: park one of your running agents on purpose. `until` is an ISO 8601
+ * time or a duration (`90m`, `2h`, `1h30m`); Rust applies the 2 h default and the 24 h
+ * limit, so the client only checks the shape.
+ */
+export const markWaitingParams = z
+  .object({
+    agentId,
+    reason: z.string().trim().min(1, 'reason must not be empty').max(200),
+    until: z.string().trim().min(1, 'until must not be empty; leave it out for 2 h').optional(),
+  })
+  .strict()
+  .transform((p) => ({
+    agentId: p.agentId,
+    reason: p.reason,
+    ...(p.until ? { until: p.until } : {}),
+  }));
 
 /**
  * The address a client gives a supervisor (`supervisorLink.fixtures.json`,
@@ -491,6 +511,8 @@ const PARAMS = {
   external_register: externalRegisterParams,
   external_stop: externalStopParams,
   external_list: noParams,
+  mark_waiting: markWaitingParams,
+  clear_waiting: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   /**
    * Only the op is checked here; Rust checks every field against the policy
    * rules and answers `invalid_params` naming the change that broke one.
@@ -657,6 +679,9 @@ const agentSummary = z.object({
   outputBytes: offset,
   idleForMs: offset.nullable().optional(),
   stalledSinceMs: offset.nullable().optional(),
+  /** Set while a supervisor has parked the agent on purpose (`mark_waiting`). */
+  waitingReason: z.string().optional(),
+  waitingUntil: z.string().optional(),
   role: z.enum(AGENT_ROLES),
   /** Only a supervisor carries one; an IDE from before keys existed sends nothing. */
   supervisorKey: z.string().nullable().optional(),
@@ -945,6 +970,9 @@ const RESULTS = {
     booked: z.boolean(),
   }),
   external_list: z.object({ agents: z.array(externalAgent) }),
+  mark_waiting: z.object({ agentId: z.string(), reason: z.string(), until: z.string() }),
+  /** `cleared: false`: there was no mark, it may have ended by itself. */
+  clear_waiting: z.object({ agentId: z.string(), cleared: z.boolean() }),
   /** `removed: false` is an answer: the worktree holds work and stays for a person. */
   remove_worktree: z.object({
     agentId: z.string(),

@@ -50,6 +50,31 @@ describe('AgentCard', () => {
     useStore.setState({ comboRuns: [] });
   });
 
+  it('says why a parked agent is quiet, and says nothing once the mark is gone', () => {
+    const parked: AgentInfo = {
+      ...runningAgent,
+      lastActivityAt: Date.now() - 20 * 60_000,
+      waiting: {
+        agentId: runningAgent.id,
+        reason: 'waiting for the deploy',
+        untilMs: Date.now() + 60 * 60_000,
+        markedAtMs: Date.now() - 10 * 60_000,
+      },
+    };
+    const { rerender } = render(<AgentCard agent={parked} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-waiting').textContent).toMatch(
+      /^waiting: waiting for the deploy \(until \d{2}:\d{2}\)$/
+    );
+    expect(screen.queryByText(/Stalled/)).toBeNull();
+    rerender(
+      <AgentCard
+        agent={{ ...parked, waiting: { ...parked.waiting!, untilMs: Date.now() - 1 } }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('agent-waiting')).toBeNull();
+  });
+
   it('names the extra MCP servers an agent started with, and shows nothing without any', () => {
     const { rerender } = render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
     expect(screen.queryByTestId('agent-extra-mcp-badge')).toBeNull();

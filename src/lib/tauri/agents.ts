@@ -1,3 +1,5 @@
+import type { AgentWaiting } from './agentWaiting';
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -40,6 +42,12 @@ export interface AgentInfo {
    * form). Frontend-only provenance, distinct from spawnedByTicketId so a
    * reviewer is never mistaken for the implementer of the ticket. */
   spawnedForReviewOfTicketId?: string;
+  /**
+   * Set while a supervisor has parked this agent on purpose (`mark_agent_waiting`):
+   * no stall chip, no nudge, the card says why. Frontend-only, stamped from Rust's
+   * marks (`useAgentWaiting`).
+   */
+  waiting?: AgentWaiting;
   /**
    * `supervisor`: the one IDE agent the control socket admits, scoped to its
    * own children (ADR 0004). Absent reads as `worker`.

@@ -1,4 +1,5 @@
 import type { AgentInfo } from '../tauri/agents';
+import { activeWaiting } from './waiting';
 
 /**
  * How long an agent may stay silent before its silence becomes the user's
@@ -29,7 +30,7 @@ export type AttentionReason = 'error' | 'needs-input' | 'stalled';
 /** The slice of an agent the attention model reads. */
 export type AttentionInput = Pick<
   AgentInfo,
-  'status' | 'lastActivityAt' | 'awaitingInput' | 'headless'
+  'status' | 'lastActivityAt' | 'awaitingInput' | 'headless' | 'waiting'
 > & {
   /** Launch time — the clock a headless agent's stall is measured on. */
   startedAt?: number;
@@ -48,6 +49,9 @@ export function agentAttention(agent: AttentionInput, now: number): AttentionRea
   // Checked before the stall clock: a permission menu redraws itself, keeping
   // lastActivityAt fresh — a blocked agent that looks busy must still surface.
   if (agent.awaitingInput) return 'needs-input';
+  // Parked on purpose by its supervisor: silence is expected, not a stall.
+  // After the prompt check, so a question still surfaces; it also ends the mark.
+  if (activeWaiting(agent, now) !== null) return null;
   // No recorded activity yet means the agent never spoke — its silence starts
   // at launch, and flagging that would cry wolf on every spawn.
   const since = quietSince(agent);

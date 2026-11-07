@@ -40,6 +40,7 @@ describe('the supervisor tool surface', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual([
       'await_agent_result',
+      'clear_agent_waiting',
       'clear_quota_block',
       'dismiss_agent',
       'kill_agent',
@@ -49,6 +50,7 @@ describe('the supervisor tool surface', () => {
       'list_my_agents',
       'list_projects',
       'list_quota_blocks',
+      'mark_agent_waiting',
       'pm_call',
       'pm_tools',
       'read_agent_output',

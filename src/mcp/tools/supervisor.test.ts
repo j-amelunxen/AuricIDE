@@ -31,6 +31,8 @@ const TOOL_METHODS: Record<string, string> = {
   register_external_agent: 'external_register',
   stop_external_agent: 'external_stop',
   list_external_agents: 'external_list',
+  mark_agent_waiting: 'mark_waiting',
+  clear_agent_waiting: 'clear_waiting',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;
@@ -192,6 +194,36 @@ describe('supervisor tools', () => {
     const text = await capture(call).get('list_external_agents')!.execute({});
     expect(vi.mocked(call).mock.lastCall).toEqual(['external_list', {}]);
     expect(JSON.parse(text)).toEqual(answer);
+  });
+
+  /* testuuid: t_wt4mk7qx covers: el_markwt01,el_clrwt001 categories: happy,negative level: unit */
+  it('park and release an agent on purpose, with the rules in the description', async () => {
+    const call = vi.fn(async () => ({})) as unknown as ControlCaller;
+    const tools = capture(call);
+    const mark = tools.get('mark_agent_waiting')!;
+    const clear = tools.get('clear_agent_waiting')!;
+    for (const phrase of ['2 h', '24 h', 'new', 'question', 'finishes', 'Stall escalated']) {
+      expect(mark.description).toContain(phrase);
+    }
+    expect(mark.parameters.safeParse({ agentId: 'agent-5', reason: 'deploy' }).success).toBe(true);
+    expect(
+      mark.parameters.safeParse({ agentId: 'agent-5', reason: 'deploy', until: '90m' }).success
+    ).toBe(true);
+    for (const bad of [
+      { agentId: 'agent-5' },
+      { agentId: 'agent-5', reason: '  ' },
+      { reason: 'deploy' },
+      { agentId: 'agent-5', reason: 'deploy', supervisor: 'other' },
+    ]) {
+      expect(mark.parameters.safeParse(bad).success).toBe(false);
+    }
+    await mark.execute({ agentId: 'agent-5', reason: 'deploy', until: '2h' });
+    expect(vi.mocked(call).mock.lastCall).toEqual([
+      'mark_waiting',
+      { agentId: 'agent-5', reason: 'deploy', until: '2h' },
+    ]);
+    await clear.execute({ agentId: 'agent-5' });
+    expect(vi.mocked(call).mock.lastCall).toEqual(['clear_waiting', { agentId: 'agent-5' }]);
   });
 
   it('report a policy refusal with its code, so the model can name it', async () => {

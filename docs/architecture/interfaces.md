@@ -203,7 +203,7 @@ configuration, not a method.
   `await_result`, `remove_worktree`, `dismiss`, `link_policy_get`, `link_policy_propose`,
   `pm_target` (supervisor callers only),
   `list_quota_blocks`, `set_quota_block`, `clear_quota_block` (outside and supervisor callers),
-  `pm_target`, `external_register`, `external_stop`, `external_list` (supervisor callers
+  `pm_target`, `external_register`, `external_stop`, `external_list`, `mark_waiting`, `clear_waiting` (supervisor callers
   only, except `external_stop` with the run's capability token from any external caller;
   `docs/design-external-agents.md`, `docs/design-capability-tokens.md`),
   and the internal `spawn_supervisor` (link only). `link_policy_apply` deliberately

@@ -16,6 +16,7 @@ import { AgentCardStatusBody } from './card/AgentCardStatusBody';
 import { AgentCardTerminalBody } from './card/AgentCardTerminalBody';
 import { SupervisorRelation } from './card/SupervisorRelation';
 import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
+import { activeWaiting, waitingLabel } from '@/lib/agents/waiting';
 
 export { AgentCardHeader } from './card/AgentCardHeader';
 export { AgentCardStatusBody } from './card/AgentCardStatusBody';
@@ -59,6 +60,10 @@ export function AgentCard({
   const isLive = isAgentLive(agent, now);
   const isIdling = isAgentIdling(agent, now);
   const state = agentState(agent, now);
+  const waitingText =
+    agent.waiting && activeWaiting(agent, now) !== null
+      ? waitingLabel(agent.waiting.reason, agent.waiting.untilMs)
+      : undefined;
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
   const { displayName, taskSummary } = agentDisplayIdentity(agent.name, agent.currentTask);
@@ -232,6 +237,7 @@ export function AgentCard({
             taskSummary={taskSummary}
             objectiveRepeatsName={objectiveRepeatsName}
             state={state}
+            waitingLabel={waitingText}
             headless={agent.headless}
             replyError={replyError}
             setReplyError={setReplyError}

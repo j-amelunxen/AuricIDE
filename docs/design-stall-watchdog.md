@@ -96,10 +96,18 @@ leave a warning in the inbox. An escalation already delivered to the human
 is not delivered again if its supervisor pingback fails. A finish/removal or recovery cancels pending stall
 notices. Human escalation does not wait for a supervisor draft to be sent.
 
+## Waiting on purpose
+
+A supervisor can park an agent with `mark_agent_waiting` (`design-agent-control.md`,
+"Waiting on purpose"). A parked agent is skipped by the tick above: no nudge, no
+supervisor notice, no human escalation, and the inactivity window is held at zero.
+The mark ends at `until`, on new output, on a question or prompt, and when the agent
+finishes; the window then starts fresh.
+
 ## API fields
 
 `list_my_agents` (socket `list_agents`) and pending `await_agent_result` expose
-`idleForMs` and `stalledSinceMs`. Both are nullable; null means no live watchdog
+`idleForMs`, `stalledSinceMs` and, while parked, `waitingReason` / `waitingUntil`. The first two are nullable; null means no live watchdog
 observation (including finished or out-of-scope agents). `idleForMs` is the
 monotonic inactivity duration at the last poll. `stalledSinceMs` is the Unix
 millisecond timestamp when the first interval elapsed, null before that or

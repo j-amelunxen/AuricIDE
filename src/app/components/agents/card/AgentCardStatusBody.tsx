@@ -15,6 +15,8 @@ export interface AgentCardStatusBodyProps {
   taskSummary?: string;
   objectiveRepeatsName: boolean;
   state: AgentState;
+  /** "waiting: <reason> (until HH:MM)" while a supervisor has parked the agent on purpose. */
+  waitingLabel?: string;
   /** A headless CLI never reads stdin, so it gets no Enter nudge. */
   headless?: boolean;
   replyError: string | null;
@@ -32,6 +34,7 @@ export function AgentCardStatusBody({
   taskSummary,
   objectiveRepeatsName,
   state,
+  waitingLabel,
   headless,
   replyError,
   setReplyError,
@@ -49,6 +52,15 @@ export function AgentCardStatusBody({
           className="line-clamp-2 px-0.5 text-[11px] leading-snug text-foreground-muted"
         >
           {taskSummary}
+        </p>
+      )}
+      {waitingLabel && (
+        <p
+          data-testid="agent-waiting"
+          title={waitingLabel}
+          className="truncate px-0.5 text-[11px] text-foreground-muted"
+        >
+          {waitingLabel}
         </p>
       )}
       {!currentTask && (

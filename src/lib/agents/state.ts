@@ -1,6 +1,7 @@
 import type { AgentInfo } from '../tauri/agents';
 import { agentAttention } from './attention';
 import { isAgentLive } from './liveness';
+import { activeWaiting } from './waiting';
 
 /**
  * What an agent is doing, in the words the UI uses everywhere.
@@ -20,6 +21,8 @@ export function agentState(agent: AgentInfo, now: number): AgentState {
       // agent looking live while it is in fact blocked on the user.
       if (agent.awaitingInput) return 'needs-input';
       if (isAgentLive(agent, now)) return 'working';
+      // Parked on purpose: a calm "Waiting", never the stall question mark.
+      if (activeWaiting(agent, now) !== null) return 'waiting';
       // A headless CLI is silent by nature; below the ceiling that silence
       // is the work, not a pause in it.
       if (agent.headless && agentAttention(agent, now) !== 'stalled') return 'working';

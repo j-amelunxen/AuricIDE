@@ -264,6 +264,22 @@ pub enum Request {
     ExternalRegister(ExternalRegisterParams),
     ExternalStop(ExternalStopParams),
     ExternalList(EmptyParams),
+    MarkWaiting(MarkWaitingParams),
+    ClearWaiting(AgentIdParams),
+}
+
+/// `mark_waiting`: park one of the caller's running agents on purpose, so
+/// stall detection leaves it alone until `until` (`docs/design-agent-control.md`,
+/// "Waiting on purpose").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarkWaitingParams {
+    pub agent_id: String,
+    pub reason: String,
+    /// An ISO 8601 time or a duration (`90m`, `2h`); two hours when left out,
+    /// 24 hours at most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
 }
 
 /// `pm_target`: which project folder a PM tool may run in. `project` is a path,
@@ -316,7 +332,7 @@ pub struct ClearQuotaBlockParams {
     pub id: String,
 }
 
-const METHODS: [&str; 20] = [
+const METHODS: [&str; 22] = [
     "list_agents",
     "read_output",
     "read_report",
@@ -337,6 +353,8 @@ const METHODS: [&str; 20] = [
     "external_register",
     "external_stop",
     "external_list",
+    "mark_waiting",
+    "clear_waiting",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -474,7 +492,10 @@ fn normalise_params(request: Request) -> Result<Request, String> {
             }
             Ok(Request::SendInput(params))
         }
-        Request::Kill(params) | Request::RemoveWorktree(params) | Request::Dismiss(params)
+        Request::Kill(params)
+        | Request::RemoveWorktree(params)
+        | Request::Dismiss(params)
+        | Request::ClearWaiting(params)
             if blank(&params.agent_id) =>
         {
             Err("agentId must not be empty".into())
@@ -494,6 +515,13 @@ fn normalise_params(request: Request) -> Result<Request, String> {
             Err("durationMinutes must be positive".into())
         }
         Request::ClearQuotaBlock(params) if blank(&params.id) => Err("id must not be empty".into()),
+        Request::MarkWaiting(params) => {
+            if blank(&params.agent_id) {
+                return Err("agentId must not be empty".into());
+            }
+            crate::agent_waiting::check_reason(&params.reason)?;
+            Ok(Request::MarkWaiting(params))
+        }
         Request::ExternalRegister(params) => {
             crate::external_agents::model::validate_register(&params)?;
             Ok(Request::ExternalRegister(params))
@@ -602,6 +630,24 @@ pub struct KillResult {
 pub struct DismissResult {
     pub agent_id: String,
     pub dismissed: bool,
+}
+
+/// `mark_waiting`: the agent is parked until `until` (ISO 8601, UTC).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkWaitingResult {
+    pub agent_id: String,
+    pub reason: String,
+    pub until: String,
+}
+
+/// `clear_waiting`: `cleared: false` means there was no mark (it may have
+/// ended by itself already).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearWaitingResult {
+    pub agent_id: String,
+    pub cleared: bool,
 }
 
 /// What `remove_worktree` did with an agent's worktree. `removed: false` is
@@ -1285,6 +1331,27 @@ pub(crate) mod tests {
                     DismissResult {
                         agent_id: "agent-5".into(),
                         dismissed: true,
+                    },
+                ),
+            ),
+            (
+                "mark_waiting",
+                ok_response(
+                    &json!(94),
+                    MarkWaitingResult {
+                        agent_id: "agent-5".into(),
+                        reason: "waiting for the deploy".into(),
+                        until: "2026-11-07T18:00:00Z".into(),
+                    },
+                ),
+            ),
+            (
+                "clear_waiting",
+                ok_response(
+                    &json!(96),
+                    ClearWaitingResult {
+                        agent_id: "agent-5".into(),
+                        cleared: true,
                     },
                 ),
             ),
