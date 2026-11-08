@@ -127,6 +127,43 @@ describe('QuickAccess', () => {
       expect(useStore.getState().starredProjects).toHaveLength(1);
     });
 
+    // A right-click opens the context menu, which takes the pointer away from
+    // the ×: no pointerup or pointerleave ever reaches it, so the timer ran out
+    // and the tile was gone without anyone holding anything. Control-click is
+    // the same right-click on macOS.
+    it.each([
+      ['a right-click', { button: 2 }],
+      ['a middle-click', { button: 1 }],
+      ['a control-click', { button: 0, ctrlKey: true }],
+    ])('does not start the hold on %s', async (_label, init) => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const unstarBtn = screen.getByTestId('quick-access-unstar-/a/website');
+      fireEvent.pointerDown(unstarBtn, init);
+      fireEvent.contextMenu(unstarBtn);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(useStore.getState().starredProjects).toHaveLength(1);
+      expect(unstarBtn.getAttribute('data-holding')).toBe('false');
+    });
+
+    it('cancels a running hold when a context menu opens over it', async () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const unstarBtn = screen.getByTestId('quick-access-unstar-/a/website');
+      fireEvent.pointerDown(unstarBtn);
+      fireEvent.contextMenu(unstarBtn);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(useStore.getState().starredProjects).toHaveLength(1);
+    });
+
     it('unstars a project once the hold is sustained past the threshold', async () => {
       const onSwitchProject = vi.fn();
       useStore.setState({

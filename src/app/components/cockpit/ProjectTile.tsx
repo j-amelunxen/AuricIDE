@@ -195,11 +195,17 @@ export function ProjectTile({
           data-holding={holding}
           onPointerDown={(e) => {
             e.stopPropagation();
+            // Primary button only. A right-click (or Control-click on macOS)
+            // opens the context menu, which takes the pointer away before any
+            // pointerup or pointerleave reaches the × — the timer then ran out
+            // and removed the tile although nobody was holding anything.
+            if (e.button !== 0 || e.ctrlKey) return;
             startHold();
           }}
           onPointerUp={cancelHold}
           onPointerLeave={cancelHold}
           onPointerCancel={cancelHold}
+          onContextMenu={cancelHold}
           onKeyDown={(e) => {
             if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
               e.preventDefault();
