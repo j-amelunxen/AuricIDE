@@ -820,10 +820,12 @@ fn provider_from(config: &Value) -> crate::providers::DynamicProvider {
 }
 
 /// FINDING SV-3. The policy refuses exactly the string `bypassPermissions`.
-/// Antigravity maps `auto` and `yolo` to `--dangerously-skip-permissions`;
-/// opencode maps `acceptEdits`, `auto` and `bypassPermissions` to the same
-/// `--auto`. A policy naming any of them is accepted and the child runs with
-/// every prompt off — the rule ADR 0004 says is enforced when the file is read.
+/// Antigravity maps `yolo` (and `bypassPermissions`) to
+/// `--dangerously-skip-permissions`; its `auto` is the CLI reviewer
+/// (`--mode auto`). Opencode maps `acceptEdits`, `auto` and
+/// `bypassPermissions` to the same `--auto`. A policy naming a skip-all
+/// mode is accepted at parse and the child would run with every prompt off —
+/// the rule ADR 0004 says is enforced when the file is read.
 ///
 /// Fixed (WP2): the refusal sits where the provider is known, not in `parse`.
 /// `parse` is pure and provider-blind on purpose — its TS twin cannot read

@@ -165,11 +165,12 @@ fn a_confined_shell_writes_its_workspace_and_nothing_else() {
 }
 
 /// The whole chain against the real Antigravity CLI, where it acts: the
-/// command line a conductor spawn builds (headless, default `auto` mode), the
-/// write sandbox around it, and the auric-pm server reached through the
-/// global bridge entry. Needs `agy` logged in, the `auric-pm` bridge entry in
-/// its MCP config and a built `src-tauri/resources/auric-mcp`. Costs a model
-/// turn, so it is ignored by default:
+/// command line a conductor spawn builds (headless, default `auto` = the CLI
+/// reviewer `--mode auto`), the write sandbox around it, and the auric-pm
+/// server reached through the global bridge entry. Needs `agy` logged in, the
+/// `auric-pm` bridge entry in its MCP config and a built
+/// `src-tauri/resources/auric-mcp`. Costs a model turn, so it is ignored by
+/// default:
 ///
 ///   cargo test agy_headless_end_to_end -- --ignored --nocapture
 #[cfg(target_os = "macos")]

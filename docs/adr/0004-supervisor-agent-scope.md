@@ -62,8 +62,8 @@ Four facts shaped the decision:
   classifier for Claude and no checks at all for another CLI), so the verdict
   comes from the built command, not the mode's name. A mode that hands each
   request to the CLI's own reviewer (Claude's `auto` classifier, Codex
-  `--approve-for-me`) is allowed (decided 2026-10-16): the request is still
-  judged, only not by the human. It applies to a
+  `--approve-for-me`, Antigravity `--mode auto`) is allowed (decided
+  2026-10-16): the request is still judged, only not by the human. It applies to a
   provider's default too, when the policy names no mode
   (`permission_mode_unattended`). Two spellings of one folder in the file
   merge to the stricter entry. The dispatcher checks before the spawn

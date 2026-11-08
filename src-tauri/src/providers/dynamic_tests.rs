@@ -747,6 +747,58 @@ fn test_local_codex_config_offers_auto_review() {
     assert!(cmd.command.contains("--approve-for-me"), "{}", cmd.command);
 }
 
+/// Antigravity's `auto` is the CLI reviewer (`--mode auto`), not skip-all.
+/// Skip-all stays on `bypassPermissions` / `yolo` (`--dangerously-skip-permissions`)
+/// and is unattended, so a supervisor's child cannot run it.
+#[test]
+fn test_local_antigravity_config_offers_auto_review() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dynamic-providers/antigravity.json");
+    let Ok(content) = fs::read_to_string(&path) else {
+        eprintln!("skipping: no local {}", path.display());
+        return;
+    };
+    let provider = DynamicProvider::new(
+        serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("local {} is not valid JSON: {e}", path.display())),
+    );
+    let info = provider.info();
+    assert_eq!(info.id, "antigravity");
+    let auto = info
+        .permission_modes
+        .iter()
+        .find(|m| m.value == "auto")
+        .expect("the auto-review mode must be offered in the pickers");
+    assert!(
+        !auto.unattended,
+        "agy --mode auto is a reviewer; skip-all is bypassPermissions"
+    );
+    let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+    assert!(
+        cmd.command.contains("--mode auto") || cmd.command.contains("--mode=auto"),
+        "auto must launch the CLI reviewer: {}",
+        cmd.command
+    );
+    assert!(
+        !cmd.command.contains("--dangerously-skip-permissions"),
+        "auto must not skip every prompt: {}",
+        cmd.command
+    );
+    let bypass = provider.build_spawn_command(
+        "auto",
+        "task",
+        Some("bypassPermissions"),
+        false,
+        false,
+        true,
+    );
+    assert!(
+        bypass.command.contains("--dangerously-skip-permissions"),
+        "{}",
+        bypass.command
+    );
+}
+
 /// Codex drops every root-level `-c` (where the auric-pm binding goes) as soon
 /// as one `-c` follows the `exec` subcommand; the MCP server then simply does
 /// not exist for the run. Checked with codex-cli 0.159.0. Whatever the local

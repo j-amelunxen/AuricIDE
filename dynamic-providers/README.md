@@ -185,10 +185,10 @@ check also fails closed on its own: `bypassPermissions`, and any mode whose
 mapped arguments contain `--dangerously-…`, `--yolo`, `--auto`,
 `--bypass-permissions` or `bypassPermissions`, count as unattended even
 unmarked (`supervisor::SKIP_PERMISSION_FLAGS`). A mode that hands approvals to
-the CLI's own reviewer (Codex `--approve-for-me`, Claude's `auto`) is not
-unattended: each request is still decided. Mark a mode when
-its flag says something else, for example a CLI whose "auto" is spelled
-`--trust-all`.
+the CLI's own reviewer (Codex `--approve-for-me`, Claude's `auto`,
+Antigravity `--mode auto`) is not unattended: each request is still decided.
+Mark a mode when its flag says something else, for example a CLI whose "auto"
+is spelled `--trust-all` or `--dangerously-skip-permissions`.
 
 `projectBinding` is optional. It declares provider-specific launch material that
 is added only when the caller explicitly binds an agent to a project. Argument
@@ -323,8 +323,10 @@ permission level whenever no explicit mode is chosen:
   pass no mode at all — the backend resolves it from this field.
 
 Pick a value that can run unattended (e.g. Claude Code's classifier-guarded
-`auto`); a prompting mode like `default` will stall agents that nobody is
-watching.
+`auto`, or Antigravity `--mode auto`); a prompting mode like `default` will
+stall agents that nobody is watching. Skip-all flags
+(`--dangerously-skip-permissions`) stay unattended: a supervisor's child
+cannot use them.
 
 ### Unattended runs: what a headless flag has to carry
 

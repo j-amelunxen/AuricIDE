@@ -32,7 +32,8 @@ const long = args.includes('--long');
 // $HOME to see whether the sandbox treats a temp-dir workspace differently.
 const probeRoot = flag('--root') ?? tmpdir();
 
-// What antigravity.json produces for permission mode `auto`.
+// Skip-all (`bypassPermissions` / `yolo` in antigravity.json). `auto` is the
+// CLI reviewer (`--mode auto`) and is not what this probe measures.
 const PERMISSION = '--sandbox --dangerously-skip-permissions';
 const PROBE_MCP = 'auric-agy-probe';
 

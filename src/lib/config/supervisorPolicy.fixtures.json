@@ -5127,7 +5127,7 @@
     "Optional on visibleProjects and checkSpawn cases: permissionModes = { provider: { default: string|null, unattended: string[] } }.",
     "unattended lists the modes of that provider that skip permission prompts. Rust derives it from the provider config: a",
     "permissionModes entry marked \"unattended\": true, bypassPermissions, or a mode whose mapped arguments carry a known skip flag",
-    "(--dangerously-*, --yolo, --auto, bypassPermissions). A reviewer mode (Codex --approve-for-me) is attended. The effective mode is the policy's permissionMode for",
+    "(--dangerously-*, --yolo, --auto, bypassPermissions). A reviewer mode (Codex --approve-for-me, Antigravity --mode auto) is attended. The effective mode is the policy's permissionMode for",
     "the provider, else default. A provider missing from permissionModes has default null and no unattended mode.",
     "Unattended effective mode: checkSpawn refuses with permission_mode_unattended; visibleProjects leaves the provider out."
   ],

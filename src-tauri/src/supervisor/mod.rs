@@ -100,7 +100,8 @@ pub fn with_canonical_keys(mut policy: SupervisorPolicy) -> SupervisorPolicy {
 /// one of these skips the permission prompts. Matched as whole words of the
 /// built command; anything starting `--dangerously` counts as well. A flag
 /// that hands approvals to the CLI's own reviewer (Codex `--approve-for-me`,
-/// Claude's `auto` classifier) is not one: the prompt is still decided.
+/// Claude's `auto` classifier, Antigravity `--mode auto`) is not one: the
+/// prompt is still decided.
 pub const SKIP_PERMISSION_FLAGS: [&str; 4] = [
     "--yolo",
     "--auto",
@@ -966,6 +967,39 @@ mod tests {
         );
         assert!(!is_unattended_mode(&provider, "auto"));
         assert!(!is_unattended_mode(&provider, "acceptEdits"));
+        assert!(is_unattended_mode(&provider, "yolo"));
+        assert!(is_unattended_mode(&provider, "bypassPermissions"));
+    }
+
+    /// Antigravity's `--mode auto` is the same kind of reviewer as Claude's
+    /// `auto` and Codex's `--approve-for-me` (agy 1.3.5+): edits and safe
+    /// commands go through, irreversible ones still ask. Skip-all stays on
+    /// `--dangerously-skip-permissions` (`bypassPermissions` / `yolo`).
+    #[test]
+    fn antigravity_mode_auto_is_a_reviewer_not_a_skip() {
+        let provider = crate::providers::DynamicProvider::new(
+            serde_json::from_value(json!({
+                "id": "antigravity", "name": "Antigravity CLI", "executable": "agy",
+                "arguments": [{ "type": "permission", "map": {
+                    "auto": "--mode auto",
+                    "acceptEdits": "--mode accept-edits",
+                    "plan": "--mode plan",
+                    "yolo": "--dangerously-skip-permissions",
+                    "bypassPermissions": "--dangerously-skip-permissions",
+                    "default": ""
+                }, "fallback": "" }],
+                "info": { "models": [], "permissionModes": [
+                    { "value": "auto", "label": "Autonomous (guarded)",
+                      "description": "Reviewer: edits and safe commands, still asks before irreversible ones" }
+                ], "defaultModel": "auto", "defaultPermissionMode": "auto" },
+                "versionCheck": { "command": "agy", "args": ["--version"] },
+                "promptTemplate": "agy -p \""
+            }))
+            .unwrap(),
+        );
+        assert!(!is_unattended_mode(&provider, "auto"));
+        assert!(!is_unattended_mode(&provider, "acceptEdits"));
+        assert!(!is_unattended_mode(&provider, "plan"));
         assert!(is_unattended_mode(&provider, "yolo"));
         assert!(is_unattended_mode(&provider, "bypassPermissions"));
     }

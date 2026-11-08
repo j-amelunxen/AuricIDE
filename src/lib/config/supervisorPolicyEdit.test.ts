@@ -106,6 +106,15 @@ describe('offerablePermissionModes', () => {
     ]);
     expect(modes.map((m) => m.value)).toEqual(['default', 'acceptEdits']);
   });
+
+  it('offers auto when it is a reviewer mode, not a skip', () => {
+    const modes = offerablePermissionModes([
+      { value: 'auto', label: 'Auto', description: '' },
+      { value: 'bypassPermissions', label: 'Bypass', description: '', unattended: true },
+      { value: 'acceptEdits', label: 'Accept edits', description: '' },
+    ]);
+    expect(modes.map((m) => m.value)).toEqual(['auto', 'acceptEdits']);
+  });
 });
 
 describe('unattendedBlockers', () => {
