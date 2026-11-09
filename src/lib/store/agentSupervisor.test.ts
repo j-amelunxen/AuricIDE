@@ -284,6 +284,28 @@ describe('spawnSupervisor', () => {
     expect(config.provider).toBe('codex');
   });
 
+  it("starts Codex on its own model, not Claude's", async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: 'opus',
+      models: { claude: 'opus', codex: 'luna' },
+      chrome: false,
+    };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+    store.setState({
+      openSupervisorProviderChoice: vi.fn(async () => 'codex'),
+    } as never);
+
+    const launch = await store.getState().spawnSupervisor();
+    expect(launch.kind).toBe('spawned');
+    const config = vi.mocked(spawnAgent).mock.calls[0][0];
+    expect(config.provider).toBe('codex');
+    expect(config.model).toBe('luna');
+  });
+
   it('cancels spawn when user cancels provider choice modal', async () => {
     const policy = emptySupervisorPolicy();
     policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };

@@ -40,6 +40,10 @@ pub const REASON_REQUIRED_FROM_RANK: i64 = 3;
 pub struct SupervisorModel {
     pub provider: String,
     pub model: Option<String>,
+    /// The model this supervisor runs on, per provider id. An absent key means
+    /// that provider's own default. Empty is omitted on write.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub models: BTreeMap<String, String>,
     /// Candidate providers allowed to act as supervisor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub providers: Option<Vec<String>>,
@@ -54,6 +58,7 @@ impl Default for SupervisorModel {
         Self {
             provider: DEFAULT_SUPERVISOR_PROVIDER.to_string(),
             model: None,
+            models: BTreeMap::new(),
             providers: None,
             chrome: false,
         }
@@ -476,10 +481,35 @@ fn parse_supervisor(value: Option<&Value>) -> SupervisorModel {
             .map(str::trim)
             .filter(|model| !model.is_empty())
             .map(str::to_string),
+        models: parse_supervisor_models(source.get("models")),
         providers,
         // Only a literal `true` switches the browser on.
         chrome: source.get("chrome").and_then(Value::as_bool) == Some(true),
     }
+}
+
+/// Provider id → the model this supervisor runs as. Wrong types and blank
+/// keys are skipped: a bad map must not refuse the whole file.
+fn parse_supervisor_models(value: Option<&Value>) -> BTreeMap<String, String> {
+    let mut models = BTreeMap::new();
+    let Some(Value::Object(source)) = value else {
+        return models;
+    };
+    for (key, entry) in source {
+        let id = normalize_provider_id(key);
+        let Some(model) = entry
+            .as_str()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        else {
+            continue;
+        };
+        if id.is_empty() {
+            continue;
+        }
+        models.insert(id, model.to_string());
+    }
+    models
 }
 
 /// A non-negative integer that fits a limit.
@@ -1810,6 +1840,7 @@ pub(crate) mod tests {
         let single_model = SupervisorModel {
             provider: "codex".to_string(),
             model: None,
+            models: BTreeMap::new(),
             providers: None,
             chrome: false,
         };
@@ -1819,6 +1850,7 @@ pub(crate) mod tests {
         let multi_model = SupervisorModel {
             provider: "claude".to_string(),
             model: None,
+            models: BTreeMap::new(),
             providers: Some(vec![
                 "Codex".to_string(),
                 "claude".to_string(),

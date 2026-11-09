@@ -1,6 +1,10 @@
 'use client';
 
-import type { SupervisorPolicy } from '@/lib/config/supervisorPolicy';
+import {
+  supervisorModelFor,
+  supervisorModelsOf,
+  type SupervisorPolicy,
+} from '@/lib/config/supervisorPolicy';
 import type { ModelOption, ProviderInfo } from '@/lib/tauri/providers';
 import { supervisorProvidersOf } from '@/lib/config/supervisorProviders';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
@@ -26,7 +30,7 @@ export interface SupervisorHeaderProps {
 
 export function SupervisorHeader({ draft, providers, onChange }: SupervisorHeaderProps) {
   const candidateProviders = supervisorProvidersOf(draft);
-  const primaryProvider = providers.find((p) => p.id === draft.supervisor.provider);
+  const tickedProviders = providers.filter((p) => candidateProviders.includes(p.id));
 
   const toggleProvider = (providerId: string, checked: boolean) => {
     let updated: string[];
@@ -44,6 +48,16 @@ export function SupervisorHeader({ draft, providers, onChange }: SupervisorHeade
       ...draft,
       supervisor: nextSupervisor,
     });
+  };
+
+  const setModelFor = (providerId: string, model: string) => {
+    const models = { ...supervisorModelsOf(draft.supervisor) };
+    if (model) models[providerId] = model;
+    else delete models[providerId];
+    const nextSupervisor = { ...draft.supervisor, model: models.claude ?? null };
+    if (Object.keys(models).length > 0) nextSupervisor.models = models;
+    else delete nextSupervisor.models;
+    onChange({ ...draft, supervisor: nextSupervisor });
   };
 
   return (
@@ -81,31 +95,30 @@ export function SupervisorHeader({ draft, providers, onChange }: SupervisorHeade
             );
           })}
         </div>
-        <SettingsRow
-          label="Model"
-          htmlFor="supervisor-model"
-          hint={`Of ${primaryProvider?.name ?? 'the first provider'}; smallest first.`}
-        >
-          <select
-            id="supervisor-model"
-            data-testid="supervisor-model"
-            value={draft.supervisor.model ?? ''}
-            onChange={(e) =>
-              onChange({
-                ...draft,
-                supervisor: { ...draft.supervisor, model: e.target.value || null },
-              })
-            }
-            className={SELECT_CLASS}
+        {tickedProviders.map((provider) => (
+          <SettingsRow
+            key={provider.id}
+            label="Model"
+            htmlFor={`supervisor-model-${provider.id}`}
+            hint={`Of ${provider.name}; smallest first.`}
           >
-            <option value="">Provider default</option>
-            {uniqueModels(byModelRank(primaryProvider?.models ?? [])).map((model) => (
-              <option key={model.value} value={model.value}>
-                {model.label} · {modelSizeLabel(model.rank)}
-              </option>
-            ))}
-          </select>
-        </SettingsRow>
+            <select
+              id={`supervisor-model-${provider.id}`}
+              data-testid={`supervisor-model-${provider.id}`}
+              aria-label={`Model of ${provider.name}`}
+              value={supervisorModelFor(draft.supervisor, provider.id) ?? ''}
+              onChange={(e) => setModelFor(provider.id, e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">Provider default</option>
+              {uniqueModels(byModelRank(provider.models ?? [])).map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label} · {modelSizeLabel(model.rank)}
+                </option>
+              ))}
+            </select>
+          </SettingsRow>
+        ))}
       </SettingsGroup>
 
       <SettingsGroup title="Limits and browser">

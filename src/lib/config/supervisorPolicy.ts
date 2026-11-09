@@ -78,7 +78,13 @@ export interface SupervisorPolicy {
   supervisor: {
     provider: string;
     providers?: string[];
+    /** Legacy single model; still read, and kept in sync with `models.claude`. */
     model: string | null;
+    /**
+     * The model this supervisor runs on, per provider id. An absent key means
+     * that provider's own default (no model flag from another provider).
+     */
+    models?: Record<string, string>;
     chrome: boolean;
   };
   maxRunningChildren: number;
@@ -463,10 +469,24 @@ function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
   return entry;
 }
 
+function parseSupervisorModelMap(value: unknown): Record<string, string> | undefined {
+  if (value === undefined || value === null || !isObject(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const id = providerId(key);
+    if (!id || typeof entry !== 'string') continue;
+    const model = entry.trim();
+    if (!model) continue;
+    result[id] = model;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function parseSupervisorBlock(value: unknown): SupervisorPolicy['supervisor'] {
   const fallback = { ...DEFAULTS.supervisor };
   if (!isObject(value)) return fallback;
   const providers = parseProviders(value.providers);
+  const models = parseSupervisorModelMap(value.models);
   return {
     provider:
       typeof value.provider === 'string' && value.provider.trim()
@@ -474,8 +494,42 @@ function parseSupervisorBlock(value: unknown): SupervisorPolicy['supervisor'] {
         : fallback.provider,
     ...(providers && providers.length > 0 ? { providers } : {}),
     model: typeof value.model === 'string' && value.model ? value.model : fallback.model,
+    ...(models ? { models } : {}),
     chrome: value.chrome === true,
   };
+}
+
+/**
+ * The model ids the supervisor should run on, keyed by provider. A stored
+ * single `model` becomes the Claude Code (`claude`) entry when that key is
+ * absent, so an existing Opus choice is kept.
+ */
+export function supervisorModelsOf(
+  supervisor: SupervisorPolicy['supervisor']
+): Record<string, string> {
+  const models: Record<string, string> = {};
+  if (supervisor.models) {
+    for (const [key, value] of Object.entries(supervisor.models)) {
+      const id = providerId(key);
+      if (!id || typeof value !== 'string') continue;
+      const model = value.trim();
+      if (model) models[id] = model;
+    }
+  }
+  const legacy = supervisor.model?.trim();
+  const claude = providerId(DEFAULTS.supervisor.provider) || 'claude';
+  if (legacy && !models[claude]) models[claude] = legacy;
+  return models;
+}
+
+/** The configured model for this provider, or `null` to use the provider's default. */
+export function supervisorModelFor(
+  supervisor: SupervisorPolicy['supervisor'],
+  provider: string
+): string | null {
+  const id = providerId(provider);
+  if (!id) return null;
+  return supervisorModelsOf(supervisor)[id] ?? null;
 }
 
 function intersectProviders(a: string[] | null, b: string[] | null): string[] | null {

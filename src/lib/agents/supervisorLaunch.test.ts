@@ -348,6 +348,51 @@ describe('supervisorSpawnConfig', () => {
     expect(config?.model).toBe('opus');
   });
 
+  it("starts each provider on its own configured model, never another provider's", () => {
+    const policy = policyWith({
+      '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+    });
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: 'opus',
+      models: { claude: 'opus', codex: 'gpt-luna' },
+      chrome: false,
+    };
+    const spawn = (provider: string) =>
+      supervisorSpawnConfig({
+        policy,
+        providers: [CLAUDE, CODEX],
+        projectPolicies: {},
+        descriptions: {},
+        provider,
+      });
+    expect(spawn('claude')?.model).toBe('opus');
+    expect(spawn('codex')?.model).toBe('gpt-luna');
+  });
+
+  it("does not hand Claude's legacy model to Codex", () => {
+    const policy = policyWith({
+      '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+    });
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: 'opus',
+      chrome: false,
+    };
+    const spawn = (provider: string) =>
+      supervisorSpawnConfig({
+        policy,
+        providers: [CLAUDE, CODEX],
+        projectPolicies: {},
+        descriptions: {},
+        provider,
+      });
+    expect(spawn('claude')?.model).toBe('opus');
+    expect(spawn('codex')?.model).toBe('gpt-luna');
+  });
+
   it('supports provider override and omits chrome for non-claude providers', () => {
     const policy = policyWith({
       '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },

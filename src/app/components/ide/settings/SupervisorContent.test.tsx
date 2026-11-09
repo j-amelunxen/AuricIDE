@@ -147,7 +147,7 @@ describe('SupervisorContent', () => {
     fireEvent.change(screen.getByTestId(`supervisor-max-running-${OPEN}`), {
       target: { value: '3' },
     });
-    fireEvent.change(screen.getByTestId('supervisor-model'), { target: { value: 'haiku' } });
+    fireEvent.change(screen.getByTestId('supervisor-model-claude'), { target: { value: 'haiku' } });
     fireEvent.change(screen.getByTestId('supervisor-max-children'), { target: { value: '4' } });
     fireEvent.click(screen.getByTestId('supervisor-chrome'));
 
@@ -156,7 +156,7 @@ describe('SupervisorContent', () => {
     await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
     expect(supervisorPolicySet).toHaveBeenCalledWith({
       ...emptySupervisorPolicy(),
-      supervisor: { provider: 'claude', model: 'haiku', chrome: true },
+      supervisor: { provider: 'claude', model: 'haiku', models: { claude: 'haiku' }, chrome: true },
       maxRunningChildren: 4,
       projects: {
         [OPEN]: {
@@ -438,9 +438,46 @@ describe('SupervisorContent', () => {
     ]);
     await renderLoaded();
     const values = Array.from(
-      screen.getByTestId('supervisor-model').querySelectorAll('option')
+      screen.getByTestId('supervisor-model-claude').querySelectorAll('option')
     ).map((o) => o.value);
     expect(values.filter((v) => v === 'opus')).toHaveLength(1);
+  });
+
+  it("offers a model dropdown per ticked provider from that provider's catalogue", async () => {
+    await renderLoaded();
+    expect(screen.getByTestId('supervisor-model-claude')).toBeInTheDocument();
+    expect(screen.queryByTestId('supervisor-model-codex')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('supervisor-provider-candidate-codex'));
+    const claudeValues = Array.from(
+      screen.getByTestId('supervisor-model-claude').querySelectorAll('option')
+    ).map((o) => o.value);
+    const codexValues = Array.from(
+      screen.getByTestId('supervisor-model-codex').querySelectorAll('option')
+    ).map((o) => o.value);
+    expect(claudeValues).toEqual(['', 'haiku', 'opus', 'custom']);
+    expect(codexValues).toEqual(['', 'gpt-luna']);
+    expect(screen.getByTestId('supervisor-model-claude')).toHaveAttribute(
+      'aria-label',
+      'Model of Claude Code'
+    );
+    expect(screen.getByTestId('supervisor-model-codex')).toHaveAttribute(
+      'aria-label',
+      'Model of Codex'
+    );
+
+    fireEvent.change(screen.getByTestId('supervisor-model-codex'), {
+      target: { value: 'gpt-luna' },
+    });
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    expect(supervisorPolicySet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        supervisor: expect.objectContaining({
+          models: { codex: 'gpt-luna' },
+        }),
+      })
+    );
   });
 
   it('shows what the stored file had rejected', async () => {

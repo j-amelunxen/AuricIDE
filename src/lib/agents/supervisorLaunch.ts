@@ -1,6 +1,7 @@
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   permissionModesOf,
+  supervisorModelFor,
   visibleProjects,
   type OfferedModels,
   type SupervisorPolicy,
@@ -110,7 +111,7 @@ export interface SupervisorSpawnInput {
   provider?: string;
   /** A skill's prompt, handed over as the first task. */
   firstTask?: string;
-  /** A skill's model; the policy's supervisor model otherwise. */
+  /** A skill's model; that provider's configured supervisor model otherwise. */
   model?: string;
   /** The human's standing instructions from Settings → Supervisor. */
   instructions?: string;
@@ -149,12 +150,14 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
   const provider = input.providers.find((p) => p.id === providerId);
   const instructions = input.instructions ?? readSupervisorInstructions(providerId);
   const { manager } = input;
-  const model = manager ? modelStillOffered(input.model, provider) : input.model;
+  const configured = supervisorModelFor(input.policy.supervisor, providerId);
+  const requested = input.model ?? configured ?? undefined;
+  const model = manager ? modelStillOffered(requested, provider) : requested;
   return {
     name: manager?.record.name ?? 'Supervisor',
     role: 'supervisor',
     provider: providerId,
-    model: model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
+    model: model ?? provider?.defaultModel ?? '',
     task: buildSupervisorLaunchPrompt(
       supervisorPromptProjects(visible, input.providers, input.descriptions),
       {

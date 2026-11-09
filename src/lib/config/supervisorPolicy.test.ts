@@ -19,6 +19,8 @@ import {
   trimProviderNote,
   runsUnattended,
   parseSupervisorPolicy,
+  supervisorModelFor,
+  supervisorModelsOf,
   SUPERVISOR_DENIED_REASON_TEXT,
   SUPERVISOR_PARSE_REASONS,
   visibleProjects,
@@ -262,5 +264,36 @@ describe('supervisor tools', () => {
 
   it('starts without tools', () => {
     expect(emptySupervisorPolicy().tools).toEqual({});
+  });
+});
+
+describe('supervisorModelsOf', () => {
+  const base = emptySupervisorPolicy().supervisor;
+
+  it('migrates a legacy model string onto the Claude Code entry', () => {
+    expect(supervisorModelsOf({ ...base, model: 'opus' })).toEqual({ claude: 'opus' });
+    expect(supervisorModelFor({ ...base, model: 'opus' }, 'claude')).toBe('opus');
+    expect(supervisorModelFor({ ...base, model: 'opus' }, 'codex')).toBeNull();
+  });
+
+  it('prefers an explicit per-provider map over the legacy string', () => {
+    const supervisor = {
+      ...base,
+      model: 'opus',
+      models: { claude: 'haiku', codex: 'gpt-6-sol' },
+    };
+    expect(supervisorModelsOf(supervisor)).toEqual({ claude: 'haiku', codex: 'gpt-6-sol' });
+    expect(supervisorModelFor(supervisor, 'codex')).toBe('gpt-6-sol');
+  });
+
+  it('fills Claude from the legacy string when the map only names another provider', () => {
+    const supervisor = { ...base, model: 'opus', models: { codex: 'gpt-6-sol' } };
+    expect(supervisorModelsOf(supervisor)).toEqual({ claude: 'opus', codex: 'gpt-6-sol' });
+  });
+
+  it('normalises provider ids in the map', () => {
+    expect(supervisorModelFor({ ...base, models: { ' Codex ': 'gpt-6-sol' } }, 'codex')).toBe(
+      'gpt-6-sol'
+    );
   });
 });

@@ -1160,6 +1160,70 @@
       }
     },
     {
+      "name": "supervisor models are kept per normalised provider id",
+      "raw": "{\"version\": 1, \"supervisor\": {\"provider\": \"claude\", \"models\": {\" Claude \": \"opus\", \"codex\": \"gpt-6-sol\"}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "models": {
+              "claude": "opus",
+              "codex": "gpt-6-sol"
+            },
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a legacy supervisor model string is kept beside an explicit models map",
+      "raw": "{\"version\": 1, \"supervisor\": {\"model\": \"opus\", \"models\": {\"codex\": \"gpt-6-sol\"}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": "opus",
+            "models": {
+              "codex": "gpt-6-sol"
+            },
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "supervisor models of the wrong type are ignored",
+      "raw": "{\"version\": 1, \"supervisor\": {\"models\": [\"opus\"]}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "tools": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
       "name": "provider weights are kept per normalised provider id; two keys for one provider keep the smaller",
       "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerWeights\": {\" Claude \": 2, \"codex\": 1, \"Codex\": 3, \"antigravity\": 0}}}}",
       "expected": {
