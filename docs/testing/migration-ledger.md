@@ -17,8 +17,9 @@ shadow and stability window.
 The complete verification for the worktree merge fix found that
 `AgentContent.test.tsx` still expected a global “Skip permission prompts” toggle.
 That control is already absent in the unchanged baseline production component;
-CLAUDE.md's “No global permission switches” rule requires permission choices per
-launch. The existing component test is corrected to assert absence of global
+the [configuration rule](../spec/modules/configuration-credentials.md#no-global-permission-switches)
+requires permission choices per launch. The existing component test is corrected to
+assert absence of global
 skip/auto-accept controls. This is a correction of an obsolete contract, not a
 migration to a weaker test layer or removal of a live confirmation gate. The
 active confirmation behavior remains covered by `useConfirm.test.tsx`, including

@@ -57,8 +57,10 @@ The last section compares link and MCP.
   `supervisor-children-adopted`, `external-agents-changed`, `menu-bar-launch`, `video-import-setup-progress`,
   `control-request` and `agent-input-sent` (control bridge, fixture
   `agentControl.fixtures.json` → `events`).
-- **Stability:** internal. Rules that must hold across the seam are in `CLAUDE.md`
-  (agent window: one writer per field, offsets; webview prefs mirror).
+- **Stability:** internal. Rules that must hold across the seam are in the
+  [agent-window guide](../development/agent-fleet.md#the-terminals-in-a-window-of-their-own)
+  (one writer per field, offsets) and the
+  [shared-preferences guide](../development/configuration.md#the-installed-app-vs-the-dev-build).
 
 ## 2. MCP servers — `auric-mcp`
 
@@ -284,7 +286,7 @@ macOS menu-bar icon can launch supervisor skills and global shortcuts.
   permission mode (`notifications/trust.ts`).
 - **Stop-hook for goals:** conductor goal agents run unattended without `/goal` because
   its stop hook refuses to let an agent end while a human station is open
-  (`CLAUDE.md`).
+  ([conductor invariants](../development/goals.md#goals-tickets-and-the-conductor-loop)).
 
 ## 9. Environment variables
 

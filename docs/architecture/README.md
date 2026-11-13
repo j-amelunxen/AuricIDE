@@ -12,8 +12,8 @@ including tests. Agent-module counts refer to runtime source files. The labels
 make that distinction explicit rather than relying on test-file name exclusions.
 
 This is the module-level companion to [`../architecture.md`](../architecture.md) (the
-one-screen diagram) and to [`../../CLAUDE.md`](../../CLAUDE.md) (the working rules per
-feature). It answers three questions: what are the modules, what depends on what, and
+one-screen diagram) and to the [developer guides](../development/README.md) (the working
+rules per feature). It answers three questions: what are the modules, what depends on what, and
 where can something from outside dock on. The last one has its own file:
 [`interfaces.md`](interfaces.md).
 
@@ -56,7 +56,7 @@ What makes it more than an editor:
   (`auric-pm`) bound to one project.
 - **It has a work model on top of tickets**: goals → stations → tickets, with a
   conductor loop that spawns agents until the goal's four satisfaction conditions hold
-  (`CLAUDE.md`, "Goals, Tickets, and the Conductor Loop").
+  ([goal workflow and invariants](../development/goals.md#goals-tickets-and-the-conductor-loop)).
 - **It has a supervisor tier**: one interactive agent (the supervisor) that starts
   other agents under a policy file, plus named, remembered supervisors (managers).
 - **It can be driven from outside** over three doors that all end in the same

@@ -1,8 +1,8 @@
 # Architecture
 
 One screen of how AuricIDE fits together. For the working rules that go with it —
-state slices, the goal/conductor loop, the agent-fleet invariants — see
-[`CLAUDE.md`](../CLAUDE.md).
+state slices, the goal/conductor loop, the agent-fleet invariants — see the
+[developer guides](development/README.md).
 
 For the module list, the dependency overview and every external docking point (MCP,
 sockets, Supervisor Link, file contracts) see [`architecture/`](architecture/README.md) and

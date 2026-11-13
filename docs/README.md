@@ -119,6 +119,7 @@ flowchart TD
 
 ### Architecture & Foundation
 
+- [Developer Guides](./development/README.md) — Task-specific implementation rules, invariants, commands, and verification recipes.
 - [Architecture Overview](./architecture.md) — Single-screen system diagram and key technological boundaries.
 - [Semantic Markdown & NLP Highlighting](./semantic-markdown-highlighting.md) — Multi-layer CodeMirror 6 highlighting architecture.
 - [Overlay, Dialog, and Work IA](./actionplan-overlay-flows.md) — Single overlay stack, Work tab unification, and dialog flows.
