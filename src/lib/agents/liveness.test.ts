@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import {
   AGENT_ACTIVITY_BUMP_MS,
   AGENT_LIVE_WINDOW_MS,

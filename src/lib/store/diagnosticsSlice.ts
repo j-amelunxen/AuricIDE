@@ -1,3 +1,5 @@
+import { loadAppConfig, setAppConfigValue } from '@/lib/config/appConfig';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 export interface StoreDiagnostic {
@@ -18,12 +20,11 @@ export interface LintConfig {
 export interface DiagnosticsSlice {
   diagnostics: Map<string, StoreDiagnostic[]>;
   lintConfig: LintConfig;
-  problemsPanelOpen: boolean;
   setDiagnostics: (filePath: string, diags: StoreDiagnostic[]) => void;
   clearDiagnostics: (filePath: string) => void;
   getDiagnosticCounts: (filePath: string) => { errors: number; warnings: number };
-  toggleRule: (ruleId: string, enabled: boolean) => void;
-  setProblemsPanelOpen: (open: boolean) => void;
+  /** Markdown linting on or off; an application setting, so it is remembered. */
+  setLintEnabled: (enabled: boolean) => void;
 }
 
 function sameDiagnostic(a: StoreDiagnostic, b: StoreDiagnostic): boolean {
@@ -38,10 +39,12 @@ function sameDiagnostic(a: StoreDiagnostic, b: StoreDiagnostic): boolean {
   );
 }
 
-export const createDiagnosticsSlice: StateCreator<DiagnosticsSlice> = (set, get) => ({
+export const createDiagnosticsSlice: StateCreator<StoreState, [], [], DiagnosticsSlice> = (
+  set,
+  get
+) => ({
   diagnostics: new Map(),
-  lintConfig: { enabled: true, disabledRules: new Set() },
-  problemsPanelOpen: false,
+  lintConfig: { enabled: loadAppConfig().markdownLintEnabled, disabledRules: new Set() },
 
   setDiagnostics: (filePath: string, diags: StoreDiagnostic[]) => {
     const prev = get().diagnostics.get(filePath);
@@ -71,18 +74,8 @@ export const createDiagnosticsSlice: StateCreator<DiagnosticsSlice> = (set, get)
     return { errors, warnings };
   },
 
-  toggleRule: (ruleId: string, enabled: boolean) => {
-    const config = get().lintConfig;
-    const newDisabled = new Set(config.disabledRules);
-    if (enabled) {
-      newDisabled.delete(ruleId);
-    } else {
-      newDisabled.add(ruleId);
-    }
-    set({ lintConfig: { ...config, disabledRules: newDisabled } });
-  },
-
-  setProblemsPanelOpen: (open: boolean) => {
-    set({ problemsPanelOpen: open });
+  setLintEnabled: (enabled: boolean) => {
+    setAppConfigValue('markdownLintEnabled', enabled);
+    set({ lintConfig: { ...get().lintConfig, enabled } });
   },
 });

@@ -1,7 +1,7 @@
 import { isValidSkip, isVerifiedEvidence } from '@/lib/pm/enums';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
-import { describeDependencyBlock } from '../goals/goalDependencyAdapters';
-import { getGoalDescendants } from '../goals/goalTreeHelpers';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/goals/types';
+import { describeDependencyBlock } from '../../goals/model/goalDependencyAdapters';
+import { getGoalDescendants } from '../../goals/model/goalTreeHelpers';
 import type { GoalAgentPurpose } from './conductorGoalAgents';
 
 export interface ExhaustedGoal {

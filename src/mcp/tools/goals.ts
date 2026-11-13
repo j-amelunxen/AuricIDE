@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { GOAL_WORK_MODE_SETTINGS } from '../../lib/goals/workMode';
-import { GOAL_STATUSES } from '../../lib/pm/enums';
+import { GOAL_STATUSES, PRIORITIES } from '../../lib/pm/enums';
 import { resolveEpicId, resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 import {
   listGoals,
@@ -32,8 +32,6 @@ import {
   FIND_GOALS_DEFAULT_LIMIT,
   goalSummary,
 } from './goalViews';
-
-export * from './goalsDb';
 
 const MISSION_PATH_DESCRIPTION =
   'Root goals only: the mission folder this goal stands for, relative to the project ' +
@@ -146,7 +144,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .optional()
         .describe('Machine-checkable markdown checklist defining "achieved"'),
       status: z.enum(GOAL_STATUSES).optional().describe('Initial status (default draft)'),
-      priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+      priority: z.enum(PRIORITIES).optional(),
       goalPrompt: z
         .string()
         .optional()
@@ -188,7 +186,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       description: z.string().optional(),
       successCriteria: z.string().optional(),
       status: z.enum(GOAL_STATUSES).optional(),
-      priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+      priority: z.enum(PRIORITIES).optional(),
       goalPrompt: z.string().optional(),
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
@@ -249,7 +247,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
             name: z.string(),
             description: z.string().optional(),
             successCriteria: z.string().optional(),
-            priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+            priority: z.enum(PRIORITIES).optional(),
             goalPrompt: z.string().optional(),
             key: z
               .string()
@@ -298,13 +296,13 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
               name: z.string(),
               description: z.string().optional(),
               successCriteria: z.string().optional(),
-              priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+              priority: z.enum(PRIORITIES).optional(),
               goalPrompt: z.string().optional(),
             }),
             ticket: z.object({
               name: z.string(),
               description: z.string().optional(),
-              priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+              priority: z.enum(PRIORITIES).optional(),
               dueDate: z.string().nullable().optional(),
               needsHumanSupervision: z.boolean().optional(),
               skills: z.array(z.string()).optional(),

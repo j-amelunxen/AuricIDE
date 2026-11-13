@@ -1,10 +1,11 @@
 'use client';
 
-import { formatExternalSpan } from '@/lib/agents/externalAgents';
-import { formatDuration } from '@/lib/pm/metrics';
-import type { AgentUsageRow, UsageCostSource } from '@/lib/tauri/agentUsage';
+import { formatTokens } from '@/lib/usage/breakdown';
+import { formatAgentDurationShort } from '@/lib/agents/duration';
+import { formatDuration } from '@/lib/pm/metrics/time';
+import type { AgentUsageRow, UsageCostSource } from '@/lib/pm/usage/types';
 import { formatDate } from '../ticketEdit/types';
-import { formatRunCost, formatTokens, rowTokens } from './usageFormat';
+import { formatRunCost, rowTokens } from './usageFormat';
 
 const SOURCE_BADGE: Record<UsageCostSource, { label: string; className: string }> = {
   cli: { label: 'exact', className: 'bg-emerald-500/15 text-emerald-300' },
@@ -48,8 +49,8 @@ function SourceBadges({ row }: { row: AgentUsageRow }) {
 
 /** On an external row the registered time is not working time, so it is never the figure alone. */
 function ExternalRuntime({ row }: { row: AgentUsageRow }) {
-  const registered = formatExternalSpan(row.durationMs);
-  const on = row.onMs === null ? 'unknown' : formatExternalSpan(row.onMs);
+  const registered = formatAgentDurationShort(row.durationMs);
+  const on = row.onMs === null ? 'unknown' : formatAgentDurationShort(row.onMs);
   const parts = [
     `Figures as reported; the IDE cannot check them. Registered ${registered}, on ${on}.`,
   ];
@@ -59,7 +60,7 @@ function ExternalRuntime({ row }: { row: AgentUsageRow }) {
     <span title={parts.join(' ')}>
       {row.activeMs === null
         ? 'runtime unknown'
-        : `active ${formatExternalSpan(row.activeMs)} of ${registered}`}
+        : `active ${formatAgentDurationShort(row.activeMs)} of ${registered}`}
     </span>
   );
 }

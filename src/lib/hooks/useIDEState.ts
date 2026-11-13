@@ -2,12 +2,12 @@ import { useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
-import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
+import type { FileTreeNode } from '@/lib/explorer/fileTree';
 import { type MindmapData } from '@/lib/mindmap/mindmapParser';
-import { type AgentInfo } from '@/lib/tauri/agents';
-import { type BottomTab } from '@/app/components/ide/BottomPanelTabs';
-import { type ExtraTerminal } from '@/app/components/terminal/TerminalPanel';
-import { type SettingsCategory } from '@/app/components/ide/SettingsModal';
+import type { AgentInfo } from '@/lib/agents/types';
+import type { BottomTab } from '@/lib/ide/types';
+import type { ExtraTerminal } from '@/lib/terminal/types';
+import type { SettingsCategory } from '@/lib/settings/types';
 
 /**
  * The page-level state `Home` renders from. Everything selected here re-renders
@@ -79,7 +79,6 @@ export function useIDEState() {
   const appendAgentLog = useStore((s) => s.appendAgentLog);
   const selectedAgentId = useStore((s) => s.selectedAgentId);
   const selectAgent = useStore((s) => s.selectAgent);
-  const killAgentsForRepoPath = useStore((s) => s.killAgentsForRepoPath);
   const loadInterruptedAgents = useStore((s) => s.loadInterruptedAgents);
   const resumeInterruptedAgent = useStore((s) => s.resumeInterruptedAgent);
   const discardInterruptedAgent = useStore((s) => s.discardInterruptedAgent);
@@ -92,7 +91,6 @@ export function useIDEState() {
   const canvasNodes = useStore((s) => s.canvasNodes);
   const canvasEdges = useStore((s) => s.canvasEdges);
   const setCanvasData = useStore((s) => s.setCanvasData);
-  const selectNode = useStore((s) => s.selectNode);
   const addTerminalLog = useStore((s) => s.addTerminalLog);
   const clearTerminalLogs = useStore((s) => s.clearTerminalLogs);
   const setCursorPos = useStore((s) => s.setCursorPos);
@@ -145,16 +143,16 @@ export function useIDEState() {
   const updateFileInIndex = useStore((s) => s.updateFileInIndex);
   const bulkUpdateFilesInIndex = useStore((s) => s.bulkUpdateFilesInIndex);
   const clearEntityIndex = useStore((s) => s.clearEntityIndex);
-  const clearHeadingIndex = useStore((s) => s.clearHeadingIndex);
   const clearLinkIndex = useStore((s) => s.clearLinkIndex);
   const getDiagnosticCounts = useStore((s) => s.getDiagnosticCounts);
-  const setProblemsPanelOpen = useStore((s) => s.setProblemsPanelOpen);
   const setPmModalOpen = useStore((s) => s.setPmModalOpen);
   const setPmSelectedEpicId = useStore((s) => s.setPmSelectedEpicId);
   const setPmSelectedTicketId = useStore((s) => s.setPmSelectedTicketId);
   const loadPmData = useStore((s) => s.loadPmData);
   const loadGoals = useStore((s) => s.loadGoals);
   const resetPmInMemory = useStore((s) => s.resetPmInMemory);
+  const resetGoalsInMemory = useStore((s) => s.resetGoalsInMemory);
+  const refreshPmData = useStore((s) => s.refreshPmData);
   const addTicket = useStore((s) => s.addTicket);
   const addDependency = useStore((s) => s.addDependency);
   const savePmData = useStore((s) => s.savePmData);
@@ -186,7 +184,6 @@ export function useIDEState() {
   const ocEdges = useStore((s) => s.ocEdges);
   const setObsidianCanvasData = useStore((s) => s.setObsidianCanvasData);
   const updateOcNode = useStore((s) => s.updateOcNode);
-  const selectOcNode = useStore((s) => s.selectOcNode);
   const addOcNode = useStore((s) => s.addOcNode);
   const updateOcNodeSize = useStore((s) => s.updateOcNodeSize);
   const updateOcNodeColor = useStore((s) => s.updateOcNodeColor);
@@ -195,7 +192,6 @@ export function useIDEState() {
   const setCanvasContextMenu = useStore((s) => s.setCanvasContextMenu);
 
   const [defaultProvider, setDefaultProvider] = useState<ProviderInfo>(FALLBACK_CRUSH_PROVIDER);
-  const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const [projectFilesInfo, setProjectFilesInfo] = useState<ProjectFileInfo[]>([]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -297,7 +293,6 @@ export function useIDEState() {
     appendAgentLog,
     selectedAgentId,
     selectAgent,
-    killAgentsForRepoPath,
     loadInterruptedAgents,
     resumeInterruptedAgent,
     discardInterruptedAgent,
@@ -310,7 +305,6 @@ export function useIDEState() {
     canvasNodes,
     canvasEdges,
     setCanvasData,
-    selectNode,
     addTerminalLog,
     clearTerminalLogs,
     setCursorPos,
@@ -357,14 +351,14 @@ export function useIDEState() {
     updateFileInIndex,
     bulkUpdateFilesInIndex,
     clearEntityIndex,
-    clearHeadingIndex,
     clearLinkIndex,
     getDiagnosticCounts,
-    setProblemsPanelOpen,
     setPmModalOpen,
     loadPmData,
     loadGoals,
     resetPmInMemory,
+    resetGoalsInMemory,
+    refreshPmData,
     resetBlueprintsInMemory,
     setRequirementsModalOpen,
     loadRequirements,
@@ -395,8 +389,6 @@ export function useIDEState() {
     refreshScratches,
     defaultProvider,
     setDefaultProvider,
-    projectFiles,
-    setProjectFiles,
     projectFilesInfo,
     setProjectFilesInfo,
     contextMenu,
@@ -419,7 +411,6 @@ export function useIDEState() {
     setObsidianCanvasData,
     updateOcNode,
     addOcNode,
-    selectOcNode,
     updateOcNodeSize,
     updateOcNodeColor,
     canvasContextMenu,

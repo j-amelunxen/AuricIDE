@@ -11,9 +11,11 @@ import { RequirementFilterPanel } from './RequirementFilterPanel';
 import { RequirementList } from './RequirementList';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
 import { RequirementCreateDialog } from './RequirementCreateDialog';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 import { persistQuietly } from '@/lib/store/persistFeedback';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { verificationFreshness } from '@/lib/pm/requirementFreshness';
+import { useSaveShortcut } from '@/lib/hooks/useSaveShortcut';
 
 export function RequirementsPanel({ embedded = false }: { embedded?: boolean }) {
   return <RequirementsDialog embedded={embedded} />;
@@ -88,17 +90,7 @@ function RequirementsDialog({ embedded = false }: { embedded?: boolean }) {
     onEscape: handleClose,
   });
 
-  useEffect(() => {
-    if (!active) return;
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        if (requirementsDirty) void handleSave();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [active, handleSave, requirementsDirty]);
+  useSaveShortcut(active, requirementsDirty, handleSave);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -113,20 +105,9 @@ function RequirementsDialog({ embedded = false }: { embedded?: boolean }) {
     if (filterCategory) result = result.filter((r) => r.category === filterCategory);
     if (filterType) result = result.filter((r) => r.type === filterType);
     if (filterStatus) result = result.filter((r) => r.status === filterStatus);
-    if (filterVerification === 'fresh') {
-      result = result.filter((r) => {
-        if (r.lastVerifiedAt === null) return false;
-        const age = Date.now() - Date.parse(r.lastVerifiedAt); // eslint-disable-line react-hooks/purity -- filter callback, not render
-        return age <= 30 * 86400000;
-      });
-    } else if (filterVerification === 'stale') {
-      result = result.filter((r) => {
-        if (r.lastVerifiedAt === null) return false;
-        const age = Date.now() - Date.parse(r.lastVerifiedAt); // eslint-disable-line react-hooks/purity -- filter callback, not render
-        return age > 30 * 86400000;
-      });
-    } else if (filterVerification === 'unverified') {
-      result = result.filter((r) => r.lastVerifiedAt === null);
+    if (filterVerification) {
+      const wanted = filterVerification === 'unverified' ? 'never' : filterVerification;
+      result = result.filter((r) => verificationFreshness(r) === wanted);
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -194,7 +175,6 @@ function RequirementsDialog({ embedded = false }: { embedded?: boolean }) {
             : 'flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl'
         }
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
             <AuricIcon name="checklist" className="text-primary-light" />
@@ -245,7 +225,6 @@ function RequirementsDialog({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
           <RequirementFilterPanel
             categories={categories}

@@ -12,12 +12,8 @@ vi.mock('@/lib/store', () => ({
   }),
 }));
 
-import {
-  yamlLintExtension,
-  currentFilePathFacetYaml,
-  yamlLintSource,
-  parseYamlErrors,
-} from './yamlLintExtension';
+import { yamlLintSource, parseYamlErrors } from './yamlLintExtension';
+import { currentFilePathFacet } from './editorFacets';
 
 describe('parseYamlErrors', () => {
   it('returns empty for valid YAML', () => {
@@ -64,18 +60,10 @@ describe('yamlLintExtension', () => {
     vi.clearAllMocks();
   });
 
-  it('exports yamlLintExtension as defined', () => {
-    expect(yamlLintExtension).toBeDefined();
-  });
-
-  it('exports currentFilePathFacetYaml as defined', () => {
-    expect(currentFilePathFacetYaml).toBeDefined();
-  });
-
   it('yamlLintSource returns no diagnostics for valid YAML', () => {
     const state = EditorState.create({
       doc: 'name: project\nversion: 1\ntags:\n  - foo\n  - bar',
-      extensions: [yaml(), currentFilePathFacetYaml.of('')],
+      extensions: [yaml(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -88,7 +76,7 @@ describe('yamlLintExtension', () => {
   it('yamlLintSource returns diagnostic for invalid YAML', () => {
     const state = EditorState.create({
       doc: 'items: [one, two',
-      extensions: [yaml(), currentFilePathFacetYaml.of('')],
+      extensions: [yaml(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -102,7 +90,7 @@ describe('yamlLintExtension', () => {
   it('pushes diagnostics to store when filePath facet is set', () => {
     const state = EditorState.create({
       doc: 'items: [unclosed',
-      extensions: [yaml(), currentFilePathFacetYaml.of('/path/to/file.yaml')],
+      extensions: [yaml(), currentFilePathFacet.of('/path/to/file.yaml')],
     });
     const view = new EditorView({ state });
 

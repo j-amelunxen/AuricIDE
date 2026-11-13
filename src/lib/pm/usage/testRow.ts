@@ -1,4 +1,4 @@
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
 
 let counter = 0;
 

@@ -24,7 +24,3 @@ export async function blueprintsLoad(projectPath: string): Promise<BlueprintStat
 export async function blueprintsSave(projectPath: string, payload: BlueprintState): Promise<void> {
   await invoke('blueprints_save', { projectPath, payload });
 }
-
-export async function blueprintsClear(projectPath: string): Promise<void> {
-  await invoke('blueprints_clear', { projectPath });
-}

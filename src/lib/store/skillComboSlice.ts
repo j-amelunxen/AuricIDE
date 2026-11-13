@@ -1,5 +1,8 @@
+import type { StoreGet } from '@/lib/store/types';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
-import type { AgentConfig } from '../tauri/agents';
+import { APP_CONFIG_KEYS, readAppJson, writeAppJson } from '@/lib/config/appConfig';
+import type { AgentConfig } from '../agents/types';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '../tauri/providers';
 import { resolveSkillLaunch } from '../agents/skillLaunch';
 import {
@@ -8,7 +11,7 @@ import {
   type SkillComboRun,
 } from '../quickAccess/combo';
 import { composeStepTask, deriveHandoffContext } from '../agents/handoff';
-import type { QuickAccessCombo, QuickAccessSkill } from './starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill } from '../quickAccess/types';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
 export type { SkillComboRun } from '../quickAccess/combo';
@@ -53,12 +56,6 @@ export interface SkillComboSlice {
   comboStepForAgent: (agentId: string) => ComboStepView | null;
 }
 
-type ComboHost = SkillComboSlice & {
-  spawnNewAgent?: (config: AgentConfig) => Promise<{ id: string }>;
-  providers?: ProviderInfo[];
-  showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
-};
-
 function resolveStepConfig(
   combo: { label: string },
   step: QuickAccessSkill,
@@ -83,7 +80,7 @@ function resolveStepConfig(
 }
 
 async function spawnStep(
-  get: () => ComboHost,
+  get: StoreGet,
   run: SkillComboRun,
   index: number,
   handoff: StepHandoff
@@ -102,36 +99,26 @@ async function spawnStep(
 /** The first step inherits nothing — there is no session before it. */
 const NO_HANDOFF: StepHandoff = { context: null, fromLabel: '' };
 
-const STORAGE_KEY = 'auric-skill-combo-runs';
-
 function persist(runs: SkillComboRun[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(runs));
-  } catch {
-    // Storage full or unavailable. Surviving a restart is a convenience; it
-    // must never take a running chain down with it.
-  }
+  writeAppJson(APP_CONFIG_KEYS.skillComboRuns, runs);
 }
 
 function restore(): SkillComboRun[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (run): run is SkillComboRun =>
-        !!run &&
-        typeof run === 'object' &&
-        typeof (run as SkillComboRun).id === 'string' &&
-        Array.isArray((run as SkillComboRun).steps)
-    );
-  } catch {
-    return [];
-  }
+  const parsed = readAppJson(APP_CONFIG_KEYS.skillComboRuns);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (run): run is SkillComboRun =>
+      !!run &&
+      typeof run === 'object' &&
+      typeof (run as SkillComboRun).id === 'string' &&
+      Array.isArray((run as SkillComboRun).steps)
+  );
 }
 
-export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) => {
+export const createSkillComboSlice: StateCreator<StoreState, [], [], SkillComboSlice> = (
+  set,
+  get
+) => {
   /**
    * The only way comboRuns changes. A chain spans agent lifetimes and now app
    * lifetimes too, so writing it and remembering it are the same act — a path
@@ -156,8 +143,8 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
         (run) => run.comboId === combo.id && run.projectPath === projectPath
       );
       if (existing) {
-        const toaster = get() as ComboHost;
-        toaster.showToast?.(`${combo.label} is already running`, 'info');
+        const toaster = get();
+        toaster.showToast(`${combo.label} is already running`, 'info');
         return;
       }
 
@@ -173,7 +160,7 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
       commit([...get().comboRuns, run]);
 
       try {
-        const agentId = await spawnStep(get as () => ComboHost, run, 0, NO_HANDOFF);
+        const agentId = await spawnStep(get, run, 0, NO_HANDOFF);
         if (!agentId) {
           commit(get().comboRuns.filter((r) => r.id !== run.id));
           return;
@@ -183,8 +170,8 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
         );
       } catch {
         commit(get().comboRuns.filter((r) => r.id !== run.id));
-        const toaster = get() as ComboHost;
-        toaster.showToast?.(`Could not start ${combo.label}`, 'error');
+        const toaster = get();
+        toaster.showToast(`Could not start ${combo.label}`, 'error');
       }
     },
 
@@ -218,8 +205,8 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
 
       commit(kept);
       const lost = runs.filter((run) => !kept.includes(run));
-      const toaster = get() as ComboHost;
-      toaster.showToast?.(
+      const toaster = get();
+      toaster.showToast(
         `${lost.map((run) => run.label).join(', ')} did not survive the restart`,
         'info'
       );
@@ -237,8 +224,8 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
       // to the replacement before dismissing, so it never reaches this branch.
       if (ended.failed) {
         commit(get().comboRuns.filter((r) => r.id !== run.id));
-        const toaster = get() as ComboHost;
-        toaster.showToast?.(`${run.label} stopped — the step “${stepLabel}” failed`, 'error');
+        const toaster = get();
+        toaster.showToast(`${run.label} stopped — the step “${stepLabel}” failed`, 'error');
         return;
       }
 
@@ -257,7 +244,7 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
       };
 
       try {
-        const nextAgentId = await spawnStep(get as () => ComboHost, run, nextIndex, handoff);
+        const nextAgentId = await spawnStep(get, run, nextIndex, handoff);
         if (!nextAgentId) {
           commit(get().comboRuns.filter((r) => r.id !== run.id));
           return;
@@ -269,8 +256,8 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
         );
       } catch {
         commit(get().comboRuns.filter((r) => r.id !== run.id));
-        const toaster = get() as ComboHost;
-        toaster.showToast?.(`Could not start the next step of ${run.label}`, 'error');
+        const toaster = get();
+        toaster.showToast(`Could not start the next step of ${run.label}`, 'error');
       }
     },
 

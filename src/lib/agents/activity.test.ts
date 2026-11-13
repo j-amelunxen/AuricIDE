@@ -5,6 +5,12 @@ import { ACTIVITY_MAX_CHARS, deriveAgentActivity } from './activity';
 const ESCAPE = String.fromCharCode(27);
 
 describe('deriveAgentActivity', () => {
+  it('skips the CLI hints a TUI repaints, glyph-prefixed ones included', () => {
+    expect(deriveAgentActivity(['Reading main.ts\n? for shortcuts\npress tab to cycle\n'])).toBe(
+      'Reading main.ts'
+    );
+  });
+
   it('reports the newest meaningful line', () => {
     expect(deriveAgentActivity(['Reading files\n', 'Editing setup.ts\n'])).toBe('Editing setup.ts');
   });

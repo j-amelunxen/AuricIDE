@@ -3,23 +3,16 @@ import { linter, lintGutter, type Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
 import { runRemarkLint, type LintDiagnostic } from './remarkLintProcessor';
 import type { LintConfig } from '@/lib/store/diagnosticsSlice';
-import { useStore } from '@/lib/store';
+import { currentFilePathFacet, projectFilesFacet } from './editorFacets';
+import { publishDiagnostics } from './structuredLintHelper';
 
 // Facets for data injection from React
 export const lintConfigFacet = Facet.define<LintConfig, LintConfig>({
   combine: (values) => values[0] ?? { enabled: true, disabledRules: new Set<string>() },
 });
 
-export const fileListForLintFacet = Facet.define<string[], string[]>({
-  combine: (values) => values[0] ?? [],
-});
-
 export const headingIndexForLintFacet = Facet.define<Map<string, string[]>, Map<string, string[]>>({
   combine: (values) => values[0] ?? new Map(),
-});
-
-export const currentFilePathFacet = Facet.define<string, string>({
-  combine: (values) => values[0] ?? '',
 });
 
 function mapSeverity(severity: LintDiagnostic['severity']): Diagnostic['severity'] {
@@ -38,7 +31,7 @@ async function markdownLintSource(view: EditorView): Promise<Diagnostic[]> {
   if (!text) return [];
 
   const config = view.state.facet(lintConfigFacet);
-  const fileList = view.state.facet(fileListForLintFacet);
+  const fileList = view.state.facet(projectFilesFacet);
   const headingIndex = view.state.facet(headingIndexForLintFacet);
   const currentFilePath = view.state.facet(currentFilePathFacet);
 
@@ -66,21 +59,18 @@ async function markdownLintSource(view: EditorView): Promise<Diagnostic[]> {
     });
   }
 
-  // Side effect: push diagnostics to Zustand store for ProblemsPanel
-  if (currentFilePath) {
-    useStore.getState().setDiagnostics(
-      currentFilePath,
-      results.map((r) => ({
-        line: r.line,
-        column: r.column,
-        endLine: r.endLine,
-        endColumn: r.endColumn,
-        message: r.message,
-        ruleId: r.ruleId,
-        severity: r.severity,
-      }))
-    );
-  }
+  publishDiagnostics(
+    view,
+    results.map((r) => ({
+      line: r.line,
+      column: r.column,
+      endLine: r.endLine,
+      endColumn: r.endColumn,
+      message: r.message,
+      ruleId: r.ruleId,
+      severity: r.severity,
+    }))
+  );
 
   return diagnostics;
 }

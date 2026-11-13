@@ -209,9 +209,10 @@ describe('useIDEHandlers', () => {
     closeTab: vi.fn(),
     closeAllTabs: vi.fn(),
     clearLinkIndex: vi.fn(),
-    clearHeadingIndex: vi.fn(),
     clearEntityIndex: vi.fn(),
     resetPmInMemory: vi.fn(),
+    resetGoalsInMemory: vi.fn(),
+    refreshPmData: vi.fn(),
     resetBlueprintsInMemory: vi.fn(),
     resetRequirementsInMemory: vi.fn(),
     setRequirementsModalOpen: vi.fn(),
@@ -456,6 +457,16 @@ describe('useIDEHandlers', () => {
     expect(mockState.loadRequirements).toHaveBeenCalledWith(projectPath);
     expect(mockState.loadGoals).toHaveBeenCalledWith(projectPath);
     expect(mockState.loadExcalidrawSpecLinks).toHaveBeenCalledWith(projectPath);
+  });
+
+  it('drops the previous project goals too, and leaves the database to the rootPath effect', async () => {
+    mockReadDirectory.mockResolvedValue([]);
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleOpenRecent('/path/to/other');
+
+    expect(mockState.resetGoalsInMemory).toHaveBeenCalled();
+    expect(mockState.initProjectDb).not.toHaveBeenCalled();
   });
 
   it('creates a spec under specs/ and opens it in the editor', async () => {
@@ -2177,6 +2188,33 @@ describe('useIDEHandlers', () => {
       result.current.handleEditorChange('abc');
 
       expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it('draws a mindmap tab from its Markdown file instead of reading the tab id as a path', async () => {
+      mockActiveTabId = 'mindmap::/project/notes.md';
+      mockReadFile.mockResolvedValueOnce('# Root');
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      await result.current.loadTabContent('mindmap::/project/notes.md');
+
+      expect(mockReadFile).toHaveBeenCalledWith('/project/notes.md');
+      expect(mockShowToast).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing to a tab whose text could not be read', async () => {
+      mockActiveTabId = '/project/notes.md';
+      mockReadFile.mockRejectedValueOnce(new Error('permission denied'));
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      await result.current.loadTabContent('/project/notes.md');
+      result.current.handleEditorChange('text of the previous tab');
+      await result.current.handleSave();
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Could not open notes.md: permission denied',
+        'error'
+      );
     });
 
     it('marks the tab dirty as soon as it is edited', () => {

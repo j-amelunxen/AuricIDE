@@ -175,9 +175,10 @@ fn a_confined_shell_writes_its_workspace_and_nothing_else() {
 ///   cargo test agy_headless_end_to_end -- --ignored --nocapture
 #[cfg(target_os = "macos")]
 #[test]
-#[ignore]
+#[ignore = "needs a logged-in agy CLI and spends a model turn"]
 fn agy_headless_end_to_end() {
-    use crate::providers::{AgentProvider, DynamicProvider};
+    use crate::providers::dynamic::DynamicProvider;
+    use crate::providers::AgentProvider;
 
     let workspace = scratch();
     let outside = scratch();

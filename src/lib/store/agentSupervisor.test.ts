@@ -1,8 +1,7 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createAgentSlice } from './agentSlice';
-import type { StoreState } from './index';
-import { forgetSupervisorRunResults, spawnAgent, type AgentInfo } from '../tauri/agents';
+import { forgetSupervisorRunResults, spawnAgent } from '../tauri/agents';
+import type { AgentInfo } from '../agents/types';
 import { supervisorPolicyGet } from '../tauri/supervisorPolicy';
 import { updateManagerPresentation } from '../quickAccess/managerPresentation';
 import { emptySupervisorPolicy, defaultSupervisorProjectPolicy } from '../config/supervisorPolicy';
@@ -50,7 +49,8 @@ const { CLAUDE_FROM_REGISTRY, CODEX_FROM_REGISTRY } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../tauri/providers', () => ({
+vi.mock('../tauri/providers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../tauri/providers')>()),
   listProviders: vi.fn(async () => [CLAUDE_FROM_REGISTRY, CODEX_FROM_REGISTRY]),
 }));
 vi.mock('../tauri/supervisorPolicy', () => ({ supervisorPolicyGet: vi.fn() }));
@@ -75,21 +75,17 @@ const CLAUDE: ProviderInfo = {
 };
 
 describe('spawnSupervisor', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.mocked(spawnAgent).mockClear();
-    store = createStore<StoreState>()(
-      (...args) =>
-        ({
-          ...createAgentSlice(...(args as Parameters<typeof createAgentSlice>)),
-          providers: [CLAUDE],
-          starredProjects: [
-            { path: '/work/project-a', name: 'project-a', starredAt: 0, description: 'Sample' },
-          ],
-          rootPath: null,
-        }) as unknown as StoreState
-    );
+    store = createFullTestStore({
+      providers: [CLAUDE],
+      starredProjects: [
+        { path: '/work/project-a', name: 'project-a', starredAt: 0, description: 'Sample' },
+      ],
+      rootPath: null,
+    });
   });
 
   it('spawns a supervisor when the policy shows a project', async () => {
@@ -164,7 +160,7 @@ describe('spawnSupervisor', () => {
         },
       ],
       sendAgentInput,
-    } as Partial<StoreState>);
+    });
 
     const launch = await store.getState().spawnSupervisor({ task: '', resumeRunDir: folder });
 
@@ -272,7 +268,7 @@ describe('spawnSupervisor', () => {
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
 
     const openSupervisorProviderChoice = vi.fn(async () => 'codex');
-    store.setState({ openSupervisorProviderChoice } as never);
+    store.setState({ openSupervisorProviderChoice });
 
     const launch = await store.getState().spawnSupervisor();
     expect(openSupervisorProviderChoice).toHaveBeenCalledWith([
@@ -297,7 +293,7 @@ describe('spawnSupervisor', () => {
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
     store.setState({
       openSupervisorProviderChoice: vi.fn(async () => 'codex'),
-    } as never);
+    });
 
     const launch = await store.getState().spawnSupervisor();
     expect(launch.kind).toBe('spawned');
@@ -318,7 +314,7 @@ describe('spawnSupervisor', () => {
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
 
     const openSupervisorProviderChoice = vi.fn(async () => null);
-    store.setState({ openSupervisorProviderChoice } as never);
+    store.setState({ openSupervisorProviderChoice });
 
     const launch = await store.getState().spawnSupervisor();
     expect(openSupervisorProviderChoice).toHaveBeenCalled();
@@ -338,7 +334,7 @@ describe('spawnSupervisor', () => {
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
 
     const openSupervisorProviderChoice = vi.fn(async () => 'codex');
-    store.setState({ openSupervisorProviderChoice } as never);
+    store.setState({ openSupervisorProviderChoice });
 
     const launch = await store
       .getState()
@@ -350,7 +346,7 @@ describe('spawnSupervisor', () => {
 });
 
 describe("clearing a supervisor card forgets its children's results", () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
   const stopped = (id: string, extra: Partial<AgentInfo> = {}): AgentInfo => ({
     id,
     name: id,
@@ -364,10 +360,7 @@ describe("clearing a supervisor card forgets its children's results", () => {
 
   beforeEach(() => {
     vi.mocked(forgetSupervisorRunResults).mockClear();
-    store = createStore<StoreState>()(
-      (...args) =>
-        createAgentSlice(...(args as Parameters<typeof createAgentSlice>)) as unknown as StoreState
-    );
+    store = createFullTestStore();
   });
 
   it('forgets them when the stopped supervisor is dismissed', () => {
@@ -403,19 +396,15 @@ describe("clearing a supervisor card forgets its children's results", () => {
 });
 
 describe('spawnLinkedSupervisor (supervisor link)', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.mocked(spawnAgent).mockClear();
-    store = createStore<StoreState>()(
-      (...args) =>
-        ({
-          ...createAgentSlice(...(args as Parameters<typeof createAgentSlice>)),
-          providers: [CLAUDE],
-          starredProjects: [],
-          rootPath: null,
-        }) as unknown as StoreState
-    );
+    store = createFullTestStore({
+      providers: [CLAUDE],
+      starredProjects: [],
+      rootPath: null,
+    });
     const policy = emptySupervisorPolicy();
     policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
@@ -519,7 +508,7 @@ describe('Project Manager launches', () => {
     archivedAt: null as string | null,
     lastLaunch: null,
   };
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
   const lastConfig = () => vi.mocked(spawnAgent).mock.calls[0][0];
 
   beforeEach(() => {
@@ -530,15 +519,11 @@ describe('Project Manager launches', () => {
     const policy = emptySupervisorPolicy();
     policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
     vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
-    store = createStore<StoreState>()(
-      (...args) =>
-        ({
-          ...createAgentSlice(...(args as Parameters<typeof createAgentSlice>)),
-          providers: [CLAUDE],
-          starredProjects: [],
-          rootPath: null,
-        }) as unknown as StoreState
-    );
+    store = createFullTestStore({
+      providers: [CLAUDE],
+      starredProjects: [],
+      rootPath: null,
+    });
   });
 
   it('resumes a manager folder as the manager: its name, key, instructions and memory rules', async () => {

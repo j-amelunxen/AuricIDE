@@ -1,15 +1,27 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { GitFileStatus, GitRepoRef } from '../tauri/git';
 import {
-  createGitSlice,
   selectBlameHunks,
   selectBranchNameForPath,
   selectChangedFileCount,
   selectRepoForPath,
   selectRepoState,
-  type GitSlice,
 } from './gitSlice';
+
+import type { GitMergeState, GitOperation } from '../tauri/gitMerge';
+
+function operationState(operation: GitOperation, message: string | null = null): GitMergeState {
+  return {
+    inProgress: true,
+    operation,
+    message,
+    oursLabel: null,
+    theirsLabel: null,
+    theirsOid: null,
+    conflicts: [],
+  };
+}
 
 const file = vi.hoisted(
   () =>
@@ -80,11 +92,11 @@ vi.mock('../tauri/git', () => ({
 }));
 
 describe('gitSlice', () => {
-  let store: StoreApi<GitSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<GitSlice>()(createGitSlice);
+    store = createFullTestStore();
   });
 
   it('initializes with empty state', () => {
@@ -556,9 +568,9 @@ describe('gitSlice', () => {
       const { commitChanges } = await import('../tauri/git');
       const concludeMerge = vi.fn(async () => 'merge-oid');
       store.setState({
-        mergeStates: { [repoRoot.path]: { inProgress: true, operation: 'merge', message: null } },
+        mergeStates: { [repoRoot.path]: operationState('merge') },
         concludeMerge,
-      } as never);
+      });
       store.getState().setCommitMessage(repoRoot.path, 'Merge feature');
 
       const oid = await store.getState().commit(repoRoot.path);
@@ -573,10 +585,10 @@ describe('gitSlice', () => {
       const concludeMerge = vi.fn(async () => 'merge-oid');
       store.setState({
         mergeStates: {
-          [repoRoot.path]: { inProgress: true, operation: 'merge', message: "Merge branch 'x'" },
+          [repoRoot.path]: operationState('merge', "Merge branch 'x'"),
         },
         concludeMerge,
-      } as never);
+      });
       await store.getState().commit(repoRoot.path);
       expect(concludeMerge).toHaveBeenCalledWith(repoRoot.path, "Merge branch 'x'");
     });
@@ -584,11 +596,11 @@ describe('gitSlice', () => {
     it('refuses with a toast during a rebase, cherry-pick or revert', async () => {
       const { commitChanges } = await import('../tauri/git');
       const showToast = vi.fn();
-      for (const operation of ['rebase', 'cherry-pick', 'revert']) {
+      for (const operation of ['rebase', 'cherry-pick', 'revert'] as const) {
         store.setState({
-          mergeStates: { [repoRoot.path]: { inProgress: true, operation, message: null } },
+          mergeStates: { [repoRoot.path]: operationState(operation) },
           showToast,
-        } as never);
+        });
         store.getState().setCommitMessage(repoRoot.path, 'wip');
         expect(await store.getState().commit(repoRoot.path)).toBeNull();
         expect(showToast).toHaveBeenLastCalledWith(

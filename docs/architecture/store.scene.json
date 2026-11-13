@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "id": "system.store",
   "title": "AuricIDE Zustand store",
-  "description": "src/lib/store: one Zustand store combined in index.ts from 35 slices, grouped here by concern. Slices persist through the IPC wrappers and use domain logic from other src/lib folders.",
+  "description": "One Zustand store: types.ts owns the complete StoreState contract; createStore.ts composes 34 store creators plus the overlay creator in their existing order. index.ts creates the application hook; testing.ts reuses the factory with explicit dependency overrides. Pure goal and index contracts stay with their domain owners.",
   "nodes": [
     {
       "id": "index",
-      "label": "Store root",
+      "label": "Store types and composition",
       "preset": "core",
       "group": "core",
       "level": 0,
@@ -15,14 +15,14 @@
       "metrics": [
         {
           "label": "source files",
-          "value": "1"
+          "value": "3"
         }
       ],
       "position": [0, 0, 0]
     },
     {
       "id": "infra",
-      "label": "Store helpers",
+      "label": "Store and test helpers",
       "preset": "box",
       "group": "core",
       "level": 2,
@@ -30,7 +30,7 @@
       "metrics": [
         {
           "label": "source files",
-          "value": "5"
+          "value": "6"
         }
       ],
       "position": [0, -10.8, 0]
@@ -61,7 +61,7 @@
       "metrics": [
         {
           "label": "source files",
-          "value": "5"
+          "value": "2"
         }
       ],
       "position": [11.35, -5.7, -2.3]
@@ -351,9 +351,20 @@
       "from": "goals",
       "to": "domain",
       "kind": "dependency"
+    },
+    {
+      "from": "indexes",
+      "to": "domain",
+      "kind": "dependency",
+      "label": "index and reference contracts"
+    },
+    {
+      "from": "uiState",
+      "to": "domain",
+      "kind": "dependency",
+      "label": "reference contract"
     }
   ],
-  "tour": ["index", "pm", "goals", "conductor", "agents", "git", "notify"],
   "layout": {
     "algorithm": "layered"
   }

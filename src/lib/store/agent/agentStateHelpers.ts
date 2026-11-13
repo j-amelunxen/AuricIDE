@@ -1,19 +1,15 @@
+import type { StoreState } from '@/lib/store/types';
 import { recordLaunchFinish } from '@/lib/agents/launchRunTracking';
 import type { AgentColor } from '@/lib/agents/colors';
 import { pruneAgentRuntime } from '@/lib/agents/events/registry';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig } from '@/lib/agents/types';
+import { persistInBackground, withPersistFeedback } from '../persistFeedback';
 import { MAX_TICKET_ATTEMPTS } from '../conductor/conductorTypes';
-import type { GoalsSlice } from '../goalsSlice';
-import {
-  UNGROUPED_REPO_KEY,
-  type AgentRuntimeRecords,
-  type AgentSlice,
-  type LogRecords,
-} from './agentTypes';
+import type { AgentRuntimeRecords, LogRecords } from './agentTypes';
 
 /** Close the still-running goal run of an agent, if any (cross-slice, optional). */
 export function completeRunForAgent(
-  state: AgentSlice,
+  state: StoreState,
   agentId: string,
   outcome: 'completed' | 'failed' | 'killed'
 ): void {
@@ -23,19 +19,31 @@ export function completeRunForAgent(
     outcome,
     state.agentLogs[agentId] ?? []
   );
-  const goalsSlice = state as AgentSlice & Partial<GoalsSlice>;
+  const goalsSlice = state;
   if (!goalsSlice.completeGoalRun || !goalsSlice.goalRunsDraft) return;
   const run = goalsSlice.goalRunsDraft.find(
     (r) => r.agentId === agentId && r.outcome === 'running'
   );
   if (!run) return;
   goalsSlice.completeGoalRun(run.id, outcome);
-  const config = state.agentSpawnConfigs[agentId];
-  const projectPath =
-    config?.projectPath ?? (state as AgentSlice & { rootPath?: string | null }).rootPath;
-  if (config?.launchRequestUid && projectPath && goalsSlice.persistGoalRun) {
-    goalsSlice.persistGoalRun(projectPath, run.id).catch(() => undefined);
-  }
+  persistLaunchGoalRun(state, state.agentSpawnConfigs[agentId], run.id);
+}
+
+/**
+ * A run started by a launch request has no dialog that saves it later, so it
+ * is written at once; a failed write is reported and the run stays in the
+ * draft for the next save.
+ */
+export function persistLaunchGoalRun(
+  state: StoreState,
+  config: Pick<AgentConfig, 'launchRequestUid' | 'projectPath'> | undefined,
+  runId: string
+): void {
+  const projectPath = config?.projectPath ?? state.rootPath;
+  if (!config?.launchRequestUid || !projectPath) return;
+  persistInBackground(
+    withPersistFeedback(state, 'the goal run', () => state.persistGoalRun(projectPath, runId))
+  );
 }
 
 /** Drops the entries of a per-agent record for agents that no longer exist —
@@ -93,29 +101,14 @@ export function withoutColors(
   return withoutAgentIds(colors, gone);
 }
 
-export function groupAgentsByRepo(agents: AgentInfo[]): Record<string, AgentInfo[]> {
-  const groups: Record<string, AgentInfo[]> = {};
-  for (const agent of agents) {
-    const key = agent.repoPath ?? UNGROUPED_REPO_KEY;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(agent);
-  }
-  return groups;
-}
-
 /**
  * True when the conductor manages this agent's ticket and still has attempts
  * left — it will requeue the work itself, so a failure toast would interrupt
  * the user for something the system is about to handle. Only the final,
  * given-up failure earns the interrupt.
  */
-export function willConductorRetry(state: AgentSlice, agentId: string): boolean {
-  const cross = state as AgentSlice &
-    Partial<{
-      conductorAssignments: Record<string, string>;
-      conductorReviewAssignments: Record<string, string>;
-      conductorFailedTickets: Record<string, number>;
-    }>;
+export function willConductorRetry(state: StoreState, agentId: string): boolean {
+  const cross = state;
   const entry =
     Object.entries(cross.conductorAssignments ?? {}).find(([, a]) => a === agentId) ??
     Object.entries(cross.conductorReviewAssignments ?? {}).find(([, a]) => a === agentId);

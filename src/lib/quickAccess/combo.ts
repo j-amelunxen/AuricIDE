@@ -1,4 +1,4 @@
-import type { QuickAccessCombo, QuickAccessSkill } from '../store/starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill } from './types';
 
 /** A running chain: one combo, one current agent, the rest still waiting. */
 export interface SkillComboRun {

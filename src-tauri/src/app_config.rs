@@ -12,12 +12,10 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 /// Bump only for a breaking change; additive fields ride on `#[serde(default)]`.
 const STORE_VERSION: u32 = 1;
@@ -26,6 +24,17 @@ const STORE_VERSION: u32 = 1;
 /// launch has to chew through before it can answer a settings screen.
 const MAX_ENTRIES: usize = 200;
 const MAX_VALUE_BYTES: usize = 64 * 1024;
+
+/// The credential namespaces, shared by the application store and a
+/// project's overrides. The frontend spells them as `CREDENTIAL_NAMESPACES`;
+/// `backendNames.fixtures.json` pins both. Pushover's is
+/// `delivery::PUSHOVER_NAMESPACE`.
+pub mod namespaces {
+    pub const LLM: &str = "llm_settings";
+    pub const JUDGE: &str = "judge_llm_settings";
+    pub const EXCALIDRAW: &str = "excalidraw_settings";
+    pub const VIDEO_IMPORT: &str = "video_import_settings";
+}
 
 pub fn credentials_path_in(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("app-credentials.json")
@@ -74,42 +83,33 @@ pub fn read_credentials(path: &Path) -> CredentialMap {
         .unwrap_or_default()
 }
 
-/// Writes through a temp file and a rename, so a read that lands mid-write sees
-/// either the old file or the new one.
-///
-/// The temp file is created at 0600 before anything is written to it. Creating
-/// it with the default mask and tightening afterwards would leave the secret
-/// world-readable for the length of the write.
+/// The stored entries for a change: like [`read_credentials`], except that a
+/// file that cannot be read is kept beside it as `.unreadable-<ms>` before the
+/// change starts from nothing. Read as empty and written back, it would lose
+/// every key the change did not touch.
+fn read_credentials_for_update(path: &Path) -> Result<CredentialMap, String> {
+    crate::json_store::load::<CredentialsFile>(path, None, crate::json_store::Unreadable::MoveAside)
+        .map(|file| file.map(|file| file.entries).unwrap_or_default())
+        .map_err(|error| format!("The credentials file cannot be read: {error}"))
+}
+
+/// Held across a read-change-write: the dev build and the installed app share
+/// this file, and the in-process lock only orders one of them.
+fn lock_credentials(path: &Path) -> Result<crate::json_store::FileLock, String> {
+    let dir = path.parent().ok_or("The credentials file has no folder")?;
+    crate::json_store::FileLock::acquire(dir, "app-credentials.lock")
+        .map_err(|error| format!("Could not lock the credentials file: {error}"))
+}
+
+/// At 0600 from the first byte: the file holds API keys.
 pub fn write_credentials_atomic(path: &Path, entries: &CredentialMap) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Credentials store has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-
-    let temporary = path.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&CredentialsFile {
-        version: STORE_VERSION,
-        entries: entries.clone(),
-    })
-    .map_err(|error| error.to_string())?;
-
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    drop(file);
-
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_json(
+        path,
+        &CredentialsFile {
+            version: STORE_VERSION,
+            entries: entries.clone(),
+        },
+    )
 }
 
 /// A stored value counts only when it carries something. An empty string is
@@ -220,18 +220,6 @@ fn total_entries(entries: &CredentialMap) -> usize {
     entries.values().map(|ns| ns.len()).sum()
 }
 
-fn namespace_has_credentials(entries: &CredentialMap, namespace: &str) -> bool {
-    let Some(values) = entries.get(namespace) else {
-        return false;
-    };
-    ["api_token", "user_key"].into_iter().all(|key| {
-        values
-            .get(key)
-            .and_then(|value| meaningful(value))
-            .is_some()
-    })
-}
-
 // ── Tauri commands ──────────────────────────────────────────────────
 
 /// Every key of one namespace at once — the settings screens read four or five
@@ -256,33 +244,11 @@ pub fn app_credential_set(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().unwrap();
-    let mut entries = read_credentials(&state.path);
-    let enabling_pushover = namespace == crate::delivery::PUSHOVER_NAMESPACE
-        && key == "enabled"
-        && value.trim() == "true"
-        && entries
-            .get(&namespace)
-            .and_then(|values| values.get("enabled"))
-            .map(String::as_str)
-            != Some("true");
+    let _file = lock_credentials(&state.path)?;
+    let mut entries = read_credentials_for_update(&state.path)?;
+    let before = entries.get(&namespace).cloned();
     set_credential(&mut entries, &namespace, &key, &value)?;
-    if enabling_pushover && !namespace_has_credentials(&entries, &namespace) {
-        return Err("Enter both Pushover credentials before enabling delivery".to_string());
-    }
-    if enabling_pushover {
-        // The switch means "from now on", never "flush everything that was
-        // queued while this integration was off".
-        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
-            delivery.skip_nonterminal()?;
-        }
-    }
-    write_credentials_atomic(&state.path, &entries)?;
-    if namespace == crate::delivery::PUSHOVER_NAMESPACE {
-        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
-            delivery.wake();
-        }
-    }
-    Ok(())
+    write_checked(&app, &state.path, &entries, &namespace, before)
 }
 
 #[tauri::command]
@@ -293,30 +259,31 @@ pub fn app_credential_replace_namespace(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().unwrap();
-    let mut entries = read_credentials(&state.path);
-    let was_enabled = entries
-        .get(&namespace)
-        .and_then(|current| current.get("enabled"))
-        .map(String::as_str)
-        == Some("true");
-    let will_be_enabled = values.get("enabled").map(String::as_str) == Some("true");
+    let _file = lock_credentials(&state.path)?;
+    let mut entries = read_credentials_for_update(&state.path)?;
+    let before = entries.get(&namespace).cloned();
     replace_namespace(&mut entries, &namespace, values)?;
-    if namespace == crate::delivery::PUSHOVER_NAMESPACE
-        && will_be_enabled
-        && !namespace_has_credentials(&entries, &namespace)
-    {
-        return Err("Enter both Pushover credentials before enabling delivery".to_string());
-    }
-    if namespace == crate::delivery::PUSHOVER_NAMESPACE && !was_enabled && will_be_enabled {
-        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
-            delivery.skip_nonterminal()?;
-        }
-    }
-    write_credentials_atomic(&state.path, &entries)?;
-    if namespace == crate::delivery::PUSHOVER_NAMESPACE {
-        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
-            delivery.wake();
-        }
+    write_checked(&app, &state.path, &entries, &namespace, before)
+}
+
+/// Writes a changed store once the features that own a namespace agreed to
+/// the change (delivery owns Pushover's), and tells them it landed.
+fn write_checked(
+    app: &tauri::AppHandle,
+    path: &Path,
+    entries: &CredentialMap,
+    namespace: &str,
+    before: Option<BTreeMap<String, String>>,
+) -> Result<(), String> {
+    let wake = crate::delivery::credentials_changing(
+        app,
+        namespace,
+        before.as_ref(),
+        entries.get(namespace),
+    )?;
+    write_credentials_atomic(path, entries)?;
+    if wake {
+        crate::delivery::wake(app);
     }
     Ok(())
 }
@@ -337,6 +304,23 @@ mod tests {
     fn a_missing_store_reads_as_empty() {
         let path = temp_path("missing");
         assert!(read_credentials(&path).is_empty());
+    }
+
+    #[test]
+    fn a_change_keeps_a_corrupt_store_aside_instead_of_writing_over_it() {
+        let path = temp_path("corrupt-update");
+        fs::write(&path, "{ \"version\": 1, \"entries\": {\"llm\": ").unwrap();
+        assert!(read_credentials_for_update(&path).unwrap().is_empty());
+        let kept: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".unreadable-"))
+            .collect();
+        assert_eq!(
+            kept.len(),
+            1,
+            "the unreadable keys stay on disk for the user"
+        );
     }
 
     #[test]
@@ -419,19 +403,6 @@ mod tests {
 
         assert_eq!(entries["pushover_settings"]["api_token"], "new");
         assert_eq!(entries["pushover_settings"]["user_key"], "user");
-        assert!(namespace_has_credentials(&entries, "pushover_settings"));
-    }
-
-    #[test]
-    fn pushover_requires_both_nonblank_credentials() {
-        let entries = CredentialMap::from([(
-            "pushover_settings".into(),
-            BTreeMap::from([
-                ("api_token".into(), "token".into()),
-                ("user_key".into(), "  ".into()),
-            ]),
-        )]);
-        assert!(!namespace_has_credentials(&entries, "pushover_settings"));
     }
 
     #[test]

@@ -11,7 +11,6 @@ import { DeepWorkerClient } from './deepWorkerClient';
 const NER_CLASS = 'cm-semantic-deep-entity';
 const VALID_NER_GROUPS = new Set(['PER', 'ORG', 'LOC', 'MISC']);
 
-// ── Intent → CSS class mapping for line decorations ──
 const INTENT_CLASS_MAP: Record<string, string> = {
   instruction: 'cm-intent-instruction',
   explanation: 'cm-intent-explanation',
@@ -27,7 +26,6 @@ const MIN_INTENT_CONFIDENCE = 0.6;
 const DEBOUNCE_MS = 300;
 const INTENT_LABELS = ['instruction', 'explanation', 'warning', 'question', 'context'];
 
-// ── State Effects ──
 export const setDeepNerDecorations = StateEffect.define<DecorationSet>();
 const setDeepIntentDecorations = StateEffect.define<DecorationSet>();
 

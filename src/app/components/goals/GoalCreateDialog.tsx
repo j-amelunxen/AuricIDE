@@ -1,7 +1,8 @@
 'use client';
 
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { useState } from 'react';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -46,7 +47,7 @@ export function GoalCreateDialog({
 
   const handleSave = () => {
     if (!name.trim()) return;
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const now = formatUtcStamp();
     onSave({
       id: crypto.randomUUID(),
       parentId: parentId || null,

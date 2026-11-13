@@ -2,7 +2,6 @@
 //! small transition table is the conformance surface for stronger verification.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Complete model state space; SQLite constructs `pending` directly.
 pub enum DeliveryStatus {
     Pending,
     Processing,
@@ -13,6 +12,25 @@ pub enum DeliveryStatus {
 }
 
 impl DeliveryStatus {
+    const ALL: [Self; 6] = [
+        Self::Pending,
+        Self::Processing,
+        Self::Retry,
+        Self::Delivered,
+        Self::Dead,
+        Self::Skipped,
+    ];
+
+    /// The statuses that are (or are not) final, as a quoted SQL `IN` list.
+    pub fn sql_list(terminal: bool) -> String {
+        Self::ALL
+            .iter()
+            .filter(|status| status.is_terminal() == terminal)
+            .map(|status| format!("'{}'", status.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -24,7 +42,6 @@ impl DeliveryStatus {
         }
     }
 
-    #[cfg(test)]
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Delivered | Self::Dead | Self::Skipped)
     }
@@ -49,13 +66,16 @@ pub const MAX_ATTEMPTS: u32 = 8;
 const BASE_BACKOFF_SECS: u64 = 15;
 const MAX_BACKOFF_SECS: u64 = 60 * 60;
 
-#[cfg(test)]
-pub fn can_claim(status: DeliveryStatus, available: bool, lease_expired: bool) -> bool {
-    match status {
-        DeliveryStatus::Pending | DeliveryStatus::Retry => available,
-        DeliveryStatus::Processing => lease_expired,
-        DeliveryStatus::Delivered | DeliveryStatus::Dead | DeliveryStatus::Skipped => false,
-    }
+/// Which rows a worker may claim, as SQL over `status`, `available_at` and
+/// `lease_until` with `?1` as now: a waiting row once it is due, a row being
+/// processed once its lease lapsed. A final row never.
+pub fn claimable_sql() -> String {
+    format!(
+        "(status IN ('{}', '{}') AND available_at <= ?1) OR (status = '{}' AND lease_until <= ?1)",
+        DeliveryStatus::Pending.as_str(),
+        DeliveryStatus::Retry.as_str(),
+        DeliveryStatus::Processing.as_str(),
+    )
 }
 
 pub fn retry_delay_secs(attempts: u32) -> u64 {
@@ -96,21 +116,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn terminal_states_can_never_be_reclaimed() {
-        for status in [
-            DeliveryStatus::Delivered,
-            DeliveryStatus::Dead,
-            DeliveryStatus::Skipped,
-        ] {
-            assert!(status.is_terminal());
-            assert!(!can_claim(status, true, true));
-        }
-    }
-
-    #[test]
-    fn only_an_expired_processing_lease_can_be_reclaimed() {
-        assert!(!can_claim(DeliveryStatus::Processing, true, false));
-        assert!(can_claim(DeliveryStatus::Processing, false, true));
+    fn the_sql_status_lists_split_every_status_by_finality() {
+        assert_eq!(
+            DeliveryStatus::sql_list(true),
+            "'delivered', 'dead', 'skipped'"
+        );
+        assert_eq!(
+            DeliveryStatus::sql_list(false),
+            "'pending', 'processing', 'retry'"
+        );
     }
 
     #[test]

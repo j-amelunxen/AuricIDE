@@ -10,7 +10,7 @@
 
 use super::merge::{conflicted_paths, operation_name};
 use super::types::*;
-use crate::video_import::failure::readable_details;
+use crate::ansi::readable_details;
 use git2::{Repository, RepositoryState};
 use std::fs;
 use std::path::Path;
@@ -86,7 +86,7 @@ fn step_flag(action: &str) -> Result<&'static str, String> {
 /// The operation a step may run on, or why it may not. Nothing is run when
 /// this refuses.
 fn check_step(repo_path: &str, action: &str) -> Result<&'static str, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("not a git repository: {e}"))?;
+    let repo = super::open_repo(repo_path)?;
     let operation = match repo.state() {
         RepositoryState::Merge => {
             return Err(
@@ -235,7 +235,7 @@ fn read_outcome(
     operation: &str,
     raw: &str,
 ) -> Result<GitOperationStepResult, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("not a git repository: {e}"))?;
+    let repo = super::open_repo(repo_path)?;
     let result = |outcome: &str, conflicts, message, details| GitOperationStepResult {
         outcome: outcome.to_string(),
         operation: operation.to_string(),

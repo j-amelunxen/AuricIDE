@@ -1,5 +1,8 @@
+import type { StoreGet } from '@/lib/store/types';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { writeChanged } from './stableRefs';
+import { draftDiffers, rebaseDraft } from './draftMerge';
 import { withPersistFeedback } from './persistFeedback';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import type {
@@ -9,7 +12,7 @@ import type {
   PmDependency,
   PmStatusHistoryEntry,
   PmContextItem,
-} from '../tauri/pm';
+} from '../pm/types';
 import {
   pmLoad as ipcPmLoad,
   pmSave as ipcPmSave,
@@ -40,10 +43,8 @@ export interface PmSlice extends PmDomainState {
   pmSelectedEpicId: string | null;
   pmSelectedTicketId: string | null;
   fileTicketCreate: FileTicketCreate | null;
-  // Status history
   pmStatusHistory: PmStatusHistoryEntry[];
   pmHistoryLoading: boolean;
-  // Actions
   loadPmHistory: (projectPath: string) => Promise<void>;
   setPmModalOpen: (open: boolean) => void;
   loadPmData: (projectPath: string) => Promise<void>;
@@ -77,90 +78,12 @@ export interface FileTicketCreate {
   initialValues: { name: string; description: string; context: PmContextItem[] };
 }
 
-interface Identifiable {
-  id: string;
-  updatedAt: string;
-}
-
-/**
- * Inbox lives in its own slice. Cast rather than import — an isolated
- * pmSlice test store has none of these fields, and every access is optional.
- */
-interface InboxCrossSlices {
-  inboxItems: { id: string }[];
-  inboxOverview: Record<string, unknown>;
-  refreshInboxOverview: (projectPaths: string[]) => Promise<void>;
-}
-
-function refreshInboxAfterPmWrite(get: () => PmSlice, projectPath: string): void {
-  const cross = get() as unknown as Partial<InboxCrossSlices>;
+function refreshInboxAfterPmWrite(get: StoreGet, projectPath: string): void {
+  const cross = get();
   if ((cross.inboxItems?.length ?? 0) === 0) return;
   const paths = new Set<string>(Object.keys(cross.inboxOverview ?? {}));
   paths.add(projectPath);
-  void cross.refreshInboxOverview?.([...paths]);
-}
-
-function mergeItems<T extends Identifiable>(fresh: T[], old: T[], draft: T[]): T[] {
-  const oldMap = new Map(old.map((item) => [item.id, item]));
-  const freshMap = new Map(fresh.map((item) => [item.id, item]));
-  const draftMap = new Map(draft.map((item) => [item.id, item]));
-
-  const result: T[] = [];
-
-  for (const freshItem of fresh) {
-    const oldItem = oldMap.get(freshItem.id);
-    const draftItem = draftMap.get(freshItem.id);
-
-    if (!oldItem) {
-      // New from DB (agent created) → add to draft
-      result.push(freshItem);
-    } else if (freshItem.updatedAt === oldItem.updatedAt) {
-      // DB unchanged → keep draft as-is
-      result.push(draftItem ?? freshItem);
-    } else {
-      // DB changed
-      if (draftItem && JSON.stringify(draftItem) === JSON.stringify(oldItem)) {
-        // User hasn't edited → take fresh
-        result.push(freshItem);
-      } else {
-        // User has local edits → keep draft (user wins)
-        result.push(draftItem ?? freshItem);
-      }
-    }
-  }
-
-  // Draft items not in fresh
-  for (const draftItem of draft) {
-    if (!freshMap.has(draftItem.id)) {
-      if (!oldMap.has(draftItem.id)) {
-        // User-created (unsaved) → keep
-        result.push(draftItem);
-      }
-      // else: in old but not in fresh → deleted from DB → drop
-    }
-  }
-
-  return result;
-}
-
-function mergeDependencies(
-  fresh: PmDependency[],
-  old: PmDependency[],
-  draft: PmDependency[]
-): PmDependency[] {
-  const oldSet = new Set(old.map((d) => d.id));
-  const freshSet = new Set(fresh.map((d) => d.id));
-
-  const result = [...fresh];
-
-  // Add user-created deps (in draft, not in old, not in fresh)
-  for (const draftDep of draft) {
-    if (!oldSet.has(draftDep.id) && !freshSet.has(draftDep.id)) {
-      result.push(draftDep);
-    }
-  }
-
-  return result;
+  void cross.refreshInboxOverview([...paths]);
 }
 
 function reducePmDomain(state: PmSlice, event: PmDomainEvent): PmSlice | PmDomainState {
@@ -170,7 +93,7 @@ function reducePmDomain(state: PmSlice, event: PmDomainEvent): PmSlice | PmDomai
   return transition.state;
 }
 
-export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
+export const createPmSlice: StateCreator<StoreState, [], [], PmSlice> = (set, get) => ({
   // Persisted state
   pmEpics: [],
   pmTickets: [],
@@ -222,7 +145,6 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
           // Empty rather than the previous project's figures.
         }
 
-        // Auto-archive 'done' tickets older than 24 hours
         const now = new Date();
         let hasArchived = false;
         const processedTickets = state.tickets.map((t) => {
@@ -284,16 +206,16 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
         pmDraftDependencies: draftDeps,
       } = get();
 
-      const mergedEpics = mergeItems(fresh.epics, oldEpics, draftEpics);
-      const mergedTickets = mergeItems(fresh.tickets, oldTickets, draftTickets);
-      const mergedTestCases = mergeItems(fresh.testCases, oldTestCases, draftTestCases);
-      const mergedDeps = mergeDependencies(fresh.dependencies, oldDeps, draftDeps);
+      const mergedEpics = rebaseDraft(draftEpics, oldEpics, fresh.epics);
+      const mergedTickets = rebaseDraft(draftTickets, oldTickets, fresh.tickets);
+      const mergedTestCases = rebaseDraft(draftTestCases, oldTestCases, fresh.testCases);
+      const mergedDeps = rebaseDraft(draftDeps, oldDeps, fresh.dependencies);
 
       const pmDirty =
-        JSON.stringify(mergedEpics) !== JSON.stringify(fresh.epics) ||
-        JSON.stringify(mergedTickets) !== JSON.stringify(fresh.tickets) ||
-        JSON.stringify(mergedTestCases) !== JSON.stringify(fresh.testCases) ||
-        JSON.stringify(mergedDeps) !== JSON.stringify(fresh.dependencies);
+        draftDiffers(mergedEpics, fresh.epics) ||
+        draftDiffers(mergedTickets, fresh.tickets) ||
+        draftDiffers(mergedTestCases, fresh.testCases) ||
+        draftDiffers(mergedDeps, fresh.dependencies);
 
       // Runs on every project.db write an agent makes; only what really
       // changed reaches the store, so an unchanged reload re-renders nothing.
@@ -317,6 +239,9 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
 
   savePmData: (projectPath) =>
     withPersistFeedback(get(), 'project data', async () => {
+      // The save replaces every row; after a failed load that would delete the ones never read.
+      if (get().pmLoadError)
+        throw new Error(`the project data did not load, so saving would replace it`);
       await initProjectDb(projectPath);
       const { pmDraftEpics, pmDraftTickets, pmDraftTestCases, pmDraftDependencies } = get();
       await ipcPmSave(projectPath, {

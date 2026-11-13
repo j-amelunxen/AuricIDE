@@ -128,12 +128,17 @@ fn config_value_passes_env_and_headers_through_unchanged() {
 fn codex_drops_sse_servers_and_says_so() {
     let dir = project(Some(SAMPLE));
     let resolved = for_provider(
-        "codex",
+        crate::providers::McpBinding::CodexToml,
         resolve_names(&names(&["motion", "legacy"]), dir.path()),
     );
     assert_eq!(resolved.servers.len(), 1);
     assert_eq!(resolved.skipped[0].name, "legacy");
-    let claude = for_provider("claude", resolve_names(&names(&["legacy"]), dir.path()));
+    let claude = for_provider(
+        crate::providers::McpBinding::Template {
+            reads_mcp_config: true,
+        },
+        resolve_names(&names(&["legacy"]), dir.path()),
+    );
     assert_eq!(claude.servers.len(), 1);
 }
 
@@ -266,4 +271,39 @@ fn codex_gets_command_line_overrides_and_nothing_for_no_extras() {
         .arguments
         .join(" ");
     assert!(!plain.contains("motion"));
+}
+
+/// The settings picker (`src/lib/config/extraMcpName.ts`) reads the same cases.
+#[test]
+fn names_match_the_shared_fixture() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/lib/config/extraMcpName.fixtures.json"
+    ))
+    .unwrap();
+    for name in fixture["valid"].as_array().unwrap() {
+        assert!(is_valid_name(name.as_str().unwrap()), "{name}");
+    }
+    for name in fixture["invalid"].as_array().unwrap() {
+        assert!(!is_valid_name(name.as_str().unwrap()), "{name}");
+    }
+}
+
+/// A project's `.mcp.json` must not be able to shadow a server the IDE
+/// registers under any of its own names.
+#[test]
+fn every_server_name_the_ide_registers_is_reserved() {
+    assert!(is_reserved(crate::mcp::AURIC_PM_SERVER));
+    assert!(is_reserved(
+        crate::supervisor::launch::SUPERVISOR_MCP_SERVER
+    ));
+    assert!(is_reserved(&format!(
+        "{}{}",
+        crate::connectors::CONNECTOR_SERVER_PREFIX,
+        "github"
+    )));
+    assert!(is_reserved(&format!(
+        "{}-project",
+        crate::mcp::AURIC_PM_SERVER
+    )));
+    assert!(!is_reserved("github"));
 }

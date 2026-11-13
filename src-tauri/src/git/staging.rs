@@ -2,7 +2,7 @@ use git2::Repository;
 use std::path::Path;
 
 pub fn git_stage_impl(repo_path: &str, paths: &[String]) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
     let mut index = repo
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
@@ -31,7 +31,7 @@ pub fn git_stage_impl(repo_path: &str, paths: &[String]) -> Result<(), String> {
 }
 
 pub fn git_unstage_impl(repo_path: &str, paths: &[String]) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
     let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
 
     repo.reset_default(
@@ -57,7 +57,7 @@ fn refuse_during_operation(repo: &Repository) -> Result<(), String> {
 }
 
 pub fn git_commit_impl(repo_path: &str, message: &str) -> Result<String, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
     refuse_during_operation(&repo)?;
 
     let mut index = repo
@@ -100,7 +100,7 @@ pub fn git_commit_impl(repo_path: &str, message: &str) -> Result<String, String>
 /// upstream on first push so later pushes (and the branch display) know
 /// where home is.
 pub fn git_push_impl(repo_path: &str) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
     let head = repo
         .head()
         .map_err(|e| format!("Failed to read HEAD: {}", e))?;

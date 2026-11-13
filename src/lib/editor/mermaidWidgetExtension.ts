@@ -137,7 +137,6 @@ class MermaidWidgetPlugin {
 
       let needsUpdate = false;
 
-      // Build decorations
       const ranges: { pos: number; widget: ReturnType<typeof Decoration.widget> }[] = [];
 
       for (const block of blocks) {
@@ -171,7 +170,6 @@ class MermaidWidgetPlugin {
         ranges.push({ pos: block.to, widget });
       }
 
-      // Sort by position and build decoration set
       ranges.sort((a, b) => a.pos - b.pos);
       const decos = Decoration.set(ranges.map((r) => r.widget.range(r.pos)));
 

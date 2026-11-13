@@ -1,13 +1,10 @@
 import dagre from '@dagrejs/dagre';
-import type { PmGoal, PmGoalDependency, PmGoalRun, PmGoalStation } from '../tauri/goals';
-import type { PmTicket } from '../tauri/pm';
-import type { AgentInfo } from '../tauri/agents';
-import {
-  getGoalWorkProgress,
-  getRootGoals,
-  getGoalChildren,
-  getSiblingWaves,
-} from '../store/goalsSlice';
+import type { PmGoal, PmGoalDependency, PmGoalRun, PmGoalStation } from '../goals/types';
+import type { PmTicket } from '../pm/types';
+import type { AgentInfo } from '../agents/types';
+import { getSiblingWaves } from '../goals/model/goalDependencyAdapters';
+import { getGoalWorkProgress } from '../goals/model/goalSatisfaction';
+import { getRootGoals, getGoalChildren } from '../goals/model/goalTreeHelpers';
 
 export interface OrchestrationNodeData {
   label: string;

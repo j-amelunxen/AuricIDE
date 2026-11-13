@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode, type KeyboardEvent } from 'react';
+import type { ReactNode, KeyboardEvent } from 'react';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface SearchPaletteModalProps {
-  isOpen: boolean;
   onClose: () => void;
   ariaLabel: string;
   overlayId: string;
@@ -22,7 +21,6 @@ export interface SearchPaletteModalProps {
 }
 
 export function SearchPaletteModal({
-  isOpen,
   onClose,
   ariaLabel,
   overlayId,
@@ -36,17 +34,8 @@ export function SearchPaletteModal({
   footerLeft,
   footerRight,
 }: SearchPaletteModalProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
-  useOverlayLayer({ id: overlayId, kind: 'tool', active: isOpen, onEscape: onClose });
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 10);
-    return () => clearTimeout(timer);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
+  useOverlayLayer({ id: overlayId, kind: 'tool', active: true, onEscape: onClose });
 
   return (
     <div
@@ -64,7 +53,7 @@ export function SearchPaletteModal({
         <div className="flex items-center gap-3 px-4 border-b border-white/5">
           <AuricIcon name="search" className="text-foreground-muted" />
           <input
-            ref={inputRef}
+            autoFocus
             type="text"
             className="w-full bg-transparent py-4 text-sm text-foreground outline-none placeholder:text-foreground-muted"
             placeholder={placeholder}

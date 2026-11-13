@@ -1,6 +1,7 @@
 //! Discovery of user-supplied Theme JSON files.
 //! Validation and apply live in the TypeScript layer (single source of truth).
 
+pub mod commands;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};

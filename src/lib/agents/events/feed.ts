@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../../tauri/agents';
+import type { AgentInfo } from '../types';
 import type { SentMessage } from '../../store/agentSlice';
 import type { PersistedAgentEvent } from '../../tauri/agentLog';
 import type { StreamLine } from './streamCapture';

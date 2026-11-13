@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useAttentionCount } from './useAttentionCount';
 import { applyDockBadge, applyWindowTitle, composeWindowTitle } from '@/lib/agents/windowTitle';
 

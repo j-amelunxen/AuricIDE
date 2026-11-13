@@ -1,4 +1,4 @@
-import type { PmTicket } from '../tauri/pm';
+import type { PmTicket } from './types';
 
 export function generateTestCaseDerivationPrompt(ticket: PmTicket): string {
   return `You are a QA Engineer. Based on the following ticket, derive meaningful test cases similar to TestRail.

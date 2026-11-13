@@ -16,8 +16,8 @@ import {
 import { exportGoalTable, type GoalTableExportFormat } from '@/lib/goals/exportGoalTable';
 import { goalsLoadStatusHistory } from '@/lib/tauri/goalHistory';
 import type { GoalHistoryEntry } from '@/lib/pm/metrics/goalMetrics';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 import { useProjectUsageRows } from '@/app/components/pm/cost/useProjectUsageRows';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 

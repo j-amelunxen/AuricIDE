@@ -1,5 +1,5 @@
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
-import type { PermissionMode } from '@/lib/tauri/agents';
+import type { PermissionMode } from '@/lib/agents/types';
 
 /** The part of a launch a skill may pin, in the shape every caller stores it. */
 export interface SkillLaunchPins {

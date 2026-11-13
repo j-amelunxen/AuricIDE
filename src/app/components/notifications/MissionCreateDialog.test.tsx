@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MissionCreateDialog } from './MissionCreateDialog';
 
 const createMock = vi.fn(async (_input: unknown) => ({ mission: {}, schedule: {} }));
-vi.mock('@/lib/missions/create', () => ({
-  createMissionWithSchedule: (input: unknown) => createMock(input),
+vi.mock('@/lib/tauri/missions', () => ({
+  missionCreate: (input: unknown) => createMock(input),
 }));
 
 describe('MissionCreateDialog', () => {

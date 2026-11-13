@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalDependency } from '../tauri/goals';
+import type { PmGoal, PmGoalDependency } from '../goals/types';
 import { buildSubGoalPlanGraph } from './subGoalPlanGraph';
 
 const TS = '2026-01-10 10:00:00';

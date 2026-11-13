@@ -3,11 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { NotificationAction } from '@/lib/notifications/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import { useStore } from '@/lib/store';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProviderInfo } from '@/lib/tauri/providers';
-import type { GoalsState, PmGoal } from '@/lib/tauri/goals';
+import type { GoalsState, PmGoal } from '@/lib/goals/types';
 import { ScheduleEditor, type ScheduleEditorProps } from './ScheduleEditor';
 
 const mockGoalsLoad = vi.fn<(projectPath: string) => Promise<GoalsState>>();

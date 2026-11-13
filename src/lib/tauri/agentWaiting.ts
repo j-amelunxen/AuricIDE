@@ -1,15 +1,8 @@
+import type { AgentWaiting } from '../agents/types';
 import { invoke } from './invoke';
 import { subscribeToTauriEvent } from './subscribe';
 
-/** One agent a supervisor parked on purpose (`mark_waiting`), as Rust keeps it. */
-export interface AgentWaiting {
-  agentId: string;
-  reason: string;
-  /** Unix ms at which the mark ends by itself. */
-  untilMs: number;
-  /** Unix ms at which it was set. */
-  markedAtMs: number;
-}
+export const AGENT_WAITING_CHANGED_EVENT = 'agent-waiting-changed';
 
 /** The marks that have not run out yet. Rust is the only source. */
 export async function agentWaitingList(): Promise<AgentWaiting[]> {
@@ -18,7 +11,7 @@ export async function agentWaitingList(): Promise<AgentWaiting[]> {
 
 export function onAgentWaitingChanged(callback: () => void, onListening?: () => void): () => void {
   return subscribeToTauriEvent(
-    'agent-waiting-changed',
+    AGENT_WAITING_CHANGED_EVENT,
     callback,
     '[Browser mode] Agent waiting listener not available',
     onListening

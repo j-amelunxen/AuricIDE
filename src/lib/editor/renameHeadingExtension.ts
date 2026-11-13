@@ -1,3 +1,4 @@
+import { matchHeadingLine } from '@/lib/markdown/markdownHeadingParser';
 import { Facet } from '@codemirror/state';
 import { keymap, type KeyBinding } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
@@ -16,11 +17,11 @@ const renameHeadingKeyBinding: KeyBinding = {
   run: (view) => {
     const pos = view.state.selection.main.head;
     const line = view.state.doc.lineAt(pos);
-    const match = /^(#{1,6})\s+(.*)$/.exec(line.text);
+    const match = matchHeadingLine(line.text);
 
     if (!match) return false;
 
-    const title = match[2].trim();
+    const title = match.title;
     const callback = view.state.facet(renameHeadingCallbackFacet);
     callback(title, line.number);
 

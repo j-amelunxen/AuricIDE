@@ -398,5 +398,16 @@ describe('task tools', () => {
       expect(history[0].to_status).toBe('done');
       expect(history[0].source).toBe('mcp');
     });
+
+    it('logs nothing when the ticket was already done', () => {
+      seedTicket(db, { id: 'ticket-1', epicId: 'epic-1', name: 'Done twice', status: 'done' });
+
+      completeTask(db, { id: 'ticket-1', summary: 'again' });
+
+      const history = db
+        .prepare('SELECT * FROM pm_status_history WHERE ticket_id = ?')
+        .all('ticket-1') as StatusHistoryEntry[];
+      expect(history).toHaveLength(0);
+    });
   });
 });

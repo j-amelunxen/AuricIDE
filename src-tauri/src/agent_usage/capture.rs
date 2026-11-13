@@ -14,7 +14,7 @@ use chrono::{DateTime, Local, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::claude::{find_session_files, session_tokens, CliResult};
+use super::claude::{find_session_files, session_tokens, CliResult, CLAUDE_PROJECTS_DIR};
 use super::codex::{
     find_rollout_by_session, find_rollout_heuristic, parse_rollout, RolloutClaims, SessionIdSniffer,
 };
@@ -30,7 +30,6 @@ use super::store;
 use crate::cc_usage::manifest::UsagePlugin;
 use crate::providers::{SessionIdFrom, TranscriptFormat, UsageConfig};
 
-const CLAUDE_PROJECTS_DIR: &str = ".claude/projects";
 const CODEX_SESSIONS_DIR: &str = ".codex/sessions";
 
 /// The Codex price list, compiled in. `None` only if the shipped file and the

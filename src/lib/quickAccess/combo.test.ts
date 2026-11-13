@@ -6,7 +6,7 @@ import {
   formatComboProgress,
   type SkillComboRun,
 } from './combo';
-import type { QuickAccessCombo } from '../store/starredProjectsSlice';
+import type { QuickAccessCombo } from './types';
 
 const write: QuickAccessCombo = {
   id: 'c1',

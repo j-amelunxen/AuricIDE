@@ -17,7 +17,7 @@ use super::contract::{
     normalize_codex, parse_wire, CodexRateLimitsResponse, UsageError, UsageSnapshot,
 };
 
-const SOURCE: &str = "codex";
+const SOURCE: &str = super::contract::CODEX;
 
 /// Budget for the whole exchange, not per message.
 const EXCHANGE_TIMEOUT_SECS: u64 = 5;
@@ -31,10 +31,10 @@ pub async fn read_codex_limits(
     // `Command` resolves a bare program name against the PATH of the *calling*
     // process, not the one handed to `.envs()`. A packaged app launched from
     // Finder has a minimal PATH, so the binary is resolved by hand first.
-    let binary = env
-        .iter()
-        .find(|(key, _)| key == "PATH")
-        .and_then(|(_, path)| crate::mcp::find_in_path("codex", path))
+    let binary = crate::machine::env_path(env)
+        .and_then(|path| {
+            crate::machine::resolve_in_path("codex", path, &crate::machine::is_executable)
+        })
         .ok_or_else(|| UsageError::Unavailable {
             source: SOURCE.to_string(),
             detail: "`codex` is not on PATH".to_string(),

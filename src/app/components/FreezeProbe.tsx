@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { invoke } from '@/lib/tauri/invoke';
+import { answerUiPing, onUiPing, recordUiStall } from '@/lib/tauri/uiWatchdog';
 import {
   createDriftProbe,
   createStallReporter,
@@ -53,7 +53,7 @@ export function FreezeProbe(): null {
   useEffect(() => {
     const visible = () => document.visibilityState === 'visible';
     const pong = () => {
-      invoke('ui_pong', { visible: visible() }).catch(() => {
+      answerUiPing(visible()).catch(() => {
         // Browser mode or tests: there is no watchdog to answer.
       });
     };
@@ -64,24 +64,18 @@ export function FreezeProbe(): null {
       breadcrumbs: perfBreadcrumbs,
       context: stallContext,
       write: (line) => {
-        invoke('record_ui_stall', { line }).catch(() => {});
+        // A stall report that cannot be written must not become an error of its own.
+        recordUiStall(line).catch(() => {});
       },
     });
 
-    let unlisten: (() => void) | null = null;
-    let disposed = false;
     Promise.all([import('@/lib/store'), import('@/lib/metrics/storeProbe')])
       .then((mods) => {
         storeModules = mods;
       })
+      // Without them stall reports carry no store context; the probe still runs.
       .catch(() => {});
-    import('@tauri-apps/api/event')
-      .then(({ listen }) => listen('ui-ping', pong))
-      .then((un) => {
-        if (disposed) un();
-        else unlisten = un;
-      })
-      .catch(() => {});
+    const unlisten = onUiPing(pong);
 
     // Prefer the engine's own long-task entries; fall back to timer drift.
     const observed = supportedObserverTypes();
@@ -114,8 +108,7 @@ export function FreezeProbe(): null {
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
-      disposed = true;
-      unlisten?.();
+      unlisten();
       observer?.disconnect();
       if (driftTimer) clearInterval(driftTimer);
       document.removeEventListener('visibilitychange', onVisibility);

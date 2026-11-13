@@ -1,6 +1,6 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from '../agents/types';
 import type { AgentSlice } from './agentSlice';
 import { agentLogAppend, agentLogLoad, agentLogPrune } from '../tauri/agentLog';
 import { APP_CONFIG_KEYS } from '../config/appConfig';
@@ -8,6 +8,15 @@ import { flushAgentLog, resetAgentLogWriter } from '../agents/events/persistence
 import { HEARTBEAT_BANDS, type HeartbeatBucket } from '../agents/events/heartbeat';
 import { resetAgentExtractors } from '../agents/events/registry';
 import { resetRemovedAgents } from './agent/removedAgents';
+import { AgentStopError } from '../agents/stop';
+import { groupAgentsByRepo, repoStopSelection } from '../agents/fleet';
+import {
+  MAX_AGENT_EVENTS,
+  MAX_AGENT_LOGS,
+  MAX_AGENT_LOG_BYTES,
+  MAX_FINISHED_AGENTS,
+  MAX_SENT_MESSAGES,
+} from './agentSlice';
 
 /** Every event counted into an agent's heartbeat window, across all bands. */
 function totalHeartbeat(buckets: HeartbeatBucket[]): number {
@@ -16,16 +25,6 @@ function totalHeartbeat(buckets: HeartbeatBucket[]): number {
     0
   );
 }
-import {
-  createAgentSlice,
-  groupAgentsByRepo,
-  MAX_AGENT_EVENTS,
-  MAX_AGENT_LOGS,
-  MAX_AGENT_LOG_BYTES,
-  MAX_FINISHED_AGENTS,
-  MAX_SENT_MESSAGES,
-  UNGROUPED_REPO_KEY,
-} from './agentSlice';
 
 vi.mock('../tauri/agentLog', () => ({
   agentLogAppend: vi.fn(async () => undefined),
@@ -60,7 +59,6 @@ vi.mock('../tauri/agents', () => ({
   })),
   killAgent: vi.fn(async () => undefined),
   recordAgentPromptHistory: vi.fn(async () => undefined),
-  killAgentsForRepo: vi.fn(async () => 2),
   renameAgent: vi.fn(async () => undefined),
   listAgents: vi.fn(async () => [
     {
@@ -98,7 +96,6 @@ vi.mock('../tauri/agents', () => ({
     repoPath: '/repo',
   })),
   discardInterruptedAgent: vi.fn(async () => undefined),
-  sendToAgent: vi.fn(async () => undefined),
   sendMessageToAgent: vi.fn(async () => undefined),
   listAgentPromptHistory: vi.fn(async () => [
     { id: 'h1', prompt: 'newest', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
@@ -113,11 +110,11 @@ beforeEach(() => {
 });
 
 describe('agentSlice', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('starts with an empty prompt history', () => {
@@ -249,11 +246,8 @@ describe('agentSlice', () => {
   });
 
   it('announces a failure as a toast, once', async () => {
-    const { createToastSlice } = await import('./toastSlice');
-    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createToastSlice(...a),
-    }));
+    await import('./toastSlice');
+    const combined = createFullTestStore();
     await combined.getState().spawnNewAgent({
       name: 'Writer',
       model: 'claude-opus-4-6',
@@ -272,12 +266,9 @@ describe('agentSlice', () => {
 
   describe('the inbox record of a failure', () => {
     async function withInbox() {
-      const { createNotificationsSlice } = await import('./notificationsSlice');
-      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
-      const combined = createStore<Combined>()((...a) => ({
-        ...createAgentSlice(...a),
-        ...createNotificationsSlice(...a),
-      }));
+      await import('./notificationsSlice');
+
+      const combined = createFullTestStore();
       await combined.getState().spawnNewAgent({
         name: 'Writer',
         model: 'claude-opus-4-6',
@@ -336,7 +327,7 @@ describe('agentSlice', () => {
       combined.setState({
         conductorAssignments: { 'ticket-1': 'mock-agent-1' },
         conductorFailedTickets: {},
-      } as never);
+      });
 
       combined.getState().updateAgentStatus('mock-agent-1', 'error');
       await new Promise((r) => setTimeout(r, 20));
@@ -355,12 +346,9 @@ describe('agentSlice', () => {
 
   describe('the inbox record of a headless finish', () => {
     async function withInbox() {
-      const { createNotificationsSlice } = await import('./notificationsSlice');
-      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
-      const combined = createStore<Combined>()((...a) => ({
-        ...createAgentSlice(...a),
-        ...createNotificationsSlice(...a),
-      }));
+      await import('./notificationsSlice');
+
+      const combined = createFullTestStore();
       await combined.getState().spawnNewAgent({
         name: 'Deploy Auric-Website',
         model: 'sonnet',
@@ -420,12 +408,9 @@ describe('agentSlice', () => {
     });
 
     it('writes nothing when a conductor agent finishes headless', async () => {
-      const { createNotificationsSlice } = await import('./notificationsSlice');
-      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
-      const combined = createStore<Combined>()((...a) => ({
-        ...createAgentSlice(...a),
-        ...createNotificationsSlice(...a),
-      }));
+      await import('./notificationsSlice');
+
+      const combined = createFullTestStore();
       await combined.getState().spawnNewAgent({
         name: 'review:auth',
         model: 'sonnet',
@@ -441,16 +426,9 @@ describe('agentSlice', () => {
     });
 
     it('does not toast a clean headless finish', async () => {
-      const { createToastSlice } = await import('./toastSlice');
-      const { createNotificationsSlice } = await import('./notificationsSlice');
-      type Combined = AgentSlice &
-        import('./toastSlice').ToastSlice &
-        import('./notificationsSlice').NotificationsSlice;
-      const combined = createStore<Combined>()((...a) => ({
-        ...createAgentSlice(...a),
-        ...createToastSlice(...a),
-        ...createNotificationsSlice(...a),
-      }));
+      await import('./toastSlice');
+      await import('./notificationsSlice');
+      const combined = createFullTestStore();
       await combined.getState().spawnNewAgent({
         name: 'Deploy Auric-Website',
         model: 'sonnet',
@@ -468,11 +446,8 @@ describe('agentSlice', () => {
   it('stays silent while the conductor will retry the ticket itself', async () => {
     // Interrupting the user for a failure the system is about to handle
     // would be a false alarm — only the final, given-up failure toasts.
-    const { createToastSlice } = await import('./toastSlice');
-    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createToastSlice(...a),
-    }));
+    await import('./toastSlice');
+    const combined = createFullTestStore();
     await combined.getState().spawnNewAgent({
       name: 'Writer',
       model: 'claude-opus-4-6',
@@ -481,18 +456,15 @@ describe('agentSlice', () => {
     combined.setState({
       conductorAssignments: { 'ticket-1': 'mock-agent-1' },
       conductorFailedTickets: {},
-    } as never);
+    });
 
     combined.getState().updateAgentStatus('mock-agent-1', 'error');
     expect(combined.getState().toasts).toHaveLength(0);
   });
 
   it('toasts the conductor ticket that has used up its attempts', async () => {
-    const { createToastSlice } = await import('./toastSlice');
-    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createToastSlice(...a),
-    }));
+    await import('./toastSlice');
+    const combined = createFullTestStore();
     await combined.getState().spawnNewAgent({
       name: 'Writer',
       model: 'claude-opus-4-6',
@@ -501,7 +473,7 @@ describe('agentSlice', () => {
     combined.setState({
       conductorAssignments: { 'ticket-1': 'mock-agent-1' },
       conductorFailedTickets: { 'ticket-1': 1 },
-    } as never);
+    });
 
     combined.getState().updateAgentStatus('mock-agent-1', 'error');
     expect(combined.getState().toasts).toHaveLength(1);
@@ -522,11 +494,8 @@ describe('agentSlice', () => {
   });
 
   it('does not toast a clean finish — only failures make noise', async () => {
-    const { createToastSlice } = await import('./toastSlice');
-    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createToastSlice(...a),
-    }));
+    await import('./toastSlice');
+    const combined = createFullTestStore();
     await combined.getState().spawnNewAgent({
       name: 'Writer',
       model: 'claude-opus-4-6',
@@ -813,7 +782,7 @@ describe('agentSlice', () => {
     expect(store.getState().selectedAgentId).toBeNull();
   });
 
-  it('killAgentsForRepoPath removes agents with matching repoPath', async () => {
+  it('stopAgents removes exactly the given agents', async () => {
     // Manually set agents with repoPath
     store.setState({
       agents: [
@@ -846,48 +815,12 @@ describe('agentSlice', () => {
         },
       ],
     });
-    await store.getState().killAgentsForRepoPath('/repo-a');
+    await store.getState().stopAgents(['1', '3']);
     expect(store.getState().agents).toHaveLength(1);
     expect(store.getState().agents[0].id).toBe('2');
   });
 
-  it('killAgentsForRepoPath ends agents that carry no repo path', async () => {
-    const { killAgent, killAgentsForRepo } = await import('../tauri/agents');
-    vi.mocked(killAgent).mockClear();
-    vi.mocked(killAgentsForRepo).mockClear();
-    store.setState({
-      agents: [
-        {
-          id: '1',
-          name: 'A',
-          model: 'm',
-          provider: 'claude',
-          status: 'running' as const,
-          startedAt: 0,
-        },
-        {
-          id: '2',
-          name: 'B',
-          model: 'm',
-          provider: 'claude',
-          status: 'running' as const,
-          startedAt: 0,
-          repoPath: '/repo-b',
-        },
-      ],
-    });
-
-    // 'Unknown' is the bucket groupAgentsByRepo shows these under — a display
-    // key, never a path. Stop all on that group has to actually end them
-    // instead of matching a repo path nobody has.
-    await store.getState().killAgentsForRepoPath(UNGROUPED_REPO_KEY);
-
-    expect(store.getState().agents.map((a) => a.id)).toEqual(['2']);
-    expect(killAgent).toHaveBeenCalledWith('1');
-    expect(killAgentsForRepo).not.toHaveBeenCalled();
-  });
-
-  it('killAgentsForRepoPath drops logs and metadata of killed agents', async () => {
+  it('stopAgents drops logs and metadata of stopped agents', async () => {
     store.setState({
       agents: [
         {
@@ -913,7 +846,9 @@ describe('agentSlice', () => {
     store.getState().appendAgentLog('1', 'a-log');
     store.getState().appendAgentLog('2', 'b-log');
 
-    await store.getState().killAgentsForRepoPath('/repo-a');
+    await store
+      .getState()
+      .stopAgents(repoStopSelection(store.getState().agents, '/repo-a').running);
 
     expect(store.getState().agentLogs['1']).toBeUndefined();
     expect(store.getState().agentLogMeta['1']).toBeUndefined();
@@ -923,11 +858,11 @@ describe('agentSlice', () => {
 });
 
 describe('agentSlice – interrupted agents (restart persistence)', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('initializes interruptedAgents as empty array', () => {
@@ -1005,16 +940,16 @@ describe('agentSlice – interrupted agents (restart persistence)', () => {
 });
 
 describe('agentSlice – spawn prompt history', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('records the start prompt in the project DB history on spawn', async () => {
     const { recordAgentPromptHistory } = await import('../tauri/agents');
-    store.setState({ rootPath: '/my/project' } as Partial<AgentSlice>);
+    store.setState({ rootPath: '/my/project' });
 
     await store.getState().spawnNewAgent({
       name: 'Writer',
@@ -1050,7 +985,7 @@ describe('agentSlice – spawn prompt history', () => {
   it('spawn succeeds even when recording history fails', async () => {
     const { recordAgentPromptHistory } = await import('../tauri/agents');
     vi.mocked(recordAgentPromptHistory).mockRejectedValueOnce(new Error('db closed'));
-    store.setState({ rootPath: '/my/project' } as Partial<AgentSlice>);
+    store.setState({ rootPath: '/my/project' });
 
     const agent = await store.getState().spawnNewAgent({
       name: 'Writer',
@@ -1116,16 +1051,27 @@ describe('groupAgentsByRepo', () => {
 });
 
 describe('agentSlice – agent logs buffer cap', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
+  function storeWithFullLog(prefix: string) {
+    const logs = Array.from({ length: MAX_AGENT_LOGS }, (_, i) => `${prefix}${i}`);
+    return createFullTestStore({
+      agentLogs: { 'agent-1': logs },
+      agentLogMeta: {
+        'agent-1': { seq: logs.length, bytes: logs.reduce((sum, chunk) => sum + chunk.length, 0) },
+      },
+    });
+  }
+
   it('caps agent logs at MAX_AGENT_LOGS per agent', () => {
+    store = storeWithFullLog('log-');
     const total = MAX_AGENT_LOGS + 200;
-    for (let i = 0; i < total; i++) {
+    for (let i = MAX_AGENT_LOGS; i < total; i++) {
       store.getState().appendAgentLog('agent-1', `log-${i}`);
     }
     const logs = store.getState().agentLogs['agent-1'];
@@ -1147,8 +1093,9 @@ describe('agentSlice – agent logs buffer cap', () => {
   });
 
   it('different agents have independent caps', () => {
+    store = storeWithFullLog('a1-log-');
     const total = MAX_AGENT_LOGS + 50;
-    for (let i = 0; i < total; i++) {
+    for (let i = MAX_AGENT_LOGS; i < total; i++) {
       store.getState().appendAgentLog('agent-1', `a1-log-${i}`);
     }
     // Add just a few to agent-2
@@ -1162,11 +1109,11 @@ describe('agentSlice – agent logs buffer cap', () => {
 });
 
 describe('agentSlice – byte-bounded agent logs', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('trims oldest chunks once MAX_AGENT_LOG_BYTES is exceeded', () => {
@@ -1255,7 +1202,7 @@ describe('agentSlice – byte-bounded agent logs', () => {
 });
 
 describe('agentSlice – output arriving after its agent was removed', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
   const running = (id: string, repoPath = '/repo') => ({
     id,
     name: id,
@@ -1268,7 +1215,7 @@ describe('agentSlice – output arriving after its agent was removed', () => {
 
   beforeEach(() => {
     resetAgentExtractors();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   const late = (id: string) => store.getState().appendAgentLogBatch([[id, ['late chunk\n']]]);
@@ -1284,7 +1231,7 @@ describe('agentSlice – output arriving after its agent was removed', () => {
 
   it('drops a batch for agents stopped with Stop all', async () => {
     store.setState({ agents: [running('agent-8'), running('agent-9')] });
-    await store.getState().killAgentsForRepoPath('/repo');
+    await store.getState().stopAgents(repoStopSelection(store.getState().agents, '/repo').running);
     late('agent-8');
     late('agent-9');
     expect(store.getState().agentLogMeta).toEqual({});
@@ -1309,7 +1256,7 @@ describe('agentSlice – arrival order across agents', () => {
   });
 
   it('stamps each chunk with the time it arrived, not the time its batch landed', () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     store.getState().appendAgentLogBatch([
       ['agent-1', ['first\n', 'third\n'], [100, 102]],
       ['agent-2', ['second\n'], [101]],
@@ -1351,12 +1298,12 @@ describe('agentSlice – batched output', () => {
   });
 
   it('ends in exactly the state chunk-by-chunk appends reach, with one store update', () => {
-    const oneByOne = createStore<AgentSlice>()(createAgentSlice);
+    const oneByOne = createFullTestStore();
     for (const [id, chunk] of chunks) oneByOne.getState().appendAgentLog(id, chunk);
     const expected = snapshot(oneByOne.getState());
 
     resetAgentExtractors();
-    const batched = createStore<AgentSlice>()(createAgentSlice);
+    const batched = createFullTestStore();
     const listener = vi.fn();
     batched.subscribe(listener);
     batched.getState().appendAgentLogBatch([
@@ -1372,37 +1319,101 @@ describe('agentSlice – batched output', () => {
 });
 
 describe('agentSlice – killRunningAgent graceful handling', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
-  it('cleans up frontend state even when Rust-side kill throws "not found"', async () => {
-    const { killAgent } = await import('../tauri/agents');
-    vi.mocked(killAgent).mockRejectedValueOnce(new Error('Agent not found: mock-agent-1'));
+  const runningAgent = (id: string, repoPath?: string): AgentInfo => ({
+    id,
+    name: `Agent ${id}`,
+    model: 'm',
+    provider: 'claude',
+    status: 'running',
+    startedAt: 0,
+    ...(repoPath ? { repoPath } : {}),
+  });
 
-    // Simulate an agent that terminated naturally (Rust already cleaned up)
+  it('keeps the agent and rejects when the kill fails and the backend still runs it', async () => {
+    const { killAgent, listAgents } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('Agent not found: mock-agent-1'));
+    vi.mocked(listAgents).mockResolvedValueOnce([runningAgent('mock-agent-1')]);
+    const updateTicket = vi.fn();
     store.setState({
-      agents: [
-        {
-          id: 'mock-agent-1',
-          name: 'Done Agent',
-          model: 'm',
-          provider: 'claude',
-          status: 'idle' as const,
-          startedAt: 0,
-        },
-      ],
+      agents: [{ ...runningAgent('mock-agent-1'), spawnedByTicketId: 't-1' }],
+      agentLogs: { 'mock-agent-1': ['some output'] },
+      updateTicket,
+    });
+
+    await expect(store.getState().killRunningAgent('mock-agent-1')).rejects.toBeInstanceOf(
+      AgentStopError
+    );
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['mock-agent-1']);
+    expect(store.getState().agentLogs['mock-agent-1']).toEqual(['some output']);
+    expect(updateTicket).not.toHaveBeenCalled();
+  });
+
+  it('keeps the agent when the backend list cannot be read after a failed kill', async () => {
+    const { killAgent, listAgents } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('boom'));
+    vi.mocked(listAgents).mockRejectedValueOnce(new Error('ipc down'));
+    store.setState({ agents: [runningAgent('mock-agent-1')] });
+
+    await expect(store.getState().killRunningAgent('mock-agent-1')).rejects.toThrow('boom');
+    expect(store.getState().agents).toHaveLength(1);
+  });
+
+  it('keeps the agent when the backend list holds a row that is not an agent', async () => {
+    const { killAgent, listAgents } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('boom'));
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      { id: 'other', status: 'exploded' },
+    ] as unknown as AgentInfo[]);
+    store.setState({ agents: [runningAgent('mock-agent-1')] });
+
+    await expect(store.getState().killRunningAgent('mock-agent-1')).rejects.toThrow();
+    expect(store.getState().agents).toHaveLength(1);
+  });
+
+  it('cleans up when the kill fails because the agent had already ended', async () => {
+    const { killAgent, listAgents } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('some unrelated wording'));
+    vi.mocked(listAgents).mockResolvedValueOnce([]);
+    store.setState({
+      agents: [runningAgent('mock-agent-1')],
       agentLogs: { 'mock-agent-1': ['some output'] },
     });
 
-    // Should NOT throw — frontend cleanup still happens
     await store.getState().killRunningAgent('mock-agent-1');
 
     expect(store.getState().agents).toHaveLength(0);
     expect(store.getState().agentLogs['mock-agent-1']).toBeUndefined();
+  });
+
+  it('stops exactly the given agents, keeps the failed and the late ones', async () => {
+    const { killAgent, listAgents } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockImplementation(async (id: string) => {
+      if (id === '3') throw new Error('refused');
+      // A new agent arrives in the same repo while the stop is under way.
+      store.setState({ agents: [...store.getState().agents, runningAgent('4', '/repo-a')] });
+    });
+    vi.mocked(listAgents).mockResolvedValue([runningAgent('3', '/repo-a')]);
+    store.setState({
+      agents: [runningAgent('1', '/repo-a'), runningAgent('3', '/repo-a')],
+      agentLogs: { '1': ['one'], '3': ['three'] },
+    });
+
+    const outcome = store.getState().stopAgents(['1', '3']);
+
+    await expect(outcome).rejects.toMatchObject({ failedIds: ['3'], stoppedIds: ['1'] });
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['3', '4']);
+    expect(store.getState().agentLogs['3']).toEqual(['three']);
+    expect(store.getState().agentLogs['1']).toBeUndefined();
+    vi.mocked(killAgent).mockReset().mockResolvedValue(undefined);
+    vi.mocked(listAgents).mockReset().mockResolvedValue([]);
   });
 
   it('agent with idle status remains visible until explicitly dismissed', () => {
@@ -1426,11 +1437,11 @@ describe('agentSlice – killRunningAgent graceful handling', () => {
 });
 
 describe('agentSlice – killRunningAgent cleans up logs', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('killRunningAgent removes agent logs for the killed agent', async () => {
@@ -1463,11 +1474,11 @@ describe('agentSlice – killRunningAgent cleans up logs', () => {
 });
 
 describe('agentSlice – bounded finished-agent retention', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   function finishedAgent(id: string, startedAt: number) {
@@ -1541,7 +1552,7 @@ describe('agentSlice – bounded finished-agent retention', () => {
 });
 
 describe('agentSlice – minimized agents', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const agent = (id: string) => ({
     id,
@@ -1554,7 +1565,7 @@ describe('agentSlice – minimized agents', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('starts with nothing minimized', () => {
@@ -1600,7 +1611,7 @@ describe('agentSlice – minimized agents', () => {
     store.getState().setAgentMinimized('a1', true);
     store.getState().setAgentMinimized('a2', true);
 
-    await store.getState().killAgentsForRepoPath('/repo');
+    await store.getState().stopAgents(repoStopSelection(store.getState().agents, '/repo').running);
 
     expect(store.getState().minimizedAgentIds).toEqual(['a2']);
   });
@@ -1623,7 +1634,7 @@ describe('agentSlice – minimized agents', () => {
 });
 
 describe('agentSlice – renaming agents', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const agent = (id: string, name: string) => ({
     id,
@@ -1636,7 +1647,7 @@ describe('agentSlice – renaming agents', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     store.setState({ agents: [agent('a1', 'Agent (repo)'), agent('a2', 'Agent (repo)')] });
   });
 
@@ -1668,11 +1679,11 @@ describe('agentSlice – renaming agents', () => {
 });
 
 describe('agentSlice – distinguishable names on spawn', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('keeps the name it was given when nothing clashes', async () => {
@@ -1762,7 +1773,7 @@ describe('agentSlice – distinguishable names on spawn', () => {
 });
 
 describe('agentSlice – marker colours', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
     id,
@@ -1775,7 +1786,7 @@ describe('agentSlice – marker colours', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     store.setState({ agents: [withStatus('a1'), withStatus('a2')] });
   });
 
@@ -1822,7 +1833,7 @@ describe('agentSlice – marker colours', () => {
     store.getState().setAgentColor('a1', 'red');
     store.getState().setAgentColor('a2', 'blue');
 
-    await store.getState().killAgentsForRepoPath('/repo');
+    await store.getState().stopAgents(repoStopSelection(store.getState().agents, '/repo').running);
 
     expect(store.getState().agentColors).toEqual({ a2: 'blue' });
   });
@@ -1851,7 +1862,7 @@ describe('agentSlice – marker colours', () => {
 });
 
 describe('agentSlice – muted lanes', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
     id,
@@ -1864,7 +1875,7 @@ describe('agentSlice – muted lanes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     store.setState({ agents: [withStatus('a1'), withStatus('a2')] });
   });
 
@@ -1903,7 +1914,7 @@ describe('agentSlice – muted lanes', () => {
 });
 
 describe('agentSlice – lane seen marks', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
     id,
@@ -1916,7 +1927,7 @@ describe('agentSlice – lane seen marks', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     store.setState({ agents: [withStatus('a1')] });
   });
 
@@ -1958,11 +1969,11 @@ describe('agentSlice – lane seen marks', () => {
 });
 
 describe('agentSlice – collapsed repo groups', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('starts with every group open', () => {
@@ -1985,7 +1996,7 @@ describe('agentSlice – collapsed repo groups', () => {
 });
 
 describe('agentSlice – dismissing finished agents', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const withStatus = (id: string, status: 'running' | 'idle' | 'error') => ({
     id,
@@ -1998,7 +2009,7 @@ describe('agentSlice – dismissing finished agents', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('clears a finished agent out of the fleet', () => {
@@ -2050,7 +2061,7 @@ describe('agentSlice – dismissing finished agents', () => {
 });
 
 describe('agentSlice – derived current activity', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const runningAgent = {
     id: 'a1',
@@ -2063,7 +2074,7 @@ describe('agentSlice – derived current activity', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     store.setState({ agents: [runningAgent] });
   });
 
@@ -2101,11 +2112,11 @@ describe('agentSlice – derived current activity', () => {
 });
 
 describe('agentSlice – event extraction', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
     // Extractors live in a module-level registry outside the store, keyed by
     // agent id — reset it so no test here inherits another test's buffer.
     const { resetAgentExtractors } = await import('../agents/events/registry');
@@ -2249,7 +2260,9 @@ describe('agentSlice – event extraction', () => {
     store.getState().appendAgentLog('events-repo-1', '⏺ Bash(pnpm lint)\n');
     store.getState().appendAgentLog('events-repo-2', '⏺ Bash(pnpm lint)\n');
 
-    await store.getState().killAgentsForRepoPath('/repo-a');
+    await store
+      .getState()
+      .stopAgents(repoStopSelection(store.getState().agents, '/repo-a').running);
 
     expect(store.getState().agentEvents['events-repo-1']).toBeUndefined();
     expect(store.getState().agentEvents['events-repo-2']).toBeUndefined();
@@ -2358,7 +2371,7 @@ describe('agentSlice – event extraction', () => {
 
 describe('recordAgentSentMessage', () => {
   it('records input typed from outside the UI without writing to the PTY again', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     const agents = await import('../tauri/agents');
     vi.mocked(agents.sendMessageToAgent).mockClear();
 
@@ -2373,7 +2386,7 @@ describe('recordAgentSentMessage', () => {
   });
 
   it('skips a bare nudge, same as sendAgentInput', () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     store.getState().recordAgentSentMessage('agent-1', '  ');
     expect(store.getState().agentSentMessages['agent-1']).toBeUndefined();
   });
@@ -2381,7 +2394,7 @@ describe('recordAgentSentMessage', () => {
 
 describe('sendAgentInput', () => {
   it('writes the exact bytes given to the agent PTY', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     const agents = await import('../tauri/agents');
 
     await store.getState().sendAgentInput('agent-1', '1\n');
@@ -2390,7 +2403,7 @@ describe('sendAgentInput', () => {
   });
 
   it('passes the automatic mark on to the wire', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     const agents = await import('../tauri/agents');
 
     await store.getState().sendAgentInput('agent-1', 'task\r', { automatic: true });
@@ -2401,7 +2414,7 @@ describe('sendAgentInput', () => {
   });
 
   it('does not decide the bytes itself — a free-text send goes through verbatim', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     const agents = await import('../tauri/agents');
 
     await store.getState().sendAgentInput('agent-1', 'run the tests\n');
@@ -2410,7 +2423,7 @@ describe('sendAgentInput', () => {
   });
 
   it('records a sent message trimmed of trailing whitespace and newlines', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     await store.getState().sendAgentInput('agent-1', 'run the tests\n');
 
@@ -2420,7 +2433,7 @@ describe('sendAgentInput', () => {
   });
 
   it('does not record a bare newline nudge as a message', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     await store.getState().sendAgentInput('agent-1', '\n');
 
@@ -2428,7 +2441,7 @@ describe('sendAgentInput', () => {
   });
 
   it('does not record an all-whitespace send as a message', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     await store.getState().sendAgentInput('agent-1', '   \n');
 
@@ -2436,7 +2449,7 @@ describe('sendAgentInput', () => {
   });
 
   it('assigns each sent message a monotonically increasing seq, per agent', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     await store.getState().sendAgentInput('agent-1', 'first\n');
     await store.getState().sendAgentInput('agent-1', 'second\n');
@@ -2447,7 +2460,7 @@ describe('sendAgentInput', () => {
   });
 
   it('caps stored sent messages at MAX_SENT_MESSAGES, dropping the oldest', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     for (let i = 0; i < MAX_SENT_MESSAGES + 5; i++) {
       await store.getState().sendAgentInput('agent-1', `message ${i}\n`);
@@ -2460,7 +2473,7 @@ describe('sendAgentInput', () => {
   });
 
   it('keeps seq increasing past the cap so a later message never reuses a dropped seq', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
 
     for (let i = 0; i < MAX_SENT_MESSAGES + 3; i++) {
       await store.getState().sendAgentInput('agent-1', `message ${i}\n`);
@@ -2473,7 +2486,7 @@ describe('sendAgentInput', () => {
   });
 
   it('forgets sent messages once the agent is killed', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     store.setState({
       agents: [
         {
@@ -2494,7 +2507,7 @@ describe('sendAgentInput', () => {
   });
 
   it('forgets sent messages once the agent is dismissed', async () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     store.setState({
       agents: [
         { id: 'done', name: 'done', model: 'm', provider: 'claude', status: 'idle', startedAt: 0 },
@@ -2509,7 +2522,7 @@ describe('sendAgentInput', () => {
 });
 
 describe('agentSlice – on-disk history', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const claudeAgent = (id: string) => ({
     id,
@@ -2526,7 +2539,7 @@ describe('agentSlice – on-disk history', () => {
     vi.mocked(agentLogAppend).mockClear();
     vi.mocked(agentLogLoad).mockClear();
     vi.mocked(agentLogPrune).mockClear();
-    store = createStore<AgentSlice>()((...a) => createAgentSlice(...a));
+    store = createFullTestStore();
   });
 
   const enable = () => localStorage.setItem(APP_CONFIG_KEYS.agentLogPersist, 'true');
@@ -2687,7 +2700,9 @@ describe('agentSlice – on-disk history', () => {
     store.getState().appendAgentLog('hist-repo-1', '⏺ Edit(src/a.ts)\n');
     store.getState().appendAgentLog('hist-repo-2', '⏺ Edit(src/b.ts)\n');
 
-    await store.getState().killAgentsForRepoPath('/repo-a');
+    await store
+      .getState()
+      .stopAgents(repoStopSelection(store.getState().agents, '/repo-a').running);
 
     expect(vi.mocked(agentLogAppend).mock.calls[0][0]).toEqual([
       expect.objectContaining({ agentId: 'hist-repo-1' }),
@@ -2706,7 +2721,7 @@ describe('agentSlice – on-disk history', () => {
 });
 
 describe('agentSlice – timeline history', () => {
-  let store: StoreApi<AgentSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
   const now = Date.now();
 
   const row = (id: string, extra: Partial<AgentInfo> = {}): AgentInfo => ({
@@ -2723,7 +2738,7 @@ describe('agentSlice – timeline history', () => {
   beforeEach(() => {
     resetRemovedAgents();
     vi.clearAllMocks();
-    store = createStore<AgentSlice>()(createAgentSlice);
+    store = createFullTestStore();
   });
 
   it('keeps a dismissed agent in timeline history and off the live list', () => {

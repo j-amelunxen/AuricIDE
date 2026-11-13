@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { llmCall } from '@/lib/tauri/llm';
-import { getRootGoals } from '@/lib/store/goalsSlice';
+import { getRootGoals } from '@/lib/goals/model/goalTreeHelpers';
 import { buildGoalLine } from '@/lib/goals/goalLinesLayout';
 import { buildInitialPrompt, buildRefinePrompt } from '@/lib/goals/planner/plannerPrompt';
 import {

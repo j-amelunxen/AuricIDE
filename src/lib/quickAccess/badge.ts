@@ -1,5 +1,5 @@
 import { AGENT_COLORS, agentColorHex, type AgentColor } from '@/lib/agents/colors';
-import type { ProjectBadge, StarredProject } from '@/lib/tauri/starredProjects';
+import type { ProjectBadge, StarredProject } from '@/lib/quickAccess/types';
 
 /**
  * One lane mark on a Quick Access tile. Six characters is enough for "fe" or

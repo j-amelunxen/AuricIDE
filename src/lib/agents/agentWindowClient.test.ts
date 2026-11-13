@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import fixtures from './agentWindow.fixtures.json';
 import { OUTPUT_FLUSH_FALLBACK_MS } from './outputBatcher';
 import { MAX_AGENT_LOG_BYTES } from '@/lib/store/agent/agentTypes';

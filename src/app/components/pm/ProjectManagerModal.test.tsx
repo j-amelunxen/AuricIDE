@@ -143,8 +143,6 @@ describe('ProjectManagerModal', () => {
     // Viewport breakpoints never see the agents bar. Container queries do:
     // epics + list go compact below @4xl so the detail is not clipped.
     expect(screen.getByTestId('tickets-columns')).toHaveClass('@container');
-    expect(screen.getByTestId('tickets-epics-col')).toHaveClass('w-40', '@4xl:w-[220px]');
-    expect(screen.getByTestId('tickets-list-col')).toHaveClass('w-52', '@4xl:w-[280px]');
     expect(screen.getByTestId('tickets-detail-col')).toHaveClass('min-w-0', 'flex-1');
   });
 

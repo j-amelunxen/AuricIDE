@@ -1,8 +1,9 @@
 'use client';
 
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
@@ -67,7 +68,7 @@ function RequirementCreateForm({
   const handleSave = useCallback(() => {
     if (!title.trim()) return;
     const reqId = generateNextReqId(category, existingRequirements);
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const now = formatUtcStamp();
     const req: PmRequirement = {
       id: crypto.randomUUID(),
       reqId,

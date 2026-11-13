@@ -76,13 +76,16 @@ pub fn destroyed_action(label: &str) -> DestroyedAction {
     }
 }
 
-/// What Cmd+W closes, given the label of the focused window.
+/// What Cmd+W closes, given the label of the focused window. Only the macOS
+/// application menu owns Cmd+W; elsewhere the page handles the key itself.
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseTabTarget {
     AgentWindow,
     EditorTab,
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn close_tab_target(focused_label: Option<&str>) -> CloseTabTarget {
     match focused_label {
         Some(AGENT_WINDOW_LABEL) => CloseTabTarget::AgentWindow,
@@ -235,6 +238,10 @@ pub(crate) mod tests {
             format!("/{AGENT_WINDOW_ROUTE}")
         );
         assert_eq!(fixtures["rustEvents"]["windowState"], WINDOW_STATE_EVENT);
+        assert_eq!(
+            fixtures["rustEvents"]["agentOutput"],
+            crate::agents::types::AGENT_OUTPUT_EVENT
+        );
     }
 
     #[test]

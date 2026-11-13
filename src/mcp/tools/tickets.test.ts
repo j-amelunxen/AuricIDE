@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createTicket, listTickets, updateTicket } from './tickets';
-import { createGoal } from './goals';
+import { createGoal } from './goalsDb';
 import { createTestDb } from '../db';
 
 function insertEpic(db: Database.Database, id = 'e1'): void {

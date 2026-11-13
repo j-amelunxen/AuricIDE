@@ -1,6 +1,6 @@
 'use client';
 
-import type { PermissionMode } from '@/lib/tauri/agents';
+import type { PermissionMode } from '@/lib/agents/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { TaskLaunchDraft } from './types';
 import { Choice, INPUT, SUBLABEL } from './ui';

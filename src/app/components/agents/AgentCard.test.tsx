@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AgentCard } from './AgentCard';
 import { useStore } from '@/lib/store';
 
@@ -11,8 +11,9 @@ vi.mock('@/lib/hooks/useNow', () => ({
   useNowWhen: () => Date.now(),
 }));
 
-vi.mock('@/lib/tauri/terminal', () => ({
-  writeToShell: vi.fn(async () => undefined),
+vi.mock('@/lib/tauri/agents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/tauri/agents')>()),
+  sendMessageToAgent: vi.fn(async () => undefined),
 }));
 
 const runningAgent: AgentInfo = {
@@ -561,32 +562,34 @@ describe('AgentCard – replying from the card', () => {
 
   it('sends the reply to the agent on Enter and clears the field', async () => {
     const user = userEvent.setup();
-    const { writeToShell } = await import('@/lib/tauri/terminal');
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
 
     const input = await openTerminal(user);
     await user.type(input, 'yes{Enter}');
 
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-1', 'yes\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-1', 'yes\r');
     expect(input).toHaveValue('');
+    // The reply shows up in the console feed like any other message sent.
+    expect(useStore.getState().agentSentMessages['agent-1']?.at(-1)?.text).toBe('yes');
   });
 
   it('sends nothing for an empty reply', async () => {
     const user = userEvent.setup();
-    const { writeToShell } = await import('@/lib/tauri/terminal');
-    vi.mocked(writeToShell).mockClear();
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendMessageToAgent).mockClear();
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
 
     const input = await openTerminal(user);
     await user.type(input, '{Enter}');
 
-    expect(writeToShell).not.toHaveBeenCalled();
+    expect(sendMessageToAgent).not.toHaveBeenCalled();
   });
 
   it('keeps the text and says so when the agent cannot be reached', async () => {
     const user = userEvent.setup();
-    const { writeToShell } = await import('@/lib/tauri/terminal');
-    vi.mocked(writeToShell).mockRejectedValueOnce(new Error('no such session'));
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendMessageToAgent).mockRejectedValueOnce(new Error('no such session'));
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
 
     const input = await openTerminal(user);
@@ -636,12 +639,12 @@ describe('AgentCard – nudging a stalled agent', () => {
 
   it('sends a bare Enter to the PTY — the commonest unstick', async () => {
     const user = userEvent.setup();
-    const { writeToShell } = await import('@/lib/tauri/terminal');
-    vi.mocked(writeToShell).mockClear();
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendMessageToAgent).mockClear();
     render(<AgentCard agent={stalled} onKill={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: /nudge/i }));
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-stalled', '\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-stalled', '\r');
   });
 
   it('offers no nudge while the agent is merely waiting', () => {
@@ -673,12 +676,12 @@ describe('AgentCard – quick reply while blocked on input', () => {
 
   it('sends the quick reply to the agent PTY', async () => {
     const user = userEvent.setup();
-    const { writeToShell } = await import('@/lib/tauri/terminal');
-    vi.mocked(writeToShell).mockClear();
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendMessageToAgent).mockClear();
     render(<AgentCard agent={blocked} onKill={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText('Reply to agent...'), '1{Enter}');
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-live', '1\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-live', '1\r');
   });
 
   it('shows no quick reply while the agent is merely working', () => {

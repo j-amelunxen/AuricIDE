@@ -8,7 +8,7 @@ import { readDirectory } from '@/lib/tauri/fs';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
 import { statusesByRepo } from './useTreeRefresh';
 import { toggleSelection } from '@/lib/explorer/treeSelection';
-import { findNode } from '@/app/components/explorer/fileTreeTypes';
+import { findNode } from '@/lib/explorer/fileTree';
 import type { IDEState } from './liveIDEState';
 
 export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Promise<boolean>) {

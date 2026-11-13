@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import { POLICY_PROPOSAL_ORIGIN, type Notification } from '@/lib/notifications/types';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { NotificationRow } from './NotificationRow';
 import { useNotificationActions } from './useNotificationActions';
@@ -40,7 +40,6 @@ vi.mock('@/lib/tauri/supervisorLink', () => ({
 vi.mock('@/lib/tauri/agents', () => ({
   spawnAgent: (config: unknown) => spawnAgentMock(config as never),
   killAgent: vi.fn(async () => undefined),
-  killAgentsForRepo: vi.fn(async () => 0),
   listAgentPromptHistory: vi.fn(async () => []),
   listAgents: vi.fn(async () => []),
   listInterruptedAgents: vi.fn(async () => []),
@@ -50,7 +49,6 @@ vi.mock('@/lib/tauri/agents', () => ({
     throw new Error('not used in this test');
   }),
   discardInterruptedAgent: vi.fn(async () => undefined),
-  sendToAgent: vi.fn(async () => undefined),
   sendMessageToAgent: vi.fn(async () => undefined),
 }));
 

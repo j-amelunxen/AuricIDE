@@ -1,7 +1,8 @@
 'use client';
 
+import { SelectChevron } from './spawnDialog/SelectChevron';
 import { useState, useEffect } from 'react';
-import type { AgentConfig } from '@/lib/tauri/agents';
+import type { AgentConfig } from '@/lib/agents/types';
 import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
 import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { exists } from '@/lib/tauri/fs';
@@ -75,17 +76,6 @@ Write the result as a Markdown file with a mermaid code block to: ${folderPath}/
 export function GenerateDiagramDialog(props: GenerateDiagramDialogProps) {
   if (!props.isOpen) return null;
   return <GenerateDiagramDialogPanel {...props} />;
-}
-
-/** Dropdown affordance for `appearance-none` selects. */
-function SelectChevron() {
-  return (
-    <AuricIcon
-      name="expand_more"
-      aria-hidden="true"
-      className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
-    />
-  );
 }
 
 function GenerateDiagramDialogPanel({

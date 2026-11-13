@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SkillInvocationInput } from '@/app/components/cockpit/SkillInvocationInput';
+import { SkillInvocationInput } from '@/app/components/ui/SkillInvocationInput';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';

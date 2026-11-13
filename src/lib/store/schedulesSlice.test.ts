@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand';
 import type { Schedule } from '@/lib/tauri/schedules';
 
 const mockList = vi.fn();
@@ -13,8 +13,6 @@ vi.mock('@/lib/tauri/schedules', () => ({
   schedulesDelete: (id: string) => mockDelete(id),
   schedulesSetEnabled: (id: string, enabled: boolean) => mockSetEnabled(id, enabled),
 }));
-
-import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
 
 function makeSchedule(overrides: Partial<Schedule> = {}): Schedule {
   return {
@@ -42,7 +40,7 @@ function makeSchedule(overrides: Partial<Schedule> = {}): Schedule {
 }
 
 describe('schedulesSlice', () => {
-  let store: StoreApi<SchedulesSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,7 +48,7 @@ describe('schedulesSlice', () => {
     mockUpsert.mockImplementation(async (schedule: Schedule) => schedule);
     mockDelete.mockResolvedValue(undefined);
     mockSetEnabled.mockResolvedValue(undefined);
-    store = createStore<SchedulesSlice>()((...a) => ({ ...createSchedulesSlice(...a) }));
+    store = createFullTestStore();
   });
 
   describe('loadSchedules', () => {

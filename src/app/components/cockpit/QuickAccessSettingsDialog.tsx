@@ -14,15 +14,13 @@ import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
-import {
-  quickAccessCombos,
-  quickAccessSkills,
-  quickAccessWheelSlots,
-  type ProjectIconOverride,
-  type QuickAccessCombo,
-  type QuickAccessSkill,
-  type StarredProject,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessCombos, quickAccessSkills } from '@/lib/quickAccess/projectEntries';
+import type {
+  ProjectIconOverride,
+  QuickAccessCombo,
+  QuickAccessSkill,
+  StarredProject,
+} from '@/lib/quickAccess/types';
 import { launchEntries, wheelSlotId } from '@/lib/quickAccess/launchSkills';
 import { normalizeWheelSlots } from '@/lib/quickAccess/wheel';
 import { QuickAccessIconPicker } from './QuickAccessIconPicker';
@@ -94,7 +92,7 @@ function ProjectSettingsPanel({ project, onClose }: QuickAccessSettingsDialogPro
         icon: project.icon,
         skills: quickAccessSkills(project),
         combos: quickAccessCombos(project),
-        wheelSlots: quickAccessWheelSlots(project),
+        wheelSlots: project.wheelSlots ?? [],
       }}
       iconPath={project.path}
       showCombos

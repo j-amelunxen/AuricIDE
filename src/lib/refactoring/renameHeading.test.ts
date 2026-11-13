@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { computeHeadingRenameChanges } from './renameHeading';
 
 describe('computeHeadingRenameChanges', () => {
+  it('leaves a matching line inside a fenced code block alone', () => {
+    const content = '# Old Title\n\n```sh\n# Old Title\n```\n';
+    const workspace = new Map([['/project/doc.md', content]]);
+
+    const changes = computeHeadingRenameChanges(
+      '/project/doc.md',
+      'doc.md',
+      'Old Title',
+      'New Title',
+      workspace
+    );
+
+    expect(changes.map((c) => c.from)).toEqual([0]);
+    expect(changes[0].to).toBe('# Old Title'.length);
+  });
+
   it('renames the heading in the source file', () => {
     const workspace = new Map([['/project/doc.md', '# Old Title\n\nSome content']]);
 

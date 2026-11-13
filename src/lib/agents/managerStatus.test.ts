@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AGENT_STALL_MS } from './attention';
 import { liveSupervisorOfManager, managerMonogram, managerStatus } from './managerStatus';
 

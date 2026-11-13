@@ -1,4 +1,5 @@
 import { nextScratchName } from './naming';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
 export interface SaveTerminalScreenArgs {
   agentName: string;
@@ -69,7 +70,7 @@ export async function saveTerminalScreen(
   const dir = await args.resolveDir();
   if (!dir) return { ok: false, reason: 'no-dir' };
   const name = nextScratchName(args.existingNames());
-  const path = `${dir.replace(/\/+$/, '')}/${name}`;
+  const path = `${withoutTrailingSlash(dir)}/${name}`;
   const body = terminalScratchMarkdown(args.agentName, args.screen, args.now ?? new Date());
   await args.write(path, body);
   await args.refresh();

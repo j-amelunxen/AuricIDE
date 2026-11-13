@@ -1,7 +1,7 @@
 'use client';
 
 import { comboPreview } from '@/lib/quickAccess/combo';
-import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo } from '@/lib/quickAccess/types';
 import type { RunComboAction } from './types';
 import { INPUT } from './ui';
 

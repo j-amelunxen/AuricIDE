@@ -1,4 +1,5 @@
-import { buildLinkIndexEntry, type LinkIndexEntry } from '@/lib/store/wikiLinkSlice';
+import { buildLinkIndexEntry } from '@/lib/store/wikiLinkSlice';
+import type { LinkIndexEntry } from '@/lib/markdown/types';
 
 /**
  * Reads in flight while a project is indexed. Each response is deserialized on

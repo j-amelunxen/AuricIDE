@@ -1,7 +1,9 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import {
+  GOAL_REVIEW_CRITERION_MET,
   GOAL_REVIEW_VERDICTS,
   decideGoalReview,
   type GoalReviewDecision,
@@ -45,7 +47,7 @@ export const goalReviewParams = z.object({
       z
         .object({
           criterion: z.string().min(1),
-          met: z.enum(['yes', 'no', 'unclear', 'human_pending']),
+          met: z.enum(GOAL_REVIEW_CRITERION_MET),
           evidence: z.string(),
         })
         .strict()
@@ -88,10 +90,6 @@ export interface GoalReviewRow {
   reviewer: string;
   attempt: number;
   created_at: string;
-}
-
-function now(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
 }
 
 /**
@@ -149,7 +147,7 @@ export function submitGoalReview(db: Database.Database, input: GoalReviewParams)
       JSON.stringify(params.reworkSteps),
       params.reviewer,
       attempt,
-      now()
+      formatUtcStamp()
     );
   }).immediate();
   return db.prepare('SELECT * FROM pm_goal_reviews WHERE id = ?').get(id) as GoalReviewRow;

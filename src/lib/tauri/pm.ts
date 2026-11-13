@@ -1,62 +1,10 @@
-import type { ModelPower, Priority, TicketStatus } from '@/lib/pm/enums';
-export interface PmEpic {
-  id: string;
-  name: string;
-  description: string;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PmContextItem {
-  id: string;
-  type: 'snippet' | 'file' | 'canvas-node';
-  value: string;
-}
-
-export interface PmTicket {
-  id: string;
-  epicId: string;
-  name: string;
-  description: string;
-  status: TicketStatus;
-  statusUpdatedAt: string;
-  sortOrder: number;
-  workingDirectory?: string;
-  context?: PmContextItem[];
-  modelPower?: ModelPower;
-  priority: Priority;
-  needsHumanSupervision?: boolean;
-  goalId?: string | null;
-  /** Calendar day `YYYY-MM-DD`. Absent or null means nothing is due. */
-  dueDate?: string | null;
-  /**
-   * Skill invocations to write in front of the agent prompt when this ticket
-   * is launched (`/tdd`, `/frontend:component`). Empty means none.
-   */
-  skills?: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PmTestCase {
-  id: string;
-  ticketId: string;
-  title: string;
-  body: string;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PmDependency {
-  id: string;
-  sourceType: 'epic' | 'ticket';
-  sourceId: string;
-  targetType: 'epic' | 'ticket';
-  targetId: string;
-}
-
+import type {
+  PmDependency,
+  PmEpic,
+  PmStatusHistoryEntry,
+  PmTestCase,
+  PmTicket,
+} from '@/lib/pm/types';
 import { invoke } from './invoke';
 
 export interface PmState {
@@ -76,15 +24,6 @@ export async function pmSave(projectPath: string, payload: PmState): Promise<voi
 
 export async function pmClear(projectPath: string): Promise<void> {
   await invoke('pm_clear', { projectPath });
-}
-
-export interface PmStatusHistoryEntry {
-  id: string;
-  ticketId: string;
-  fromStatus: string | null;
-  toStatus: string;
-  changedAt: string;
-  source: string;
 }
 
 export async function pmLoadHistory(projectPath: string): Promise<PmStatusHistoryEntry[]> {

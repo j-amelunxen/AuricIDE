@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { useNowWhen } from '@/lib/hooks/useNow';
 import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
@@ -146,8 +146,7 @@ export function AgentCard({
 
     setReplyError(null);
     try {
-      const { writeToShell } = await import('@/lib/tauri/terminal');
-      await writeToShell(`agent-${agent.id}`, `${message}${TERMINAL_ENTER}`);
+      await useStore.getState().sendAgentInput(agent.id, `${message}${TERMINAL_ENTER}`);
       input.value = '';
     } catch {
       setReplyError('Message could not be delivered. The agent may have exited.');

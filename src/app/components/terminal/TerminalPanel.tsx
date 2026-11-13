@@ -1,8 +1,10 @@
 'use client';
 
+import type { ExtraTerminal } from '@/lib/terminal/types';
+
 import { useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
-import { sendToAgent } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
+import { AgentXterm } from '../agents/AgentXterm';
 import { XtermTerminal } from './XtermTerminal';
 import { useNow } from '@/lib/hooks/useNow';
 import { useStore } from '@/lib/store';
@@ -10,19 +12,6 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export type TerminalTabId = 'terminal' | string;
-
-export interface LogEntry {
-  tab: string;
-  text: string;
-  timestamp: number;
-  agentId?: string;
-}
-
-export interface ExtraTerminal {
-  id: string;
-  label: string;
-  cwd: string;
-}
 
 interface TerminalPanelProps {
   selectedAgentId?: string | null;
@@ -77,7 +66,6 @@ export function TerminalPanel({
       data-testid="terminal-panel"
       className="flex h-full w-full flex-col bg-panel-bg overflow-hidden border-t border-white/5"
     >
-      {/* Tab bar */}
       <div className="flex items-center justify-between border-b border-white/10 px-2 glass h-10 overflow-x-auto no-scrollbar flex-shrink-0">
         <div className="flex gap-1 h-full items-end">
           {allTabs.map((tabId) => {
@@ -142,21 +130,23 @@ export function TerminalPanel({
           // Only mount agent terminals when they are the active tab
           if (isAgent && activeTab !== tabId) return null;
 
-          const termId =
-            tabId === 'terminal' ? 'main-terminal' : extra ? `extra-${tabId}` : `agent-${tabId}`;
+          const termId = tabId === 'terminal' ? 'main-terminal' : `extra-${tabId}`;
           const termCwd = extra ? extra.cwd : rootPath || undefined;
           return (
             <div
               key={tabId + (tabId === 'terminal' ? rootPath || '' : '')}
               className={`absolute inset-0 p-2 ${activeTab === tabId ? 'z-10 visible' : 'z-0 invisible pointer-events-none'}`}
             >
-              <XtermTerminal
-                id={termId}
-                initialCommand={tabId === 'terminal' ? shellCmd : extra ? shellCmd : undefined}
-                cwd={termCwd}
-                agentId={isAgent ? tabId : undefined}
-                onInput={isAgent ? (data) => sendToAgent(tabId, data) : undefined}
-              />
+              {isAgent ? (
+                <AgentXterm agentId={tabId} autoFocus={false} />
+              ) : (
+                <XtermTerminal
+                  id={termId}
+                  initialCommand={shellCmd}
+                  cwd={termCwd}
+                  projectShell={tabId === 'terminal'}
+                />
+              )}
             </div>
           );
         })}

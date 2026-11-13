@@ -36,11 +36,6 @@ pub struct FailureReport {
     pub details: String,
 }
 
-/// Longest output tail worth keeping in memory for the UI fold. The full text
-/// goes to a log file; this is the part that gets rendered.
-const DETAIL_LINES: usize = 40;
-const DETAIL_CHARS: usize = 4_000;
-
 /// Rules are ordered: the first match wins, so the specific causes must come
 /// before the general ones. Each pattern is matched case-insensitively against
 /// the combined stdout+stderr.
@@ -64,7 +59,11 @@ const RULES: &[(&[&str], &str)] = &[
             "requires python",
             "no such python",
         ],
-        "No suitable Python was found. The local runtime needs Python 3.10 or newer.",
+        concat!(
+            "No suitable Python was found. The local runtime needs Python ",
+            super::preflight::min_python_version!(),
+            " or newer."
+        ),
     ),
     (
         &["no solution found", "distribution not found", "no matching distribution"],
@@ -105,49 +104,14 @@ pub fn describe_failure(stage: Stage, raw: &str) -> FailureReport {
 
     FailureReport {
         summary,
-        details: readable_details(raw),
+        details: crate::ansi::readable_details(raw),
     }
-}
-
-/// Strip the terminal decoration that makes tool output unreadable in a web
-/// view, then keep only the tail — the cause is at the bottom of a traceback,
-/// never at the top.
-pub fn readable_details(raw: &str) -> String {
-    let cleaned = strip_decoration(raw);
-    let lines: Vec<&str> = cleaned
-        .lines()
-        .map(str::trim_end)
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    let tail = if lines.len() > DETAIL_LINES {
-        &lines[lines.len() - DETAIL_LINES..]
-    } else {
-        &lines[..]
-    };
-    let mut text = tail.join("\n");
-    if text.chars().count() > DETAIL_CHARS {
-        let skip = text.chars().count() - DETAIL_CHARS;
-        text = text.chars().skip(skip).collect();
-    }
-    text
-}
-
-/// Remove ANSI escape sequences and the box-drawing characters `rich` uses to
-/// frame its error panels. Both survive into a `<p>` as visual noise.
-fn strip_decoration(raw: &str) -> String {
-    crate::ansi::strip_ansi(raw)
-        .chars()
-        .map(|ch| if is_box_drawing(ch) { ' ' } else { ch })
-        .collect()
-}
-
-fn is_box_drawing(ch: char) -> bool {
-    matches!(ch, '\u{2500}'..='\u{257f}' | '\u{2580}'..='\u{259f}')
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ansi::{readable_details, DETAIL_LINES};
 
     /// The rule the whole module exists for.
     #[test]

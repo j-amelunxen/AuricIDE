@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import type { ProjectGroup } from '@/lib/notifications/commandCenter';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { parseScheduleView, type ScheduleView } from '@/lib/notifications/scheduleCalendar';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { NotificationsPanel } from './NotificationsPanel';
 import { SchedulesCalendar } from './SchedulesCalendar';

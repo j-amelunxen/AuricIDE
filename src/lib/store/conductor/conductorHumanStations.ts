@@ -1,6 +1,6 @@
 import { isClosedGoalStatus } from '@/lib/pm/enums';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import { getGoalDescendants } from '../goals/goalTreeHelpers';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import { getGoalDescendants } from '../../goals/model/goalTreeHelpers';
 
 export interface HumanWaitBlockers {
   /** The run's blockers, open human stations first and phrased as asks. */

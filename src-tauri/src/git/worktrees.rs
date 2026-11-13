@@ -78,7 +78,7 @@ fn branch_is_auric(branch: Option<&str>) -> bool {
 }
 
 fn open_main_repo(repo_path: &str) -> Result<(Repository, PathBuf), String> {
-    let opened = Repository::open(repo_path).map_err(|e| format!("not a git repository: {e}"))?;
+    let opened = super::open_repo(repo_path)?;
     let source = primary_project_path(Path::new(repo_path))
         .ok_or_else(|| "could not resolve the repository's main working tree".to_string())?;
     if source.as_os_str() == Path::new(repo_path).as_os_str() {

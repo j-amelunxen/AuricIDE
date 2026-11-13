@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { zoneAt, type DropZone } from '@/lib/agents/terminalGrid';
-
-/** A press that moves less than this is a click, not a drag. */
-const TAB_DRAG_THRESHOLD_PX = 6;
+import { pastDragThreshold, swallowNextClick } from '@/lib/ui/pointerDrag';
 
 export interface TabGridDrag {
   agentId: string;
@@ -25,7 +23,6 @@ export function useTabGridDrag(
     onDropRef.current = onDrop;
   }, [onDrop]);
   const stopRef = useRef<(() => void) | null>(null);
-  const draggedRef = useRef(false);
 
   useEffect(() => () => stopRef.current?.(), []);
 
@@ -33,8 +30,7 @@ export function useTabGridDrag(
     (agentId: string, event: MouseEvent<HTMLElement>) => {
       if (event.button !== 0) return;
       stopRef.current?.();
-      const startX = event.clientX;
-      const startY = event.clientY;
+      const origin = { x: event.clientX, y: event.clientY };
       let dragging = false;
       let zone: DropZone | null = null;
 
@@ -47,7 +43,7 @@ export function useTabGridDrag(
       };
       const move = (e: globalThis.MouseEvent) => {
         if (!dragging) {
-          if (Math.hypot(e.clientX - startX, e.clientY - startY) < TAB_DRAG_THRESHOLD_PX) return;
+          if (!pastDragThreshold(origin, e)) return;
           dragging = true;
         }
         const rect = areaRef.current?.getBoundingClientRect();
@@ -57,11 +53,7 @@ export function useTabGridDrag(
       const release = () => {
         stop();
         if (!dragging) return;
-        // The browser still sends the click that ends this press to the tab.
-        draggedRef.current = true;
-        setTimeout(() => {
-          draggedRef.current = false;
-        }, 0);
+        swallowNextClick();
         if (zone) onDropRef.current(agentId, zone);
       };
       const cancel = (e: KeyboardEvent) => {
@@ -79,12 +71,5 @@ export function useTabGridDrag(
     [areaRef]
   );
 
-  /** True once for the click that follows a drag, so it does not also select the tab. */
-  const consumeClick = useCallback(() => {
-    const dragged = draggedRef.current;
-    draggedRef.current = false;
-    return dragged;
-  }, []);
-
-  return { drag, begin, consumeClick };
+  return { drag, begin };
 }

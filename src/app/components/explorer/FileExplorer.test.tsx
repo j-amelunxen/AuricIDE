@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FileExplorer, flattenVisibleTree, type FileTreeNode } from './FileExplorer';
+import { FileExplorer } from './FileExplorer';
+import { flattenVisibleTree, type FileTreeNode } from '../../../lib/explorer/fileTree';
 
 // Every file row asks for its icon exactly once per render, so counting the
 // calls by name counts row renders without touching the component.

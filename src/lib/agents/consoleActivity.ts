@@ -56,5 +56,7 @@ export function describeRightNow({
         : 'Waiting on you';
     case 'working':
       return describeWorking(lastEvent, currentActivity);
+    case 'queued':
+      return 'Queued · waits for a free slot';
   }
 }

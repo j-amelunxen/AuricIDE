@@ -11,6 +11,7 @@
  */
 import { readDirectory, readFile } from '@/lib/tauri/fs';
 import { GOAL_REVIEW_VERDICTS, type GoalReviewDecision } from '@/lib/goals/goalReviewDecision';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
 export const MISSION_PHASES = [
   'nicht begonnen',
@@ -139,7 +140,7 @@ export async function loadMissionMemory(
   missionPath: string,
   fs: MissionFs = tauriFs
 ): Promise<MissionMemory> {
-  const shared = `${missionPath.replace(/\/+$/, '')}/shared`;
+  const shared = `${withoutTrailingSlash(missionPath)}/shared`;
   let folders: Set<string>;
   try {
     const entries = await fs.readDirectory(shared);

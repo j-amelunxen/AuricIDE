@@ -1,12 +1,13 @@
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { GOAL_STATUSES, PRIORITIES, type GoalStatusValue, type Priority } from '@/lib/pm/enums';
-import type { ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import {
   getGoalChildren,
   getGoalDescendants,
   getRootGoals,
   planGoalMove,
-} from '@/lib/store/goals/goalTreeHelpers';
+} from '@/lib/goals/model/goalTreeHelpers';
+import { GOAL_STATUS_NAME, PRIORITY_NAME } from '@/lib/pm/labels';
 
 /** One goal and the fields to change on it. */
 export interface GoalBulkUpdate {
@@ -39,23 +40,6 @@ export interface BulkMenuHandlers {
   onOpenParentStage: () => void;
   onBack: () => void;
 }
-
-const STATUS_LABELS: Record<GoalStatusValue, string> = {
-  draft: 'Draft',
-  active: 'Active',
-  in_progress: 'In Progress',
-  in_review: 'In Review',
-  achieved: 'Achieved',
-  failed: 'Failed',
-  archived: 'Archived',
-};
-
-const PRIORITY_LABELS: Record<Priority, string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  critical: 'Critical',
-};
 
 /**
  * Plain click replaces the selection, Shift-click calls this: it toggles one
@@ -235,7 +219,7 @@ export function buildBulkGoalMenuOptions(
   }
   for (const status of offer.statusChoices) {
     options.push({
-      label: STATUS_LABELS[status],
+      label: GOAL_STATUS_NAME[status],
       action: () => applyToAll(ids, { status }, handlers.onApply),
     });
   }
@@ -243,7 +227,7 @@ export function buildBulkGoalMenuOptions(
   options.push({ type: 'separator' }, { type: 'header', label: 'Priority' });
   for (const priority of PRIORITIES) {
     options.push({
-      label: PRIORITY_LABELS[priority],
+      label: PRIORITY_NAME[priority],
       icon: offer.sharedPriority === priority ? 'check' : undefined,
       action: () => applyToAll(ids, { priority }, handlers.onApply),
     });

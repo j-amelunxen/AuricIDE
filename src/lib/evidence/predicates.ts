@@ -1,6 +1,5 @@
-import type { StationPredicate } from '@/lib/tauri/goals';
-import type { PmTestCase, PmTicket } from '@/lib/tauri/pm';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { StationPredicate } from '@/lib/goals/types';
+import type { PmRequirement, PmTestCase, PmTicket } from '@/lib/pm/types';
 import type { CommitInfo } from '@/lib/tauri/git';
 
 export interface EvidenceResult {

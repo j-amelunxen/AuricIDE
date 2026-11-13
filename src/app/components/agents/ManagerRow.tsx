@@ -5,7 +5,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { managerStatus, type ManagerStatus } from '@/lib/agents/managerStatus';
 import { providerName } from '@/lib/usage/quota';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ManagerInspector } from './ManagerInspector';

@@ -1,10 +1,10 @@
 'use client';
 
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { formatNotificationProject } from '@/lib/notifications/format';
 import { formatNextDue } from '@/lib/notifications/scheduleFormat';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 
 export interface UpcomingStripProps {

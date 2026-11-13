@@ -4,40 +4,37 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import {
-  spawnShell,
-  writeToShell,
-  resizeShell,
-  onTerminalOut,
-  onTerminalErr,
-} from '@/lib/tauri/terminal';
+import { spawnShell, writeToShell, onTerminalOut, onTerminalErr } from '@/lib/tauri/terminal';
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
-import { attachAgentStream } from '@/lib/terminal/agentStream';
-import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
-import { accentColor, accentRgb } from '@/lib/theme/accent';
-import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { TERMINAL_FONT_FAMILY, TERMINAL_SCROLLBACK, terminalTheme } from '@/lib/terminal/theme';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import {
   TERMINAL_INTERACTION_OPTIONS,
   buildTerminalMenu,
   copyText,
   handleTerminalClipboardKey,
-  readClipboardText,
   terminalMenuActions,
 } from '@/lib/terminal/interactions';
+import { readClipboardText } from '@/lib/tauri/clipboard';
+import { forwardResizeToPty, observeFit, safeFit } from '@/lib/terminal/fit';
 
+/** A shell terminal. Agent terminals are AgentXterm, which streams from the store. */
 interface XtermTerminalProps {
-  id: string; // Session ID (agent-id or 'main-terminal')
+  id: string; // Shell session id
   cwd?: string; // Working directory
   initialCommand?: string; // e.g. /bin/zsh
-  agentId?: string; // Agent mode: stream this agent's output from the store
-  onInput?: (data: string) => void; // Custom input handler (e.g. sendToAgent)
+  /**
+   * The project's own shell: it waits for a project folder before it starts
+   * and shows that it is connecting meanwhile.
+   */
+  projectShell?: boolean;
 }
 
-export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: XtermTerminalProps) {
+export function XtermTerminal({ id, cwd, initialCommand, projectShell }: XtermTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -67,23 +64,10 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     // Initialize xterm.js
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: agentId ? loadAppConfig().agentTerminalFontSize : 13,
-      fontFamily: "'JetBrains Mono', monospace",
-      scrollback: 1000,
-      theme: {
-        background: '#00000000', // Inherit from parent container
-        foreground: '#ffffff',
-        cursor: accentColor(),
-        selectionBackground: `rgba(${accentRgb()}, 0.4)`,
-        black: '#000000',
-        red: '#ff5555',
-        green: '#50fa7b',
-        yellow: '#f1fa8c',
-        blue: '#bd93f9',
-        magenta: '#ff79c6',
-        cyan: '#8be9fd',
-        white: '#ffffff',
-      },
+      fontSize: 13,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      scrollback: TERMINAL_SCROLLBACK,
+      theme: terminalTheme('#00000000'), // Inherit from parent container
       allowTransparency: true,
       ...TERMINAL_INTERACTION_OPTIONS,
     });
@@ -113,24 +97,8 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       keepAlive.nudge();
     };
 
-    // Propagate xterm resize events to PTY backend. For agent sessions this
-    // also keeps the headless mirror in lockstep (resizeShell handles that),
-    // so whichever view fits last owns the PTY geometry — tmux model.
-    term.onResize(({ rows, cols }) => {
-      resizeShell(id, rows, cols).catch(() => {});
-    });
-
-    // ResizeObserver triggers fitAddon.fit() on container size changes
-    let resizeTimer: ReturnType<typeof setTimeout>;
-    const resizeObserver = new ResizeObserver(() => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        try {
-          fitAddonRef.current?.fit();
-        } catch {}
-      }, 50);
-    });
-    resizeObserver.observe(containerRef.current);
+    forwardResizeToPty(term, id);
+    const stopFitting = observeFit(containerRef.current, fitAddon);
 
     // Intercept CMD+I to insert provider prompt template.
     // Flags go before -p so the cursor lands right after the opening quote —
@@ -167,11 +135,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     host.addEventListener('contextmenu', handleContextMenu);
 
     const sendText = (data: string) => {
-      if (onInput) {
-        onInput(data);
-      } else {
-        writeToShell(id, data);
-      }
+      writeToShell(id, data);
     };
 
     term.onData(sendText);
@@ -186,42 +150,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     );
 
     const setupSession = async () => {
-      // Agent mode — replay + live output from the store (single source,
-      // synchronous attach: no gap or duplication against the backfill)
-      if (agentId) {
-        // Custom fonts change char metrics and therefore cols. Attach only
-        // after they settle, or the later re-fit reflows the replayed TUI
-        // screen into duplicated fragments.
-        try {
-          await document.fonts?.ready;
-        } catch {}
-        if (!isMounted) return;
-        try {
-          fitAddon.fit();
-        } catch {}
-        // Sync PTY + mirror to this view's geometry BEFORE attaching, so the
-        // replayed screen is laid out for the width it is displayed at. The
-        // TUI agent repaints itself for the new size via SIGWINCH.
-        resizeShell(id, term.rows, term.cols).catch(() => {});
-        let { detach } = attachAgentStream({ write: writeTerm }, agentId);
-        // Another view (the fullscreen modal) may take the PTY geometry over.
-        // Adopt it and redraw from a fresh mirror snapshot — keeping a screen
-        // laid out for the old width produces scrambled fragments.
-        const unsubResize = onAgentPtyResize(agentId, ({ rows, cols }) => {
-          if (term.rows === rows && term.cols === cols) return;
-          detach();
-          term.resize(cols, rows);
-          term.reset();
-          detach = attachAgentStream({ write: writeTerm }, agentId).detach;
-        });
-        setIsInitialized(true);
-        return () => {
-          unsubResize();
-          detach();
-        };
-      }
-
-      if (id === 'main-terminal' && !cwd) {
+      if (projectShell && !cwd) {
         term.write('\r\n\x1b[33mAwaiting project directory...\x1b[0m\r\n');
         return;
       }
@@ -249,9 +178,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     // then fit the terminal and spawn the shell with the correct cols/rows.
     requestAnimationFrame(() => {
       if (!isMounted) return;
-      try {
-        fitAddon.fit();
-      } catch {}
+      safeFit(fitAddon);
 
       setupSession().then((c) => {
         if (!isMounted) {
@@ -278,41 +205,18 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       detachImagePaste();
       detachFileDrop();
       keepAlive.stop();
-      clearTimeout(resizeTimer);
-      resizeObserver.disconnect();
+      stopFitting();
       host.removeEventListener('contextmenu', handleContextMenu);
       term.dispose();
       termRef.current = null;
       xtermUnmounted();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, cwd, initialCommand, agentId]);
-
-  // The Settings screen writes within this same webview, so `storage` would
-  // not fire. The app-config event keeps an already open agent terminal in
-  // sync, and fitting again lets xterm report its new geometry to the PTY.
-  useEffect(() => {
-    if (!agentId) return;
-    const applyFontSize = () => {
-      const term = termRef.current;
-      if (!term) return;
-      term.options.fontSize = loadAppConfig().agentTerminalFontSize;
-      try {
-        fitAddonRef.current?.fit();
-      } catch {}
-    };
-    const onConfigChange = (event: Event) => {
-      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-      if (key === APP_CONFIG_KEYS.agentTerminalFontSize) applyFontSize();
-    };
-    window.addEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
-    applyFontSize();
-    return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
-  }, [agentId]);
+  }, [id, cwd, initialCommand]);
 
   return (
     <div className="h-full w-full relative">
-      {!isInitialized && id === 'main-terminal' && (
+      {!isInitialized && projectShell && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20 text-[10px] text-foreground-muted animate-pulse uppercase tracking-widest pointer-events-none">
           Connecting to PTY...
         </div>

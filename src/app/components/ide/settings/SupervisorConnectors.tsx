@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { LearnMore, SETTINGS_HINT_CLASS } from '@/app/components/ui/settings/SettingsGroup';
-import { invoke } from '@/lib/tauri/invoke';
+import { inspectConnector } from '@/lib/tauri/connectors';
 import {
   allowedConnectorTools,
   removeConnector,
@@ -15,7 +15,6 @@ import { normalizeProjectPath, type SupervisorPolicy } from '@/lib/config/superv
 const button =
   'rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-foreground hover:bg-white/10 disabled:opacity-50';
 const EMPTY: ConnectorPolicy = { registry: {}, bindings: {} };
-const inspect = (path: string) => invoke<ConnectorRegistration>('connector_inspect', { path });
 
 /** Draft-only: registration, reapproval and grants take effect through the existing Save bar. */
 export function SupervisorConnectors({
@@ -35,7 +34,7 @@ export function SupervisorConnectors({
   useEffect(() => {
     let cancelled = false;
     for (const [id, entry] of Object.entries(connectors.registry)) {
-      void inspect(entry.path)
+      void inspectConnector(entry.path)
         .then((current) => {
           if (!cancelled)
             setStatus((s) => ({
@@ -60,7 +59,7 @@ export function SupervisorConnectors({
     setError(null);
     setPreview(null);
     try {
-      setPreview(await inspect(manifestPath));
+      setPreview(await inspectConnector(manifestPath));
     } catch (e) {
       setError(String(e));
     } finally {

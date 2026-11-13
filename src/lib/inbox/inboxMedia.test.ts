@@ -7,7 +7,6 @@ import {
   inboxAttachments,
   inboxMediaKind,
   inboxMediaPathsFromFileList,
-  isInboxMediaPath,
 } from './inboxMedia';
 import attachmentKinds from './attachmentKinds.fixtures.json';
 import type { InboxAttachment, InboxItem } from '@/lib/tauri/inbox';
@@ -36,14 +35,6 @@ describe('inboxMediaKind', () => {
     expect(inboxMediaKind('/p/notes.md')).toBeNull();
     expect(inboxMediaKind('/p/spec.pdf')).toBeNull();
     expect(inboxMediaKind('/p/app.ts')).toBeNull();
-  });
-});
-
-describe('isInboxMediaPath', () => {
-  it('is true only for image and video paths', () => {
-    expect(isInboxMediaPath('bug.png')).toBe(true);
-    expect(isInboxMediaPath('walkthrough.webm')).toBe(true);
-    expect(isInboxMediaPath('readme.md')).toBe(false);
   });
 });
 

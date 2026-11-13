@@ -102,15 +102,27 @@ pub struct ProjectPmOverview {
     pub project_path: String,
     pub project_name: String,
     pub has_db: bool,
-    pub open: u32,
-    pub in_progress: u32,
-    pub in_review: u32,
-    pub done: u32,
+    #[serde(flatten)]
+    pub counts: StatusCounts,
     pub epics: Vec<ProjectEpicDigest>,
     pub tickets: Vec<ProjectTicketDigest>,
     pub error: Option<String>,
 }
 
+/// Tickets per status that is still part of the work (archived and discarded
+/// are not counted).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusCounts {
+    pub open: u32,
+    pub in_progress: u32,
+    pub to_test: u32,
+    pub in_review: u32,
+    pub done: u32,
+}
+
+/// The ticket priorities and statuses; the frontend's `PRIORITIES` and
+/// `TICKET_STATUSES` (`backendNames.fixtures.json` pins both).
 pub const VALID_PRIORITIES: [&str; 4] = ["low", "normal", "high", "critical"];
 pub const VALID_TICKET_STATUSES: [&str; 7] = [
     "open",

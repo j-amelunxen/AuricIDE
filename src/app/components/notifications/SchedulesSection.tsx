@@ -1,7 +1,7 @@
 'use client';
 
 import type { Notification } from '@/lib/notifications/types';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { ScheduleRow } from './ScheduleRow';
 

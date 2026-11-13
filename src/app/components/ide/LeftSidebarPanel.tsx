@@ -1,3 +1,4 @@
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import { memo, useMemo } from 'react';
 import type { useIDEState } from '@/lib/hooks/useIDEState';
 import type { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
@@ -14,6 +15,7 @@ import { NotificationsSidebar } from '../notifications/NotificationsSidebar';
 import { InboxPanel } from '../inbox/InboxPanel';
 import { SupervisorRunsPanel } from '../agents/SupervisorRunsPanel';
 import { AuricIcon } from '../ui/AuricIcon';
+import { isLeftPanelActivity } from '@/lib/ide/leftPanel';
 
 const MemoizedFileExplorer = memo(FileExplorer);
 
@@ -143,11 +145,7 @@ function OutlineSection({ state }: { state: IDEPageState }) {
     <OutlinePanel
       content={state.editorContent}
       cursorLine={cursorLine}
-      isMarkdown={
-        !state.activeTabId ||
-        state.activeTabId.endsWith('.md') ||
-        state.activeTabId.endsWith('.markdown')
-      }
+      isMarkdown={!state.activeTabId || isMarkdownPath(state.activeTabId)}
       onHeadingClick={(line) => state.setScrollToLine(line)}
     />
   );
@@ -157,11 +155,10 @@ export function LeftSidebarPanel({ state, handlers }: LeftSidebarPanelProps) {
   const activeItem = handlers.itemsWithBadge.find((item) => item.id === state.activeActivity);
   // Default activity is explorer. Without a project that destination is
   // gone from the rail — keep the left pane empty rather than a hollow tree.
-  if (!activeItem) return null;
+  const activity = state.activeActivity;
+  if (!activeItem || !isLeftPanelActivity(activity)) return null;
 
-  // Every case below must be listed in LEFT_PANEL_ACTIVITIES (lib/ide/leftPanel.ts),
-  // or the shell will not give it a column.
-  switch (state.activeActivity) {
+  switch (activity) {
     case 'explorer':
       return (
         <div className="flex h-full flex-col bg-panel-bg">
@@ -227,7 +224,9 @@ export function LeftSidebarPanel({ state, handlers }: LeftSidebarPanelProps) {
       // Also self-contained — its data is kept warm app-wide by
       // useInboxData, independent of whether this panel is even mounted.
       return <InboxPanel variant="sidebar" onOpenProject={handlers.handleOpenRecent} />;
-    default:
-      return null;
+    default: {
+      const unhandled: never = activity;
+      return unhandled;
+    }
   }
 }

@@ -10,6 +10,7 @@
 
 use super::managers::ManagerRecord;
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
+use crate::project_path::same_folder;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -63,9 +64,14 @@ pub fn key_invalid_message(key: &str) -> String {
     )
 }
 
+/// What the two "another live supervisor holds it" refusals say; the
+/// messages are built from these and `is_busy_refusal` recognises them.
+const KEY_IN_USE: &str = "is already the key of a running supervisor";
+const RUN_DIR_IN_USE: &str = "is already in use by the running supervisor";
+
 /// The sentence fixture `spawnRefusals` maps to `supervisor_key_in_use`.
 pub fn key_in_use_message(key: &str, agent_id: &str) -> String {
-    format!("'{key}' is already the key of a running supervisor ({agent_id}).")
+    format!("'{key}' {KEY_IN_USE} ({agent_id}).")
 }
 
 /// The sentence fixture `spawnRefusals` maps to `invalid_params`.
@@ -77,7 +83,7 @@ pub fn run_dir_in_use_message(dir: &Path, agent_id: &str) -> String {
         .file_name()
         .map_or_else(|| dir.to_string_lossy(), |name| name.to_string_lossy());
     format!(
-        "The run folder {name} is already in use by the running supervisor {agent_id}. \
+        "The run folder {name} {RUN_DIR_IN_USE} {agent_id}. \
          Open that supervisor instead of resuming the run again."
     )
 }
@@ -106,11 +112,6 @@ pub fn check_key(agents: &[AgentInfo], key: &str) -> Result<(), String> {
         Some(holder) => Err(key_in_use_message(key, &holder.id)),
         None => Ok(()),
     }
-}
-
-pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
-    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    a == b || canonical(a) == canonical(b)
 }
 
 /// The live supervisor already working in `dir`. A worker that happens to run
@@ -148,8 +149,7 @@ pub fn recheck(
 /// Whether a spawn refusal is about another live supervisor (its run folder
 /// or its key) and so may succeed once that one ends.
 pub fn is_busy_refusal(message: &str) -> bool {
-    message.contains("is already in use by the running supervisor")
-        || message.contains("is already the key of a running supervisor")
+    message.contains(RUN_DIR_IN_USE) || message.contains(KEY_IN_USE)
 }
 
 /// Whether a refused restore leaves its offer in place: a supervisor that

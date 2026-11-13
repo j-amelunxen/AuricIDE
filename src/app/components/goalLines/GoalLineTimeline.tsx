@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import Image from 'next/image';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { GoalLine, LineStation } from '@/lib/goals/goalLinesLayout';
 import {
   stationStatusText,

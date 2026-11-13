@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '@/lib/store';
+import { onMenuCloseTab } from '@/lib/tauri/appMenu';
 
 /**
  * Cmd/Ctrl+W closes the active editor tab — like Safari or Xcode — instead of
@@ -38,26 +39,11 @@ export function useCloseTabShortcut() {
     };
     window.addEventListener('keydown', onKeyDown);
 
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    (async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const stop = await listen('menu:close-tab', () => void closeActiveTabOrWindow());
-        if (disposed) {
-          stop();
-        } else {
-          unlisten = stop;
-        }
-      } catch {
-        // Browser mode — no Tauri event system.
-      }
-    })();
+    const unlisten = onMenuCloseTab(() => void closeActiveTabOrWindow());
 
     return () => {
-      disposed = true;
       window.removeEventListener('keydown', onKeyDown);
-      unlisten?.();
+      unlisten();
     };
   }, []);
 }

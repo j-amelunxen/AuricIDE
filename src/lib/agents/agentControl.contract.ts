@@ -1,3 +1,4 @@
+import { AGENT_STATUSES } from './types';
 import { z } from 'zod';
 import fixtures from './agentControl.fixtures.json';
 import policyFixtures from '../config/supervisorPolicy.fixtures.json';
@@ -90,6 +91,10 @@ export const CONTROL_LIMITS = {
   questionMaxBytes: 4096,
   questionOptionsMax: 10,
   reportMaxBytes: 65536,
+  /** `mark_waiting`: the reason's length; Rust applies the default and the cap of `until`. */
+  waitingReasonMaxChars: 200,
+  waitingDefaultMs: 2 * 60 * 60 * 1000,
+  waitingMaxMs: 24 * 60 * 60 * 1000,
 } as const;
 
 /**
@@ -205,7 +210,11 @@ const noParams = z.object({}).transform(() => ({}));
 export const markWaitingParams = z
   .object({
     agentId,
-    reason: z.string().trim().min(1, 'reason must not be empty').max(200),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'reason must not be empty')
+      .max(CONTROL_LIMITS.waitingReasonMaxChars),
     until: z.string().trim().min(1, 'until must not be empty; leave it out for 2 h').optional(),
   })
   .strict()
@@ -656,14 +665,15 @@ export function parseControlParams<M extends ControlMethod>(
 
 // ── Responses ───────────────────────────────────────────────────────────────
 
-const agentStatus = z.enum(['running', 'idle', 'queued', 'error']);
+const agentStatus = z.enum(AGENT_STATUSES);
 
 const agentSummary = z.object({
   id: z.string(),
   name: z.string(),
   model: z.string(),
   provider: z.string(),
-  status: z.enum(['running', 'idle', 'queued', 'error', 'done']),
+  // A supervisor's listing also has its finished children, gone from the fleet.
+  status: z.enum([...AGENT_STATUSES, 'done']),
   finishedAt: z.number().optional(),
   answerPreview: z.string().nullable().optional(),
   /** How many questions it raised; only a supervisor's listing has it, absent at zero. */

@@ -1,7 +1,9 @@
 'use client';
 
+import { answerToneClass } from './answerTone';
 import { useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
+import { endAgentThenOfferMerge, stopConfirmation } from '@/app/components/agents/endAgent';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import { consoleAgentState, consoleStateLabel } from '@/lib/agents/consoleState';
 import { describeRightNow } from '@/lib/agents/consoleActivity';
@@ -29,14 +31,6 @@ const ANSWER_LABEL_LIMIT = 28;
 
 function truncateAnswerLabel(label: string): string {
   return label.length > ANSWER_LABEL_LIMIT ? `${label.slice(0, ANSWER_LABEL_LIMIT - 1)}…` : label;
-}
-
-/** Yes/no colour cues, same reading as the dummy's `.radio button.yes/.no`. */
-function answerToneClass(label: string): string {
-  if (/^yes\b/i.test(label))
-    return 'border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10';
-  if (/^no\b/i.test(label)) return 'border-red-400/35 text-red-400 hover:bg-red-400/10';
-  return 'border-white/10 text-foreground-muted hover:bg-white/5';
 }
 
 const EMPTY_LOGS: string[] = [];
@@ -67,7 +61,7 @@ export interface ConsoleAgentCardProps {
   /** Opens the focus view — the single-agent stage with its live terminal. */
   onFocus?: (agentId: string) => void;
   onOpenTerminal: (agentId: string) => void;
-  onStop?: (agentId: string) => void;
+  onStop?: (agentId: string) => void | Promise<void>;
   onRetry?: (agentId: string) => void;
   onMarkReviewed?: (agentId: string) => void;
   onDismiss?: (agentId: string) => void;
@@ -127,14 +121,8 @@ export function ConsoleAgentCard({
   const tailLines = readsTail ? promptTailLines(logTail) : [];
 
   const handleStop = async () => {
-    const go = await confirm({
-      title: 'Stop this agent?',
-      message: `Stop ${agent.name}? Its work in progress is lost.`,
-      confirmLabel: 'Stop',
-    });
-    if (!go) return;
-    await Promise.resolve(onStop?.(agent.id));
-    await offerMerge(agent);
+    if (!(await confirm(stopConfirmation(agent)))) return;
+    await endAgentThenOfferMerge(agent, { onKill: onStop, offerMerge });
   };
 
   const handleDismiss = () => {

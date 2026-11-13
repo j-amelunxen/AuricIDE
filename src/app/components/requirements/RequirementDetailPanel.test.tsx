@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 
 function makeRequirement(overrides: Partial<PmRequirement> = {}): PmRequirement {
   return {

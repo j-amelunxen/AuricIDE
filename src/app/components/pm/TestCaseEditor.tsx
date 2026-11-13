@@ -1,6 +1,6 @@
 'use client';
 
-import type { PmTestCase } from '@/lib/tauri/pm';
+import type { PmTestCase } from '@/lib/pm/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface TestCaseEditorProps {

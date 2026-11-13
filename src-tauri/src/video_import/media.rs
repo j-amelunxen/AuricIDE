@@ -1,10 +1,10 @@
 use super::failure::Stage;
-use super::preflight::{self, resolve_executable};
+use super::preflight;
 use super::{
     tool_error, write_log, TranscriptSegment, TranscriptionSettings, VideoFrame,
     DEFAULT_LOCAL_COMMAND,
 };
-use crate::agents::cached_login_shell_env;
+use crate::machine::{cached_login_shell_env, resolve_executable};
 use reqwest::multipart::{Form, Part};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;

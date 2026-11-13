@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import managerFixtures from '@/lib/agents/supervisorManagers.fixtures.json';
-import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency } from '@/lib/goals/types';
 import type { Notification, NotificationAction } from './types';
 import { autoAgentLaunches, goalLaunchBlockReason } from './autoLaunch';
 

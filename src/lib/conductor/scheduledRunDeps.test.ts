@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { useStore } from '@/lib/store';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
 import { buildScheduledRunDeps } from './scheduledRunDeps';
 
 describe('buildScheduledRunDeps readiness', () => {

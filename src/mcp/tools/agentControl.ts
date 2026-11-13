@@ -5,9 +5,9 @@ import {
   ControlError,
   type ControlMethod,
   type ControlParamsInput,
-  type ControlResult,
 } from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
+import type { ControlCaller } from '../controlTypes';
 
 /**
  * The agent-control tools, offered only by `auric-mcp --control`
@@ -16,11 +16,6 @@ import { callControl } from '../controlClient';
  * the project server and never get these: typing into a console can answer a
  * permission prompt, and one agent must not approve another's.
  */
-
-export type ControlCaller = <M extends ControlMethod>(
-  method: M,
-  params: ControlParamsInput<M>
-) => Promise<ControlResult<M>>;
 
 /**
  * Calls one socket method; the result as JSON text, a refusal as

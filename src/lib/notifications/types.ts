@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import linkFixtures from '@/lib/agents/supervisorLink.fixtures.json';
-import type { PermissionMode } from '@/lib/tauri/agents';
+import type { PermissionMode } from '@/lib/agents/types';
 
 /**
  * The notification bus: what happened, said once, kept until it is read.
@@ -13,7 +13,8 @@ import type { PermissionMode } from '@/lib/tauri/agents';
  * "what happened while I was away".
  */
 
-export type NotificationSeverity = 'info' | 'success' | 'warn' | 'error';
+export const NOTIFICATION_SEVERITIES = ['info', 'success', 'warn', 'error'] as const;
+export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
 export type NotificationKind = 'info' | 'ask';
 export type NotificationSource = 'ui' | 'agent' | 'mcp' | 'system';
 export type NotificationRefKind = 'agent' | 'ticket' | 'goal' | 'file' | 'mission';
@@ -396,13 +397,10 @@ export function parseNotificationActions(
   return actions;
 }
 
-/**
- * True once a question has been settled. Only asks can reach this state —
- * an info notification's buttons are navigation, and navigating somewhere
- * twice is allowed.
- */
-export function isAnsweredNotification(
-  notification: Pick<Notification, 'kind' | 'answeredAt'>
-): boolean {
-  return notification.kind === 'ask' && notification.answeredAt !== null;
+/** Rows that never reached the database carry this id, so they can never move the cursor. */
+export const LOCAL_ONLY_NOTIFICATION_ID = 0;
+
+/** A question nobody has answered: pinned in the tray, spared by bulk clears. */
+export function isOpenQuestion(notification: Pick<Notification, 'kind' | 'answeredAt'>): boolean {
+  return notification.kind === 'ask' && notification.answeredAt === null;
 }

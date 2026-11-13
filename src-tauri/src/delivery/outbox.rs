@@ -17,22 +17,27 @@ fn timestamp(at: DateTime<Utc>) -> String {
 /// permanent second notification archive.
 pub fn purge_terminal(conn: &Connection, now: DateTime<Utc>) -> Result<usize, String> {
     let expired_before = timestamp(now - Duration::days(TERMINAL_RETENTION_DAYS));
+    let terminal = DeliveryStatus::sql_list(true);
     let expired = conn
         .execute(
-            "DELETE FROM notification_delivery_outbox
-             WHERE status IN ('delivered', 'dead', 'skipped') AND created_at < ?1",
+            &format!(
+                "DELETE FROM notification_delivery_outbox
+                 WHERE status IN ({terminal}) AND created_at < ?1"
+            ),
             params![expired_before],
         )
         .map_err(|error| format!("Failed to purge expired delivery history: {error}"))?;
     let overflow = conn
         .execute(
-            "DELETE FROM notification_delivery_outbox
-             WHERE id IN (
-                 SELECT id FROM notification_delivery_outbox
-                 WHERE status IN ('delivered', 'dead', 'skipped')
-                 ORDER BY id DESC
-                 LIMIT -1 OFFSET ?1
-             )",
+            &format!(
+                "DELETE FROM notification_delivery_outbox
+                 WHERE id IN (
+                     SELECT id FROM notification_delivery_outbox
+                     WHERE status IN ({terminal})
+                     ORDER BY id DESC
+                     LIMIT -1 OFFSET ?1
+                 )"
+            ),
             params![MAX_TERMINAL_ROWS],
         )
         .map_err(|error| format!("Failed to cap delivery history: {error}"))?;
@@ -54,14 +59,13 @@ pub fn claim_next(
 
     let id = tx
         .query_row(
-            "SELECT id FROM notification_delivery_outbox
-             WHERE channel = 'pushover'
-               AND (
-                    (status IN ('pending', 'retry') AND available_at <= ?1)
-                 OR (status = 'processing' AND lease_until <= ?1)
-               )
-             ORDER BY id
-             LIMIT 1",
+            &format!(
+                "SELECT id FROM notification_delivery_outbox
+                 WHERE channel = 'pushover' AND ({})
+                 ORDER BY id
+                 LIMIT 1",
+                super::policy::claimable_sql()
+            ),
             params![now_raw],
             |row| row.get::<_, i64>(0),
         )

@@ -2,7 +2,7 @@
 
 import {
   supervisorModelFor,
-  supervisorModelsOf,
+  withSupervisorModel,
   type SupervisorPolicy,
 } from '@/lib/config/supervisorPolicy';
 import type { ModelOption, ProviderInfo } from '@/lib/tauri/providers';
@@ -50,15 +50,8 @@ export function SupervisorHeader({ draft, providers, onChange }: SupervisorHeade
     });
   };
 
-  const setModelFor = (providerId: string, model: string) => {
-    const models = { ...supervisorModelsOf(draft.supervisor) };
-    if (model) models[providerId] = model;
-    else delete models[providerId];
-    const nextSupervisor = { ...draft.supervisor, model: models.claude ?? null };
-    if (Object.keys(models).length > 0) nextSupervisor.models = models;
-    else delete nextSupervisor.models;
-    onChange({ ...draft, supervisor: nextSupervisor });
-  };
+  const setModelFor = (providerId: string, model: string) =>
+    onChange({ ...draft, supervisor: withSupervisorModel(draft.supervisor, providerId, model) });
 
   return (
     <SettingsSection title="Supervisor" icon="account_tree">

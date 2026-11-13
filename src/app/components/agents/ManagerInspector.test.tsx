@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MANAGER_OKF_FIX, sha256Hex } from '@/lib/agents/supervisorManagers';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { ManagerMemorySummary, SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ManagerInspector } from './ManagerInspector';

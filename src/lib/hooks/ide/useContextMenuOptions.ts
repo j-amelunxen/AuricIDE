@@ -1,12 +1,14 @@
 'use client';
 
+import { mindmapTabId } from '@/lib/ide/mindmapTabId';
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import { useCallback, useMemo, type MouseEvent } from 'react';
-import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
-import { findNode } from '@/app/components/explorer/fileTreeTypes';
+import type { FileTreeNode } from '@/lib/explorer/fileTree';
+import { findNode } from '@/lib/explorer/fileTree';
 import { openFileComparison } from '@/lib/compare/compareFiles';
 import { revealInFileManager } from '@/lib/tauri/opener';
 import { toGitignoreEntry } from '@/lib/git/gitignore';
-import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import type { IDEState } from './liveIDEState';
 
 /** Label matches each OS's own file manager, following VS Code's convention. */
@@ -158,13 +160,16 @@ export function useContextMenuOptions({
       options.push({ label: 'Paste', icon: 'content_paste', action: () => handlePaste(node.path) });
     }
 
-    if (!node.isDirectory && /\.(md|markdown)$/i.test(node.name)) {
+    if (!node.isDirectory && isMarkdownPath(node.name)) {
       options.push({
         label: 'Show as Mindmap',
         icon: 'account_tree',
         action: () => {
-          const tabId = `mindmap::${node.path}`;
-          state.openTab({ id: tabId, path: node.path, name: `${node.name} · Mindmap` });
+          state.openTab({
+            id: mindmapTabId(node.path),
+            path: node.path,
+            name: `${node.name} · Mindmap`,
+          });
         },
       });
       options.push({

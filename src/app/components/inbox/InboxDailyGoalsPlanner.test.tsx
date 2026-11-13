@@ -37,6 +37,7 @@ describe('InboxDailyGoalsPlanner', () => {
       hasDb: true,
       open: 1,
       inProgress: 0,
+      toTest: 0,
       inReview: 0,
       done: 0,
       epics: [],

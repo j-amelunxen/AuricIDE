@@ -1,12 +1,6 @@
+import { baseName } from '@/lib/paths/baseName';
 import { describe, expect, it } from 'vitest';
-import {
-  baseName,
-  isNoopDrop,
-  joinPath,
-  numberedName,
-  planTransfers,
-  replaceBlocker,
-} from './transferPlan';
+import { isNoopDrop, joinPath, numberedName, planTransfers, replaceBlocker } from './transferPlan';
 
 describe('planTransfers', () => {
   it('sends each item into the folder under its own name', () => {

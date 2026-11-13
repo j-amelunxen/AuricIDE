@@ -4,6 +4,9 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { OrchestrationNodeData } from '@/lib/orchestration/graphBuilder';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { GOAL_STATUS_STYLES } from './GoalTree';
+import { TICKET_STATUS_DOT_CLASS } from '@/lib/pm/ticketStatusStyle';
+import type { GoalStatusValue, TicketStatus } from '@/lib/pm/enums';
 
 const KIND_META: Record<
   OrchestrationNodeData['kind'],
@@ -14,20 +17,18 @@ const KIND_META: Record<
   agent: { icon: 'smart_toy', border: 'border-green-500/40', iconCls: 'text-green-300' },
 };
 
-const STATUS_DOTS: Record<string, string> = {
-  draft: 'bg-gray-400',
-  active: 'bg-sky-400',
-  open: 'bg-gray-400',
-  in_progress: 'bg-amber-400 animate-pulse',
-  in_review: 'bg-violet-400',
+const AGENT_DOTS: Record<string, string> = {
   running: 'bg-green-400 animate-pulse',
-  done: 'bg-green-400',
-  achieved: 'bg-green-400',
-  failed: 'bg-red-400',
   error: 'bg-red-400',
-  archived: 'bg-gray-600',
   idle: 'bg-gray-500',
 };
+
+/** A node's dot in the colour its kind uses everywhere else: the goal tree's, the ticket chips'. */
+function statusDot(kind: OrchestrationNodeData['kind'], status: string): string | undefined {
+  if (kind === 'goal') return GOAL_STATUS_STYLES[status as GoalStatusValue]?.dot;
+  if (kind === 'ticket') return TICKET_STATUS_DOT_CLASS[status as TicketStatus];
+  return AGENT_DOTS[status];
+}
 
 function OrchestrationNodeInner({ data }: NodeProps) {
   const d = data as OrchestrationNodeData;
@@ -47,7 +48,7 @@ function OrchestrationNodeInner({ data }: NodeProps) {
         <AuricIcon name={meta.icon} className={`text-base ${meta.iconCls}`} />
         <span className="flex-1 truncate text-[11px] font-semibold text-foreground">{d.label}</span>
         <span
-          className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[d.status] ?? 'bg-gray-400'}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${statusDot(d.kind, d.status) ?? 'bg-gray-400'}`}
           title={d.status}
         />
       </div>

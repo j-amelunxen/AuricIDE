@@ -12,7 +12,6 @@ export function useLLM() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // For cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const call = useCallback(
@@ -25,7 +24,6 @@ export function useLLM() {
       setIsLoading(true);
       setError(null);
 
-      // Create a new AbortController for this call
       // Note: Tauri invoke doesn't natively support AbortController yet,
       // but we can use it to track if we should ignore the result.
       const controller = new AbortController();

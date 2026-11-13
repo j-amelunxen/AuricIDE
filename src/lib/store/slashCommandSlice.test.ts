@@ -1,12 +1,10 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, beforeEach } from 'vitest';
-import type { SlashCommandSlice } from './slashCommandSlice';
-import { createSlashCommandSlice } from './slashCommandSlice';
-import { create } from 'zustand';
 
 const STORAGE_KEY = 'auric-custom-slash-commands';
 
 function createTestStore() {
-  return create<SlashCommandSlice>()((...a) => createSlashCommandSlice(...a));
+  return createFullTestStore();
 }
 
 describe('slashCommandSlice', () => {

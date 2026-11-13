@@ -63,7 +63,6 @@ function buildStoreRows(store: StoreMetrics): StoreRow[] {
     { label: 'Agents', value: store.agentCount },
     { label: 'Entity Index', value: store.entityIndexSize },
     { label: 'Entity Occurrences', value: store.entityOccurrencesTotal },
-    { label: 'Heading Index', value: store.headingIndexSize },
     { label: 'Link Index', value: store.linkIndexSize },
     { label: 'Diagnostics', value: store.diagnosticsSize },
     { label: 'Canvas Nodes', value: store.canvasNodesCount },
@@ -218,7 +217,6 @@ export function PerformanceMonitor() {
           </div>
 
           <div className="p-3 space-y-3">
-            {/* Process Breakdown */}
             {processes.length > 0 && (
               <div className="space-y-2">
                 {processes.map((p) => (
@@ -259,7 +257,6 @@ export function PerformanceMonitor() {
               <div className="text-center py-2 text-foreground-muted">No memory data available</div>
             )}
 
-            {/* JS Heap */}
             {snapshot?.jsHeap && (
               <div className="border-t border-white/10 pt-2">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-1">
@@ -278,7 +275,6 @@ export function PerformanceMonitor() {
               </div>
             )}
 
-            {/* Store Breakdown */}
             {storeRows.length > 0 && (
               <div className="border-t border-white/10 pt-2">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-1">
@@ -303,7 +299,6 @@ export function PerformanceMonitor() {
                     </div>
                   ))}
 
-                  {/* Per-agent log breakdown */}
                   {snapshot && Object.keys(snapshot.store.agentLogsByAgent).length > 0 && (
                     <div className="ml-2 mt-0.5 space-y-0.5">
                       {Object.entries(snapshot.store.agentLogsByAgent).map(([agentId, count]) => {
@@ -321,7 +316,6 @@ export function PerformanceMonitor() {
                     </div>
                   )}
 
-                  {/* Xterm instances */}
                   {snapshot && (
                     <div className="flex justify-between">
                       <span>Xterm Instances</span>
@@ -334,7 +328,6 @@ export function PerformanceMonitor() {
               </div>
             )}
 
-            {/* Thresholds */}
             <div className="text-[10px] space-y-0.5">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500" /> &lt; {WARN_TOTAL_MB} MB:
@@ -350,7 +343,6 @@ export function PerformanceMonitor() {
               </div>
             </div>
 
-            {/* Long Tasks */}
             <div>
               <div className="flex justify-between mb-1">
                 <span>Long Tasks (last 30s)</span>

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { QuickAccessWheelEditor } from './QuickAccessWheelEditor';
 import { launchEntries } from '@/lib/quickAccess/launchSkills';
 import { WHEEL_SLOT_COUNT } from '@/lib/quickAccess/wheel';
-import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/quickAccess/types';
 
 const changelog: QuickAccessSkill = { id: 's1', label: 'Changelog', prompt: '/changelog' };
 const research: QuickAccessSkill = { id: 's2', label: 'Research', prompt: '/research' };

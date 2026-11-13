@@ -2,6 +2,8 @@ use super::model_catalog;
 use super::types::*;
 use std::path::PathBuf;
 
+const MCP_CONFIG_PATH_PLACEHOLDER: &str = "{mcpConfigPath}";
+
 pub struct DynamicProvider {
     config: ProviderConfig,
     /// `<app_data_dir>/model-catalog` when the registry knows the app data dir.
@@ -109,7 +111,7 @@ impl DynamicProvider {
         template
             .replace("{projectRoot}", &project_root)
             .replace("{databasePath}", &database_path)
-            .replace("{mcpConfigPath}", &mcp_config_path)
+            .replace(MCP_CONFIG_PATH_PLACEHOLDER, &mcp_config_path)
     }
 }
 
@@ -167,7 +169,7 @@ impl AgentProvider for DynamicProvider {
                 // so it is always one double-quoted, escaped argument. An
                 // unquoted task would let `;` or a line break end the command;
                 // `quote: false` is kept only so older configs still parse.
-                ArgumentConfig::Task { quote: _ } => {
+                ArgumentConfig::Task {} => {
                     cmd_parts.push(format!("\"{}\"", shell_escape_double_quoted(task)));
                 }
                 ArgumentConfig::Headless {
@@ -230,6 +232,37 @@ impl AgentProvider for DynamicProvider {
 
     fn allows_unbound_mcp(&self) -> bool {
         self.config.allow_unbound_mcp
+    }
+
+    fn mcp_binding(&self) -> McpBinding {
+        let declared = self.config.project_binding.as_ref();
+        // The one place a provider id decides anything: `codex` configs written
+        // before `projectBinding.format` existed declare no binding at all.
+        let format =
+            declared
+                .and_then(|config| config.format)
+                .unwrap_or(if self.config.id == "codex" {
+                    ProjectBindingFormat::CodexToml
+                } else {
+                    ProjectBindingFormat::Template
+                });
+        match (format, declared) {
+            (ProjectBindingFormat::CodexToml, _) => McpBinding::CodexToml,
+            (ProjectBindingFormat::Template, Some(config))
+                if !config.arguments.is_empty() || !config.environment.is_empty() =>
+            {
+                McpBinding::Template {
+                    reads_mcp_config: config
+                        .arguments
+                        .iter()
+                        .any(|argument| argument.contains(MCP_CONFIG_PATH_PLACEHOLDER))
+                        || config.environment.iter().any(|(key, value)| {
+                            key == "CRUSH_GLOBAL_CONFIG" && value == MCP_CONFIG_PATH_PLACEHOLDER
+                        }),
+                }
+            }
+            (ProjectBindingFormat::Template, _) => McpBinding::Unbound,
+        }
     }
 
     fn usage_config(&self) -> Option<UsageConfig> {

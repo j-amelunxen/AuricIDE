@@ -160,19 +160,19 @@ fn progress_then_the_result_on_the_branch_then_a_notification() {
     let mut events = subscribed(&s);
 
     std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let progress = events.poll_jobs(s.h.link.jobs());
     assert_eq!(progress.len(), 1);
     assert_eq!(progress[0].0, "job.progress");
     assert_eq!(progress[0].1["changed"], json!(["docs/auth.diagram.json"]));
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     assert!(
         events.poll_jobs(s.h.link.jobs()).is_empty(),
         "no change, no event"
     );
 
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let finished = events.poll_jobs(s.h.link.jobs());
     assert_eq!(finished[0].0, "job.finished");
     let job = &finished[0].1["job"];
@@ -215,7 +215,7 @@ fn an_agent_that_changes_nothing_fails_the_job() {
     let s = setup(JobLimits::default());
     create(&s, Value::Null).unwrap();
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let job = &s.h.link.jobs().list(None, None, 1)[0];
     assert_eq!(job.status, JobStatus::Failed);
     assert_eq!(
@@ -359,7 +359,7 @@ fn cancel_stops_the_agent_and_the_job_ends_as_cancelled() {
         .lock()
         .unwrap()
         .retain(|agent| agent.id != "agent-7");
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let job = s.h.link.jobs().get(&job_id).unwrap();
     assert_eq!(job.error.unwrap().code, jobs::JobErrorCode::Cancelled);
 
@@ -392,7 +392,7 @@ fn a_cancel_is_repeated_while_the_agent_still_runs() {
         &json!({ "v": 1, "id": 2, "method": "jobs.cancel", "params": { "jobId": job_id } })
             .to_string(),
     )
-    .unwrap();
+    .unwrap_err();
     let kills = |s: &Setup| {
         s.h.backend
             .requests
@@ -403,7 +403,7 @@ fn a_cancel_is_repeated_while_the_agent_still_runs() {
             .count()
     };
     let before = kills(&s);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     assert_eq!(kills(&s), before + 1, "the tick kills again");
     assert_eq!(
         s.h.link.jobs().get(&job_id).unwrap().status,
@@ -411,7 +411,7 @@ fn a_cancel_is_repeated_while_the_agent_still_runs() {
     );
 
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let job = s.h.link.jobs().get(&job_id).unwrap();
     assert_eq!(job.error.unwrap().code, jobs::JobErrorCode::Cancelled);
 }
@@ -425,13 +425,13 @@ fn a_job_whose_project_leaves_the_policy_is_stopped() {
         .to_string();
     s.h.host.policy.lock().unwrap().projects.clear();
 
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let kill = s.h.backend.requests.lock().unwrap().last().unwrap().clone();
     assert_eq!(kill.method, "kill");
     assert_eq!(kill.params["agentId"], "agent-7");
 
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let job = s.h.link.jobs().get(&job_id).unwrap();
     assert_eq!(job.status, JobStatus::Failed);
     let error = job.error.unwrap();
@@ -453,9 +453,9 @@ fn a_job_whose_kind_leaves_the_policy_is_stopped() {
     for config in s.h.host.policy.lock().unwrap().projects.values_mut() {
         config.job_kinds.clear();
     }
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let error = s.h.link.jobs().get(&job_id).unwrap().error.unwrap();
     assert_eq!(error.code, jobs::JobErrorCode::Cancelled);
     assert!(
@@ -478,7 +478,7 @@ fn book_end(s: &Setup, status: AgentStatus, exit_code: Option<i32>) {
             exit_code,
             None,
             || None,
-            jobs::now_ms(),
+            crate::json_store::now_ms(),
         ),
         None,
     );
@@ -494,7 +494,7 @@ fn an_agent_that_exits_with_an_error_fails_the_job_as_agent_failed() {
     create(&s, Value::Null).unwrap();
     // A crashed agent leaves the list at once; only its booked result remains.
     book_end(&s, AgentStatus::Error, Some(1));
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let error = job_error(&s).expect("the job failed");
     assert_eq!(error.code, jobs::JobErrorCode::AgentFailed);
 }
@@ -505,7 +505,7 @@ fn work_committed_before_a_crash_does_not_make_the_job_finished() {
     create(&s, Value::Null).unwrap();
     std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
     book_end(&s, AgentStatus::Error, Some(1));
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let job = &s.h.link.jobs().list(None, None, 1)[0];
     assert_eq!(job.status, JobStatus::Failed);
     assert_eq!(
@@ -521,7 +521,7 @@ fn an_agent_killed_from_outside_fails_the_job_as_agent_failed() {
     create(&s, Value::Null).unwrap();
     // agents.kill or the Stop button: a result with no exit code.
     book_end(&s, AgentStatus::Idle, None);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let error = job_error(&s).expect("the job failed");
     assert_eq!(error.code, jobs::JobErrorCode::AgentFailed);
     assert!(error.message.contains("stopped"), "{}", error.message);
@@ -532,7 +532,7 @@ fn a_clean_exit_with_nothing_written_is_still_no_changes() {
     let s = setup(JobLimits::default());
     create(&s, Value::Null).unwrap();
     book_end(&s, AgentStatus::Idle, Some(0));
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     assert_eq!(job_error(&s).unwrap().code, jobs::JobErrorCode::NoChanges);
 }
 
@@ -545,7 +545,7 @@ fn an_agent_gone_before_its_end_is_booked_is_waited_for() {
         .lock()
         .unwrap()
         .retain(|agent| agent.id != "agent-7");
-    let now = jobs::now_ms();
+    let now = crate::json_store::now_ms();
     s.h.link.tick_jobs(now);
     assert_eq!(
         s.h.link.jobs().list(None, None, 1)[0].status,
@@ -578,7 +578,7 @@ fn an_agent_gone_for_good_with_no_end_booked_closes_after_the_grace() {
         .lock()
         .unwrap()
         .retain(|agent| agent.id != "agent-7");
-    let now = jobs::now_ms();
+    let now = crate::json_store::now_ms();
     s.h.link.tick_jobs(now);
     s.h.link
         .tick_jobs(now + crate::supervisor_link::job_runner::VANISHED_GRACE_MS - 1);
@@ -696,7 +696,7 @@ fn a_job_for_a_supervisor_records_it_and_pings_whoever_carries_the_key_at_the_en
     }
     std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let written = s.h.backend.written.lock().unwrap().clone();
     assert_eq!(written.len(), 1, "{written:?}");
     assert_eq!(written[0].0, "agent-11");
@@ -719,7 +719,7 @@ fn a_job_nobody_asked_for_pings_no_supervisor() {
     let s = setup(JobLimits::default());
     create(&s, Value::Null).unwrap();
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     assert!(s.h.backend.written.lock().unwrap().is_empty());
     assert_eq!(s.h.link.jobs().list(None, None, 1)[0].requested_by, None);
 }
@@ -745,9 +745,9 @@ fn a_supervisor_subscription_hears_its_own_jobs_progress_and_end_only() {
     let mut other = subscribe("night-shift");
     create_for(&s, "mail-triage").unwrap();
     std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     set_status(&s, AgentStatus::Idle);
-    s.h.link.tick_jobs(jobs::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
     let names: Vec<&str> = mine
         .poll_jobs(s.h.link.jobs())
         .into_iter()
@@ -755,4 +755,305 @@ fn a_supervisor_subscription_hears_its_own_jobs_progress_and_end_only() {
         .collect();
     assert_eq!(names, vec!["job.started", "job.progress", "job.finished"]);
     assert!(other.poll_jobs(s.h.link.jobs()).is_empty());
+}
+
+fn cancel_request(s: &Setup, job_id: &str) -> Result<Value, LinkError> {
+    ask(
+        &s.h.link,
+        &json!({ "v": 1, "id": 2, "method": "jobs.cancel", "params": { "jobId": job_id } })
+            .to_string(),
+    )
+}
+
+fn without_launch_worktree(s: &Setup) {
+    for agent in s.h.backend.agents.lock().unwrap().iter_mut() {
+        if agent.id == "agent-7" {
+            agent.repo_path = Some(s.p.path().into());
+        }
+    }
+}
+
+#[test]
+fn a_cancel_reports_transport_failure_and_retries_without_a_false_ending() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut events = subscribed(&s);
+    *s.h.backend.reply.lock().unwrap() = None;
+    let error = cancel_request(&s, &job_id).unwrap_err();
+    assert_eq!(error.code, "frontend_unavailable");
+    assert!(error.message.contains(&job_id));
+    assert!(error.message.contains("retried"));
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert!(job.cancel_requested);
+    assert_eq!(job.status, JobStatus::Running);
+    assert!(job.finished_at.is_none());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert!(events.poll_jobs(s.h.link.jobs()).is_empty());
+    assert_eq!(
+        s.h.host.notified.lock().unwrap().len(),
+        1,
+        "the same failed stop warns once while retries remain active"
+    );
+    *s.h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: true,
+        result: Some(json!({})),
+        error: None,
+    });
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert_eq!(job.status, JobStatus::Failed);
+    assert_eq!(job.error.unwrap().code, jobs::JobErrorCode::Cancelled);
+    let ended = events.poll_jobs(s.h.link.jobs());
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].0, "job.failed");
+}
+
+#[test]
+fn an_unsafe_launch_stays_running_and_durable_until_the_stop_is_observed() {
+    let mut s = setup(JobLimits::default());
+    let register = s._place.path().join("jobs.json");
+    s.h.link = Arc::new(Link::with_jobs(
+        s.h.link.dispatcher.clone(),
+        s.h.host.clone(),
+        Arc::new(Jobs::load(register.clone(), crate::json_store::now_ms())),
+    ));
+    without_launch_worktree(&s);
+    *s.h.backend.kill_leaves_agent.lock().unwrap() = true;
+    let error = create(&s, Value::Null).unwrap_err();
+    let job = s.h.link.jobs().list(None, None, 1).remove(0);
+    assert_eq!(job.status, JobStatus::Running);
+    assert!(job.cancel_requested);
+    assert!(job.finished_at.is_none());
+    assert!(job.worktree.is_none());
+    assert!(error.message.contains(&job.job_id));
+    assert!(error.message.contains(&job.agent_id));
+    let persisted: Value = serde_json::from_slice(&std::fs::read(&register).unwrap()).unwrap();
+    assert_eq!(persisted["jobs"][0]["status"], "running");
+    assert_eq!(persisted["jobs"][0]["cancelRequested"], true);
+    assert!(persisted["jobs"][0]["worktree"].is_null());
+    let mut events = subscribed(&s);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(
+        s.h.link.jobs().get(&job.job_id).unwrap().status,
+        JobStatus::Running
+    );
+    assert!(events.poll_jobs(s.h.link.jobs()).is_empty());
+    *s.h.backend.kill_leaves_agent.lock().unwrap() = false;
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    let ended = s.h.link.jobs().get(&job.job_id).unwrap();
+    assert_eq!(ended.status, JobStatus::Failed);
+    assert_eq!(ended.error.unwrap().code, jobs::JobErrorCode::Internal);
+    assert_eq!(events.poll_jobs(s.h.link.jobs()).len(), 1);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert!(
+        events.poll_jobs(s.h.link.jobs()).is_empty(),
+        "no duplicate ending"
+    );
+}
+
+#[test]
+fn an_unsafe_launch_with_a_successful_stop_is_internal_on_the_next_tick() {
+    let s = setup(JobLimits::default());
+    without_launch_worktree(&s);
+    create(&s, Value::Null).unwrap_err();
+    let job = s.h.link.jobs().list(None, None, 1).remove(0);
+    assert_eq!(job.status, JobStatus::Running);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    let ended = s.h.link.jobs().get(&job.job_id).unwrap();
+    assert_eq!(ended.status, JobStatus::Failed);
+    assert_eq!(ended.error.unwrap().code, jobs::JobErrorCode::Internal);
+}
+
+#[test]
+fn an_agent_removed_before_cancel_is_benign_but_a_live_not_running_refusal_is_not() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    *s.h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: false,
+        result: None,
+        error: Some(FrontendError {
+            code: "agent_not_running".into(),
+            message: "not stopped yet".into(),
+        }),
+    });
+    assert_eq!(
+        cancel_request(&s, &job_id).unwrap_err().code,
+        "agent_not_running"
+    );
+    assert_eq!(
+        s.h.link.jobs().get(&job_id).unwrap().status,
+        JobStatus::Running
+    );
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id != "agent-7");
+    s.h.buffers.append("agent-7", "ended");
+    s.h.buffers.finish("agent-7", AgentStatus::Idle);
+    assert_eq!(cancel_request(&s, &job_id).unwrap()["cancelled"], true);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(
+        s.h.link.jobs().get(&job_id).unwrap().error.unwrap().code,
+        jobs::JobErrorCode::Cancelled
+    );
+}
+
+#[test]
+fn a_cancelled_valid_launch_with_a_missing_directory_is_still_cancelled() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    std::fs::remove_dir_all(&s.worktree).unwrap();
+    cancel_request(&s, &job_id).unwrap();
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(
+        s.h.link.jobs().get(&job_id).unwrap().error.unwrap().code,
+        jobs::JobErrorCode::Cancelled
+    );
+}
+
+#[test]
+fn a_withdrawn_job_warns_when_stop_fails_and_keeps_retrying() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    *s.h.backend.reply.lock().unwrap() = None;
+    s.h.host.policy.lock().unwrap().projects.clear();
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert!(job.cancel_requested);
+    assert_eq!(job.status, JobStatus::Running);
+    assert_eq!(s.h.host.notified.lock().unwrap().len(), 1);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(s.h.host.notified.lock().unwrap().len(), 1);
+    assert!(
+        s.h.backend
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.method == "kill")
+            .count()
+            >= 2
+    );
+}
+
+#[test]
+fn an_unsafe_launch_survives_a_kill_transport_failure_and_the_retry_finishes_it() {
+    let s = setup(JobLimits::default());
+    without_launch_worktree(&s);
+    s.h.backend
+        .fail_control
+        .lock()
+        .unwrap()
+        .insert("kill".into());
+    let error = create(&s, Value::Null).unwrap_err();
+    assert!(error.message.contains("frontend_unavailable"));
+    let job = s.h.link.jobs().list(None, None, 1).remove(0);
+    assert_eq!(job.status, JobStatus::Running);
+    assert!(job.cancel_requested);
+    assert_eq!(s.h.host.notified.lock().unwrap().len(), 1);
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(s.h.host.notified.lock().unwrap().len(), 1);
+    s.h.backend.fail_control.lock().unwrap().clear();
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    s.h.link.tick_jobs(crate::json_store::now_ms());
+    assert_eq!(
+        s.h.link
+            .jobs()
+            .get(&job.job_id)
+            .unwrap()
+            .error
+            .unwrap()
+            .code,
+        jobs::JobErrorCode::Internal
+    );
+}
+
+#[test]
+fn a_legacy_running_record_without_worktree_or_cancel_flag_still_requests_stop() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    let mut legacy = serde_json::to_value(&job).unwrap();
+    legacy["worktree"] = Value::Null;
+    legacy.as_object_mut().unwrap().remove("cancelRequested");
+    let legacy: jobs::JobRecord = serde_json::from_value(legacy).unwrap();
+    let registry = Arc::new(Jobs::default());
+    registry.start(legacy, crate::json_store::now_ms());
+    let link = Link::with_jobs(s.h.link.dispatcher.clone(), s.h.host.clone(), registry);
+    *s.h.backend.kill_leaves_agent.lock().unwrap() = true;
+    link.tick_jobs(crate::json_store::now_ms());
+    assert!(link.jobs().get(&job_id).unwrap().cancel_requested);
+    assert_eq!(link.jobs().get(&job_id).unwrap().status, JobStatus::Running);
+    assert_eq!(
+        s.h.backend.requests.lock().unwrap().last().unwrap().method,
+        "kill"
+    );
+}
+
+#[test]
+fn a_queued_agent_that_survives_a_successful_kill_reply_remains_pending() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    set_status(&s, AgentStatus::Queued);
+    *s.h.backend.kill_leaves_agent.lock().unwrap() = true;
+    assert_eq!(cancel_request(&s, &job_id).unwrap_err().code, "internal");
+    assert_eq!(
+        s.h.link.jobs().get(&job_id).unwrap().status,
+        JobStatus::Running
+    );
+    assert!(s.h.link.jobs().get(&job_id).unwrap().finished_at.is_none());
+}
+
+#[test]
+fn cancellation_is_persisted_before_a_failed_stop_and_restart_still_means_interrupted() {
+    let mut s = setup(JobLimits::default());
+    let register = s._place.path().join("jobs.json");
+    s.h.link = Arc::new(Link::with_jobs(
+        s.h.link.dispatcher.clone(),
+        s.h.host.clone(),
+        Arc::new(Jobs::load(register.clone(), crate::json_store::now_ms())),
+    ));
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.h.backend
+        .fail_control
+        .lock()
+        .unwrap()
+        .insert("kill".into());
+    cancel_request(&s, &job_id).unwrap_err();
+    let persisted: Value = serde_json::from_slice(&std::fs::read(&register).unwrap()).unwrap();
+    assert_eq!(persisted["jobs"][0]["status"], "running");
+    assert_eq!(persisted["jobs"][0]["cancelRequested"], true);
+    assert!(persisted["jobs"][0]["worktree"].is_string());
+    let recovered = Jobs::load(register, crate::json_store::now_ms());
+    let recovered = recovered.get(&job_id).unwrap();
+    assert_eq!(recovered.status, JobStatus::Failed);
+    assert_eq!(
+        recovered.error.unwrap().code,
+        jobs::JobErrorCode::Interrupted
+    );
 }

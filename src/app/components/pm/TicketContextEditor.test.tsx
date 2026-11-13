@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TicketContextEditor } from './TicketContextEditor';
-import type { PmContextItem } from '@/lib/tauri/pm';
+import type { PmContextItem } from '@/lib/pm/types';
 
 describe('TicketContextEditor', () => {
   const mockContext: PmContextItem[] = [

@@ -30,7 +30,6 @@ impl ProviderRegistry {
         // Add Crush as fallback/default if no others are present (or keep it always)
         providers.insert(RESERVED_PROVIDER_ID.to_string(), Arc::new(CrushProvider));
 
-        // Load Dynamic Providers
         let mut search_paths = vec![
             PathBuf::from("dynamic-providers"),
             PathBuf::from("../dynamic-providers"),
@@ -58,20 +57,7 @@ impl ProviderRegistry {
             catalog_cache_dir.clone(),
         ));
 
-        // Determine default ID. First dynamic provider we find? Or claude?
-        // Usually, pick the first dynamic one, or fallback to crush.
-        let default_id = if providers.contains_key("claude") {
-            "claude".to_string()
-        } else if providers.len() > 1 {
-            // Find any key that isn't crush
-            providers
-                .keys()
-                .find(|&k| k != "crush")
-                .cloned()
-                .unwrap_or_else(|| "crush".to_string())
-        } else {
-            "crush".to_string()
-        };
+        let default_id = preferred_default(&providers);
 
         let import_dir = app_data_dir.map(|d| d.join("dynamic-providers"));
 
@@ -195,13 +181,26 @@ impl ProviderRegistry {
             DynamicProvider::new(config).with_catalog_cache_dir(self.catalog_cache_dir.clone()),
         );
         let info = provider.info();
-        self.providers.write().unwrap().insert(id.clone(), provider);
-        // A freshly-imported claude becomes the default (matches startup logic).
-        if id == "claude" {
-            *self.default_id.write().unwrap() = "claude".to_string();
-        }
+        let mut providers = self.providers.write().unwrap();
+        providers.insert(id.clone(), provider);
+        // The same choice a restart would make with this provider installed.
+        *self.default_id.write().unwrap() = preferred_default(&providers);
         Ok(info)
     }
+}
+
+/// The default provider: `claude` when installed, else any provider that is
+/// not the built-in fallback, else the built-in fallback itself.
+fn preferred_default(providers: &HashMap<String, Arc<dyn AgentProvider>>) -> String {
+    if providers.contains_key("claude") {
+        return "claude".to_string();
+    }
+    providers
+        .keys()
+        .filter(|id| id.as_str() != RESERVED_PROVIDER_ID)
+        .min()
+        .cloned()
+        .unwrap_or_else(|| RESERVED_PROVIDER_ID.to_string())
 }
 
 pub type ProviderRegistryState = Arc<ProviderRegistry>;

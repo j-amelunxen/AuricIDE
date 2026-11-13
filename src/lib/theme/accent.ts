@@ -11,11 +11,7 @@
 
 import { BUILTIN_THEMES, DEFAULT_THEME_ID, getBuiltinTheme } from './catalog/builtins';
 import { applyTheme } from './catalog/apply';
-import {
-  ACCENT_STORAGE_KEY as STORAGE_KEY,
-  readStoredThemeId,
-  writeStoredThemeId,
-} from './catalog/storage';
+import { ACCENT_STORAGE_KEY as STORAGE_KEY, writeStoredThemeId } from './catalog/storage';
 import { selectTheme } from './catalog/controller';
 
 export interface Accent {
@@ -40,12 +36,6 @@ export const ACCENT_STORAGE_KEY = STORAGE_KEY;
 
 export function isAccentId(value: unknown): value is string {
   return typeof value === 'string' && ACCENTS.some((accent) => accent.id === value);
-}
-
-/** Reads the persisted accent, falling back to the default on absent/invalid. */
-export function loadAccent(): string {
-  const stored = readStoredThemeId();
-  return isAccentId(stored) ? stored : DEFAULT_ACCENT_ID;
 }
 
 /** Stamps the accent onto <html> so the CSS variable overrides take effect. */

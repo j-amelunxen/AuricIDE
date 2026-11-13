@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import fixtures from './agentControl.fixtures.json';
 import { adoptSupervisorChildren } from './supervisorFamily';
 

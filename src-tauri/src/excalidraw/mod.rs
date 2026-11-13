@@ -4,9 +4,10 @@
 //! Tauri commands. Only `fetch_json` touches the network; everything else is
 //! pure and covered by `cargo test --lib`.
 
+pub mod commands;
 pub mod contract;
 
-use crate::database::{kv_get, DatabaseState};
+use crate::database::DatabaseState;
 use contract::{
     parse_paged, scene_content_to_file_json, ApiCollection, ApiScene, Collection, ExcalidrawError,
     Paged, SceneSummary,
@@ -33,6 +34,8 @@ fn is_mock_value(value: &str) -> bool {
     value == "1"
 }
 
+const API_KEY: &str = "api_key";
+
 /// The key is application-wide, so a project that never configured one still
 /// works; a project that set its own still wins.
 fn read_api_key(
@@ -40,20 +43,14 @@ fn read_api_key(
     credentials: &State<'_, crate::app_config::AppCredentialsState>,
     project_path: &str,
 ) -> Result<String, ExcalidrawError> {
-    let global = crate::app_config::global_namespace(credentials.path(), "excalidraw_settings")
-        .get("api_key")
+    let namespace = crate::app_config::namespaces::EXCALIDRAW;
+    let global = crate::app_config::global_namespace(credentials.path(), namespace)
+        .get(API_KEY)
         .cloned();
-
-    // No project database is no longer a reason to give up — it only means
-    // this project overrides nothing.
-    let project = {
-        let connections = db_state.connections.lock().unwrap();
-        match connections.get(project_path) {
-            Some(conn) => kv_get(conn, "excalidraw_settings", "api_key")
-                .map_err(|detail| ExcalidrawError::Network { detail })?,
-            None => None,
-        }
-    };
+    let project = db_state
+        .kv_values(project_path, namespace, &[API_KEY])
+        .map_err(|detail| ExcalidrawError::Network { detail })?
+        .remove(API_KEY);
 
     crate::app_config::resolve_credential(global, project).ok_or(ExcalidrawError::NotConfigured)
 }

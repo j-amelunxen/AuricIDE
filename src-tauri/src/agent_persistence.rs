@@ -76,12 +76,23 @@ impl AgentPersistence {
     /// Loads the persistence file. Every entry found belonged to a previous
     /// run — no process can outlive the app — so all of them are interrupted.
     pub fn load(path: Option<PathBuf>) -> Self {
-        let interrupted = path
-            .as_deref()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|content| serde_json::from_str::<PersistenceFile>(&content).ok())
-            .map(|file| file.agents)
-            .unwrap_or_default();
+        // A file that does not parse is moved aside, so the agents it lists are
+        // not written over by the first spawn; one that cannot be moved keeps
+        // persistence off for this run rather than be replaced.
+        let (interrupted, path) = match path.as_deref().map(|p| {
+            crate::json_store::load::<PersistenceFile>(
+                p,
+                None,
+                crate::json_store::Unreadable::MoveAside,
+            )
+        }) {
+            None => (Vec::new(), None),
+            Some(Ok(file)) => (file.map(|file| file.agents).unwrap_or_default(), path),
+            Some(Err(error)) => {
+                eprintln!("Agent persistence: the restart file cannot be used: {error}");
+                (Vec::new(), None)
+            }
+        };
 
         Self {
             path,
@@ -245,16 +256,9 @@ impl AgentPersistence {
         let file = PersistenceFile {
             agents: interrupted.iter().chain(active.iter()).cloned().collect(),
         };
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
-        }
-        let json = serde_json::to_string_pretty(&file)
+        let json = serde_json::to_vec_pretty(&file)
             .map_err(|e| format!("Failed to encode agent persistence: {e}"))?;
-        let staged = path.with_extension("json.tmp");
-        std::fs::write(&staged, json)
-            .map_err(|e| format!("Failed to write {}: {e}", staged.display()))?;
-        std::fs::rename(&staged, path)
+        crate::json_store::write_atomic(path, &json, crate::json_store::Mode::Default)
             .map_err(|e| format!("Failed to replace {}: {e}", path.display()))
     }
 }
@@ -265,11 +269,23 @@ pub fn new_agent_persistence_state(path: Option<PathBuf>) -> AgentPersistenceSta
     Arc::new(Mutex::new(AgentPersistence::load(path)))
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restart_file_that_does_not_parse_is_kept_aside_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agents.json");
+        std::fs::write(&path, "{ broken").unwrap();
+        let persistence = AgentPersistence::load(Some(path.clone()));
+        assert!(persistence.interrupted.is_empty());
+        let kept = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains(".unreadable-"));
+        assert!(kept, "the agents it listed stay on disk");
+    }
 
     fn sample_agent(id: &str) -> PersistedAgent {
         PersistedAgent {
@@ -345,12 +361,7 @@ mod tests {
         assert_eq!(parent("agent-3").as_deref(), Some("agent-9"));
     }
 
-    /// Blocks the staging file, so the next save fails.
-    fn block_saves(path: &std::path::Path) -> PathBuf {
-        let staged = path.with_extension("json.tmp");
-        std::fs::create_dir(&staged).unwrap();
-        staged
-    }
+    use crate::json_store::test_support::block_writes as block_saves;
 
     /// Review r3 of goal 10: an exit whose save failed keeps the anchor, in
     /// memory and in the file, so the removal can be retried; once it lands,
@@ -371,7 +382,7 @@ mod tests {
             1
         );
 
-        std::fs::remove_dir(blocked).unwrap();
+        drop(blocked);
         p.record_exit("agent-1").unwrap();
         assert!(AgentPersistence::load(Some(path)).interrupted().is_empty());
     }
@@ -396,7 +407,7 @@ mod tests {
             1
         );
 
-        std::fs::remove_dir(blocked).unwrap();
+        drop(blocked);
         assert!(p.discard_interrupted("agent-1").unwrap());
         assert!(AgentPersistence::load(Some(path)).interrupted().is_empty());
     }
@@ -410,8 +421,7 @@ mod tests {
         p.record_spawn(sample_agent("agent-1")).unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
 
-        // The staging file cannot be created: a directory sits in its place.
-        std::fs::create_dir(path.with_extension("json.tmp")).unwrap();
+        let _blocked = block_saves(&path);
         assert!(p.record_spawn(sample_agent("agent-2")).is_err());
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);

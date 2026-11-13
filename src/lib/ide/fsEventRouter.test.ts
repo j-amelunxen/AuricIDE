@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { createFsEventRouter, isContentOnlyKind, isProjectDbPath } from './fsEventRouter';
+import { createFsEventRouter, isProjectDbPath } from './fsEventRouter';
 
 describe('isProjectDbPath', () => {
   it('matches the project SQLite database and its WAL/SHM side files', () => {
@@ -40,8 +40,8 @@ describe('createFsEventRouter', () => {
 
   it('routes regular file events to a debounced tree refresh', () => {
     const r = router();
-    r.handle({ path: '/proj/specs/spec-a.md', kind: 'Create' });
-    r.handle({ path: '/proj/specs/spec-b.md', kind: 'Create' });
+    r.handle({ path: '/proj/specs/spec-a.md', contentOnly: false });
+    r.handle({ path: '/proj/specs/spec-b.md', contentOnly: false });
 
     expect(onTreeChange).not.toHaveBeenCalled();
     vi.advanceTimersByTime(300);
@@ -51,8 +51,8 @@ describe('createFsEventRouter', () => {
 
   it('routes project DB events to a debounced data refresh, not the tree', () => {
     const r = router();
-    r.handle({ path: '/proj/.auric/project.db-wal', kind: 'Modify' });
-    r.handle({ path: '/proj/.auric/project.db', kind: 'Modify' });
+    r.handle({ path: '/proj/.auric/project.db-wal', contentOnly: false });
+    r.handle({ path: '/proj/.auric/project.db', contentOnly: false });
 
     expect(onProjectDataChange).not.toHaveBeenCalled();
     vi.advanceTimersByTime(500);
@@ -62,8 +62,8 @@ describe('createFsEventRouter', () => {
 
   it('keeps the two debounce lanes independent', () => {
     const r = router();
-    r.handle({ path: '/proj/.auric/project.db-wal', kind: 'Modify' });
-    r.handle({ path: '/proj/specs/spec-a.md', kind: 'Create' });
+    r.handle({ path: '/proj/.auric/project.db-wal', contentOnly: false });
+    r.handle({ path: '/proj/specs/spec-a.md', contentOnly: false });
 
     vi.advanceTimersByTime(300);
     expect(onTreeChange).toHaveBeenCalledTimes(1);
@@ -75,9 +75,9 @@ describe('createFsEventRouter', () => {
 
   it('hands the tree lane the deduplicated parent directories that changed', () => {
     const r = router();
-    r.handle({ path: '/proj/src/lib/a.ts', kind: 'Create' });
-    r.handle({ path: '/proj/src/lib/b.ts', kind: 'Create' });
-    r.handle({ path: '/proj/README.md', kind: 'Modify' });
+    r.handle({ path: '/proj/src/lib/a.ts', contentOnly: false });
+    r.handle({ path: '/proj/src/lib/b.ts', contentOnly: false });
+    r.handle({ path: '/proj/README.md', contentOnly: false });
 
     vi.advanceTimersByTime(300);
     expect(onTreeChange).toHaveBeenCalledTimes(1);
@@ -86,9 +86,9 @@ describe('createFsEventRouter', () => {
 
   it('starts each flush from an empty set of directories', () => {
     const r = router();
-    r.handle({ path: '/proj/src/a.ts', kind: 'Create' });
+    r.handle({ path: '/proj/src/a.ts', contentOnly: false });
     vi.advanceTimersByTime(300);
-    r.handle({ path: '/proj/docs/b.md', kind: 'Create' });
+    r.handle({ path: '/proj/docs/b.md', contentOnly: false });
     vi.advanceTimersByTime(300);
 
     expect(onTreeChange).toHaveBeenCalledTimes(2);
@@ -105,7 +105,7 @@ describe('createFsEventRouter', () => {
     // A build tool writing every 100ms would reset a pure trailing debounce
     // forever, and the explorer would never refresh while it runs.
     for (let elapsed = 0; elapsed < 1000; elapsed += 100) {
-      r.handle({ path: `/proj/out/chunk-${elapsed}.js`, kind: 'Create' });
+      r.handle({ path: `/proj/out/chunk-${elapsed}.js`, contentOnly: false });
       vi.advanceTimersByTime(100);
     }
     expect(onTreeChange).toHaveBeenCalledTimes(1);
@@ -114,8 +114,8 @@ describe('createFsEventRouter', () => {
 
   it('dispose cancels pending refreshes', () => {
     const r = router();
-    r.handle({ path: '/proj/.auric/project.db', kind: 'Modify' });
-    r.handle({ path: '/proj/specs/spec-a.md', kind: 'Create' });
+    r.handle({ path: '/proj/.auric/project.db', contentOnly: false });
+    r.handle({ path: '/proj/specs/spec-a.md', contentOnly: false });
 
     r.dispose();
     vi.advanceTimersByTime(1000);
@@ -139,7 +139,7 @@ describe('evidence lane', () => {
       evidenceDebounceMs: 1000,
     });
 
-    router.handle({ path: '/p/docs/readme.md', kind: 'modify' });
+    router.handle({ path: '/p/docs/readme.md', contentOnly: false });
     vi.advanceTimersByTime(300);
     expect(onTreeChange).toHaveBeenCalledTimes(1);
     expect(onEvidenceChange).not.toHaveBeenCalled();
@@ -147,7 +147,7 @@ describe('evidence lane', () => {
     expect(onEvidenceChange).toHaveBeenCalledTimes(1);
 
     // DB writes stay out of the evidence lane — data reloads own that path.
-    router.handle({ path: '/p/.auric/project.db-wal', kind: 'modify' });
+    router.handle({ path: '/p/.auric/project.db-wal', contentOnly: false });
     vi.advanceTimersByTime(2000);
     expect(onEvidenceChange).toHaveBeenCalledTimes(1);
     router.dispose();
@@ -155,29 +155,11 @@ describe('evidence lane', () => {
   });
 });
 
-describe('isContentOnlyKind', () => {
-  it('treats data and metadata writes as content-only', () => {
-    expect(isContentOnlyKind('Modify(Data(Content))')).toBe(true);
-    expect(isContentOnlyKind('Modify(Data(Any))')).toBe(true);
-    expect(isContentOnlyKind('Modify(Metadata(Any))')).toBe(true);
-    expect(isContentOnlyKind('Access(Close(Write))')).toBe(true);
-  });
-
-  it('treats anything that can change the set of paths as structural', () => {
-    expect(isContentOnlyKind('Create(File)')).toBe(false);
-    expect(isContentOnlyKind('Remove(File)')).toBe(false);
-    expect(isContentOnlyKind('Modify(Name(Any))')).toBe(false);
-    // Unknown shapes are structural: the safe answer is the expensive one.
-    expect(isContentOnlyKind('Any')).toBe(false);
-    expect(isContentOnlyKind('Other')).toBe(false);
-  });
-});
-
 describe('createFsEventRouter change summary', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  const flushWith = (events: Array<{ path: string; kind: string }>) => {
+  const flushWith = (events: Array<{ path: string; contentOnly: boolean }>) => {
     const onTreeChange = vi.fn();
     const r = createFsEventRouter({ onTreeChange, onProjectDataChange: vi.fn() });
     for (const e of events) r.handle(e);
@@ -189,8 +171,8 @@ describe('createFsEventRouter change summary', () => {
   it('reports a burst of content writes as non-structural', () => {
     expect(
       flushWith([
-        { path: '/p/a.md', kind: 'Modify(Data(Content))' },
-        { path: '/p/b.md', kind: 'Modify(Data(Content))' },
+        { path: '/p/a.md', contentOnly: true },
+        { path: '/p/b.md', contentOnly: true },
       ])
     ).toEqual({ structural: false, ignoreRulesChanged: false });
   });
@@ -198,28 +180,28 @@ describe('createFsEventRouter change summary', () => {
   it('reports a burst with one create as structural', () => {
     expect(
       flushWith([
-        { path: '/p/a.md', kind: 'Modify(Data(Content))' },
-        { path: '/p/new.md', kind: 'Create(File)' },
+        { path: '/p/a.md', contentOnly: true },
+        { path: '/p/new.md', contentOnly: false },
       ])
     ).toMatchObject({ structural: true });
   });
 
   it('notices a changed ignore file anywhere in the project', () => {
-    expect(flushWith([{ path: '/p/.gitignore', kind: 'Modify(Data(Content))' }])).toEqual({
+    expect(flushWith([{ path: '/p/.gitignore', contentOnly: true }])).toEqual({
       structural: false,
       ignoreRulesChanged: true,
     });
-    expect(flushWith([{ path: '/p/sub/.gitignore', kind: 'Modify(Data(Content))' }])).toMatchObject(
-      { ignoreRulesChanged: true }
-    );
+    expect(flushWith([{ path: '/p/sub/.gitignore', contentOnly: true }])).toMatchObject({
+      ignoreRulesChanged: true,
+    });
   });
 
   it('starts every burst with a clean summary', () => {
     const onTreeChange = vi.fn();
     const r = createFsEventRouter({ onTreeChange, onProjectDataChange: vi.fn() });
-    r.handle({ path: '/p/new.md', kind: 'Create(File)' });
+    r.handle({ path: '/p/new.md', contentOnly: false });
     vi.advanceTimersByTime(1_000);
-    r.handle({ path: '/p/new.md', kind: 'Modify(Data(Content))' });
+    r.handle({ path: '/p/new.md', contentOnly: true });
     vi.advanceTimersByTime(1_000);
     expect(onTreeChange.mock.calls[1][1]).toEqual({
       structural: false,
@@ -237,7 +219,7 @@ describe('createFsEventRouter with existence facts', () => {
   afterEach(() => vi.useRealTimers());
 
   const known = new Set(['/p/a.md', '/p/dir']);
-  const flushWith = (events: Array<{ path: string; kind: string; exists?: boolean }>) => {
+  const flushWith = (events: Array<{ path: string; contentOnly: boolean; exists?: boolean }>) => {
     const onTreeChange = vi.fn();
     const r = createFsEventRouter({
       onTreeChange,
@@ -250,34 +232,34 @@ describe('createFsEventRouter with existence facts', () => {
   };
 
   it('treats a rename over a file the index already has as a content write', () => {
-    expect(flushWith([{ path: '/p/a.md', kind: 'Modify(Name(Any))', exists: true }])).toMatchObject(
-      { structural: false }
-    );
+    expect(flushWith([{ path: '/p/a.md', contentOnly: false, exists: true }])).toMatchObject({
+      structural: false,
+    });
   });
 
   it('still sees a new file as structural', () => {
-    expect(flushWith([{ path: '/p/new.md', kind: 'Create(File)', exists: true }])).toMatchObject({
+    expect(flushWith([{ path: '/p/new.md', contentOnly: false, exists: true }])).toMatchObject({
       structural: true,
     });
   });
 
   it('still sees a removed file or folder as structural', () => {
-    expect(flushWith([{ path: '/p/a.md', kind: 'Remove(File)', exists: false }])).toMatchObject({
+    expect(flushWith([{ path: '/p/a.md', contentOnly: false, exists: false }])).toMatchObject({
       structural: true,
     });
-    expect(flushWith([{ path: '/p/dir', kind: 'Modify(Name(Any))', exists: false }])).toMatchObject(
-      { structural: true }
-    );
+    expect(flushWith([{ path: '/p/dir', contentOnly: false, exists: false }])).toMatchObject({
+      structural: true,
+    });
   });
 
   it('ignores a temp file that came and went within the burst', () => {
-    expect(
-      flushWith([{ path: '/p/.a.md.swp', kind: 'Remove(File)', exists: false }])
-    ).toMatchObject({ structural: false });
+    expect(flushWith([{ path: '/p/.a.md.swp', contentOnly: false, exists: false }])).toMatchObject({
+      structural: false,
+    });
   });
 
   it('stays structural when the watcher did not say whether the path exists', () => {
-    expect(flushWith([{ path: '/p/a.md', kind: 'Modify(Name(Any))' }])).toMatchObject({
+    expect(flushWith([{ path: '/p/a.md', contentOnly: false }])).toMatchObject({
       structural: true,
     });
   });

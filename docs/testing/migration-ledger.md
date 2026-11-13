@@ -72,3 +72,40 @@ The only removed assertions in this pilot were presentation-coupled CSS class
 checks in `PhaseChip.test.tsx`. Their behavioral replacement is isolated in a
 separate Playwright spec, so reverting the migration does not require changing
 production code. All higher-risk legacy suites remain in place.
+
+## Untangle T1 unreachable surfaces, 2026-11-11
+
+This removes unreachable application code and its dedicated assertions. It does
+not replace live verification with a different test layer. The source and import
+inspection covered `src`, `scripts` and `e2e`, including dynamic imports and the
+MCP registration entry points. The original focused suite passed before removal
+(25 files, 692 tests); the changed owner suites passed afterwards (29 files,
+821 tests, including additional unchanged MCP/metrics consumers).
+
+| Retired surface                                                                      | Previous protection and removal rationale                                                                                                                                                                                        | Retained evidence / gate                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ReferencesPanel` and its `uiSlice` state/action                                     | Eight component tests and six state tests protected a panel mounted by no application entry point. Its editor callback computed results into state read by no component. Delete that callback, panel and state together.         | Live rename reference counting still calls `findAllReferences`; its algorithm tests and `MarkdownEditor.test.tsx` remain in `pnpm test:run`.                                                                                     |
+| `BlueprintsPanel`                                                                    | Thirteen tests protected an obsolete panel imported only by its test. The application mounts `BlueprintsGallery`. No live confirmation gate is removed.                                                                          | `BlueprintsGallery.test.tsx` retains open/approve/decline deletion and nested Escape coverage; `useConfirm.test.tsx` and blueprint store tests remain in `pnpm test:run`.                                                        |
+| `lib/git/defaultBranch`                                                              | Six tests exercised a TS branch-selection copy called only by those tests. The application uses `gitDefaultBranch` over IPC.                                                                                                     | Existing real-repository `git::tests::worktree_tests` cover the live native default-branch rule in `cargo test`; no replacement of those tests.                                                                                  |
+| `buildMissionSchedule` and `createMissionWithSchedule`                               | Two tests exercised an unused TS schedule-builder copy and an injectable forwarding wrapper. The dialog now calls the same `missionCreate` adapter directly.                                                                     | `MissionCreateDialog.test.tsx` keeps request and failure assertions; `missions::tests::coordinated_create_persists_exactly_one_linked_schedule` and rollback/collision tests retain native persistence coverage in `cargo test`. |
+| `listCrashLogs`, `readCrashLog`, `excalidrawTestConnection`, `clearVideoImportCache` | Four tests asserted argument forwarding for TS wrappers imported only by those tests; their native commands remain registered. These assertions verify retired wrappers, not a user-accessible TS path.                          | Live wrappers keep their forwarding and error tests; crash-report failure propagation is retained through `reportFrontendCrash` in `pnpm test:run`.                                                                              |
+| `isProviderFullyBlocked`, `formatScopeBadge`, `isAnsweredNotification`               | Five tests protected helpers with no application caller. No launch/notification authority consumes them.                                                                                                                         | Live quota matching, supervisor policy fixture cases and notification action parsing tests remain unchanged in `pnpm test:run`; these deletions do not change enforcement.                                                       |
+| Test-only constants and pass-through helpers                                         | Remove `DEFAULT_PTY_SIZE`'s fixture-to-itself assertion. Move the exhaustive drop-zone list into its test; inspect reason text directly in the shared fixture; exercise launch-entry slot IDs through existing public functions. | All model-choice/check-spawn fixture-coverage assertions, drop-zone cases and wheel-slot assertions remain in `pnpm test:run`.                                                                                                   |
+| `agentMirrorIsLive`                                                                  | Remove the production test probe, retaining every freeze/thaw test. Tests now observe actual terminal `dispose` and snapshot `write` calls instead of asking the mirror whether it considers itself live.                        | `agentMirror.test.ts` retains lifetime, frozen screen, late output, seeded mirror, resize and mouse encoding assertions in `pnpm test:run`.                                                                                      |
+
+The station resolver is consolidated without deleting its tests. Five added
+SQLite characterization cases ran against the original resolver first, then the
+shared implementation: exact-ID precedence, short/empty prefixes, absent UUIDs,
+case-insensitive lookup, ambiguity and precise station errors. Other tables keep
+their existing UUID fast path and four-character minimum.
+
+The migrated mirror lifetime test was fault-checked: omitting the real freeze
+`term.dispose()` produced the expected failure (zero disposals instead of one).
+The fault was restored before the final green verification.
+
+Independent review approved these removals after checking all 44 retired test
+cases, the live call paths and unchanged assertions. A differential SQLite
+check compared 88 station lookup inputs with the original implementation and
+found no mismatch. Omitting the real terminal disposal made the migrated
+lifetime test fail; restoring it returned the 35 mirror tests to green. No live
+confirmation, native persistence or policy-enforcement test was removed.

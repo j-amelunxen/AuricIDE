@@ -105,6 +105,7 @@ export interface ProjectPmOverview {
   hasDb: boolean;
   open: number;
   inProgress: number;
+  toTest: number;
   inReview: number;
   done: number;
   epics: ProjectEpicDigest[];

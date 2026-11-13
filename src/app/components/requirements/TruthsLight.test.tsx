@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { TruthsLight } from './TruthsLight';
 import { useStore } from '@/lib/store';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 
 function makeRequirement(overrides: Partial<PmRequirement>): PmRequirement {
   return {

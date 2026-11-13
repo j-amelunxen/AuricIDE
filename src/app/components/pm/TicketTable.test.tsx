@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import { usageRow } from '@/lib/pm/usage/testRow';
 import { TicketTable } from './TicketTable';
-import type { PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import type { PmTicket, PmDependency, PmTestCase } from '@/lib/pm/types';
 import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 
 const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({

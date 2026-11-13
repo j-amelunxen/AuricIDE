@@ -14,13 +14,15 @@ pub const MAX_SKILLS_PER_PROJECT: usize = 20;
 pub const MAX_COMBOS_PER_PROJECT: usize = 20;
 pub const MAX_STEPS_PER_COMBO: usize = 8;
 pub const WHEEL_SLOT_COUNT: usize = 6;
-/// Twin of `DOCK_MAX` in `src/lib/quickAccess/dock.ts`.
+/// Twin of `DOCK_MAX` in `src/lib/quickAccess/dock.ts`; `backendNames.fixtures.json` checks both.
 pub const DOCK_MAX: usize = 8;
-/// Twin of `BADGE_MAX_CHARS` in `src/lib/quickAccess/badge.ts`.
+/// Twin of `BADGE_MAX_CHARS` in `src/lib/quickAccess/badge.ts`, checked against the same fixture.
 pub const BADGE_MAX_CHARS: usize = 6;
 /// A user's own description of a starred project, cut to this when saved
 /// (`projectDescription.userMaxChars` in `agentControl.fixtures.json`).
 pub const USER_DESCRIPTION_MAX_CHARS: usize = 300;
+/// The `localStorage` keys older builds kept these lists under; the frontend
+/// still names them `APP_CONFIG_KEYS.recentProjects` / `.starredProjects`.
 pub const LEGACY_KEY: &str = "auric-recent-projects";
 pub const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 

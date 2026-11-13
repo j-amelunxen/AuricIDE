@@ -7,8 +7,8 @@ import {
   buildGoalPlanningPrompt,
   buildMetaGoalSplitPrompt,
 } from '../../lib/goals/goalLaunchPrompt';
-import { getGoalWorkMode } from '../../lib/store/goals/goalSatisfaction';
-import type { PmGoal, PmGoalStation } from '../../lib/tauri/goals';
+import { getGoalWorkMode } from '../../lib/goals/model/goalSatisfaction';
+import type { PmGoal, PmGoalStation } from '../../lib/goals/types';
 import { createGoal } from './goalsDb';
 import { createStations, listStations } from './stations';
 import { createEpic } from './epics';

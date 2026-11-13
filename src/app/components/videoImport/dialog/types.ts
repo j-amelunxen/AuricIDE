@@ -1,3 +1,4 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type { ProcessActor, ProcessStationKind } from '@/lib/videoImport/processExtraction';
 
 export type DialogStage = 'select' | 'analyzing' | 'review' | 'saving';
@@ -18,7 +19,7 @@ export const STATION_KINDS: Array<{ value: ProcessStationKind; label: string }> 
 ];
 
 export function timestamp(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp();
 }
 
 export function shortPath(path: string): string {

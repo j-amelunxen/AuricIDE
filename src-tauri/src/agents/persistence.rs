@@ -2,35 +2,66 @@ use super::types::{AgentConfig, AgentRole};
 use crate::agent_persistence::{AgentPersistenceState, PersistedAgent};
 use tauri::{AppHandle, Manager};
 
-/// Snapshot of a spawn config for the restart-persistence file.
+/// Snapshot of a spawn config for the restart-persistence file. The config is
+/// destructured without `..`, so a new `AgentConfig` field does not compile
+/// until it is either persisted here or named as one a restart does not need.
 pub fn persisted_from_config(
     config: &AgentConfig,
     id: &str,
     provider_id: &str,
     started_at: u64,
 ) -> PersistedAgent {
+    let AgentConfig {
+        name,
+        model,
+        task,
+        cwd,
+        project_path,
+        permission_mode,
+        dangerously_ignore_permissions,
+        auto_accept_edits,
+        provider: _,
+        headless,
+        spawned_by_ticket_id,
+        spawned_by_goal_id,
+        launch_request_uid,
+        // Answered once, at the click; a resume is not that click again.
+        agent_notification_uid: _,
+        agent_notification_action_id: _,
+        run_source,
+        run_kind,
+        review_of_ticket_id,
+        role,
+        spawned_by_agent_id,
+        // A resumed supervisor resumes its cwd, which is that folder.
+        resume_run_dir: _,
+        supervisor_key,
+        resumed_run_dir: _,
+        replaces_agent_id: _,
+        launch_to_book: _,
+    } = config;
     PersistedAgent {
         id: id.to_string(),
-        name: config.name.clone(),
-        model: config.model.clone(),
+        name: name.clone(),
+        model: model.clone(),
         provider: provider_id.to_string(),
-        task: config.task.clone(),
-        cwd: config.cwd.clone(),
-        project_path: config.project_path.clone(),
-        permission_mode: config.permission_mode.clone(),
-        dangerously_ignore_permissions: config.dangerously_ignore_permissions.unwrap_or(false),
-        auto_accept_edits: config.auto_accept_edits.unwrap_or(false),
-        headless: config.headless.unwrap_or(false),
+        task: task.clone(),
+        cwd: cwd.clone(),
+        project_path: project_path.clone(),
+        permission_mode: permission_mode.clone(),
+        dangerously_ignore_permissions: dangerously_ignore_permissions.unwrap_or(false),
+        auto_accept_edits: auto_accept_edits.unwrap_or(false),
+        headless: headless.unwrap_or(false),
         started_at,
-        spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
-        spawned_by_goal_id: config.spawned_by_goal_id.clone(),
-        launch_request_uid: config.launch_request_uid.clone(),
-        run_source: config.run_source.clone(),
-        run_kind: config.run_kind.clone(),
-        review_of_ticket_id: config.review_of_ticket_id.clone(),
-        role: config.role,
-        spawned_by_agent_id: config.spawned_by_agent_id.clone(),
-        supervisor_key: config.supervisor_key.clone(),
+        spawned_by_ticket_id: spawned_by_ticket_id.clone(),
+        spawned_by_goal_id: spawned_by_goal_id.clone(),
+        launch_request_uid: launch_request_uid.clone(),
+        run_source: run_source.clone(),
+        run_kind: run_kind.clone(),
+        review_of_ticket_id: review_of_ticket_id.clone(),
+        role: *role,
+        spawned_by_agent_id: spawned_by_agent_id.clone(),
+        supervisor_key: supervisor_key.clone(),
     }
 }
 

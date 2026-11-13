@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 import type { ConflictSegment, MergeSegment, Resolution } from '@/lib/git/merge/conflictModel';
 import { wordDiff, type WordSpan } from '@/lib/git/wordDiff';
 import type {
@@ -284,10 +285,6 @@ export function conflictsOf(segments: readonly MergeSegment[]): ConflictSegment[
 }
 
 const PREVIEW_FILES = 3;
-
-function baseName(path: string): string {
-  return path.split('/').pop() ?? path;
-}
 
 /** What merging a branch would do, for the line under it in the Merge… menu. */
 export function previewSummary(preview: GitMergePreview): string {

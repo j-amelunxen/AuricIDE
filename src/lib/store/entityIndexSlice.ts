@@ -1,13 +1,7 @@
+import type { StoreState } from '@/lib/store/types';
+import type { EntityOccurrence } from '@/lib/nlp/nlpTypes';
 import type { StateCreator } from 'zustand';
 import { ENTITY_REGEX } from '@/lib/nlp/patterns';
-
-export interface EntityOccurrence {
-  filePath: string;
-  lineNumber: number;
-  lineText: string;
-  charFrom: number;
-  charTo: number;
-}
 
 export interface EntityIndexSlice {
   entityIndex: Map<string, EntityOccurrence[]>; // entityName -> occurrences
@@ -44,14 +38,16 @@ function scanEntities(filePath: string, content: string): Map<string, EntityOccu
   return result;
 }
 
-export const createEntityIndexSlice: StateCreator<EntityIndexSlice> = (set, get) => ({
+export const createEntityIndexSlice: StateCreator<StoreState, [], [], EntityIndexSlice> = (
+  set,
+  get
+) => ({
   entityIndex: new Map(),
 
   updateEntitiesForFile: (filePath: string, content: string) => {
     const currentIndex = get().entityIndex;
     const newIndex = new Map<string, EntityOccurrence[]>();
 
-    // Copy existing entries, removing old occurrences from this file
     for (const [entityName, occurrences] of currentIndex) {
       const filtered = occurrences.filter((o) => o.filePath !== filePath);
       if (filtered.length > 0) {
@@ -59,7 +55,6 @@ export const createEntityIndexSlice: StateCreator<EntityIndexSlice> = (set, get)
       }
     }
 
-    // Add new occurrences from the scanned content
     const scanned = scanEntities(filePath, content);
     for (const [entityName, occurrences] of scanned) {
       const existing = newIndex.get(entityName) ?? [];

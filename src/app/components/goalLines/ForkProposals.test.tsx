@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useStore } from '@/lib/store';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import type { CommitInfo } from '@/lib/tauri/git';
 import { ForkProposals } from './ForkProposals';
 

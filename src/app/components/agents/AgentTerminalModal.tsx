@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -122,7 +122,8 @@ function AgentTerminalDialog({
     [onDismiss, onKill]
   );
   const endAgent = useCallback(
-    (target: AgentInfo) => endAgentThenOfferMerge(target, { onKill, onDismiss, offerMerge }),
+    (target: AgentInfo, onEnded: () => void) =>
+      endAgentThenOfferMerge(target, { onKill, onDismiss, offerMerge }, onEnded),
     [offerMerge, onDismiss, onKill]
   );
 

@@ -26,15 +26,7 @@ describe('McpSettingsContent', () => {
       command: 'node',
       args: ['/app/auric-mcp/server.mjs', '--project-root', '/test/project'],
     });
-    useStore.setState({
-      rootPath: '/test/project',
-      mcpServerRunning: false,
-      mcpAutoStart: false,
-      mcpPid: null,
-      mcpPhase: 'stopped',
-      mcpProjectPath: null,
-      mcpError: null,
-    });
+    useStore.setState({ rootPath: '/test/project' });
   });
 
   it('explains that agent MCP bindings survive UI project changes', () => {

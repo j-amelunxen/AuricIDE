@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import {
   CRITERIA_EXCERPT_CHARS,
   DESCRIPTION_EXCERPT_CHARS,

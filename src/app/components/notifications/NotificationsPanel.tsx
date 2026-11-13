@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { InboxErrorNote, InboxHeading } from './InboxChrome';
 import { NotificationRow } from './NotificationRow';
 

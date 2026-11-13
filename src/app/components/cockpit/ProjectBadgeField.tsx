@@ -9,7 +9,7 @@ import {
   usedBadges,
 } from '@/lib/quickAccess/badge';
 import { useStore } from '@/lib/store';
-import type { ProjectBadge, StarredProject } from '@/lib/tauri/starredProjects';
+import type { ProjectBadge, StarredProject } from '@/lib/quickAccess/types';
 
 interface ProjectBadgeFieldProps {
   project: StarredProject;

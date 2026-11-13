@@ -5,6 +5,7 @@ import type {
 } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import fixtures from './supervisorManagers.fixtures.json';
+import { baseName } from '@/lib/paths/baseName';
 
 /**
  * Name rules, the key derivation and the refusal sentences are twins of
@@ -136,8 +137,6 @@ export function managerRefusalCode(error: unknown): ManagerRefusalCode | null {
   return REFUSALS.find(([, pattern]) => pattern.test(sentence))?.[0] ?? null;
 }
 
-const basename = (path: string) => path.replace(/\/+$/, '').split('/').pop() ?? '';
-
 /**
  * The non-archived manager a launch is for: the one owning the resumed run
  * folder, else the one holding the key. An archived manager is left out on
@@ -150,7 +149,7 @@ export function findLaunchManager(
 ): SupervisorManager | undefined {
   const live = managers.filter((m) => m.archivedAt === null);
   if (launch.resumeRunDir) {
-    const folder = basename(launch.resumeRunDir);
+    const folder = baseName(launch.resumeRunDir);
     return live.find((m) => m.runDir === folder);
   }
   return launch.key ? live.find((m) => m.key === launch.key) : undefined;

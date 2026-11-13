@@ -4,22 +4,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { BurndownChart } from './BurndownChart';
 import { VelocityChart } from './VelocityChart';
+import { computeBurndown } from '@/lib/pm/metrics/burndown';
 import {
-  computeBurndown,
   computeEpicProjections,
   computeProjectProjection,
-  computeStatusDurations,
-  computeTicketMetrics,
   computeVelocity,
   computeVelocityBasis,
-  formatDuration,
-  parseHistoryTime,
-} from '@/lib/pm/metrics';
+} from '@/lib/pm/metrics/projections';
+import { computeStatusDurations, computeTicketMetrics } from '@/lib/pm/metrics/ticketMetrics';
+import { formatDuration, parseHistoryTime } from '@/lib/pm/metrics/time';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import {
   BASIS_OPTIONS,
   CLOCK_TICK_MS,
-  COMPLETED_STATUSES,
   DASH,
   FORECAST_DAYS,
   MetricCard,
@@ -31,6 +28,7 @@ import {
   OpenTicketsTable,
   StatusDurationsTable,
 } from './metricsView/TicketMetricsTables';
+import { COMPLETED_STATUSES } from '@/lib/pm/metrics/types';
 
 export function MetricsView() {
   const rootPath = useStore((s) => s.rootPath);
@@ -248,7 +246,6 @@ export function MetricsView() {
         </p>
       )}
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-4 gap-4">
         <MetricCard
           label="Avg Cycle Time"

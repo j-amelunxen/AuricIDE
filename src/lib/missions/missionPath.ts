@@ -1,3 +1,5 @@
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
+
 /**
  * Where a root goal's mission folder lives: a path relative to the project root
  * (`missions/<slug>`), so the link survives a moved checkout or a worktree.
@@ -46,5 +48,5 @@ export function resolveMissionDir(
     return null;
   }
   if (relative === null) return null;
-  return `${rootPath.replace(/\/+$/, '')}/${relative}`;
+  return `${withoutTrailingSlash(rootPath)}/${relative}`;
 }

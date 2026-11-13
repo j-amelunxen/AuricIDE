@@ -1,0 +1,250 @@
+{
+  "formatVersion": 1,
+  "id": "system.supervisor",
+  "title": "Supervisor launch and admission",
+  "description": "Supervisor-owned launch configuration, role admission, shared child-policy input mapping, manager booking and adoption. The agent runtime still starts processes. Control pre-check and final start capture fresh state at their original points; successful pre-check is not a cached permission to start.",
+  "nodes": [
+    {
+      "id": "runtime",
+      "label": "Agent process and PTY runtime",
+      "preset": "rings",
+      "group": "callers",
+      "level": 0,
+      "weight": 0.8,
+      "detail": "./agents.scene.json",
+      "position": [-2.2, 0, 0]
+    },
+    {
+      "id": "control",
+      "label": "Control child pre-check",
+      "preset": "rings",
+      "group": "callers",
+      "level": 0,
+      "weight": 0.6,
+      "detail": "./control-socket.scene.json",
+      "position": [2.2, 0, 0]
+    },
+    {
+      "id": "admit",
+      "label": "launch::admit + AdmissionInputs",
+      "preset": "core",
+      "group": "launch",
+      "level": 1,
+      "weight": 0.8,
+      "position": [-4.3, -5.6, 0],
+      "metrics": [
+        {
+          "label": "launch.rs lines",
+          "value": "579"
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "label": "Supervisor CLI and MCP binding",
+      "preset": "box",
+      "group": "launch",
+      "level": 1,
+      "weight": 0.6,
+      "position": [0.1, -5.6, 0]
+    },
+    {
+      "id": "booking",
+      "label": "Manager booking and child adoption",
+      "preset": "box",
+      "group": "launch",
+      "level": 1,
+      "weight": 0.6,
+      "position": [4.3, -5.6, 0]
+    },
+    {
+      "id": "childAdmission",
+      "label": "admission::ChildAdmission",
+      "preset": "box",
+      "group": "checks",
+      "level": 2,
+      "weight": 0.8,
+      "position": [-3.7, -11.2, 0],
+      "metrics": [
+        {
+          "label": "admission.rs lines",
+          "value": "167"
+        }
+      ]
+    },
+    {
+      "id": "policy",
+      "label": "policy.rs",
+      "preset": "box",
+      "group": "checks",
+      "level": 3,
+      "weight": 0.7,
+      "position": [-9.25, -16.7, 0]
+    },
+    {
+      "id": "runs",
+      "label": "Run folders and manager registry",
+      "preset": "stack",
+      "group": "state",
+      "level": 2,
+      "weight": 0.6,
+      "position": [3.7, -11.2, 0]
+    },
+    {
+      "id": "types",
+      "label": "AgentConfig and AgentInfo",
+      "preset": "box",
+      "group": "state",
+      "level": 3,
+      "weight": 0.4,
+      "position": [-2.15, -16.7, 0]
+    },
+    {
+      "id": "quota",
+      "label": "Active quota blocks",
+      "preset": "box",
+      "group": "state",
+      "level": 3,
+      "weight": 0.4,
+      "position": [1.65, -16.7, 0]
+    },
+    {
+      "id": "providers",
+      "label": "Offered models and provider modes",
+      "preset": "box",
+      "group": "state",
+      "level": 3,
+      "weight": 0.4,
+      "position": [5.45, -16.7, 0]
+    },
+    {
+      "id": "paths",
+      "label": "project_path.rs",
+      "preset": "box",
+      "group": "state",
+      "level": 3,
+      "weight": 0.4,
+      "position": [9.25, -16.7, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "runtime",
+      "to": "admit",
+      "kind": "calls",
+      "label": "final role admission"
+    },
+    {
+      "from": "control",
+      "to": "childAdmission",
+      "kind": "calls",
+      "label": "structured pre-check"
+    },
+    {
+      "from": "admit",
+      "to": "childAdmission",
+      "kind": "calls",
+      "label": "fresh child validation"
+    },
+    {
+      "from": "childAdmission",
+      "to": "policy",
+      "kind": "dependency",
+      "label": "shared policy check"
+    },
+    {
+      "from": "childAdmission",
+      "to": "types",
+      "kind": "dependency",
+      "label": "final config checks"
+    },
+    {
+      "from": "quota",
+      "to": "childAdmission",
+      "kind": "dataflow",
+      "label": "current blocks"
+    },
+    {
+      "from": "providers",
+      "to": "childAdmission",
+      "kind": "dataflow",
+      "label": "caller snapshots"
+    },
+    {
+      "from": "admit",
+      "to": "runs",
+      "kind": "calls",
+      "label": "key and run admission"
+    },
+    {
+      "from": "admit",
+      "to": "paths",
+      "kind": "dependency",
+      "label": "canonical project keys"
+    },
+    {
+      "from": "runtime",
+      "to": "config",
+      "kind": "calls",
+      "label": "supervisor command"
+    },
+    {
+      "from": "runtime",
+      "to": "booking",
+      "kind": "calls",
+      "label": "after process start"
+    },
+    {
+      "from": "booking",
+      "to": "runs",
+      "kind": "calls",
+      "label": "record launch or session"
+    },
+    {
+      "from": "booking",
+      "to": "types",
+      "kind": "dataflow",
+      "label": "adopt live and kept children"
+    },
+    {
+      "from": "control",
+      "to": "policy",
+      "kind": "dependency",
+      "label": "provider and model selection"
+    },
+    {
+      "from": "runtime",
+      "to": "types",
+      "kind": "dependency",
+      "label": "process configuration"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "contracts",
+      "preset": "hud-panel",
+      "text": "Preserved launch boundaries",
+      "rows": [
+        {
+          "label": "Final admission",
+          "value": "always rechecked"
+        },
+        {
+          "label": "Input reads",
+          "value": "caller order preserved"
+        },
+        {
+          "label": "Manager booking",
+          "value": "after process start"
+        },
+        {
+          "label": "Runtime cycle",
+          "value": "explicit, still present"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AGENT_STALL_MS } from '@/lib/agents/attention';
 
 const renders = vi.hoisted(() => ({ header: 0, cardHeader: 0 }));

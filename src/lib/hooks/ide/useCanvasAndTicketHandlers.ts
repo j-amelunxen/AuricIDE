@@ -1,5 +1,6 @@
 'use client';
 
+import { stripMarkdownExtension } from '@/lib/markdown/markdownPath';
 import { useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import { writeFile, readFile } from '@/lib/tauri/fs';
@@ -7,9 +8,9 @@ import { serializeMindmap, type MindmapNode } from '@/lib/mindmap/mindmapParser'
 import { type WorkflowNode, serializeWorkflow } from '@/lib/canvas/markdownParser';
 import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianNode, ObsidianEdge, ObsidianColor } from '@/lib/obsidian-canvas/types';
-import type { PmTicket, PmDependency } from '@/lib/tauri/pm';
+import type { PmTicket, PmDependency } from '@/lib/pm/types';
 import { persistInBackground } from '@/lib/store/persistFeedback';
-import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
+import type { FileTreeNode } from '@/lib/explorer/fileTree';
 import type { IDEState } from './liveIDEState';
 
 export function useCanvasAndTicketHandlers(
@@ -243,7 +244,7 @@ export function useCanvasAndTicketHandlers(
     async (node: FileTreeNode) => {
       const content = await readFile(node.path);
       const firstHeading = content.match(/^#+\s*(.+)$/m)?.[1]?.trim();
-      const fallbackName = node.name.replace(/\.(md|markdown)$/i, '');
+      const fallbackName = stripMarkdownExtension(node.name);
       state.setFileTicketCreate({
         initialValues: {
           name: firstHeading || fallbackName,

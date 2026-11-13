@@ -1,5 +1,6 @@
 'use client';
 
+import { baseName } from '@/lib/paths/baseName';
 import {
   useCallback,
   useEffect,
@@ -31,10 +32,6 @@ export interface ReviewEntry {
 
 /** How many unread files open by themselves. */
 export const OPEN_BY_DEFAULT = 10;
-
-function basename(path: string): string {
-  return path.slice(path.lastIndexOf('/') + 1);
-}
 
 /** Looked up by attribute value rather than a selector, so no path needs escaping. */
 function sectionFor(container: HTMLElement | null, path: string): HTMLElement | undefined {
@@ -222,11 +219,11 @@ export function useReviewNavigation(
       useStore.getState().toggleViewed(tabId, path);
       setExpanded(({ [path]: _manual, ...rest }) => rest);
       if (file.viewed) {
-        announce(`${basename(path)} no longer marked viewed`);
+        announce(`${baseName(path)} no longer marked viewed`);
         moveTo({ path, hunk: null });
         return;
       }
-      announce(`${basename(path)} marked viewed`);
+      announce(`${baseName(path)} marked viewed`);
       const after = files.map((f) => (f.path === path ? { ...f, viewed: true } : f));
       moveTo(stopAfterViewed(after, path));
     },
@@ -237,7 +234,7 @@ export function useReviewNavigation(
     (path: string, hunk: number, outcome: ReviewActionOutcome) => {
       const at = { path, hunk };
       if (outcome !== 'kept') {
-        announce(`${OUTCOME_WORD[outcome]} hunk ${hunk + 1} in ${basename(path)}`);
+        announce(`${OUTCOME_WORD[outcome]} hunk ${hunk + 1} in ${baseName(path)}`);
       }
       const { stops: current } = latest.current;
       if (outcome === 'accepted') moveTo(stopAfterAction(current, at, 'accept') ?? at);
@@ -253,7 +250,7 @@ export function useReviewNavigation(
         moveTo({ path, hunk: null });
         return;
       }
-      announce(`${outcome === 'accepted' ? 'Accepted' : 'Discarded'} ${basename(path)}`);
+      announce(`${outcome === 'accepted' ? 'Accepted' : 'Discarded'} ${baseName(path)}`);
       if (outcome === 'accepted') {
         moveTo({ path, hunk: null });
         return;

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import { useStore } from '@/lib/store';
@@ -11,7 +11,6 @@ vi.mock('@/lib/tauri/agents', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri/agents')>('@/lib/tauri/agents');
   return {
     ...actual,
-    sendToAgent: vi.fn(async () => undefined),
     sendMessageToAgent: vi.fn(async () => undefined),
   };
 });

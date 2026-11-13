@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.agents",
   "title": "Agent manager",
-  "description": "Rust module src-tauri/src/agents: spawns agent CLIs in PTYs (manager.rs), prepares the launch (project binding, write sandbox, launch folder, MCP guard), buffers and cleans console output, types input into terminals, and books launches, exits and run results.",
+  "description": "Rust agent runtime: manager.rs starts processes and pumps output; AgentSession groups child and PTY registration identity; agents::pty owns terminal infrastructure and agents::finish owns reason-specific completion. Launch preparation, buffering, results and persistence stay with their feature owners.",
   "nodes": [
     {
       "id": "manager",
@@ -15,10 +15,11 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "1514"
+          "value": "1498"
         }
       ],
-      "position": [-3.65, 0, 0]
+      "position": [-3.65, 0, 0],
+      "detail": "./agent-session.scene.json"
     },
     {
       "id": "types",
@@ -30,7 +31,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "255"
+          "value": "290"
         }
       ],
       "position": [0, -16.2, 0]
@@ -105,7 +106,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "526"
+          "value": "528"
         }
       ],
       "position": [-10.85, -11, 0]
@@ -120,7 +121,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "123"
+          "value": "133"
         }
       ],
       "position": [-12.7, -5.7, 0]
@@ -135,7 +136,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "323"
+          "value": "616"
         }
       ],
       "position": [-6.65, -11, 0]
@@ -151,7 +152,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "365"
+          "value": "391"
         }
       ],
       "position": [12.7, -5.7, 0]
@@ -166,7 +167,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "175"
+          "value": "290"
         }
       ],
       "position": [10.85, -11, 0]
@@ -239,7 +240,7 @@
       "from": "manager",
       "to": "launchRuns",
       "kind": "calls",
-      "label": "launch, exit"
+      "label": "via finish; launch at spawn"
     },
     {
       "from": "manager",
@@ -250,7 +251,7 @@
       "from": "manager",
       "to": "runResults",
       "kind": "calls",
-      "label": "book result"
+      "label": "via finish"
     },
     {
       "from": "manager",
@@ -267,7 +268,7 @@
       "from": "manager",
       "to": "agentUsage",
       "kind": "calls",
-      "label": "session id, capture"
+      "label": "capture; finish books"
     },
     {
       "from": "manager",
@@ -384,19 +385,23 @@
       "rows": [
         {
           "label": "modules (non-test)",
-          "value": "13"
+          "value": "21"
         },
         {
           "label": "manager.rs lines",
-          "value": "1514"
+          "value": "1458"
         },
         {
-          "label": "providers refs in manager",
-          "value": "31"
+          "label": "shell_env owner",
+          "value": "machine/shell_env.rs"
         },
         {
-          "label": "shell_env.rs",
-          "value": "not drawn (119 lines)"
+          "label": "project identity owner",
+          "value": "project_path.rs"
+        },
+        {
+          "label": "supervisor launch owner",
+          "value": "supervisor/launch.rs"
         }
       ]
     }

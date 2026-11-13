@@ -23,6 +23,11 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The providers a usage snapshot is stored under, and how each source names
+/// itself in errors.
+pub const CODEX: &str = "codex";
+pub const CLAUDE: &str = "claude";
+
 /// Error taxonomy for the quota boundary. `Display` renders a stable
 /// machine-readable prefix (`USAGE_*:`) so the frontend can branch on the class
 /// while the rest of the message names exactly which source and field broke.
@@ -302,7 +307,7 @@ pub fn normalize_codex(raw: CodexRateLimitsResponse, observed_at: i64) -> UsageS
     sort_windows(&mut windows);
 
     UsageSnapshot {
-        provider: "codex".to_string(),
+        provider: CODEX.to_string(),
         plan_label,
         windows,
         credits,
@@ -317,7 +322,7 @@ pub fn normalize_claude(
     observed_at: i64,
 ) -> Result<UsageSnapshot, UsageError> {
     let not_subscribed = || UsageError::NotSubscribed {
-        source: "claude".to_string(),
+        source: CLAUDE.to_string(),
     };
     let limits = raw.rate_limits.ok_or_else(not_subscribed)?;
 
@@ -349,7 +354,7 @@ pub fn normalize_claude(
     sort_windows(&mut windows);
 
     Ok(UsageSnapshot {
-        provider: "claude".to_string(),
+        provider: CLAUDE.to_string(),
         plan_label: None,
         windows,
         credits: None,

@@ -405,7 +405,7 @@ half is `supervisors` in `agentControl.fixtures.json`
 | `send_input`                                                | its own children only                                                                                                                                                                     |
 | `pm_target`                                                 | the one folder a PM tool may run in now, by the current policy (below)                                                                                                                    |
 | `list_quota_blocks`, `set_quota_block`, `clear_quota_block` | the machine-wide quota blocks (below), the same as for an outside client                                                                                                                  |
-| `mark_waiting`, `clear_waiting`                             | its own running children only ("Waiting on purpose" below)                                                                                                                         |
+| `mark_waiting`, `clear_waiting`                             | its own running children only ("Waiting on purpose" below)                                                                                                                                |
 | `external_register`, `external_stop`, `external_list`       | entries of its own run folder only; `docs/design-external-agents.md`. `external_stop` with a run's capability token is also open to external callers (`docs/design-capability-tokens.md`) |
 
 - **Quota blocks are facts about a provider, not about a scope.** `<app_data_dir>/quota-blocks.json`

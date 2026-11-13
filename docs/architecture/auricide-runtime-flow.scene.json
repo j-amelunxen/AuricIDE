@@ -45,7 +45,7 @@
     },
     {
       "id": "policyGate",
-      "label": "Policies and provider rules",
+      "label": "Policy and admission gates",
       "preset": "box",
       "group": "runtime",
       "level": 2,
@@ -305,6 +305,12 @@
       "to": "human",
       "kind": "dataflow",
       "label": "merge"
+    },
+    {
+      "from": "agentMgr",
+      "to": "policyGate",
+      "kind": "calls",
+      "label": "fresh final admission"
     }
   ],
   "tour": [

@@ -1,5 +1,6 @@
+import { baseName } from '@/lib/paths/baseName';
 import dagre from '@dagrejs/dagre';
-import type { LinkIndexEntry } from '@/lib/store/wikiLinkSlice';
+import type { LinkIndexEntry } from '@/lib/markdown/types';
 
 export interface LinkGraphNodeData {
   [key: string]: unknown;
@@ -38,7 +39,7 @@ export interface LinkGraphResult {
 }
 
 function basename(filePath: string): string {
-  return filePath.split('/').pop()?.toLowerCase() ?? '';
+  return baseName(filePath).toLowerCase();
 }
 
 export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
@@ -62,7 +63,6 @@ export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
   const nodeIds = new Set<string>();
   const ghostNodeIds = new Set<string>(); // broken targets
 
-  // Add all files that participate in links
   for (const [filePath, entry] of linkIndex) {
     const bn = pathToBasename.get(filePath) ?? basename(filePath);
     nodeIds.add(bn);
@@ -90,7 +90,6 @@ export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
     return { nodes: [], edges: [] };
   }
 
-  // Compute backlink counts
   const backlinkCounts = new Map<string, number>();
   for (const entry of linkIndex.values()) {
     const seen = new Set<string>();
@@ -103,7 +102,6 @@ export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
     }
   }
 
-  // Build dagre graph
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: 'LR',
@@ -119,7 +117,6 @@ export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
     g.setNode(nodeId, { width, height: 60 });
   }
 
-  // Build edges
   const edgeList: LinkGraphEdge[] = [];
   const edgeSet = new Set<string>();
 
@@ -143,7 +140,6 @@ export function layoutLinkGraph(input: LinkGraphInput): LinkGraphResult {
 
   dagre.layout(g);
 
-  // Build positioned nodes
   const activeBasename = activeFilePath ? basename(activeFilePath) : null;
 
   const graphNodes: LinkGraphNode[] = [];

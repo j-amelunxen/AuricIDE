@@ -1,4 +1,4 @@
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { agentAttention } from './attention';
 
 /** What a Project Manager's tile shows: nothing running, working, or waiting for the human. */

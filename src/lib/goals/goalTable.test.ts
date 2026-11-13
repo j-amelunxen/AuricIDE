@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
+import type { PmGoal } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 import type { GoalHistoryEntry } from '@/lib/pm/metrics/goalMetrics';
 import {
   GOAL_TABLE_COLUMNS,

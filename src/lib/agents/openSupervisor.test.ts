@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openManager, openSupervisor, resumeSupervisor } from './openSupervisor';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import { openManager, openSupervisor, restartManager, resumeSupervisor } from './openSupervisor';
+import type { AgentInfo } from '@/lib/agents/types';
 import { updateManagerPresentation } from '@/lib/quickAccess/managerPresentation';
 
 type SupervisorStore = Parameters<typeof openSupervisor>[0];
@@ -470,5 +470,64 @@ describe('openManager', () => {
       start.resolve({ kind: 'spawned', agent });
       await first;
     });
+  });
+});
+
+describe('restartManager', () => {
+  const old: AgentInfo = {
+    id: 'agent-4',
+    name: 'Release Desk',
+    status: 'running',
+    model: 'sonnet',
+    startedAt: 1,
+    provider: 'claude',
+    role: 'supervisor',
+    supervisorKey: 'release-desk',
+  };
+  const fresh: AgentInfo = { ...old, id: 'agent-9', startedAt: 2 };
+  const manager = { key: 'release-desk', name: 'Release Desk' };
+
+  const setup = (kill: () => Promise<void>) => {
+    const state = {
+      agents: [old],
+      spawnSupervisor: vi.fn().mockResolvedValue({ kind: 'spawned', agent: fresh }),
+      showToast: vi.fn(),
+      sendAgentInput: vi.fn().mockResolvedValue(undefined),
+      killRunningAgent: vi.fn(async (id: string) => {
+        await kill();
+        state.agents = state.agents.filter((a) => a.id !== id);
+      }),
+    };
+    return { state, hooks: { onNothingVisible: vi.fn(), onShow: vi.fn() } };
+  };
+
+  it('stops the running instance, then opens the manager again by key', async () => {
+    const { state, hooks } = setup(async () => {});
+    await restartManager(() => state, manager, 'agent-4', hooks);
+    expect(state.killRunningAgent).toHaveBeenCalledWith('agent-4');
+    expect(state.spawnSupervisor).toHaveBeenCalledWith({ task: '', managerKey: 'release-desk' });
+    expect(hooks.onShow).toHaveBeenCalledWith('agent-9');
+  });
+
+  it('opens nothing when the stop fails, and says why', async () => {
+    const { state, hooks } = setup(async () => {
+      throw new Error('refused');
+    });
+    await expect(restartManager(() => state, manager, 'agent-4', hooks)).resolves.toBe('failed');
+    expect(state.spawnSupervisor).not.toHaveBeenCalled();
+    expect(state.showToast).toHaveBeenCalledWith('Could not stop Release Desk: refused', 'error');
+  });
+
+  it('hands an Ask sent during the restart to the new instance, not the stopped one', async () => {
+    let release: () => void = () => {};
+    const { state, hooks } = setup(() => new Promise<void>((resolve) => (release = resolve)));
+    const restarting = restartManager(() => state, manager, 'agent-4', hooks);
+    // The snapshot this Ask was made from still lists the old instance.
+    const asking = openManager({ ...state }, 'release-desk', hooks, { task: 'status?' });
+    release();
+    await restarting;
+    await asking;
+    expect(state.spawnSupervisor).toHaveBeenCalledTimes(1);
+    expect(state.sendAgentInput).toHaveBeenCalledWith('agent-9', 'status?\r');
   });
 });

@@ -1,7 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { ProjectDbSlice } from './projectDbSlice';
-import { createProjectDbSlice } from './projectDbSlice';
 
 vi.mock('../tauri/db', () => ({
   initProjectDb: vi.fn(async () => undefined),
@@ -9,11 +7,11 @@ vi.mock('../tauri/db', () => ({
 }));
 
 describe('projectDbSlice', () => {
-  let store: StoreApi<ProjectDbSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store = createStore<ProjectDbSlice>()(createProjectDbSlice);
+    store = createFullTestStore();
   });
 
   it('initializes with projectDbInitialized = false', () => {

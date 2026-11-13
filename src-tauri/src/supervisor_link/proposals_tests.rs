@@ -1,5 +1,5 @@
 use super::*;
-use crate::supervisor_link::policy::{read_policy, LinkDefaults, Origin};
+use crate::supervisor_link::policy::{read_policy, read_stored, LinkDefaults, Origin};
 use crate::supervisor_link::test_support::{diagram_type, Project};
 use serde_json::json;
 
@@ -376,4 +376,88 @@ fn the_pending_file_and_the_audit_log_are_private() {
             .mode();
         assert_eq!(mode & 0o777, 0o600, "{name}");
     }
+}
+
+/// Pending decisions a person has not made yet are never written over: an
+/// unreadable file is kept aside and the next proposal starts a fresh one.
+#[test]
+fn an_unreadable_pending_file_is_moved_aside_not_overwritten() {
+    let s = Setup::new();
+    let pending = s.app.path().join(PROPOSALS_FILE_NAME);
+    std::fs::write(&pending, "{ not json").unwrap();
+
+    s.store()
+        .propose(
+            proposer(),
+            "Scenes everywhere",
+            scene_changes(s.project.path()),
+            NOW,
+        )
+        .unwrap();
+
+    let aside: Vec<_> = std::fs::read_dir(s.app.path())
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("supervisor-link-proposals.json.unreadable-")
+        })
+        .collect();
+    assert_eq!(aside.len(), 1, "{aside:?}");
+    assert_eq!(std::fs::read_to_string(&aside[0]).unwrap(), "{ not json");
+    assert_eq!(s.store().pending(NOW).len(), 1);
+}
+
+#[test]
+fn an_expiry_that_could_not_be_stored_is_logged_once_it_is() {
+    let s = Setup::new();
+    s.store()
+        .propose(proposer(), "why", scene_changes(s.project.path()), NOW)
+        .unwrap();
+    let later = NOW + PROPOSAL_TTL_MS;
+    {
+        let _blocked =
+            crate::json_store::test_support::block_writes(&s.app.path().join(PROPOSALS_FILE_NAME));
+        assert!(s.store().pending(later).is_empty());
+        assert!(
+            s.store().recent(10).is_empty(),
+            "not logged while still on disk"
+        );
+    }
+    assert!(s.store().pending(later).is_empty());
+    let audit = s.store().recent(10);
+    assert_eq!(audit.len(), 1, "logged once");
+    assert_eq!(audit[0].outcome, Outcome::Expired);
+}
+
+/// A policy file this build cannot read (broken, or written by a newer one)
+/// is never the base of a change: applying "empty plus the change" over it
+/// would erase every project it lists.
+#[test]
+fn a_policy_file_that_cannot_be_read_is_never_overwritten() {
+    let s = Setup::new();
+    let path = policy::policy_path_in(s.app.path());
+    std::fs::write(&path, r#"{"version": 99, "projects": {"/kept": {}}}"#).unwrap();
+
+    let error = s
+        .store()
+        .propose(proposer(), "why", scene_changes(s.project.path()), NOW)
+        .unwrap_err();
+    assert!(error.contains("version 99"), "{error}");
+    assert!(s.store().pending(NOW).is_empty());
+
+    std::fs::remove_file(&path).unwrap();
+    let proposal = s
+        .store()
+        .propose(proposer(), "why", scene_changes(s.project.path()), NOW)
+        .unwrap();
+    std::fs::write(&path, "{ not json").unwrap();
+    let error = s.store().decide(&proposal.id, true, NOW).unwrap_err();
+    assert!(error.contains("not valid JSON"), "{error}");
+    assert_eq!(s.on_disk().as_deref(), Some("{ not json"));
+    // Still waiting: once the file is fixed the person can decide again.
+    assert_eq!(s.store().pending(NOW).len(), 1);
 }

@@ -3,10 +3,6 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { resolveTicketId } from './resolve';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface TestCaseRow {
   id: string;
   ticket_id: string;
@@ -22,10 +18,6 @@ export interface CreateTestCaseParams {
   title: string;
   body?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Pure functions
-// ---------------------------------------------------------------------------
 
 export function createTestCase(db: Database.Database, params: CreateTestCaseParams): TestCaseRow {
   const id = crypto.randomUUID();
@@ -45,10 +37,6 @@ export function createTestCase(db: Database.Database, params: CreateTestCasePara
 
   return db.prepare('SELECT * FROM pm_test_cases WHERE id = ?').get(id) as TestCaseRow;
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerTestCaseTools(server: FastMCP, db: Database.Database): void {
   server.addTool({

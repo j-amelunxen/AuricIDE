@@ -1,5 +1,7 @@
 'use client';
 
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
+import { findWikiTargetPath, resolveWikiTarget } from '@/lib/markdown/wikiLinkParser';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { EditorView, keymap } from '@codemirror/view';
 import { Compartment, Prec, StateEffect } from '@codemirror/state';
@@ -10,14 +12,14 @@ import {
   isExternalContentSync,
 } from '@/lib/editor/externalContentSync';
 import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
-import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
+import { headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
 import {
   slashCommandsFacet,
   mergeSlashCommands,
   slashCommands as defaultSlashCommands,
 } from '@/lib/editor/slashCommandSource';
-import { filePathsFacet } from '@/lib/editor/markdownCompletionSource';
+import { projectFilesFacet } from '@/lib/editor/editorFacets';
 import {
   wikiLinkHoverExtension,
   previewFetcherFacet,
@@ -30,22 +32,19 @@ import {
   renameHeadingCallbackFacet,
 } from '@/lib/editor/renameHeadingExtension';
 import { computeSectionExtraction } from '@/lib/refactoring/extractSection';
-import { showReferencesFacet } from '@/lib/editor/findReferencesExtension';
 import { findAllReferences } from '@/lib/refactoring/findReferences';
 import { MarkdownPreview } from './MarkdownPreview';
 import { detectAsciiArt } from '@/lib/ascii-art/detector';
 import { repairAsciiArt } from '@/lib/ascii-art/repair';
 import { SelectionMenu } from './SelectionMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { createEditorState, getLanguageExtension, getLintableFileType } from '@/lib/editor/setup';
-import { buildLintReconfiguration } from './markdown/editorLintConfig';
+import { createEditorState, getLanguageExtension, lintExtensionFor } from '@/lib/editor/setup';
 import { useEditorGitExtensions } from './markdown/useEditorGitExtensions';
 import { EditorRefactoringDialogs } from './markdown/EditorRefactoringDialogs';
 
 interface UniversalEditorProps {
   content: string;
   filePath?: string;
-  projectFiles?: string[];
   scrollToLine?: number;
   onChange?: (content: string) => void;
   /** ⌘S while the editor has focus. */
@@ -61,7 +60,6 @@ interface UniversalEditorProps {
 export function MarkdownEditor({
   content,
   filePath,
-  projectFiles = [],
   scrollToLine,
   onChange,
   onSave,
@@ -71,6 +69,7 @@ export function MarkdownEditor({
   onWikiLinkNavigate,
   onExtractSectionReady,
 }: UniversalEditorProps) {
+  const projectFiles = useStore((s) => s.allFilePaths);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -120,7 +119,6 @@ export function MarkdownEditor({
     fold: new Compartment(),
     autocomplete: new Compartment(),
     filePaths: new Compartment(),
-    wikiLinkCompletion: new Compartment(),
     hover: new Compartment(),
     headingProvider: new Compartment(),
     renameHeading: new Compartment(),
@@ -136,7 +134,6 @@ export function MarkdownEditor({
     const state = createEditorState({
       content,
       filePath,
-      projectFiles,
       compartments: compartments.current,
       onUpdate: (update) => {
         if (update.docChanged && !isExternalContentSync(update) && onChangeRef.current) {
@@ -220,18 +217,22 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const isMarkdown = !filePath || filePath.endsWith('.md') || filePath.endsWith('.markdown');
+    const isMarkdown = !filePath || isMarkdownPath(filePath);
 
     view.dispatch({
       effects: [
         compartments.current.language.reconfigure(getLanguageExtension(filePath)),
-        compartments.current.filePaths.reconfigure(filePathsFacet.of(projectFiles)),
-        compartments.current.wikiLinkCompletion.reconfigure(
-          isMarkdown ? fileListFacet.of(projectFiles) : []
-        ),
+        compartments.current.filePaths.reconfigure(projectFilesFacet.of(projectFiles)),
         compartments.current.headingProvider.reconfigure(
           isMarkdown
-            ? headingProviderFacet.of((p) => useStore.getState().headingIndex.get(p) || [])
+            ? headingProviderFacet.of((page) => {
+                const { linkIndex, allFilePaths } = useStore.getState();
+                const path =
+                  page === ''
+                    ? filePath
+                    : findWikiTargetPath(allFilePaths, resolveWikiTarget(page));
+                return (path && linkIndex.get(path)?.headings) || [];
+              })
             : []
         ),
         compartments.current.brokenLinks.reconfigure(
@@ -241,9 +242,7 @@ export function MarkdownEditor({
               )
             : []
         ),
-        compartments.current.lint.reconfigure(
-          buildLintReconfiguration(getLintableFileType(filePath), filePath)
-        ),
+        compartments.current.lint.reconfigure(lintExtensionFor(filePath)),
         compartments.current.slashCmds.reconfigure(
           isMarkdown
             ? slashCommandsFacet.of(
@@ -269,24 +268,19 @@ export function MarkdownEditor({
               ]
             : []
         ),
-        compartments.current.findReferences.reconfigure(
-          isMarkdown
-            ? showReferencesFacet.of((query, queryType) => {
-                const state = useStore.getState();
-                const currentFile = filePath ?? '';
-                const currentFileName = currentFile.split('/').pop() ?? '';
-                const results = findAllReferences(query, queryType, {
-                  headingTarget: currentFileName,
-                  entityIndex: state.entityIndex,
-                  linkIndex: state.linkIndex,
-                });
-                state.setReferencesPanel(true, query, results);
-              })
-            : []
-        ),
       ],
     });
   }, [filePath, projectFiles]);
+
+  // A lint setting changed: the facets carry the old one until reconfigured.
+  const lintConfig = useStore((s) => s.lintConfig);
+  const lintConfigApplied = useRef(lintConfig);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || lintConfigApplied.current === lintConfig) return;
+    lintConfigApplied.current = lintConfig;
+    view.dispatch({ effects: compartments.current.lint.reconfigure(lintExtensionFor(filePath)) });
+  }, [lintConfig, filePath]);
 
   useEffect(() => {
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {
@@ -342,11 +336,7 @@ export function MarkdownEditor({
       const exists = !state.isBrokenLink(target);
       const cached = previewCache.get(target);
       if (exists && !cached) {
-        const fullPath = state.allFilePaths.find(
-          (p) =>
-            p.toLowerCase().endsWith('/' + target.toLowerCase()) ||
-            p.toLowerCase().endsWith('\\' + target.toLowerCase())
-        );
+        const fullPath = findWikiTargetPath(state.allFilePaths, target);
         if (fullPath) {
           import('@/lib/tauri/fs').then((m) =>
             m.readFile(fullPath).then((c) =>
@@ -368,7 +358,7 @@ export function MarkdownEditor({
     });
   }, [onWikiLinkNavigate]);
 
-  const isMarkdown = !filePath || filePath.endsWith('.md') || filePath.endsWith('.markdown');
+  const isMarkdown = !filePath || isMarkdownPath(filePath);
 
   return (
     <div ref={wrapperRef} className="relative h-full w-full overflow-hidden bg-editor-bg">

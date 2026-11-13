@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentConfig } from '../tauri/agents';
+import type { AgentConfig } from './types';
 import { llmCall } from '../tauri/llm';
 import {
   announceHeadlessFinish,

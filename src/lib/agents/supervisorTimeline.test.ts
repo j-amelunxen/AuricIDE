@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import type { ExternalAgent } from './externalAgents';
 import { buildSupervisorTimeline, timelineBarLabel } from './supervisorTimeline';
+import titles from './taskTitle.fixtures.json';
 import { mergeTimelineFleet } from './timelineHistory';
 
 const NOW = 1_000_000_000_000;
@@ -430,6 +431,10 @@ describe('buildSupervisorTimeline: external runs', () => {
 });
 
 describe('timelineBarLabel', () => {
+  it.each(titles.cases)('$why', ({ name, task, expected }) => {
+    expect(timelineBarLabel({ name, currentTask: task ?? undefined })).toBe(expected);
+  });
+
   it('uses a short task and the agent name when the task is a long prompt', () => {
     expect(timelineBarLabel(supervisor)).toBe('Supervisor');
     expect(

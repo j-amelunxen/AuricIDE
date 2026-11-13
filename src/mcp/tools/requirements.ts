@@ -1,8 +1,11 @@
+import { PRIORITIES, REQUIREMENT_STATUSES, REQUIREMENT_TYPES } from '@/lib/pm/enums';
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { resolveRequirementId } from './resolve';
+import { REQUIREMENT_STALE_DAYS } from '@/lib/pm/requirementFreshness';
 
 interface RequirementRow {
   id: string;
@@ -53,7 +56,7 @@ export function listRequirements(
     params.push(filters.status);
   }
   if (filters?.stale === true) {
-    sql += ` AND status = 'verified' AND last_verified_at < datetime('now', '-30 days')`;
+    sql += ` AND status = 'verified' AND last_verified_at < datetime('now', '-${REQUIREMENT_STALE_DAYS} days')`;
   }
 
   sql += ' ORDER BY sort_order, req_id';
@@ -85,7 +88,7 @@ export function createRequirement(
   }
 ): RequirementRow {
   const id = crypto.randomUUID();
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const now = formatUtcStamp();
 
   db.prepare(
     `INSERT INTO pm_requirements (id, req_id, title, description, type, category, priority, status, rationale, acceptance_criteria, source, sort_order, last_verified_at, applies_to, created_at, updated_at)
@@ -258,10 +261,7 @@ export function registerRequirementTools(server: FastMCP, db: Database.Database)
         .optional()
         .describe('Filter by requirement type'),
       category: z.string().optional().describe('Filter by category'),
-      status: z
-        .enum(['draft', 'active', 'implemented', 'verified', 'deprecated'])
-        .optional()
-        .describe('Filter by status'),
+      status: z.enum(REQUIREMENT_STATUSES).optional().describe('Filter by status'),
       stale: z
         .boolean()
         .optional()
@@ -302,13 +302,10 @@ export function registerRequirementTools(server: FastMCP, db: Database.Database)
       reqId: z.string().describe('Human-readable ID like "REQ-AUTH-01"'),
       title: z.string().describe('Short title'),
       description: z.string().optional().describe('Full markdown description'),
-      type: z.enum(['functional', 'non_functional']).optional().describe('Requirement type'),
+      type: z.enum(REQUIREMENT_TYPES).optional().describe('Requirement type'),
       category: z.string().optional().describe('Category for grouping'),
-      priority: z.enum(['low', 'normal', 'high', 'critical']).optional().describe('Priority level'),
-      status: z
-        .enum(['draft', 'active', 'implemented', 'verified', 'deprecated'])
-        .optional()
-        .describe('Current status'),
+      priority: z.enum(PRIORITIES).optional().describe('Priority level'),
+      status: z.enum(REQUIREMENT_STATUSES).optional().describe('Current status'),
       rationale: z.string().optional().describe('Why this requirement exists'),
       acceptanceCriteria: z.string().optional().describe('Markdown acceptance criteria'),
       source: z.string().optional().describe('Origin document or reference'),
@@ -329,13 +326,10 @@ export function registerRequirementTools(server: FastMCP, db: Database.Database)
       reqId: z.string().optional().describe('New human-readable ID'),
       title: z.string().optional().describe('New title'),
       description: z.string().optional().describe('New description'),
-      type: z.enum(['functional', 'non_functional']).optional().describe('New type'),
+      type: z.enum(REQUIREMENT_TYPES).optional().describe('New type'),
       category: z.string().optional().describe('New category'),
-      priority: z.enum(['low', 'normal', 'high', 'critical']).optional().describe('New priority'),
-      status: z
-        .enum(['draft', 'active', 'implemented', 'verified', 'deprecated'])
-        .optional()
-        .describe('New status'),
+      priority: z.enum(PRIORITIES).optional().describe('New priority'),
+      status: z.enum(REQUIREMENT_STATUSES).optional().describe('New status'),
       rationale: z.string().optional().describe('New rationale'),
       acceptanceCriteria: z.string().optional().describe('New acceptance criteria'),
       source: z.string().optional().describe('New source'),
@@ -372,10 +366,10 @@ export function registerRequirementTools(server: FastMCP, db: Database.Database)
             reqId: z.string().describe('Human-readable ID'),
             title: z.string().describe('Short title'),
             description: z.string().optional(),
-            type: z.enum(['functional', 'non_functional']).optional(),
+            type: z.enum(REQUIREMENT_TYPES).optional(),
             category: z.string().optional(),
-            priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
-            status: z.enum(['draft', 'active', 'implemented', 'verified', 'deprecated']).optional(),
+            priority: z.enum(PRIORITIES).optional(),
+            status: z.enum(REQUIREMENT_STATUSES).optional(),
             rationale: z.string().optional(),
             acceptanceCriteria: z.string().optional(),
             source: z.string().optional(),

@@ -1,36 +1,42 @@
 'use client';
 
 import { useState, useMemo, type DragEvent, type MouseEvent } from 'react';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 import type { GoalStatusValue } from '@/lib/pm/enums';
+import { getGoalWorkProgress } from '@/lib/goals/model/goalSatisfaction';
 import {
   getGoalChildren,
   getGoalDescendants,
-  getGoalWorkProgress,
   getRootGoals,
   type GoalDropPosition,
-} from '@/lib/store/goalsSlice';
+} from '@/lib/goals/model/goalTreeHelpers';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { GoalDependencyChips } from './GoalDependencyChips';
 import {
   buildBulkGoalMenuOptions,
   type BulkMenuStage,
   type GoalBulkUpdate,
 } from '@/lib/goals/bulkGoalMenu';
+import { GOAL_STATUS_NAME } from '@/lib/pm/labels';
 
 export const GOAL_STATUS_STYLES: Record<
   GoalStatusValue,
   { dot: string; label: string; text: string }
 > = {
-  draft: { dot: 'bg-gray-400', label: 'Draft', text: 'text-gray-300' },
-  active: { dot: 'bg-sky-400', label: 'Active', text: 'text-sky-300' },
-  in_progress: { dot: 'bg-amber-400 animate-pulse', label: 'In Progress', text: 'text-amber-300' },
-  in_review: { dot: 'bg-violet-400', label: 'In Review', text: 'text-violet-300' },
-  achieved: { dot: 'bg-green-400', label: 'Achieved', text: 'text-green-300' },
-  failed: { dot: 'bg-red-400', label: 'Failed', text: 'text-red-300' },
-  archived: { dot: 'bg-gray-600', label: 'Archived', text: 'text-gray-500' },
+  draft: { dot: 'bg-gray-400', label: GOAL_STATUS_NAME.draft, text: 'text-gray-300' },
+  active: { dot: 'bg-sky-400', label: GOAL_STATUS_NAME.active, text: 'text-sky-300' },
+  in_progress: {
+    dot: 'bg-amber-400 animate-pulse',
+    label: GOAL_STATUS_NAME.in_progress,
+    text: 'text-amber-300',
+  },
+  in_review: { dot: 'bg-violet-400', label: GOAL_STATUS_NAME.in_review, text: 'text-violet-300' },
+  achieved: { dot: 'bg-green-400', label: GOAL_STATUS_NAME.achieved, text: 'text-green-300' },
+  failed: { dot: 'bg-red-400', label: GOAL_STATUS_NAME.failed, text: 'text-red-300' },
+  archived: { dot: 'bg-gray-600', label: GOAL_STATUS_NAME.archived, text: 'text-gray-500' },
 };
 
 interface GoalTreeProps {

@@ -169,19 +169,46 @@ fn test_watcher_keeps_the_build_output_folders_themselves() {
 }
 
 mod batching {
-    use crate::commands::watcher_commands::{finish_batch, FileEvent};
+    use crate::commands::watcher_commands::{finish_batch, is_content_only, FileEvent};
+    use notify::event::RenameMode;
+    use notify::event::{AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind};
+    use notify::EventKind;
 
-    fn raw(path: &str, kind: &str) -> (String, String) {
-        (path.to_string(), kind.to_string())
+    const CONTENT: bool = true;
+    const STRUCTURAL: bool = false;
+
+    fn raw(path: &str, content_only: bool) -> (String, bool) {
+        (path.to_string(), content_only)
+    }
+
+    #[test]
+    fn only_data_metadata_and_access_events_are_content_only() {
+        for kind in [
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)),
+            EventKind::Access(AccessKind::Any),
+        ] {
+            assert!(is_content_only(&kind), "{kind:?}");
+        }
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Any)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            assert!(!is_content_only(&kind), "{kind:?}");
+        }
     }
 
     #[test]
     fn exact_repeats_are_sent_once_in_first_seen_order() {
         let batch = finish_batch(
             vec![
-                raw("/p/a.md", "Modify(Data(Content))"),
-                raw("/p/b.md", "Create(File)"),
-                raw("/p/a.md", "Modify(Data(Content))"),
+                raw("/p/a.md", CONTENT),
+                raw("/p/b.md", STRUCTURAL),
+                raw("/p/a.md", CONTENT),
             ],
             |_| true,
         );
@@ -190,14 +217,10 @@ mod batching {
     }
 
     #[test]
-    fn different_kinds_for_one_path_all_stay() {
-        // Whether a kind is structural is decided in the frontend; merging
-        // Create + Modify here would hide the Create.
+    fn a_structural_and_a_content_event_for_one_path_both_stay() {
+        // Merging Create + Modify here would hide the Create.
         let batch = finish_batch(
-            vec![
-                raw("/p/new.md", "Create(File)"),
-                raw("/p/new.md", "Modify(Data(Content))"),
-            ],
+            vec![raw("/p/new.md", STRUCTURAL), raw("/p/new.md", CONTENT)],
             |_| true,
         );
         assert_eq!(batch.len(), 2);
@@ -207,7 +230,7 @@ mod batching {
     fn existence_is_asked_once_per_path_and_carried_on_every_event() {
         let asked = std::cell::Cell::new(0);
         let batch = finish_batch(
-            vec![raw("/p/tmp", "Create(File)"), raw("/p/tmp", "Remove(File)")],
+            vec![raw("/p/tmp", STRUCTURAL), raw("/p/tmp", CONTENT)],
             |_| {
                 asked.set(asked.get() + 1);
                 false
@@ -218,7 +241,7 @@ mod batching {
             batch[1],
             FileEvent {
                 path: "/p/tmp".into(),
-                kind: "Remove(File)".into(),
+                content_only: CONTENT,
                 exists: false
             }
         );

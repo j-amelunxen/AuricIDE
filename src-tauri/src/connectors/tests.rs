@@ -1,5 +1,6 @@
 use super::*;
-use crate::providers::{AgentProvider, DynamicProvider, ProviderProjectBinding};
+use crate::providers::dynamic::DynamicProvider;
+use crate::providers::{AgentProvider, ProviderProjectBinding};
 use crate::supervisor::policy::{parse, ProjectRules, SupervisorPolicy};
 use serde_json::{json, Value};
 use std::{
@@ -121,7 +122,7 @@ fn project_a_gets_connector_and_briefing_b_gets_neither_for_each_adapter() {
         }
         for id in ["claude", "custom"] {
             let adapter = provider(id, true);
-            let effective = for_provider(resolved.clone(), id, &adapter, binding(root)).unwrap();
+            let effective = for_provider(resolved.clone(), &adapter);
             let command = adapter.build_spawn_command(
                 "auto",
                 &launch_context("task", &effective),
@@ -132,7 +133,7 @@ fn project_a_gets_connector_and_briefing_b_gets_neither_for_each_adapter() {
             );
             assert_eq!(command.command.contains("Use catalog_list"), expected);
         }
-        let claude_filter = crate::providers::connector_tool_filter_injection("claude", &resolved);
+        let claude_filter = crate::providers::connector_tool_filter_injection(true, &resolved);
         assert_eq!(!claude_filter.is_empty(), expected);
         if expected {
             assert!(
@@ -140,15 +141,9 @@ fn project_a_gets_connector_and_briefing_b_gets_neither_for_each_adapter() {
             );
             assert!(!claude_filter.arguments[1].contains("catalog_list"));
         }
-        let crush = for_provider(
-            resolved.clone(),
-            "crush",
-            &crate::providers::CrushProvider,
-            binding(root),
-        )
-        .unwrap();
+        let crush = for_provider(resolved.clone(), &crate::providers::crush::CrushProvider);
         assert_eq!(!crush.is_empty(), expected);
-        let grok = for_provider(resolved, "grok", &provider("grok", false), binding(root)).unwrap();
+        let grok = for_provider(resolved, &provider("grok", false));
         assert!(grok.is_empty());
         assert_eq!(launch_context("task", &grok), "task");
     }
@@ -355,8 +350,7 @@ fn environment_only_core_bridge_never_gets_connector_or_briefing() {
         "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "default" },
         "versionCheck": { "command": "printf", "args": [] }, "promptTemplate": "printf "
     })).unwrap());
-    let effective =
-        for_provider(resolve(&policy, &a), "antigravity", &adapter, binding(&a)).unwrap();
+    let effective = for_provider(resolve(&policy, &a), &adapter);
     assert!(effective.is_empty());
     assert_eq!(launch_context("task", &effective), "task");
 }

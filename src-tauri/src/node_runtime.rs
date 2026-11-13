@@ -62,10 +62,8 @@ pub fn candidate_nodes(
     home: Option<&Path>,
     nvm_dir: Option<&Path>,
 ) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = path_var
-        .split(':')
-        .filter(|dir| !dir.is_empty())
-        .map(PathBuf::from)
+    let mut dirs: Vec<PathBuf> = crate::machine::path_entries(path_var)
+        .map(Path::to_path_buf)
         .collect();
     dirs.extend(COMMON_DIRS.iter().map(PathBuf::from));
     let nvm = nvm_dir
@@ -114,7 +112,7 @@ pub fn pick_matching(
 ) -> Result<PathBuf, String> {
     let mut seen: Vec<(PathBuf, String)> = Vec::new();
     for candidate in candidates {
-        if !crate::mcp::is_executable_file(candidate) {
+        if !crate::machine::is_executable(candidate) {
             continue;
         }
         match probe(candidate) {
@@ -169,7 +167,7 @@ static CACHE: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
 fn cached(abi: &str) -> Option<PathBuf> {
     let guard = CACHE.lock().ok()?;
     let path = guard.as_ref()?.get(abi)?.clone();
-    crate::mcp::is_executable_file(&path).then_some(path)
+    crate::machine::is_executable(&path).then_some(path)
 }
 
 fn remember(abi: &str, path: &Path) {
@@ -226,15 +224,6 @@ pub fn node_choice(runtime: &Path, path_var: &str) -> NodeChoice {
             }
         }
     }
-}
-
-/// PATH from a harvested environment, else this process's PATH.
-pub fn path_from_env(env: &[(String, String)]) -> String {
-    env.iter()
-        .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default()
 }
 
 /// Node command to write into MCP configs. Logs when the choice is unverified.
@@ -376,7 +365,7 @@ mod tests {
         let candidates = candidate_nodes(&path, None, None);
         let Some(abi) = candidates
             .iter()
-            .filter(|c| crate::mcp::is_executable_file(c))
+            .filter(|c| crate::machine::is_executable(c))
             .find_map(|c| probe_abi(c))
         else {
             return;
@@ -393,25 +382,6 @@ mod tests {
         assert_eq!(
             command_for_mcp(&tmp.path().join("server.mjs"), &path),
             choice.command
-        );
-    }
-
-    #[test]
-    fn path_from_env_prefers_the_harvested_path() {
-        let env = vec![
-            ("HOME".to_string(), "/Users/dev".to_string()),
-            ("PATH".to_string(), "/a/bin:/b/bin".to_string()),
-        ];
-        assert_eq!(path_from_env(&env), "/a/bin:/b/bin");
-    }
-
-    #[test]
-    fn path_from_env_falls_back_to_the_process_path() {
-        let from_process = std::env::var("PATH").unwrap_or_default();
-        assert_eq!(path_from_env(&[]), from_process);
-        assert_eq!(
-            path_from_env(&[("HOME".to_string(), "/tmp".to_string())]),
-            from_process
         );
     }
 }

@@ -6,7 +6,8 @@ import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
 import { useScheduledConductorRuns } from '@/lib/hooks/useScheduledConductorRuns';
 import { useInboxData } from '@/lib/inbox/useInboxData';
 import { AgentsPanel, type AgentsPanelProps } from '../agents/AgentsPanel';
-import { TerminalPanel, type ExtraTerminal } from '../terminal/TerminalPanel';
+import { TerminalPanel } from '../terminal/TerminalPanel';
+import type { ExtraTerminal } from '../../../lib/terminal/types';
 import { StatusBar, type StatusBarProps } from './StatusBar';
 
 /*
@@ -49,7 +50,7 @@ export const AttentionTitle = memo(function AttentionTitle(): null {
 
 type PagePassedAgentsPanelProps = Pick<
   AgentsPanelProps,
-  'onSpawn' | 'onKill' | 'onSelectAgent' | 'onImageDrop' | 'onCollapse' | 'onResumeInterrupted'
+  'onSpawn' | 'onKill' | 'onSelectAgent' | 'onCollapse' | 'onResumeInterrupted'
 >;
 
 export const ConnectedAgentsPanel = memo(function ConnectedAgentsPanel(
@@ -61,7 +62,7 @@ export const ConnectedAgentsPanel = memo(function ConnectedAgentsPanel(
   const collapsedAgentRepos = useStore((s) => s.collapsedAgentRepos);
   const agentColors = useStore((s) => s.agentColors);
   const reviewedAgentIds = useStore((s) => s.reviewedAgentIds);
-  const killAgentsForRepoPath = useStore((s) => s.killAgentsForRepoPath);
+  const stopAgents = useStore((s) => s.stopAgents);
   const openAgentConsole = useStore((s) => s.openAgentConsole);
   const discardInterruptedAgent = useStore((s) => s.discardInterruptedAgent);
   const setAgentMinimized = useStore((s) => s.setAgentMinimized);
@@ -75,7 +76,7 @@ export const ConnectedAgentsPanel = memo(function ConnectedAgentsPanel(
       {...props}
       agents={agents}
       interruptedAgents={interruptedAgents}
-      onKillRepo={killAgentsForRepoPath}
+      onStopAgents={stopAgents}
       onOpenConsole={openAgentConsole}
       onDiscardInterrupted={discardInterruptedAgent}
       minimizedAgentIds={minimizedAgentIds}

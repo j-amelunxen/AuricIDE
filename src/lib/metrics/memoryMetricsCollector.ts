@@ -105,6 +105,7 @@ export class MemoryMetricsCollector {
     }
 
     if (this.config.appendMetricsLog) {
+      // The log is a diagnostic extra; a failed append must not disturb sampling.
       this.config.appendMetricsLog(JSON.stringify(snapshot)).catch(() => {});
     }
 

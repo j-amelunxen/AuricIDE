@@ -8,7 +8,7 @@ import {
   type SupervisorPolicy,
 } from '@/lib/config/supervisorPolicy';
 import { useStore } from '@/lib/store';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import { QuickAccess } from './QuickAccess';
 
 const { spawnAgent, supervisorPolicyGet, supervisorRunsList } = vi.hoisted(() => ({

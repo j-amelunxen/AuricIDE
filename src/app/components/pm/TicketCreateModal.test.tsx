@@ -331,8 +331,8 @@ describe('TicketCreateModal', () => {
       />
     );
     expect(screen.getByRole('button', { name: 'Open' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'In Progress' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'To Test' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'In progress' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'To test' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
   });
 

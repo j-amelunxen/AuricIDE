@@ -1,3 +1,4 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { isValidSkip, isVerifiedEvidence } from '../../lib/pm/enums';
@@ -104,8 +105,6 @@ export interface GoalDependencyEdgeRow {
   dependsOnGoalId: string;
   createdAt: string;
 }
-
-const now = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
 export function listGoals(
   db: Database.Database,
@@ -368,7 +367,7 @@ export function createGoal(
     const { workMode, missionPath, bundle, siblings } = prepareGoalCreation(db, params);
 
     const id = crypto.randomUUID();
-    const ts = now();
+    const ts = formatUtcStamp();
     db.prepare(
       `INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, status, priority, goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, work_mode, mission_path, bundle)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
@@ -548,8 +547,23 @@ export function updateGoal(db: Database.Database, id: string, updates: GoalUpdat
   return result;
 }
 
+/**
+ * Deletes the goal and, through the foreign keys, its sub-goals and their runs,
+ * stations and links. Tickets are not the goal's: they stay, unlinked, exactly
+ * as the goal tree's delete in the app leaves them.
+ */
 export function deleteGoal(db: Database.Database, id: string): boolean {
-  return db.prepare('DELETE FROM pm_goals WHERE id = ?').run(id).changes > 0;
+  return db.transaction(() => {
+    db.prepare(
+      `WITH RECURSIVE doomed(id) AS (
+         SELECT id FROM pm_goals WHERE id = ?
+         UNION SELECT g.id FROM pm_goals g JOIN doomed d ON g.parent_id = d.id
+       )
+       UPDATE pm_tickets SET goal_id = NULL, updated_at = datetime('now')
+       WHERE goal_id IN (SELECT id FROM doomed)`
+    ).run(id);
+    return db.prepare('DELETE FROM pm_goals WHERE id = ?').run(id).changes > 0;
+  })();
 }
 
 export function decomposeGoal(
@@ -981,7 +995,7 @@ function subtreeSnapshot(db: Database.Database, goalId: string): SubtreeSnapshot
     }
   }
 
-  // SQL twin of getGoalSatisfaction (src/lib/store/goals/goalSatisfaction.ts) — the two
+  // SQL twin of getGoalSatisfaction (src/lib/goals/model/goalSatisfaction.ts) — the two
   // must stay in lockstep, or the UI and agents calling evaluate_goal will
   // disagree about whether a goal is done. Stations are part of the check:
   // an open human station must block auto-achievement here exactly as in TS.

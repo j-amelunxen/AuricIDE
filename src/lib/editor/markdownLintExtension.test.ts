@@ -5,10 +5,9 @@ import { EditorView } from '@codemirror/view';
 import {
   markdownLintExtension,
   lintConfigFacet,
-  fileListForLintFacet,
   headingIndexForLintFacet,
-  currentFilePathFacet,
 } from './markdownLintExtension';
+import { currentFilePathFacet, projectFilesFacet } from './editorFacets';
 import type { LintConfig } from '@/lib/store/diagnosticsSlice';
 
 describe('markdownLintExtension', () => {
@@ -20,8 +19,8 @@ describe('markdownLintExtension', () => {
     expect(lintConfigFacet).toBeDefined();
   });
 
-  it('exports fileListForLintFacet as defined', () => {
-    expect(fileListForLintFacet).toBeDefined();
+  it('exports projectFilesFacet as defined', () => {
+    expect(projectFilesFacet).toBeDefined();
   });
 
   it('exports headingIndexForLintFacet as defined', () => {
@@ -43,7 +42,7 @@ describe('markdownLintExtension', () => {
       extensions: [
         markdownLintExtension,
         lintConfigFacet.of(config),
-        fileListForLintFacet.of([]),
+        projectFilesFacet.of([]),
         headingIndexForLintFacet.of(new Map()),
         currentFilePathFacet.of('/test.md'),
       ],
@@ -73,9 +72,9 @@ describe('markdownLintExtension', () => {
     expect(result.disabledRules.size).toBe(0);
   });
 
-  it('fileListForLintFacet defaults to empty array', () => {
+  it('projectFilesFacet defaults to empty array', () => {
     const state = EditorState.create({ doc: '', extensions: [] });
-    expect(state.facet(fileListForLintFacet)).toEqual([]);
+    expect(state.facet(projectFilesFacet)).toEqual([]);
   });
 
   it('headingIndexForLintFacet defaults to empty map', () => {

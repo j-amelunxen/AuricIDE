@@ -17,7 +17,7 @@
  * - Waves are derived, never stored: topological levels of a parent's children,
  *   bundles kept in one wave. They drive the plan graph.
  */
-import type { GoalStatus } from '../tauri/goals';
+import type { GoalStatus } from './types';
 
 export interface DependencyGoal {
   id: string;

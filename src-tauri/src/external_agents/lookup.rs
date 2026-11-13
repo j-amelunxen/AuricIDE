@@ -3,7 +3,7 @@
 //! is refused, so a typo cannot lose a run's place in the billing.
 
 use super::model::{ExternalRegisterParams, Links};
-use crate::agent_usage::store::project_db_path;
+use crate::database::project_db_path;
 use rusqlite::{params, Connection, OpenFlags};
 use std::path::Path;
 use std::time::Duration;

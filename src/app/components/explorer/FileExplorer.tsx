@@ -9,22 +9,18 @@ import {
   nextRecentlyCreatedExpiry,
 } from '@/lib/explorer/recentlyCreated';
 import { rangeSelection } from '@/lib/explorer/treeSelection';
-import { baseName } from '@/lib/explorer/transferPlan';
+import { baseName } from '@/lib/paths/baseName';
 import {
   flattenVisibleTree,
   flattenVisibleNodes,
   findNode,
   parentDir,
   type FileTreeNode,
-  type FlatTreeEntry,
-} from './fileTreeTypes';
+} from '../../../lib/explorer/fileTree';
 import { TreeNode } from './TreeNode';
 import { planRows } from './virtualRows';
 import { useTreeDrag } from './useTreeDrag';
 import { useExternalTreeDrop } from './useExternalTreeDrop';
-
-export { flattenVisibleTree };
-export type { FileTreeNode, FlatTreeEntry };
 
 export interface FileExplorerProps {
   tree: FileTreeNode[];

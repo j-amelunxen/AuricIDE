@@ -17,10 +17,6 @@ import {
 
 export * from './canvasOps';
 
-// ---------------------------------------------------------------------------
-// Path validation
-// ---------------------------------------------------------------------------
-
 export function assertWithinProject(projectRoot: string, filePath: string): string {
   const resolved = resolve(filePath);
   const root = resolve(projectRoot);
@@ -29,10 +25,6 @@ export function assertWithinProject(projectRoot: string, filePath: string): stri
   }
   return resolved;
 }
-
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
 
 async function readCanvasFile(filePath: string): Promise<ObsidianCanvasData> {
   try {
@@ -50,10 +42,6 @@ async function writeCanvasFile(filePath: string, data: ObsidianCanvasData): Prom
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, serializeObsidianCanvas(data), 'utf-8');
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerCanvasTools(server: FastMCP, projectRoot: string): void {
   server.addTool({

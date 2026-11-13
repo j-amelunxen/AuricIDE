@@ -6,6 +6,9 @@ mod agent_window;
 mod agents;
 mod ansi;
 mod app_config;
+mod auric_env;
+#[cfg(test)]
+mod backend_names_tests;
 mod capability_tokens;
 mod cc_usage;
 mod clipboard;
@@ -18,11 +21,11 @@ mod delivery;
 mod excalidraw;
 pub mod external_agents;
 mod extra_mcp;
-mod file_lock;
 mod formatter;
 mod git;
 mod ignored_repos;
 mod inbox;
+mod json_store;
 mod llm;
 mod machine;
 mod mcp;
@@ -34,6 +37,7 @@ mod missions;
 mod node_runtime;
 mod notifications;
 mod project_icons;
+mod project_path;
 mod project_skills;
 mod provider_policy;
 mod providers;
@@ -61,6 +65,18 @@ use tauri::{Emitter, Manager};
 
 #[cfg(all(feature = "e2e-webdriver", not(debug_assertions)))]
 compile_error!("the e2e-webdriver feature must never be linked into a release artifact");
+
+/// `identifier` in `tauri.conf.json`: the folder name of `app_data_dir()` and
+/// of the bundled app's WebKit store. For code that runs before Tauri is up.
+pub(crate) const BUNDLE_ID: &str = "com.auricide.ide";
+
+// Only the macOS application menu emits these; elsewhere the fixture test reads them.
+/// A menu item with a dotted id runs that frontend command.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) const MENU_COMMAND_EVENT: &str = "menu:command";
+/// Cmd+W in the main window: the frontend closes its active tab.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) const MENU_CLOSE_TAB_EVENT: &str = "menu:close-tab";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 // code-gate: complexity-cyclomatic, complexity-function-length - the Tauri builder chain; one line per command and plugin, pre-existing shape
@@ -141,7 +157,7 @@ pub fn run() {
                     let handle = app.handle().clone();
                     let watcher_delivery = delivery_router.clone();
                     let watcher = notifications::watch_inbox(&notifications_db, move || {
-                        let _ = handle.emit("notifications-changed", ());
+                        let _ = handle.emit(notifications::CHANGED_EVENT, ());
                         watcher_delivery.wake();
                     })
                     .map_err(|error| {
@@ -170,13 +186,15 @@ pub fn run() {
                         watcher: std::sync::Mutex::new(watcher),
                     });
                     delivery_router.wake();
+                    // Nothing else wakes the worker when a delayed retry comes
+                    // due, and the inbox watcher above may be missing.
                     let fallback_delivery = delivery_router.clone();
                     std::thread::spawn(move || loop {
                         std::thread::sleep(std::time::Duration::from_secs(30));
                         fallback_delivery.wake();
                     });
                     app.manage(delivery_router);
-                    spawn_schedule_runner(app.handle().clone());
+                    schedules::commands::spawn_schedule_runner(app.handle().clone());
                 }
                 // A missing inbox must not stop the IDE from opening. The
                 // commands then fail loudly per call instead.
@@ -303,8 +321,8 @@ pub fn run() {
             }
 
             // Pre-resolve the login-shell environment in the background so the
-            // first agent spawn doesn't pay for it (see agents::warm_shell_env_cache).
-            tauri::async_runtime::spawn(agents::warm_shell_env_cache());
+            // first agent spawn doesn't pay for it (see machine::warm_shell_env_cache).
+            tauri::async_runtime::spawn(machine::warm_shell_env_cache());
 
             // External agent control (`docs/design-agent-control.md`). Last,
             // so every state a request can touch is managed before the first
@@ -330,9 +348,7 @@ pub fn run() {
         .manage(WatcherState {
             watchers: Mutex::new(HashMap::new()),
         })
-        .manage(TerminalState {
-            sessions: Mutex::new(HashMap::new()),
-        })
+        .manage(agents::pty::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             control_socket::control_respond,
             control_socket::control_ready,
@@ -440,15 +456,14 @@ pub fn run() {
             list_agents,
             spawn_agent,
             kill_agent,
-            kill_agents_for_repo,
             rename_agent,
             list_interrupted_agents,
             resume_interrupted_agent,
             discard_interrupted_agent,
-            list_providers,
-            import_provider,
-            list_themes,
-            import_theme,
+            providers::commands::list_providers,
+            providers::commands::import_provider,
+            themes::commands::list_themes,
+            themes::commands::import_theme,
             get_prompt_template,
             get_system_memory,
             init_project_db,
@@ -469,24 +484,22 @@ pub fn run() {
             agent_prompt_history_list,
             blueprints_save,
             blueprints_load,
-            blueprints_clear,
             requirements_save,
             requirements_load,
-            requirements_clear,
-            notifications_dispatch,
-            notifications_list,
-            notifications_mark_read,
-            notifications_mark_all_read,
-            notifications_answer,
-            notifications_record_launch_run,
-            notifications_claim_launch,
-            notifications_release_launch_claim,
-            notifications_save_launch_grant,
-            notifications_revoke_launch_grant,
-            notifications_list_launch_grants,
-            notifications_unread_count,
-            notifications_clear,
-            notifications_delete,
+            notifications::commands::notifications_dispatch,
+            notifications::commands::notifications_list,
+            notifications::commands::notifications_mark_read,
+            notifications::commands::notifications_mark_all_read,
+            notifications::commands::notifications_answer,
+            notifications::commands::notifications_record_launch_run,
+            notifications::commands::notifications_claim_launch,
+            notifications::commands::notifications_release_launch_claim,
+            notifications::commands::notifications_save_launch_grant,
+            notifications::commands::notifications_revoke_launch_grant,
+            notifications::commands::notifications_list_launch_grants,
+            notifications::commands::notifications_unread_count,
+            notifications::commands::notifications_clear,
+            notifications::commands::notifications_delete,
             inbox_list,
             inbox_add,
             inbox_update,
@@ -499,37 +512,36 @@ pub fn run() {
             inbox_set_ticket_status,
             inbox_capture_ticket,
             projects_pm_overview,
-            agent_log_append,
-            agent_log_load,
-            agent_log_prune,
-            agent_log_purge,
-            schedules_list,
-            schedules_upsert,
-            schedules_delete,
-            schedules_set_enabled,
-            schedules_preview,
-            schedules_occurrences,
-            mission_create,
+            agent_log::commands::agent_log_append,
+            agent_log::commands::agent_log_load,
+            agent_log::commands::agent_log_prune,
+            agent_log::commands::agent_log_purge,
+            schedules::commands::schedules_list,
+            schedules::commands::schedules_upsert,
+            schedules::commands::schedules_delete,
+            schedules::commands::schedules_set_enabled,
+            schedules::commands::schedules_preview,
+            schedules::commands::schedules_occurrences,
+            missions::commands::mission_create,
             delivery::worker::pushover_send_test,
             goals_save,
             goals_load,
-            goals_clear,
             append_metrics_log,
             ui_watchdog::ui_pong,
             ui_watchdog::record_ui_stall,
-            report_frontend_crash,
-            list_crash_logs,
-            read_crash_log,
-            llm_call,
-            excalidraw_test_connection,
-            excalidraw_list_collections,
-            excalidraw_list_scenes,
-            excalidraw_get_scene_content,
-            excalidraw_scene_url,
-            mcp_launch_spec,
-            start_mcp,
-            stop_mcp,
-            mcp_status,
+            crashlog::commands::report_frontend_crash,
+            crashlog::commands::list_crash_logs,
+            crashlog::commands::read_crash_log,
+            llm::commands::llm_call,
+            excalidraw::commands::excalidraw_test_connection,
+            excalidraw::commands::excalidraw_list_collections,
+            excalidraw::commands::excalidraw_list_scenes,
+            excalidraw::commands::excalidraw_get_scene_content,
+            excalidraw::commands::excalidraw_scene_url,
+            mcp::commands::mcp_launch_spec,
+            mcp::commands::start_mcp,
+            mcp::commands::stop_mcp,
+            mcp::commands::mcp_status,
             set_menu_command_states,
             recent_projects::recent_projects_list,
             recent_projects::recent_projects_import,
@@ -653,7 +665,7 @@ pub fn run() {
                             let _ = window.close();
                         }
                         _ => {
-                            let _ = app.emit("menu:close-tab", ());
+                            let _ = app.emit(MENU_CLOSE_TAB_EVENT, ());
                         }
                     }
                 }
@@ -667,7 +679,7 @@ pub fn run() {
                     }
                 }
                 other if other.contains('.') => {
-                    let _ = app.emit("menu:command", other);
+                    let _ = app.emit(MENU_COMMAND_EVENT, other);
                 }
                 _ => {}
             }

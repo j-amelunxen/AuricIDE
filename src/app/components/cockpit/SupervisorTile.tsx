@@ -12,10 +12,11 @@ import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
 import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
+import type { AgentInfo } from '@/lib/agents/types';
 import { supervisorRunsList, type SupervisorRun } from '@/lib/tauri/supervisorRuns';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SupervisorQuickAccessDialog } from './QuickAccessSettingsDialog';
 import { useLaunchWheel } from './useLaunchWheel';
@@ -114,6 +115,7 @@ export function SupervisorTile({
   const readRecentRuns = useCallback(() => {
     supervisorRunsList()
       .then((runs) => setRecentRuns(runs.slice(0, RECENT_RUNS_IN_MENU)))
+      // Without the list the menu still offers the tile's skills, only no resume entries.
       .catch(() => undefined);
   }, []);
 

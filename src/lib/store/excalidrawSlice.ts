@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import type {
   ExcalidrawCollection,
@@ -31,7 +32,6 @@ export interface ExcalidrawSlice {
   // Spec-link registry (relPath -> link), persisted in kv namespace excalidraw_specs
   excalidrawSpecLinks: Record<string, ExcalidrawSpecLink>;
   excalidrawSyncing: Record<string, boolean>;
-  // Actions
   setExcalidrawBrowserOpen: (open: boolean) => void;
   loadExcalidrawCollections: (projectPath: string) => Promise<void>;
   selectExcalidrawCollection: (projectPath: string, collectionId: string) => Promise<void>;
@@ -62,7 +62,10 @@ const initialState = {
   excalidrawSyncing: {} as Record<string, boolean>,
 };
 
-export const createExcalidrawSlice: StateCreator<ExcalidrawSlice> = (set, get) => ({
+export const createExcalidrawSlice: StateCreator<StoreState, [], [], ExcalidrawSlice> = (
+  set,
+  get
+) => ({
   ...initialState,
 
   setExcalidrawBrowserOpen: (open) => set({ excalidrawBrowserOpen: open }),
@@ -127,7 +130,7 @@ export const createExcalidrawSlice: StateCreator<ExcalidrawSlice> = (set, get) =
     if (existing) {
       relPath = existing[0];
     } else {
-      const { allFilePaths = [] } = get() as ExcalidrawSlice & { allFilePaths?: string[] };
+      const { allFilePaths = [] } = get();
       const taken = (candidate: string) =>
         excalidrawSpecLinks[candidate] !== undefined ||
         allFilePaths.includes(`${projectPath}/${candidate}`);

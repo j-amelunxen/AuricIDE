@@ -3,8 +3,8 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalsModal } from './GoalsModal';
 import { buildGoalLaunchPrompt } from '@/lib/goals/goalLaunchPrompt';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 
 const mocks = {
   setGoalsModalOpen: vi.fn(),

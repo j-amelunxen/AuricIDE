@@ -1,3 +1,4 @@
+import { onMenuCommand, setMenuCommandStates } from '@/lib/tauri/appMenu';
 import { useEffect, useRef } from 'react';
 
 /**
@@ -23,37 +24,10 @@ export function useMenuCommands(onCommand: (commandId: string) => void, rootPath
     handler.current = onCommand;
   });
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-
-    (async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const stop = await listen<string>('menu:command', (event) => {
-          if (typeof event.payload === 'string') handler.current(event.payload);
-        });
-        if (disposed) stop();
-        else unlisten = stop;
-      } catch {
-        // Browser mode — no native menu to listen to.
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useEffect(() => onMenuCommand((command) => handler.current(command)), []);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('set_menu_command_states', { projectOpen: rootPath !== null });
-      } catch {
-        // Browser mode — no native menu to update.
-      }
-    })();
+    // Browser mode has no native menu to update.
+    setMenuCommandStates(rootPath !== null).catch(() => {});
   }, [rootPath]);
 }

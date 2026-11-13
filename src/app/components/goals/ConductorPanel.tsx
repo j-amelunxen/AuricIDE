@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import type {
   ConductorDecision,
   ConductorPreflight,
@@ -159,7 +159,6 @@ export function ConductorPanel({
           a narrow surface — the panel sits in a 768px card on the cockpit and
           at full modal width in Goals. */}
       <div className="flex items-center gap-3">
-        {/* Status */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
             data-testid="conductor-status-dot"
@@ -277,7 +276,6 @@ export function ConductorPanel({
         </div>
       </div>
 
-      {/* Settings bar */}
       <ConductorSettingsBar
         running={running}
         maxConcurrent={maxConcurrent}
@@ -304,14 +302,12 @@ export function ConductorPanel({
         judgeLlmModel={judgeLlmModel}
       />
 
-      {/* Pending approvals */}
       <ConductorApprovals
         pendingApprovals={pendingApprovals}
         onApprove={onApprove}
         onDismiss={onDismiss}
       />
 
-      {/* Decision log */}
       <ConductorDecisionLog expanded={logExpanded} decisions={decisions} />
 
       {confirmDialog}

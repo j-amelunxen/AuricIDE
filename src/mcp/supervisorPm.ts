@@ -4,7 +4,8 @@ import { type ContentResult, UserError } from 'fastmcp';
 import { z } from 'zod';
 import { ControlError } from '../lib/agents/agentControl.contract';
 import type { BridgeTarget } from './configBridge';
-import type { ControlCaller } from './tools/agentControl';
+import type { ControlCaller } from './controlTypes';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
 
 /**
  * The PM tools of a supervisor's projects, reached through `pm_tools` and
@@ -20,8 +21,6 @@ import type { ControlCaller } from './tools/agentControl';
  * against `PmGateway`.
  */
 
-/** The environment of the project servers, set by Rust (`supervisor_server_env`). */
-export const PM_CHILD_ENV = 'AURIC_PM_CHILD_ENV';
 /** `cacheLimit` in `PmScope.lean`. */
 const PM_MAX_CHILDREN = 8;
 /** A slow answer gets this long; then the child goes. */
@@ -363,7 +362,7 @@ function declaredChildEnv(raw: string | undefined): Record<string, string> {
   try {
     return z.record(z.string(), z.string()).parse(JSON.parse(raw ?? '{}'));
   } catch {
-    throw new UserError(`internal: ${PM_CHILD_ENV} is not a map of strings.`);
+    throw new UserError(`internal: ${AURIC_ENV.pmChildEnv} is not a map of strings.`);
   }
 }
 
@@ -379,12 +378,12 @@ export function pmChildTarget(
 ): BridgeTarget {
   if (!runtime.entry) throw new UserError('internal: this server does not know its own entry.');
   const {
-    AURIC_CONTROL_SOCKET: _socket,
-    AURIC_AGENT_CWD: _cwd,
-    [PM_CHILD_ENV]: raw,
+    [AURIC_ENV.controlSocket]: _socket,
+    [AURIC_ENV.agentCwd]: _cwd,
+    [AURIC_ENV.pmChildEnv]: raw,
     ...inherited
   } = environment;
-  const { AURIC_AGENT_CWD: _ownCwd, ...declared } = declaredChildEnv(raw);
+  const { [AURIC_ENV.agentCwd]: _ownCwd, ...declared } = declaredChildEnv(raw);
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries({ ...inherited, ...declared })) {
     if (value !== undefined) env[key] = value;

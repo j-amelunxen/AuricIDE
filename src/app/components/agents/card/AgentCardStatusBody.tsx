@@ -4,6 +4,7 @@ import type React from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import type { AgentState } from '@/lib/agents/state';
 import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
+import { useStore } from '@/lib/store';
 
 export interface AgentCardStatusBodyProps {
   agentId: string;
@@ -104,8 +105,7 @@ export function AgentCardStatusBody({
             e.stopPropagation();
             setReplyError(null);
             try {
-              const { writeToShell } = await import('@/lib/tauri/terminal');
-              await writeToShell(`agent-${agentId}`, TERMINAL_ENTER);
+              await useStore.getState().sendAgentInput(agentId, TERMINAL_ENTER);
             } catch {
               setReplyError('Nudge could not be delivered. The agent may have exited.');
             }

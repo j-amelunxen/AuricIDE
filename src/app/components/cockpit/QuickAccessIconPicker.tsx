@@ -4,8 +4,8 @@ import { useRef } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { QUICK_ACCESS_GLYPHS } from '@/lib/quickAccess/glyphs';
-import type { ProjectIconOverride } from '@/lib/store/starredProjectsSlice';
-import { ProjectTileFace } from './ProjectTileFace';
+import type { ProjectIconOverride } from '@/lib/quickAccess/types';
+import { ProjectTileFace } from '../ui/ProjectTileFace';
 import { QuickAccessEmojiPicker } from './QuickAccessEmojiPicker';
 import { QuickAccessFaviconFinder } from './QuickAccessFaviconFinder';
 

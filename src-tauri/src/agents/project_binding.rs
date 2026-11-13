@@ -24,11 +24,11 @@ impl ResolvedProjectBinding {
     pub fn environment(&self) -> Vec<(String, String)> {
         vec![
             (
-                "AURIC_PROJECT_ROOT".to_string(),
+                crate::auric_env::PROJECT_ROOT.to_string(),
                 self.project_root().to_string_lossy().into_owned(),
             ),
             (
-                "AURIC_MCP_DB_PATH".to_string(),
+                crate::auric_env::MCP_DB_PATH.to_string(),
                 self.database_path().to_string_lossy().into_owned(),
             ),
         ]
@@ -61,7 +61,7 @@ pub fn resolve_project_binding(
         ));
     }
 
-    let requested_database_path = root.join(".auric").join("project.db");
+    let requested_database_path = crate::database::project_db_path(&root);
     if !requested_database_path.is_file() {
         return Err(format!(
             "Project '{}' is not initialized: missing {}",

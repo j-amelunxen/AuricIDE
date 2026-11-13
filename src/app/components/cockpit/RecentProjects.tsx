@@ -1,7 +1,7 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { ProjectTileFace } from './ProjectTileFace';
+import { ProjectTileFace } from '../ui/ProjectTileFace';
 import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 

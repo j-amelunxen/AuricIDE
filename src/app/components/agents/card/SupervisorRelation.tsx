@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { supervisorChildSummary } from '@/lib/agents/fleet';
 import { agentDisplayName } from '@/lib/agents/displayName';
 import { useStore } from '@/lib/store';

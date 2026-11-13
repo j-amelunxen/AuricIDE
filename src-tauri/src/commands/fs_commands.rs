@@ -1,7 +1,7 @@
 use super::fs_utils::{
-    copy_dir_recursive, ensure_scratch_dir, read_directory_dated_by, read_file_impl,
-    search_in_files_impl, write_file_base64_impl, write_file_impl, FileEntry, SearchMatch,
-    SEARCH_MAX_RESULTS,
+    copy_dir_recursive, ensure_scratch_dir, is_file_list_pruned_dir, read_directory_dated_by,
+    read_file_impl, search_in_files_impl, write_file_base64_impl, write_file_impl, FileEntry,
+    SearchMatch, SEARCH_MAX_RESULTS,
 };
 use crate::recent_creations::RecentCreations;
 use serde::Serialize;
@@ -157,7 +157,7 @@ pub fn list_all_files_impl(root: &Path) -> Result<Vec<String>, String> {
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            name != ".git" && name != "node_modules" && name != "target" && name != ".auric"
+            !is_file_list_pruned_dir(&name)
         })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -189,7 +189,7 @@ pub fn project_files_info_impl(root: &Path) -> Vec<ProjectFileInfo> {
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            name != ".git" && name != "node_modules" && name != "target" && name != ".auric"
+            !is_file_list_pruned_dir(&name)
         })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())

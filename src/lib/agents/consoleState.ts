@@ -1,5 +1,6 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { agentAttention } from './attention';
+import { AGENT_STATE_LABEL, agentStateLabel } from './state';
 
 /**
  * The five buckets the Agent Console sorts and colours by. Coarser than
@@ -7,7 +8,7 @@ import { agentAttention } from './attention';
  * to read urgency at a glance, not to describe every nuance of "running" the
  * way a single agent's own card does.
  */
-export type ConsoleAgentState = 'yours' | 'error' | 'stalled' | 'working' | 'done';
+export type ConsoleAgentState = 'yours' | 'error' | 'stalled' | 'working' | 'queued' | 'done';
 
 /**
  * Where an agent sits for the console's purposes: a failure or a finish are
@@ -25,7 +26,7 @@ export function consoleAgentState(
 ): ConsoleAgentState {
   if (agent.status === 'error') return 'error';
   if (agent.status === 'idle') return 'done';
-  if (agent.status !== 'running') return 'working';
+  if (agent.status === 'queued') return 'queued';
   if (agent.awaitingInput) return 'yours';
   return agentAttention({ ...agent, reviewed }, now) === 'stalled' ? 'stalled' : 'working';
 }
@@ -35,6 +36,7 @@ const BASE_LABEL: Record<ConsoleAgentState, string> = {
   error: 'Failed',
   stalled: 'Possibly stalled',
   working: 'Running',
+  queued: AGENT_STATE_LABEL.queued,
   done: 'Done, unreviewed',
 };
 
@@ -49,8 +51,8 @@ export function consoleStateLabel(
   headless?: boolean
 ): string {
   if (state === 'done' && reviewed) return 'Done';
-  // A headless run escalates on length, not silence — say that.
-  if (state === 'stalled' && headless) return 'Long run?';
+  // A headless run escalates on length, not silence; the card says so too.
+  if (state === 'stalled' && headless) return agentStateLabel('stalled', headless);
   return BASE_LABEL[state];
 }
 
@@ -60,5 +62,6 @@ export const CONSOLE_STATE_RANK: Record<ConsoleAgentState, number> = {
   error: 1,
   stalled: 2,
   working: 3,
-  done: 4,
+  queued: 4,
+  done: 5,
 };

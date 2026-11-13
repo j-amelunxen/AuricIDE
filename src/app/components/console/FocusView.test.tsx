@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { FocusView } from './FocusView';
 
@@ -9,7 +9,6 @@ vi.mock('@/lib/tauri/agents', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri/agents')>('@/lib/tauri/agents');
   return {
     ...actual,
-    sendToAgent: vi.fn(async () => undefined),
     sendMessageToAgent: vi.fn(async () => undefined),
   };
 });
@@ -17,8 +16,8 @@ vi.mock('@/lib/tauri/agents', async () => {
 // The embedded terminal is XtermTerminal itself (the same primitive
 // TerminalPanel mounts) — stub it here so this test stays about FocusView's
 // own layout and wiring, not xterm's DOM.
-vi.mock('@/app/components/terminal/XtermTerminal', () => ({
-  XtermTerminal: ({ agentId }: { agentId?: string }) => (
+vi.mock('@/app/components/agents/AgentXterm', () => ({
+  AgentXterm: ({ agentId }: { agentId: string }) => (
     <div data-testid="stage-terminal">{agentId}</div>
   ),
 }));

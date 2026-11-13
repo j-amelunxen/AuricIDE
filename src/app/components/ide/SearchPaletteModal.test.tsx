@@ -5,7 +5,6 @@ import { useStore } from '@/lib/store';
 
 describe('SearchPaletteModal', () => {
   const defaultProps = {
-    isOpen: true,
     onClose: vi.fn(),
     ariaLabel: 'Search Palette',
     overlayId: 'test-search-palette',
@@ -18,9 +17,9 @@ describe('SearchPaletteModal', () => {
     useStore.setState({ overlayStack: { layers: [] } });
   });
 
-  it('renders nothing when isOpen is false', () => {
-    const { container } = render(<SearchPaletteModal {...defaultProps} isOpen={false} />);
-    expect(container.innerHTML).toBe('');
+  it('puts the cursor in the search field', () => {
+    render(<SearchPaletteModal {...defaultProps} />);
+    expect(screen.getByPlaceholderText('Type something...')).toHaveFocus();
   });
 
   it('renders accessible dialog with provided aria-label', () => {

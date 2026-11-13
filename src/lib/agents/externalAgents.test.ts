@@ -14,11 +14,11 @@ import {
   externalCountsAsOn,
   externalOnMs,
   externalStateLabel,
-  formatExternalSpan,
   isExternalStale,
   type ExternalAgent,
 } from './externalAgents';
 import fixtures from './externalAgents.fixtures.json';
+import { formatAgentDurationShort } from './duration';
 
 type DisplayEntry = Pick<ExternalAgent, 'state' | 'lastSeenAt' | 'onSpans'>;
 
@@ -116,9 +116,9 @@ describe('external agents: display', () => {
   });
 
   it('writes a span without a trailing zero', () => {
-    expect(formatExternalSpan(9 * 3_600_000)).toBe('9h');
-    expect(formatExternalSpan(2.5 * 3_600_000)).toBe('2h 30m');
-    expect(formatExternalSpan(48 * 3_600_000)).toBe('2d');
+    expect(formatAgentDurationShort(9 * 3_600_000)).toBe('9h');
+    expect(formatAgentDurationShort(2.5 * 3_600_000)).toBe('2h 30m');
+    expect(formatAgentDurationShort(48 * 3_600_000)).toBe('2d');
   });
 });
 

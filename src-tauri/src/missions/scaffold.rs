@@ -9,6 +9,74 @@ pub(super) struct PreparedMission {
     destination: PathBuf,
 }
 
+/// A mission lives in `<project>/.auric/missions/<slug>/` and runs from these two files.
+pub const MISSION_FILE: &str = "MISSION.md";
+pub const STATE_FILE: &str = "STATE.md";
+const MAX_SLUG_LEN: usize = 64;
+
+pub fn missions_dir(project: &Path) -> PathBuf {
+    crate::database::auric_dir(project).join("missions")
+}
+
+/// The project a mission folder (`<project>/.auric/missions/<slug>`) belongs to.
+pub fn project_of(mission_dir: &Path) -> Option<&Path> {
+    mission_dir.parent()?.parent()?.parent()
+}
+
+/// Why the mission `slug` cannot run in `project`, or `None` when it can: a
+/// bad slug, a missing or symlinked folder on its path, or a missing
+/// MISSION.md / STATE.md.
+pub fn why_not_runnable(project: &Path, slug: &str) -> Option<String> {
+    if !is_valid_slug(slug) {
+        return Some(format!("Mission `{slug}` has an invalid path identifier."));
+    }
+    let missions = missions_dir(project);
+    let directory = missions.join(slug);
+    let unsafe_dir = |path: &Path| match fs::symlink_metadata(path) {
+        Ok(metadata) => !metadata.is_dir() || metadata.file_type().is_symlink(),
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    };
+    if [
+        crate::database::auric_dir(project),
+        missions,
+        directory.clone(),
+    ]
+    .iter()
+    .any(|path| unsafe_dir(path))
+    {
+        return Some(format!(
+            "Mission `{slug}` cannot run because its path is missing or unsafe."
+        ));
+    }
+    let real_file = |path: &Path| {
+        fs::symlink_metadata(path)
+            .map(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+            .unwrap_or(false)
+    };
+    let missing: Vec<&str> = [MISSION_FILE, STATE_FILE]
+        .into_iter()
+        .filter(|name| !real_file(&directory.join(name)))
+        .collect();
+    (!missing.is_empty()).then(|| {
+        format!(
+            "Mission `{slug}` cannot run because {} is missing.",
+            missing.join(" and ")
+        )
+    })
+}
+
+/// What `derive_slug` produces: one path component of lowercase ASCII letters,
+/// digits and inner hyphens. A stored slug is checked against it before use.
+pub fn is_valid_slug(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug.len() <= MAX_SLUG_LEN
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
 /// Stable, filesystem-safe identity derived from the display name.
 pub fn derive_slug(name: &str) -> String {
     let mut out = String::new();
@@ -19,13 +87,13 @@ pub fn derive_slug(name: &str) -> String {
                 out.push('-');
             }
             separator = false;
-            if out.len() < 64 {
+            if out.len() < MAX_SLUG_LEN {
                 out.push(ch);
             }
         } else if !out.is_empty() {
             separator = true;
         }
-        if out.len() >= 64 {
+        if out.len() >= MAX_SLUG_LEN {
             break;
         }
     }
@@ -113,8 +181,8 @@ fn populate(staging: &Path, input: &CreateMissionInput, slug: &str) -> Result<()
     fs::create_dir(staging.join("runs")).map_err(|e| format!("Failed to create runs: {e}"))?;
     fs::create_dir(staging.join("artifacts"))
         .map_err(|e| format!("Failed to create artifacts: {e}"))?;
-    write_new(&staging.join("MISSION.md"), &mission_markdown(input, slug))?;
-    write_new(&staging.join("STATE.md"), state_markdown())?;
+    write_new(&staging.join(MISSION_FILE), &mission_markdown(input, slug))?;
+    write_new(&staging.join(STATE_FILE), state_markdown())?;
     write_new(&staging.join("runs/.gitkeep"), "")?;
     write_new(&staging.join("artifacts/.gitkeep"), "")?;
     write_new(
@@ -155,9 +223,8 @@ pub(super) fn prepare_impl(input: &CreateMissionInput) -> Result<PreparedMission
         .map_err(|error| format!("Failed to resolve project path: {error}"))?;
 
     let slug = derive_slug(name);
-    let auric = project.join(".auric");
-    ensure_real_directory(&auric, ".auric directory")?;
-    let missions = auric.join("missions");
+    ensure_real_directory(&crate::database::auric_dir(&project), ".auric directory")?;
+    let missions = missions_dir(&project);
     ensure_real_directory(&missions, "missions directory")?;
     let canonical_missions = fs::canonicalize(&missions)
         .map_err(|error| format!("Failed to resolve missions directory: {error}"))?;

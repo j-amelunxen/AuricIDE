@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { StartScreenAgentsLine } from './StartScreenAgentsLine';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 
 const DAILY_TIP = { icon: 'lightbulb', text: 'Use Cmd+K to open the command palette.' };
 

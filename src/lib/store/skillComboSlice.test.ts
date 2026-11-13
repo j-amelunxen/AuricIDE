@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { recordAgentPromptHistory, spawnAgent } from '../tauri/agents';
 import { useStore } from './index';
-import type { QuickAccessCombo } from './starredProjectsSlice';
+import { repoStopSelection } from '../agents/fleet';
+import type { QuickAccessCombo } from '../quickAccess/types';
 import { FALLBACK_CRUSH_PROVIDER } from '../tauri/providers';
 import { saveAuricSkills } from '../settings/auricSkills';
 
@@ -22,7 +23,6 @@ vi.mock('../tauri/agents', () => {
     ),
     killAgent: vi.fn(async () => undefined),
     recordAgentPromptHistory: vi.fn(async () => undefined),
-    killAgentsForRepo: vi.fn(async () => 0),
     renameAgent: vi.fn(async () => undefined),
     listAgents: vi.fn(async () => []),
     listInterruptedAgents: vi.fn(async () => []),
@@ -180,7 +180,9 @@ describe('skillComboSlice', () => {
 
   it('killing every agent in the repo cancels the combo instead of chaining', async () => {
     await useStore.getState().startSkillCombo('/a/website', blogWrite);
-    await useStore.getState().killAgentsForRepoPath('/a/website');
+    await useStore
+      .getState()
+      .stopAgents(repoStopSelection(useStore.getState().agents, '/a/website').running);
     expect(useStore.getState().comboRuns).toHaveLength(0);
     expect(spawnAgent).toHaveBeenCalledTimes(1);
   });

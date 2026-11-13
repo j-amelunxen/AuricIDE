@@ -13,6 +13,7 @@ import {
 } from '@/lib/tauri/videoImport';
 import {
   buildProcessExtractionMessages,
+  MAX_VISION_FRAMES,
   parseExtractedProcess,
   type ExtractedProcess,
 } from '@/lib/videoImport/processExtraction';
@@ -26,6 +27,12 @@ import { parseToolFailure, type ToolFailure } from '@/lib/videoImport/toolFailur
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { ACCEPTED_VIDEO, timestamp, type DialogStage } from './types';
+import {
+  VIDEO_IMPORT_COMMITS_NS,
+  VIDEO_IMPORT_SETTINGS_NS,
+  VIDEO_IMPORT_SETTING_KEYS,
+  visionEnabledFrom,
+} from '@/lib/videoImport/settings';
 
 export function useVideoImportDialog() {
   const dialogRef = useDialogA11y<HTMLDivElement>();
@@ -132,12 +139,13 @@ export function useVideoImportDialog() {
       setMedia(analyzed);
 
       setProgress('Analyzing transcript + frames…');
-      const visionEnabled =
-        (await dbGet(rootPath, 'video_import_settings', 'vision_enabled')) !== 'false';
+      const visionEnabled = visionEnabledFrom(
+        await dbGet(rootPath, VIDEO_IMPORT_SETTINGS_NS, VIDEO_IMPORT_SETTING_KEYS.visionEnabled)
+      );
       if (runId !== analyzeRunId.current) return;
       const frames = await Promise.all(
         analyzed.frames.map(async (frame, index) => {
-          if (!visionEnabled || index >= 12) return frame;
+          if (!visionEnabled || index >= MAX_VISION_FRAMES) return frame;
           try {
             return {
               ...frame,
@@ -164,7 +172,7 @@ export function useVideoImportDialog() {
         transcriptLength: analyzed.transcript.length,
       });
       setStepKeys(extracted.steps.map(() => crypto.randomUUID()));
-      const savedIds = await dbGet(rootPath, 'video_import_commit_ids', analyzed.sourcePath);
+      const savedIds = await dbGet(rootPath, VIDEO_IMPORT_COMMITS_NS, analyzed.sourcePath);
       if (runId !== analyzeRunId.current) return;
       if (savedIds) {
         try {
@@ -275,7 +283,7 @@ export function useVideoImportDialog() {
         process.steps.length
       );
       const ids = commitIds.current;
-      await dbSet(rootPath, 'video_import_commit_ids', media.sourcePath, JSON.stringify(ids));
+      await dbSet(rootPath, VIDEO_IMPORT_COMMITS_NS, media.sourcePath, JSON.stringify(ids));
       const built = buildVideoImportCommit({
         process,
         media,

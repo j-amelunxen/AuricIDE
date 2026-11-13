@@ -1,6 +1,6 @@
 use git2::Repository;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CarryOverMode {
@@ -44,7 +44,7 @@ pub fn default_worktree_include_entries() -> Vec<WorktreeIncludeEntry> {
 /// 2. `.worktreeinclude` (Claude Code compatibility)
 /// 3. Built-in defaults
 pub fn resolve_worktree_include_rules(source_repo: &Path) -> Vec<WorktreeIncludeEntry> {
-    let auric_file = source_repo.join(".auric").join("worktree-include");
+    let auric_file = crate::database::auric_dir(source_repo).join("worktree-include");
     if auric_file.is_file() {
         if let Ok(content) = fs::read_to_string(&auric_file) {
             return parse_worktree_include_content(&content);
@@ -237,21 +237,25 @@ pub fn apply_worktree_carry_over(
             }
 
             let dest_path = dest_worktree.join(&rel_path);
-            let success = match rule.mode {
+            let outcome = match rule.mode {
                 CarryOverMode::Copy => {
                     if source_path.is_dir() {
-                        copy_entry_recursive(&source_path, &dest_path).is_ok()
+                        copy_entry_recursive(&source_path, &dest_path)
                     } else {
-                        if let Some(parent) = dest_path.parent() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                        fs::copy(&source_path, &dest_path).is_ok()
+                        dest_path
+                            .parent()
+                            .map_or(Ok(()), fs::create_dir_all)
+                            .and_then(|_| fs::copy(&source_path, &dest_path).map(|_| ()))
                     }
                 }
-                CarryOverMode::Symlink => symlink_entry(&source_path, &dest_path).is_ok(),
+                CarryOverMode::Symlink => symlink_entry(&source_path, &dest_path),
             };
+            if let Err(error) = &outcome {
+                // The worktree is still usable; what it lacks is named here.
+                eprintln!("Worktree carry-over of {rel_path} failed: {error}");
+            }
 
-            if success {
+            if outcome.is_ok() {
                 let mode_label = match rule.mode {
                     CarryOverMode::Copy => "copied",
                     CarryOverMode::Symlink => "symlinked",

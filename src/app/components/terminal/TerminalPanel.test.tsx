@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { TerminalPanel } from './TerminalPanel';
 import { useStore } from '@/lib/store';
 
@@ -16,6 +16,12 @@ vi.mock('./XtermTerminal', () => ({
         Terminal: {id}
       </div>
     );
+  },
+}));
+vi.mock('../agents/AgentXterm', () => ({
+  AgentXterm: ({ agentId }: { agentId: string }) => {
+    xtermRenders.count++;
+    return <div data-testid={`xterm-agent-${agentId}`}>Agent: {agentId}</div>;
   },
 }));
 

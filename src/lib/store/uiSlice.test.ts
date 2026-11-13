@@ -1,3 +1,4 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { ProjectConfig } from '@/lib/config/projectConfig';
 
@@ -19,26 +20,19 @@ vi.mock('@/lib/config/projectConfig', async (importOriginal) => {
   };
 });
 
-import { createUISlice, MAX_TERMINAL_LOGS, type UISlice } from './uiSlice';
+import { MAX_TERMINAL_LOGS } from './uiSlice';
 import { useStore } from '@/lib/store';
-import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 
 const DEFAULT_PROMPT =
   'commit on the current branch. Do not switch branches. Commit message prefix: {ticket}:';
 
-function createTestStore() {
-  let state: UISlice;
-  const setState = (partial: Partial<UISlice> | ((s: UISlice) => Partial<UISlice>)) => {
-    const updates = typeof partial === 'function' ? partial(state) : partial;
-    state = { ...state, ...updates };
-  };
-  const getState = () => state;
-  state = createUISlice(setState as never, getState as never, {} as never);
+function createTestStore(overrides: Parameters<typeof createFullTestStore>[0] = {}) {
+  const store = createFullTestStore(overrides);
   return {
     get current() {
-      return state;
+      return store.getState();
     },
-    ...state,
+    ...store.getState(),
   };
 }
 
@@ -191,71 +185,6 @@ describe('uiSlice – enableDeepNlp', () => {
   });
 });
 
-describe('uiSlice – references panel', () => {
-  let store: ReturnType<typeof createTestStore>;
-
-  beforeEach(() => {
-    store = createTestStore();
-  });
-
-  it('defaults referencesPanelOpen to false', () => {
-    expect(store.current.referencesPanelOpen).toBe(false);
-  });
-
-  it('defaults referencesPanelQuery to empty string', () => {
-    expect(store.current.referencesPanelQuery).toBe('');
-  });
-
-  it('defaults referencesPanelResults to empty array', () => {
-    expect(store.current.referencesPanelResults).toEqual([]);
-  });
-});
-
-describe('uiSlice – setReferencesPanel integration', () => {
-  beforeEach(() => {
-    useStore.getState().setReferencesPanel(false);
-  });
-
-  it('opens the references panel with query and results', () => {
-    const mockResults: ReferenceResult[] = [
-      {
-        type: 'entity',
-        filePath: '/project/doc.md',
-        lineNumber: 1,
-        lineText: 'DataPipeline here',
-        charFrom: 0,
-        charTo: 12,
-      },
-    ];
-
-    useStore.getState().setReferencesPanel(true, 'DataPipeline', mockResults);
-
-    const state = useStore.getState();
-    expect(state.referencesPanelOpen).toBe(true);
-    expect(state.referencesPanelQuery).toBe('DataPipeline');
-    expect(state.referencesPanelResults).toEqual(mockResults);
-  });
-
-  it('closes the panel and clears query and results', () => {
-    useStore.getState().setReferencesPanel(true, 'Test', []);
-    expect(useStore.getState().referencesPanelOpen).toBe(true);
-
-    useStore.getState().setReferencesPanel(false);
-    const state = useStore.getState();
-    expect(state.referencesPanelOpen).toBe(false);
-    expect(state.referencesPanelQuery).toBe('');
-    expect(state.referencesPanelResults).toEqual([]);
-  });
-
-  it('preserves other UI state when toggling references panel', () => {
-    useStore.getState().setCursorPos(5, 10);
-    useStore.getState().setReferencesPanel(true, 'Entity', []);
-
-    expect(useStore.getState().cursorPos).toEqual({ line: 5, col: 10 });
-    expect(useStore.getState().referencesPanelOpen).toBe(true);
-  });
-});
-
 describe('uiSlice – importSpecDialogOpen', () => {
   let store: ReturnType<typeof createTestStore>;
 
@@ -353,7 +282,14 @@ describe('uiSlice – terminalLogs buffer cap', () => {
 
   it('caps terminalLogs at MAX_TERMINAL_LOGS', () => {
     const total = MAX_TERMINAL_LOGS + 100;
-    for (let i = 0; i < total; i++) {
+    store = createTestStore({
+      terminalLogs: Array.from({ length: MAX_TERMINAL_LOGS }, (_, i) => ({
+        tab: 'terminal',
+        text: `log-${i}`,
+        timestamp: i,
+      })),
+    });
+    for (let i = MAX_TERMINAL_LOGS; i < total; i++) {
       store.addTerminalLog({ tab: 'terminal', text: `log-${i}`, timestamp: i });
     }
     expect(store.current.terminalLogs).toHaveLength(MAX_TERMINAL_LOGS);

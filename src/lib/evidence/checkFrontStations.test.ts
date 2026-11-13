@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PmGoalStation, StationPredicate } from '@/lib/tauri/goals';
+import type { PmGoalStation, StationPredicate } from '@/lib/goals/types';
 
 // The sweep runs on every burst of file changes while agents work. Each save
 // writes project.db, and that write comes back through the watcher as a full

@@ -127,7 +127,7 @@ pub fn project_name(path: &str) -> String {
 /// gave no description — the three files one may be derived from. Nothing
 /// else is read.
 pub fn inspect_folder(dir: &Path, user: Option<&str>) -> FolderFacts {
-    let initialized = dir.join(".auric").join("project.db").is_file();
+    let initialized = crate::database::project_db_path(dir).is_file();
     if let Some(described) = describe_user(user) {
         return FolderFacts {
             initialized,
@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(block["maxChars"], DESCRIPTION_MAX_CHARS as u64);
         assert_eq!(
             block["userMaxChars"],
-            crate::recent_projects::USER_DESCRIPTION_MAX_CHARS as u64
+            crate::recent_projects::types::USER_DESCRIPTION_MAX_CHARS as u64
         );
         let sources: Vec<Value> = [
             DescriptionSource::User,

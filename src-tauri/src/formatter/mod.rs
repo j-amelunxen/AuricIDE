@@ -225,7 +225,7 @@ mod tests {
     /// and prints the outcome. The only place resolution and argument shapes
     /// meet the real tools rather than our idea of them.
     #[tokio::test]
-    #[ignore]
+    #[ignore = "runs the formatters installed on this machine"]
     async fn formats_with_this_machines_tools() {
         let samples: [(&str, &str, &str); 11] = [
             ("javascript", "a.js", "const a = {b:1}\n"),

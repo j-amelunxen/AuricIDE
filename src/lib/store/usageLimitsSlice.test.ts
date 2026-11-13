@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand';
 
 import type { UsageSnapshot } from '@/lib/usage/types';
 
@@ -10,8 +10,6 @@ vi.mock('../tauri/usageLimits', () => ({
   usageLimitsRead: () => mockRead(),
   usageLimitsRefresh: () => mockRefresh(),
 }));
-
-import { createUsageLimitsSlice, type UsageLimitsSlice } from './usageLimitsSlice';
 
 function makeSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
   return {
@@ -36,7 +34,7 @@ function makeSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
 }
 
 function createTestStore() {
-  return createStore<UsageLimitsSlice>()((...a) => ({ ...createUsageLimitsSlice(...a) }));
+  return createFullTestStore();
 }
 
 describe('usageLimitsSlice', () => {

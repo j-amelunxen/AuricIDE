@@ -50,8 +50,8 @@ import {
   type SideLabels,
 } from './mergeCopy';
 import { OperationHeadline } from './OperationHeadline';
-import { useShortcutSheet, type ShortcutSheetContent } from '../shared/ShortcutSheet';
-import { isShortcutSheetKey } from '../shared/shortcutKeys';
+import { useShortcutSheet, type ShortcutSheetContent } from '../../diff/ShortcutSheet';
+import { isShortcutSheetKey } from '../../diff/shortcutKeys';
 import type { GitOperation } from '@/lib/tauri/gitMerge';
 import { openMergeTabOrToast } from '@/lib/ide/openMergeTab';
 

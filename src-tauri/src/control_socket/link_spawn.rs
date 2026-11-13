@@ -12,11 +12,12 @@
 use super::protocol::*;
 use super::{Dispatcher, Outcome};
 use crate::agents::{AgentRole, AgentStatus};
+use crate::project_path::canonical_project_path;
+use crate::supervisor::model_names;
 use crate::supervisor::policy::{
     check_spawn, job_providers, smallest_ranked_model, visible_projects, RunningChildren,
     SpawnRequest, VisibleProvider,
 };
-use crate::supervisor::{canonical_project_path, model_names};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::Path;

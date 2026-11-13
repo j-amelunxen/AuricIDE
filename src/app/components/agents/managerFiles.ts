@@ -1,15 +1,14 @@
 import { useStore } from '@/lib/store';
 import { openFileTab } from '@/lib/hooks/ide/openFileTab';
 import { openPathInDefaultApp } from '@/lib/tauri/opener';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
+import { MANAGER_KNOWLEDGE_FOLDER } from '@/lib/agents/managerRail';
 
-const KNOWLEDGE_DIR = 'knowledge';
 export const MEMORY_INDEX_FILE = 'index.md';
-
-const withoutTrailingSlash = (path: string) => path.replace(/\/+$/, '');
 
 /** A file inside a manager's memory bundle, from its run folder and the path relative to `knowledge/`. */
 export const knowledgeFilePath = (runPath: string, relative: string) =>
-  `${withoutTrailingSlash(runPath)}/${KNOWLEDGE_DIR}/${relative}`;
+  `${withoutTrailingSlash(runPath)}/${MANAGER_KNOWLEDGE_FOLDER}/${relative}`;
 
 /** What every surface says about a manager whose run folder is gone. */
 export const FOLDER_MISSING_SENTENCE =

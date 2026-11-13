@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand';
 
 const mockStatus = vi.fn();
 const mockDiff = vi.fn();
@@ -16,16 +16,10 @@ vi.mock('../tauri/git', () => ({
 }));
 
 import { patchHash, viewedMarksKey } from '../git/review/reviewSession';
-import {
-  createReviewSlice,
-  selectReviewFiles,
-  selectReviewSession,
-  selectViewedMarks,
-  type ReviewSlice,
-} from './reviewSlice';
+import { selectReviewFiles, selectReviewSession, selectViewedMarks } from './reviewSlice';
 
 function createTestStore() {
-  return createStore<ReviewSlice>()((...a) => ({ ...createReviewSlice(...a) }));
+  return createFullTestStore();
 }
 
 function patchFor(path: string, added: string): string {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS } from '@/lib/config/appConfig';
+import { APP_CONFIG_KEYS, subscribeAppPrefs } from '@/lib/config/appConfig';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import {
   forgetRemovedManagers,
@@ -137,9 +137,9 @@ describe('forgetRemovedManagers', () => {
   it('writes nothing when every stored key is still in the registry', () => {
     updateManagerPresentation('kept', { shortcut: 'F6' });
     const changed = vi.fn();
-    window.addEventListener(APP_CONFIG_CHANGED_EVENT, changed);
+    const unsubscribe = subscribeAppPrefs([APP_CONFIG_KEYS.supervisorManagers], changed);
     forgetRemovedManagers(['kept', 'other']);
-    window.removeEventListener(APP_CONFIG_CHANGED_EVENT, changed);
+    unsubscribe();
     expect(changed).not.toHaveBeenCalled();
   });
 });

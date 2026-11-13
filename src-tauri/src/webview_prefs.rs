@@ -21,7 +21,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -84,37 +83,21 @@ pub fn read_prefs(path: &Path) -> BTreeMap<String, String> {
     match parsed {
         Some(file) => file.entries,
         None => {
-            preserve_corrupt_prefs(path);
+            crate::json_store::keep_corrupt_copy(path, "webview-prefs");
             BTreeMap::new()
         }
     }
 }
 
-fn preserve_corrupt_prefs(path: &Path) {
-    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let backup = path.with_file_name(format!("webview-prefs.corrupt-{timestamp}.json.bak"));
-    let _ = fs::copy(path, backup);
-}
-
-/// Writes the mirror through a temp file and a rename, so a launch that lands
-/// mid-write reads either the old file or the new one.
 pub fn write_prefs_atomic(path: &Path, entries: &BTreeMap<String, String>) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Webview prefs store has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&WebviewPrefsFile {
-        version: STORE_VERSION,
-        entries: entries.clone(),
-    })
-    .map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_json_as(
+        path,
+        &WebviewPrefsFile {
+            version: STORE_VERSION,
+            entries: entries.clone(),
+        },
+        crate::json_store::Mode::Default,
+    )
 }
 
 /// The startup reconciliation: the stored value wins wherever both sides have
@@ -175,11 +158,11 @@ fn read_webkit_store(path: &Path) -> BTreeMap<String, String> {
 /// The WebKit data stores this app has ever written under. The bare dev binary
 /// lands under its process name, the bundled app under its identifier, and
 /// `com.auricide.app` is an identifier an earlier build used.
-fn webkit_roots() -> Vec<PathBuf> {
+pub(crate) fn webkit_roots() -> Vec<PathBuf> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
-    ["auric-ide", "com.auricide.ide", "com.auricide.app"]
+    ["auric-ide", crate::BUNDLE_ID, "com.auricide.app"]
         .iter()
         .map(|app_id| home.join("Library/WebKit").join(app_id).join("WebsiteData"))
         .collect()

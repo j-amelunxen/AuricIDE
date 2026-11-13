@@ -20,7 +20,7 @@ vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ close: mockWindowClose }),
 }));
 
-type MenuHandler = () => void;
+type MenuHandler = (event: { payload: unknown }) => void;
 let menuHandlers: Record<string, MenuHandler> = {};
 const mockUnlisten = vi.fn();
 vi.mock('@tauri-apps/api/event', () => ({
@@ -93,7 +93,7 @@ describe('useCloseTabShortcut', () => {
     renderHook(() => useCloseTabShortcut());
 
     await waitFor(() => expect(menuHandlers['menu:close-tab']).toBeDefined());
-    menuHandlers['menu:close-tab']();
+    menuHandlers['menu:close-tab']({ payload: null });
 
     await waitFor(() => expect(mockCloseTab).toHaveBeenCalledWith('/project/notes.md'));
   });

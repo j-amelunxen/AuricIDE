@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FileExplorer, type FileTreeNode } from './FileExplorer';
+import { FileExplorer } from './FileExplorer';
+import type { FileTreeNode } from '../../../lib/explorer/fileTree';
 import { AUTO_EXPAND_MS } from './useTreeDrag';
 
 const tree: FileTreeNode[] = [

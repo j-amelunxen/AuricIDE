@@ -58,24 +58,3 @@ export function findBlockForModel(
   }
   return latest;
 }
-
-export function isProviderFullyBlocked(
-  blocks: readonly QuotaBlock[],
-  provider: string,
-  allowedModels: readonly string[],
-  nowMs: number = Date.now()
-): boolean {
-  if (allowedModels.length === 0) return false;
-  return allowedModels.every((model) => findBlockForModel(blocks, provider, model, nowMs) !== null);
-}
-
-export function formatScopeBadge(block: QuotaBlock): string {
-  switch (block.scope.kind) {
-    case 'provider':
-      return `${block.provider} (all models)`;
-    case 'family':
-      return `${block.provider} ${block.scope.prefix}*`;
-    case 'model':
-      return `${block.provider} ${block.scope.model}`;
-  }
-}

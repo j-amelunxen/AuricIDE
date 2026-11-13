@@ -1,6 +1,6 @@
 'use client';
 
-export type BottomTab = 'terminal' | 'problems';
+import type { BottomTab } from '@/lib/ide/types';
 
 export interface BottomPanelTabsProps {
   activeTab: BottomTab;
@@ -19,7 +19,6 @@ export function BottomPanelTabs({
 }: BottomPanelTabsProps) {
   return (
     <div className="flex h-full flex-col">
-      {/* Tab bar */}
       <div className="flex items-center gap-0 border-b border-white/5 bg-panel-bg">
         <button
           role="tab"
@@ -55,7 +54,6 @@ export function BottomPanelTabs({
         </button>
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'terminal' ? terminalContent : problemsContent}
       </div>

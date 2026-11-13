@@ -1,6 +1,6 @@
 import type { Notification } from './types';
 import { scheduleOccurrenceMs } from '@/lib/conductor/scheduledRun';
-import { parseNotificationTimestamp } from './format';
+import { parseUtcStamp } from '@/lib/time/utcStamp';
 import { scheduleIdFromDedupeKey } from './scheduleLink';
 import type { Schedule } from '@/lib/tauri/schedules';
 
@@ -35,15 +35,6 @@ export interface ScheduleRun {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
-
-/** `YYYY-MM-DD HH:MM:SS` in UTC, the shape the backend takes and gives. */
-export function formatUtcStamp(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
-}
-
-export function parseUtcStamp(raw: string): number | null {
-  return parseNotificationTimestamp(raw)?.getTime() ?? null;
-}
 
 /** Monday 00:00 (local time) of the week holding `ms`. */
 export function startOfWeek(ms: number): number {

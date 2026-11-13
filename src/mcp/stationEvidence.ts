@@ -1,9 +1,10 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { globMatch } from '../lib/evidence/globMatch';
 import type { EvidenceContext } from '../lib/evidence/predicates';
-import type { StationPredicate } from '../lib/tauri/goals';
+import type { StationPredicate } from '../lib/goals/types';
 
 /**
  * Predicates the MCP server can decide from the project database and the
@@ -23,7 +24,12 @@ export function isServerCheckable(predicate: StationPredicate): boolean {
  * src-tauri/src/commands/fs_commands.rs). A station must see exactly the files
  * the frontend engine sees, or a claim passes here and fails there.
  */
-const PRUNED_DIRS = new Set(['.git', 'node_modules', 'target', '.auric']);
+export const PRUNED_DIRS: ReadonlySet<string> = new Set([
+  '.git',
+  'node_modules',
+  'target',
+  '.auric',
+]);
 
 /** True as soon as one file under `root` matches `glob`. Paths are absolute,
  * like the IDE's list, and symlinks are not followed, like its walk. */
@@ -50,7 +56,7 @@ function projectFileExists(root: string, glob: string): boolean {
 }
 
 function nowTimestamp(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp();
 }
 
 /** The evidence context for server-side checks: SQL for tickets and

@@ -3,7 +3,6 @@ import { useStore } from '../store';
 import { resetRemovedAgents } from '../store/agent/removedAgents';
 import { Terminal } from '@xterm/headless';
 import {
-  agentMirrorIsLive,
   agentMirrorResized,
   agentMirrorSize,
   disposeAllAgentMirrors,
@@ -14,6 +13,23 @@ import {
   snapshotAgentScreen,
 } from './agentMirror';
 import { attachAgentStream } from './agentStream';
+
+async function expectLiveTerminal(agentId: string) {
+  const write = vi.spyOn(Terminal.prototype, 'write');
+  write.mockClear();
+  await snapshotAgentScreen(agentId);
+  expect(write).toHaveBeenCalledWith('', expect.any(Function));
+  write.mockRestore();
+}
+
+async function finishAndObserveDisposal() {
+  const dispose = vi.spyOn(Terminal.prototype, 'dispose');
+  dispose.mockClear();
+  const agents = useStore.getState().agents.map((agent) => ({ ...agent, status: 'idle' as const }));
+  useStore.setState({ agents });
+  await vi.waitFor(() => expect(dispose).toHaveBeenCalledTimes(1));
+  dispose.mockRestore();
+}
 
 describe('agent PTY resize propagation', () => {
   beforeEach(() => {
@@ -122,17 +138,12 @@ describe('frozen mirrors of finished agents', () => {
     useStore.setState({ agentLogs: {}, agentLogMeta: {}, agents: [agent('running')] });
   });
 
-  async function finishAndFreeze() {
-    useStore.setState({ agents: [agent('idle')] });
-    await vi.waitFor(() => expect(agentMirrorIsLive('a1')).toBe(false));
-  }
-
   it('releases the terminal once the agent finishes, answering snapshots unchanged', async () => {
     for (let i = 0; i < 50; i++)
       useStore.getState().appendAgentLog('a1', `\x1b[1mline ${i}\x1b[0m\r\n`);
     const before = await snapshotAgentScreen('a1');
 
-    await finishAndFreeze();
+    await finishAndObserveDisposal();
 
     expect(await snapshotAgentScreen('a1')).toEqual(before);
   });
@@ -141,12 +152,12 @@ describe('frozen mirrors of finished agents', () => {
     useStore.getState().appendAgentLog('a1', 'working\r\n');
     await snapshotAgentScreen('a1');
     useStore.setState({ agents: [agent('running')] });
-    expect(agentMirrorIsLive('a1')).toBe(true);
+    await expectLiveTerminal('a1');
   });
 
   it('thaws for output that arrives after the finish, keeping what it had', async () => {
     useStore.getState().appendAgentLog('a1', 'before\r\n');
-    await finishAndFreeze();
+    await finishAndObserveDisposal();
 
     useStore.getState().appendAgentLog('a1', 'after\r\n');
     const snapshot = await snapshotAgentScreen('a1');
@@ -158,7 +169,7 @@ describe('frozen mirrors of finished agents', () => {
 
   it('is dropped entirely when the finished agent is dismissed', async () => {
     useStore.getState().appendAgentLog('a1', 'bye\r\n');
-    await finishAndFreeze();
+    await finishAndObserveDisposal();
 
     useStore.getState().dismissFinishedAgent('a1');
 
@@ -167,11 +178,11 @@ describe('frozen mirrors of finished agents', () => {
 
   it('thaws to take a resize, which then counts as one', async () => {
     useStore.getState().appendAgentLog('a1', 'hello');
-    await finishAndFreeze();
+    await finishAndObserveDisposal();
 
     resizeAgentMirror('a1', 40, 160);
 
-    expect(agentMirrorIsLive('a1')).toBe(true);
+    await expectLiveTerminal('a1');
     expect(agentMirrorResized('a1')).toBe(true);
     expect((await snapshotAgentScreen('a1'))?.data).toContain('hello');
   });
@@ -344,8 +355,7 @@ describe('a mirror seeded from another window’s snapshot', () => {
 
   it('freezes like any other mirror when its agent is finished', async () => {
     seedAgentMirror('a1', { data: SCREEN, rows: 24, cols: 80 });
-    useStore.setState({ agents: [agent('idle')] });
-    await vi.waitFor(() => expect(agentMirrorIsLive('a1')).toBe(false));
+    await finishAndObserveDisposal();
 
     expect((await snapshotAgentScreen('a1'))?.data).toContain('screen so far');
     expect(agentMirrorResized('a1')).toBe(true);
@@ -409,13 +419,12 @@ describe('mouse encoding in a restored screen', () => {
       ({ id: 'a1', name: 'A', model: 'm', provider: 'codex', status, startedAt: 0 }) as const;
     useStore.setState({ agents: [agent('running')] });
     useStore.getState().appendAgentLog('a1', `${MOUSE_ON}tui`);
-    useStore.setState({ agents: [agent('idle')] });
-    await vi.waitFor(() => expect(agentMirrorIsLive('a1')).toBe(false));
+    await finishAndObserveDisposal();
 
     expect(await modeIn((await snapshotAgentScreen('a1'))!.data, 1006)).toBe('\x1b[?1006;1$y');
 
     resizeAgentMirror('a1', 30, 100);
-    expect(agentMirrorIsLive('a1')).toBe(true);
+    await expectLiveTerminal('a1');
     expect(await modeIn((await snapshotAgentScreen('a1'))!.data, 1006)).toBe('\x1b[?1006;1$y');
   });
 });

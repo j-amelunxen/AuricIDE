@@ -358,3 +358,27 @@ fn assign_copies_attachments_into_the_project_and_onto_ticket_context() {
         "transferred media must be file context items: {context_json}"
     );
 }
+
+#[test]
+fn a_ticket_context_that_does_not_parse_is_left_alone() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_str().unwrap();
+    let conn = crate::database::init_db(root).unwrap();
+    conn.execute_batch(
+        "INSERT INTO pm_epics (id, name) VALUES ('e1', 'Epic');
+         INSERT INTO pm_tickets (id, epic_id, name, context) VALUES ('t1', 'e1', 'T', '{broken');",
+    )
+    .unwrap();
+
+    let error = crate::inbox::attachments::write_ticket_attachments(root, "t1", &[]).unwrap_err();
+
+    assert!(error.contains("unreadable context"), "{error}");
+    let context: String = conn
+        .query_row(
+            "SELECT context FROM pm_tickets WHERE id = 't1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(context, "{broken");
+}

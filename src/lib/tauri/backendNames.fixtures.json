@@ -1,0 +1,57 @@
+{
+  "$comment": "Names Rust and TypeScript both spell: the app prefs Rust reads from the mirrored webview prefs, the events it emits, the MCP server name agents see, and the folders the project file list leaves out. Read by src/lib/tauri/backendNames.test.ts and src-tauri/src/backend_names_tests.rs; change it first.",
+  "prefKeys": {
+    "taskLogEnabled": "auric.task-log.enabled",
+    "taskLogDir": "auric.task-log.dir",
+    "cliUsageLimits": "auric.cli-usage-limits",
+    "recentProjects": "auric-recent-projects",
+    "starredProjects": "auric-starred-projects"
+  },
+  "events": {
+    "notificationsChanged": "notifications-changed",
+    "usageLimitsChanged": "usage-limits-changed",
+    "fileEvents": "file-events",
+    "agentWaitingChanged": "agent-waiting-changed",
+    "agentUsageRecorded": "agent-usage-recorded",
+    "videoImportSetupProgress": "video-import-setup-progress",
+    "uiPing": "ui-ping",
+    "menuCommand": "menu:command",
+    "menuCloseTab": "menu:close-tab",
+    "agentStatus": "agent-status"
+  },
+  "terminalOutputEventPrefix": "terminal-out-",
+  "ticketStatuses": [
+    "open",
+    "in_progress",
+    "to_test",
+    "in_review",
+    "done",
+    "archived",
+    "discarded"
+  ],
+  "priorities": ["low", "normal", "high", "critical"],
+  "scheduleVocabulary": {
+    "specKinds": ["cron", "every"],
+    "everyUnits": ["hour", "day", "week"],
+    "catchUps": ["coalesce", "skip", "all"]
+  },
+  "credentialNamespaces": {
+    "llm": "llm_settings",
+    "judge": "judge_llm_settings",
+    "excalidraw": "excalidraw_settings",
+    "videoImport": "video_import_settings",
+    "pushover": "pushover_settings"
+  },
+  "mcpServerName": "auric-pm",
+  "fileListPrunedDirs": [".git", "node_modules", "target", ".auric"],
+  "mcpScheduleIdPrefix": "mcp-",
+  "launchGrantLimits": {
+    "maxConcurrent": 5,
+    "maxBudget": 50
+  },
+  "launchRunStatuses": ["running", "interrupted", "completed", "failed", "killed"],
+  "quickAccessLimits": {
+    "dockMax": 8,
+    "badgeMaxChars": 6
+  }
+}

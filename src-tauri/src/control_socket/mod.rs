@@ -1273,7 +1273,7 @@ impl ControlBackend for TauriBackend {
     fn agents(&self) -> Vec<AgentInfo> {
         use tauri::Manager;
         let state = self.app.state::<crate::agents::AgentManagerState>();
-        tauri::async_runtime::block_on(crate::agents::list_agents_impl(&state)).unwrap_or_default()
+        tauri::async_runtime::block_on(crate::agents::list_agents_impl(&state))
     }
 
     fn agent_pids(&self) -> HashMap<u32, (String, AgentRole)> {
@@ -1281,12 +1281,8 @@ impl ControlBackend for TauriBackend {
         let state = self.app.state::<crate::agents::AgentManagerState>();
         let manager = state.blocking_lock();
         manager
-            .agents
-            .values()
-            .filter_map(|process| {
-                let pid = process.child.process_id()?;
-                Some((pid, (process.info.id.clone(), process.info.role)))
-            })
+            .processes()
+            .map(|(pid, info)| (pid, (info.id.clone(), info.role)))
             .collect()
     }
 
@@ -1326,9 +1322,8 @@ impl ControlBackend for TauriBackend {
         use tauri::Manager;
         let state = self.app.state::<crate::agents::AgentManagerState>();
         let capture = tauri::async_runtime::block_on(state.lock())
-            .agents
-            .get(agent_id)
-            .and_then(|process| process.usage.clone());
+            .usage(agent_id)
+            .cloned();
         match (capture, dirs::home_dir()) {
             (Some(capture), Some(home)) => capture.latest_report(&home),
             _ => ReportLookup::Missing(ReportMissing::ProviderUnsupported),
@@ -1344,9 +1339,9 @@ impl ControlBackend for TauriBackend {
 
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String> {
         use tauri::Manager;
-        let terminals = self.app.state::<crate::commands::TerminalState>();
-        let session = format!("agent-{agent_id}");
-        tauri::async_runtime::block_on(crate::commands::write_to_session(
+        let terminals = self.app.state::<crate::agents::pty::TerminalState>();
+        let session = crate::agents::pty::agent_session_id(agent_id);
+        tauri::async_runtime::block_on(crate::agents::pty::write_to_session(
             &terminals, &session, data,
         ))
     }
@@ -1391,19 +1386,7 @@ impl ControlBackend for TauriBackend {
     }
 
     fn notify(&self, input: crate::notifications::NotificationInput) {
-        use tauri::Manager;
-        let Some(state) = self
-            .app
-            .try_state::<crate::notifications::NotificationsState>()
-        else {
-            return;
-        };
-        let Ok(mut conn) = state.conn.lock() else {
-            return;
-        };
-        if let Err(error) = crate::notifications::dispatch_impl(&mut conn, &input) {
-            eprintln!("Control socket: could not record a notification: {error}");
-        }
+        crate::notifications::dispatch_logged(&self.app, &input, "Control socket");
     }
 
     fn projects(&self) -> Vec<ProjectEntry> {
@@ -1521,11 +1504,7 @@ fn check_worker_project(project_path: Option<&str>) -> Result<(), ControlError> 
             format!("projectPath {project_path} is not an existing directory"),
         ));
     }
-    if !Path::new(project_path)
-        .join(".auric")
-        .join("project.db")
-        .is_file()
-    {
+    if !crate::database::project_db_path(Path::new(project_path)).is_file() {
         return Err(ControlError::new(
             ErrorCode::InvalidParams,
             format!(

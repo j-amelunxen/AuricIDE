@@ -1,5 +1,5 @@
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
 import { resolveAuricSkillReference } from '@/lib/settings/auricSkills';
 
 /**

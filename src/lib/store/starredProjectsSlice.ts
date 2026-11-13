@@ -1,34 +1,17 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
+import { APP_CONFIG_KEYS, readAppJson, writeAppJson } from '@/lib/config/appConfig';
 import * as nativeStarredProjects from '../tauri/starredProjects';
 import { normalizeProjectDescription } from '../quickAccess/description';
 import { normalizeProjectBadge } from '../quickAccess/badge';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
 import { DOCK_MAX, applyDockPlace, splitDock } from '../quickAccess/dock';
-import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
+import { loadAuricSkills } from '../settings/auricSkills';
 import { pinSlottedLibrarySkills } from '../quickAccess/menuSkills';
 
-const STORAGE_KEY = 'auric-starred-projects';
 const MAX_STARRED = 50;
 let syncRevision = 0;
 
-/**
- * A project the user pinned for one-click switching. Unlike {@link RecentProject},
- * a starred entry is INDEPENDENT of recency: it survives even when the project
- * falls off the (capped, recency-ordered) recent list.
- *
- * The array is kept in STAR order — new stars append, nothing reorders — but that
- * is NOT the display order: `QuickAccess` sorts the tiles, by name unless the
- * user switches to badge. Star order still carries weight:
- * `starredAt` means "pinned since", and the Rust store sorts and dedupes on it
- * (`merge_starred_projects`), so both sides agree on which copy of a path wins.
- */
-/**
- * The mark drawn on a tile instead of the generated initials. Absent means
- * "generate one from the path", which is what every tile did before this
- * existed. Narrowed from the backend's deliberately lenient `{kind, value}`:
- * a kind this build does not know falls back to the generated tile rather
- * than breaking the row.
- */
 import type {
   ProjectBadge,
   ProjectIconOverride,
@@ -36,32 +19,22 @@ import type {
   QuickAccessSkill,
   StarredProject,
   StarredProjectSettings,
-} from '../tauri/starredProjects';
-export type {
-  ProjectBadge,
-  ProjectIconOverride,
-  QuickAccessCombo,
-  QuickAccessSkill,
-  StarredProject,
-  StarredProjectSettings,
-};
-export type { StarredProject as StarredProjectRecord } from '../tauri/starredProjects';
+} from '../quickAccess/types';
+import { COMBO_SLOT_PREFIX } from '../quickAccess/launchSkills';
+import { quickAccessCombos, quickAccessSkills } from '../quickAccess/projectEntries';
 
-export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
-  const library = loadAuricSkills();
-  return (project.skills ?? []).map((skill) => resolveAuricSkillReference(skill, library));
-}
-
-export function quickAccessCombos(project: StarredProject): QuickAccessCombo[] {
-  const library = loadAuricSkills();
-  return (project.combos ?? []).map((combo) => ({
-    ...combo,
-    steps: combo.steps.map((step) => resolveAuricSkillReference(step, library)),
-  }));
-}
-
-export function quickAccessWheelSlots(project: StarredProject): (string | null)[] {
-  return project.wheelSlots ?? [];
+/** The tile's stored settings with one change; everything else is sent again as it is. */
+function settingsWith(
+  target: StarredProject,
+  change: Partial<StarredProjectSettings>
+): StarredProjectSettings {
+  return {
+    icon: target.icon,
+    skills: quickAccessSkills(target),
+    combos: quickAccessCombos(target),
+    wheelSlots: target.wheelSlots ?? [],
+    ...change,
+  };
 }
 
 function wheelIdsForSettings(
@@ -70,24 +43,10 @@ function wheelIdsForSettings(
 ): string[] {
   const ids = skills.map((skill) => skill.id);
   for (const entry of combos ?? []) {
-    ids.push(`combo:${entry.id}`);
+    ids.push(`${COMBO_SLOT_PREFIX}${entry.id}`);
     for (const step of entry.steps) ids.push(step.id);
   }
   return ids;
-}
-
-/**
- * Counterpart to the backend's lenient icon struct: an unrecognised kind
- * round-trips through this build untouched but renders as the generated tile.
- */
-export function isRenderableIcon(icon: unknown): icon is ProjectIconOverride {
-  if (typeof icon !== 'object' || icon === null) return false;
-  const candidate = icon as { kind?: unknown; value?: unknown };
-  return (
-    (candidate.kind === 'glyph' || candidate.kind === 'emoji' || candidate.kind === 'image') &&
-    typeof candidate.value === 'string' &&
-    candidate.value.length > 0
-  );
 }
 
 export interface StarredProjectsSlice {
@@ -114,14 +73,8 @@ export interface StarredProjectsSlice {
 }
 
 function loadLegacyProjects(): StarredProject[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  const parsed = readAppJson(APP_CONFIG_KEYS.starredProjects);
+  return Array.isArray(parsed) ? (parsed as StarredProject[]) : [];
 }
 
 function applyNativeResult(
@@ -133,14 +86,13 @@ function applyNativeResult(
 }
 
 function persist(projects: StarredProject[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-  } catch {
-    // storage full or unavailable — silently ignore
-  }
+  writeAppJson(APP_CONFIG_KEYS.starredProjects, projects);
 }
 
-export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (set, get) => ({
+export const createStarredProjectsSlice: StateCreator<StoreState, [], [], StarredProjectsSlice> = (
+  set,
+  get
+) => ({
   starredProjects: [],
 
   addStarredProject: (path) => {
@@ -152,17 +104,9 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     // Idempotent: never duplicate and never reorder an already-starred project.
     if (existing.some((p) => p.path === path)) return;
     if (existing.length >= MAX_STARRED) {
-      // Refusing a requested action has to be visible. The slice is typed as
-      // StateCreator<StarredProjectsSlice>, so `get()` does not know about the
-      // toast slice — reach it duck-typed, exactly as agentSlice does, rather
-      // than coupling two otherwise independent slices for one notification.
-      const toaster = get() as StarredProjectsSlice & {
-        showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
-      };
-      toaster.showToast?.(
-        `Quick Access is full (${MAX_STARRED}) — remove a project first`,
-        'error'
-      );
+      // Refusing a requested action has to be visible through the shared toast slice.
+      const toaster = get();
+      toaster.showToast(`Quick Access is full (${MAX_STARRED}) — remove a project first`, 'error');
       return;
     }
     const name = path.split('/').pop() || path;
@@ -259,71 +203,48 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
   setStarredProjectIcon: (path, icon) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon,
-      skills: quickAccessSkills(target),
-      combos: quickAccessCombos(target),
-      wheelSlots: quickAccessWheelSlots(target),
-    });
+    get().updateStarredProjectSettings(path, settingsWith(target, { icon }));
   },
 
   setStarredProjectSkills: (path, skills) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      skills,
-      combos: quickAccessCombos(target),
-      wheelSlots: quickAccessWheelSlots(target),
-    });
+    get().updateStarredProjectSettings(path, settingsWith(target, { skills }));
   },
 
   setStarredProjectCombos: (path, combos) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      skills: quickAccessSkills(target),
-      combos,
-      wheelSlots: quickAccessWheelSlots(target),
-    });
+    get().updateStarredProjectSettings(path, settingsWith(target, { combos }));
   },
 
   setStarredProjectWheelSlots: (path, wheelSlots) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      // The live wheel offers the Settings → Skills library as well; a library
-      // skill put on a slot is pinned here, or the slot would not survive.
-      skills: pinSlottedLibrarySkills(quickAccessSkills(target), wheelSlots, loadAuricSkills()),
-      combos: quickAccessCombos(target),
-      wheelSlots,
-    });
+    get().updateStarredProjectSettings(
+      path,
+      settingsWith(target, {
+        // The live wheel offers the Settings → Skills library as well; a library
+        // skill put on a slot is pinned here, or the slot would not survive.
+        skills: pinSlottedLibrarySkills(quickAccessSkills(target), wheelSlots, loadAuricSkills()),
+        wheelSlots,
+      })
+    );
   },
 
   setStarredProjectBadge: (path, badge) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      skills: quickAccessSkills(target),
-      combos: quickAccessCombos(target),
-      wheelSlots: quickAccessWheelSlots(target),
-      badge,
-    });
+    get().updateStarredProjectSettings(path, settingsWith(target, { badge }));
   },
 
   setStarredProjectDescription: (path, description) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      skills: quickAccessSkills(target),
-      combos: quickAccessCombos(target),
-      wheelSlots: quickAccessWheelSlots(target),
-      description: normalizeProjectDescription(description),
-    });
+    get().updateStarredProjectSettings(
+      path,
+      settingsWith(target, { description: normalizeProjectDescription(description) })
+    );
   },
 
   setStarredProjectDock: (path, place) => {
@@ -331,20 +252,12 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     if (!target) return;
     if (place !== null && target.dockIndex === undefined) {
       if (splitDock(get().starredProjects).full) {
-        const toaster = get() as StarredProjectsSlice & {
-          showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
-        };
-        toaster.showToast?.(`Dock is full (${DOCK_MAX}) — take a project out first`, 'error');
+        const toaster = get();
+        toaster.showToast(`Dock is full (${DOCK_MAX}) — take a project out first`, 'error');
         return;
       }
     }
-    get().updateStarredProjectSettings(path, {
-      icon: target.icon,
-      skills: quickAccessSkills(target),
-      combos: quickAccessCombos(target),
-      wheelSlots: quickAccessWheelSlots(target),
-      dockIndex: place,
-    });
+    get().updateStarredProjectSettings(path, settingsWith(target, { dockIndex: place }));
   },
 
   loadStarredProjects: async () => {

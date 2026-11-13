@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 import { isSameOrInside, topLevelPaths } from './treeSelection';
 
 /**
@@ -22,11 +23,6 @@ export interface SkippedTransfer {
 export interface TransferPlan {
   transfers: PlannedTransfer[];
   skipped: SkippedTransfer[];
-}
-
-export function baseName(path: string): string {
-  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path;
-  return trimmed.slice(trimmed.lastIndexOf('/') + 1);
 }
 
 export function parentOf(path: string): string {

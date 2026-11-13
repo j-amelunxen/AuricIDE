@@ -1,4 +1,4 @@
-import type { PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoalStation } from '@/lib/goals/types';
 import type { PlannerGraph } from './plannerSchema';
 
 /**

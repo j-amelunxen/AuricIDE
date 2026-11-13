@@ -2,8 +2,6 @@ use super::types::*;
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
-type StatusCounts = (u32, u32, u32, u32);
-
 /// One overview per input path, same order, never creating or migrating a
 /// project database. A missing `.auric/project.db` reports `has_db: false`;
 /// any read failure (old schema, corrupt file, ...) reports `error` instead
@@ -21,17 +19,14 @@ fn project_pm_overview_one(project_path: &str) -> ProjectPmOverview {
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| project_path.to_string());
 
-    let db_path = Path::new(project_path).join(".auric").join("project.db");
+    let db_path = crate::database::project_db_path(Path::new(project_path));
 
     if !db_path.exists() {
         return ProjectPmOverview {
             project_path: project_path.to_string(),
             project_name,
             has_db: false,
-            open: 0,
-            in_progress: 0,
-            in_review: 0,
-            done: 0,
+            counts: StatusCounts::default(),
             epics: Vec::new(),
             tickets: Vec::new(),
             error: None,
@@ -43,10 +38,7 @@ fn project_pm_overview_one(project_path: &str) -> ProjectPmOverview {
             project_path: project_path.to_string(),
             project_name,
             has_db: true,
-            open: counts.0,
-            in_progress: counts.1,
-            in_review: counts.2,
-            done: counts.3,
+            counts,
             epics,
             tickets,
             error: None,
@@ -55,10 +47,7 @@ fn project_pm_overview_one(project_path: &str) -> ProjectPmOverview {
             project_path: project_path.to_string(),
             project_name,
             has_db: true,
-            open: 0,
-            in_progress: 0,
-            in_review: 0,
-            done: 0,
+            counts: StatusCounts::default(),
             epics: Vec::new(),
             tickets: Vec::new(),
             error: Some(error),
@@ -85,7 +74,7 @@ fn read_project_pm_overview(
     conn.busy_timeout(std::time::Duration::from_secs(1))
         .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
 
-    let mut counts: StatusCounts = (0, 0, 0, 0);
+    let mut counts = StatusCounts::default();
     {
         let mut stmt = conn
             .prepare(
@@ -101,13 +90,16 @@ fn read_project_pm_overview(
         for row in rows {
             let (status, count) =
                 row.map_err(|e| format!("Failed to read ticket counts: {}", e))?;
-            match status.as_str() {
-                "open" => counts.0 = count as u32,
-                "in_progress" => counts.1 = count as u32,
-                "in_review" => counts.2 = count as u32,
-                "done" => counts.3 = count as u32,
-                _ => {}
-            }
+            let slot = match status.as_str() {
+                "open" => &mut counts.open,
+                "in_progress" => &mut counts.in_progress,
+                "to_test" => &mut counts.to_test,
+                "in_review" => &mut counts.in_review,
+                "done" => &mut counts.done,
+                // A status this build does not know is not counted.
+                _ => continue,
+            };
+            *slot = count as u32;
         }
     }
 

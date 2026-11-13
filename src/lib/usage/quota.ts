@@ -23,7 +23,8 @@ const PROVIDER_TAGS: Record<string, string> = {
 };
 
 export function providerTag(provider: string): string {
-  return PROVIDER_TAGS[provider] ?? provider.slice(0, 2).toUpperCase();
+  const letters = provider.replace(/[^a-z0-9]/gi, '');
+  return PROVIDER_TAGS[provider] ?? (letters.slice(0, 2) || '?').toUpperCase();
 }
 
 export function providerName(provider: string): string {

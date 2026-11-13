@@ -1,6 +1,6 @@
 'use client';
 
-import type { EpicProjection, ProjectProjection } from '@/lib/pm/metrics';
+import type { EpicProjection, ProjectProjection } from '@/lib/pm/metrics/types';
 import { MetricPanel, ProgressCell, DASH } from './metricsUi';
 
 export interface EpicProjectionsTableProps {

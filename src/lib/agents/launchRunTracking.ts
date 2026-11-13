@@ -1,4 +1,4 @@
-import type { AgentConfig } from '../tauri/agents';
+import type { AgentConfig } from './types';
 import { notificationsRecordLaunchRun } from '../tauri/notifications';
 import { deriveFinishSummary } from './finishSummary';
 
@@ -14,14 +14,17 @@ import { deriveFinishSummary } from './finishSummary';
  * that must not decide the run's status (review r2).
  *
  * A failed write is retried a few times; the agent never waits for it. A
- * missing backend (browser mode) costs the summary, not the agent.
+ * missing backend (browser mode) costs the summary, not the agent; a write
+ * that still fails after the last retry is logged, since the asking agent
+ * will read an empty summary.
  */
 export const LAUNCH_RECORD_RETRY_MS = [200, 1_000, 5_000];
 
 function record(input: Parameters<typeof notificationsRecordLaunchRun>[0], attempt = 0): void {
-  const retry = () => {
+  const retry = (error: unknown) => {
     const delay = LAUNCH_RECORD_RETRY_MS[attempt];
     if (delay !== undefined) setTimeout(() => record(input, attempt + 1), delay);
+    else console.warn(`[launch] run summary for ${input.agentId} not recorded: ${String(error)}`);
   };
   try {
     notificationsRecordLaunchRun(input).catch(retry);

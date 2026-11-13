@@ -12,6 +12,7 @@ use super::stall_watchdog::StallMetrics;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agent_waiting::{self, WaitingMark, WaitingMarks};
 use crate::agents::{AgentInfo, AgentStatus};
+use crate::json_store::now_ms;
 use std::sync::MutexGuard;
 
 pub(super) fn supervisors_only() -> ControlError {
@@ -19,12 +20,6 @@ pub(super) fn supervisors_only() -> ControlError {
         ErrorCode::OutsideSupervisorScope,
         "mark_waiting and clear_waiting are for supervisors: a mark belongs to the supervisor that parked its own agent",
     )
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
 impl Dispatcher {

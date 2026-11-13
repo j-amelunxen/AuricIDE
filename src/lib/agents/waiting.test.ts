@@ -1,13 +1,17 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it } from 'vitest';
-import { createStore } from 'zustand/vanilla';
-import { createAgentSlice, type AgentSlice } from '../store/agentSlice';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { AGENT_STALL_MS, agentAttention } from './attention';
 import { agentState } from './state';
 import { activeWaiting, waitingLabel } from './waiting';
 
 const NOW = 1_800_000_000_000;
-const mark = { agentId: 'a', reason: 'deploy', untilMs: NOW + 3_600_000, markedAtMs: NOW - 600_000 };
+const mark = {
+  agentId: 'a',
+  reason: 'deploy',
+  untilMs: NOW + 3_600_000,
+  markedAtMs: NOW - 600_000,
+};
 
 /** Quiet for ten minutes: past the stall window, so a plain agent reads "stalled". */
 const quiet = {
@@ -61,7 +65,7 @@ describe('applyAgentWaiting', () => {
   });
 
   it('stamps a mark on its agent, drops it when gone, and writes nothing when unchanged', () => {
-    const store = createStore<AgentSlice>()(createAgentSlice);
+    const store = createFullTestStore();
     store.setState({ agents: [agent('a'), agent('b')] });
     const marks = [{ ...mark }];
     store.getState().applyAgentWaiting(marks);

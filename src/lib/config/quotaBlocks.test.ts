@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   blockMatchesModel,
   findBlockForModel,
-  formatScopeBadge,
   isBlockActive,
-  isProviderFullyBlocked,
   type QuotaBlock,
 } from './quotaBlocks';
 
@@ -52,36 +50,5 @@ describe('quotaBlocks', () => {
         Date.parse('2026-10-23T19:01:00Z')
       )
     ).toBeNull();
-  });
-
-  it('determines when a provider has all allowed models blocked vs partial family block', () => {
-    const blocks = [agyClaudeBlock, grokProviderBlock];
-    // antigravity has both claude and gemini allowed -> NOT fully blocked
-    expect(
-      isProviderFullyBlocked(
-        blocks,
-        'antigravity',
-        ['claude-sonnet-5-5-high', 'gemini-3.8-flash-medium'],
-        NOW
-      )
-    ).toBe(false);
-
-    // antigravity in a project that only allows claude models -> fully blocked
-    expect(
-      isProviderFullyBlocked(
-        blocks,
-        'antigravity',
-        ['claude-sonnet-5-5-high', 'claude-opus-5-5-thinking'],
-        NOW
-      )
-    ).toBe(true);
-
-    // grok provider-wide block -> fully blocked
-    expect(isProviderFullyBlocked(blocks, 'grok', ['grok-4-20'], NOW)).toBe(true);
-  });
-
-  it('formats human-readable scope badges', () => {
-    expect(formatScopeBadge(agyClaudeBlock)).toBe('antigravity claude-*');
-    expect(formatScopeBadge(grokProviderBlock)).toBe('grok (all models)');
   });
 });

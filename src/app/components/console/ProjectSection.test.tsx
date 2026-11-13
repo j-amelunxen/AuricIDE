@@ -1,7 +1,7 @@
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { ProjectSection } from './ProjectSection';
 import { useStore } from '@/lib/store';
 
@@ -41,7 +41,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof ProjectSection
     onRetry: vi.fn(),
     onMarkReviewed: vi.fn(),
     onDismiss: vi.fn(),
-    onStopAll: vi.fn(),
+    onStopAgents: vi.fn(),
     ...overrides,
   };
 }
@@ -139,18 +139,18 @@ describe('ProjectSection actions', () => {
     expect(screen.queryByRole('button', { name: 'Stop all' })).not.toBeInTheDocument();
   });
 
-  it('Stop all asks for confirmation before calling onStopAll', async () => {
+  it('Stop all asks first, then stops the counted agents', async () => {
     resetStore();
     const user = userEvent.setup();
-    const onStopAll = vi.fn();
-    render(<ProjectSection {...baseProps({ onStopAll })} />);
+    const onStopAgents = vi.fn();
+    render(<ProjectSection {...baseProps({ onStopAgents })} />);
 
     await user.click(screen.getByRole('button', { name: 'Stop all' }));
-    expect(onStopAll).not.toHaveBeenCalled();
+    expect(onStopAgents).not.toHaveBeenCalled();
 
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Stop all' }));
-    expect(onStopAll).toHaveBeenCalledWith('/repos/acme-app');
+    expect(onStopAgents).toHaveBeenCalledWith(['a1']);
   });
 });
 

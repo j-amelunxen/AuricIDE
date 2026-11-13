@@ -7,7 +7,7 @@ import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { PersistChip } from '@/app/components/ui/PersistChip';
 import { useNow } from '@/lib/hooks/useNow';
-import { getRootGoals } from '@/lib/store/goalsSlice';
+import { getRootGoals } from '@/lib/goals/model/goalTreeHelpers';
 import { buildGoalLines } from '@/lib/goals/goalLinesLayout';
 import { buildForYouQueue, type ForYouItem } from '@/lib/goals/forYou';
 import { GoalLineBoard } from './GoalLineBoard';
@@ -325,7 +325,6 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
       className={embedded ? 'flex h-full flex-col bg-background-dark' : 'flex h-full flex-col'}
     >
       <RestoreLineFocus goalId={restoreGoalId} />
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
           <AuricIcon name="route" aria-hidden="true" className="text-primary-light" />
@@ -358,7 +357,6 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
         )}
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto p-6">
         {lines.length === 0 && notStarted.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">

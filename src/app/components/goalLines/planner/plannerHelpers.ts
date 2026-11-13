@@ -1,5 +1,6 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type { PlannerGraph, PlannerStation } from '@/lib/goals/planner/plannerSchema';
-import type { StationPredicate } from '@/lib/tauri/goals';
+import type { StationPredicate } from '@/lib/goals/types';
 
 export const EDITABLE_PREDICATES = [
   'undefined',
@@ -89,5 +90,5 @@ export function predicateValueProblem(station: PlannerStation): boolean {
 }
 
 export function nowTimestamp(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp();
 }

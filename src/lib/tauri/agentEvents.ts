@@ -1,3 +1,4 @@
+import type { AgentStatus } from '@/lib/agents/types';
 import { AGENT_WINDOW_RUST_EVENTS, type AgentWindowMessages } from '../agents/agentWindow.contract';
 import { subscribeToTauriEvent } from './subscribe';
 
@@ -19,7 +20,7 @@ export type AgentPtyResizedEvent = AgentWindowMessages['ptyResized'];
 
 export interface AgentStatusEvent {
   agentId: string;
-  status: 'running' | 'idle' | 'queued' | 'error';
+  status: AgentStatus;
   exitCode: number | null;
   repoPath?: string;
 }
@@ -37,9 +38,12 @@ export function onAgentOutput(
   );
 }
 
+/** An agent's status changed (exit, kill, quit); Rust: `agents::types::AGENT_STATUS_EVENT`. */
+export const AGENT_STATUS_EVENT = 'agent-status';
+
 export function onAgentStatus(callback: (event: AgentStatusEvent) => void): () => void {
   return subscribeToTauriEvent(
-    'agent-status',
+    AGENT_STATUS_EVENT,
     callback,
     '[Browser mode] Agent status listener not available'
   );

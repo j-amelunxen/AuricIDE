@@ -91,7 +91,6 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
         onTextEdit={handlers.handleOcTextEdit}
         onResize={handlers.handleOcResize}
         onFileOpen={handlers.handleOcFileOpen}
-        onNodeSelect={state.selectOcNode}
         loadFileContent={handlers.loadFileContent}
         onFileDrop={handlers.handleOcFileDrop}
         onNodeContextMenu={handlers.handleOcNodeContextMenu}
@@ -106,7 +105,6 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
         nodes={state.canvasNodes}
         edges={state.canvasEdges}
         onNodesChange={handlers.handleCanvasNodesChange}
-        onNodeSelect={state.selectNode}
       />
     );
   }
@@ -145,7 +143,6 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
     <MarkdownEditor
       content={state.editorContent}
       filePath={state.activeTabId}
-      projectFiles={state.projectFiles}
       scrollToLine={state.scrollToLine}
       onChange={handlers.handleEditorChange}
       onSave={() => void handlers.handleSave()}

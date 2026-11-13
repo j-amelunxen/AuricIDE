@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useStore } from '@/lib/store';
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { PmGoal } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
+import type { AgentInfo } from '@/lib/agents/types';
 import { GoalLinesModal } from './GoalLinesModal';
 
 const TS = '2026-01-10 10:00:00';

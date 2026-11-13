@@ -11,8 +11,9 @@
 //!
 //! Any change to the rules starts by adding a case to that fixture file.
 
+use crate::project_path::normalize_project_path;
 use crate::provider_policy::{is_provider_allowed, ProviderPolicy};
-use crate::providers::ModelOption;
+use crate::providers::{normalize_provider_id, ModelOption};
 use crate::quota_blocks::{find_block_for_model, QuotaBlock};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -62,30 +63,6 @@ impl Default for SupervisorModel {
             providers: None,
             chrome: false,
         }
-    }
-}
-
-impl SupervisorModel {
-    #[allow(dead_code)]
-    pub fn candidate_providers(&self) -> Vec<String> {
-        let mut candidates = Vec::new();
-        if let Some(ref list) = self.providers {
-            for id in list {
-                let norm = normalize_provider_id(id);
-                if !norm.is_empty() && !candidates.contains(&norm) {
-                    candidates.push(norm);
-                }
-            }
-        }
-        if candidates.is_empty() {
-            let primary = normalize_provider_id(&self.provider);
-            if !primary.is_empty() {
-                candidates.push(primary);
-            } else {
-                candidates.push(DEFAULT_SUPERVISOR_PROVIDER.to_string());
-            }
-        }
-        candidates
     }
 }
 
@@ -229,11 +206,6 @@ fn refused(reason: ParseReason) -> ParsedPolicy {
             reason,
         }],
     }
-}
-
-/// Provider ids are lowercase in the registry; a hand-typed key must still match.
-pub fn normalize_provider_id(value: &str) -> String {
-    value.trim().to_lowercase()
 }
 
 /// Reads the file's text (`None`: there is no file). Never fails: what cannot
@@ -515,16 +487,6 @@ fn parse_supervisor_models(value: Option<&Value>) -> BTreeMap<String, String> {
 /// A non-negative integer that fits a limit.
 fn as_limit(value: &Value) -> Option<u32> {
     value.as_u64().and_then(|n| u32::try_from(n).ok())
-}
-
-/// `/abs/project-a/` → `/abs/project-a`; the root stays `/`.
-pub fn normalize_project_path(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    if trimmed.is_empty() && path.starts_with('/') {
-        "/".to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 fn parse_project(key: &str, entry: &Value) -> Result<(String, ProjectRules), ParseReason> {
@@ -1831,36 +1793,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn supervisor_candidate_providers_and_parsing() {
-        // Defaults to single provider
-        let default_model = SupervisorModel::default();
-        assert_eq!(default_model.candidate_providers(), vec!["claude"]);
-
-        // Explicit single provider in field
-        let single_model = SupervisorModel {
-            provider: "codex".to_string(),
-            model: None,
-            models: BTreeMap::new(),
-            providers: None,
-            chrome: false,
-        };
-        assert_eq!(single_model.candidate_providers(), vec!["codex"]);
-
-        // Explicit list in providers overrides provider field for candidates
-        let multi_model = SupervisorModel {
-            provider: "claude".to_string(),
-            model: None,
-            models: BTreeMap::new(),
-            providers: Some(vec![
-                "Codex".to_string(),
-                "claude".to_string(),
-                "codex".to_string(),
-            ]),
-            chrome: false,
-        };
-        assert_eq!(multi_model.candidate_providers(), vec!["codex", "claude"]);
-
-        // Parsed from json
+    fn supervisor_provider_list_is_parsed() {
         let parsed = parse(Some(
             r#"{
                 "version": 1,
@@ -1870,10 +1803,6 @@ pub(crate) mod tests {
                 }
             }"#,
         ));
-        assert_eq!(
-            parsed.policy.supervisor.candidate_providers(),
-            vec!["codex", "claude"]
-        );
         assert_eq!(
             parsed.policy.supervisor.providers,
             Some(vec!["codex".to_string(), "claude".to_string()])

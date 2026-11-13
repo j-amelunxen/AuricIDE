@@ -1,6 +1,6 @@
 'use client';
 
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { clampInt } from './helpers';
 import type { ConductorActionDraft } from './types';

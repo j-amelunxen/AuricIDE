@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  sanitizeProjectName,
-  joinProjectPath,
-  scaffoldProjectFiles,
-  scaffoldDirectories,
-} from './newProject';
+import { sanitizeProjectName, joinProjectPath, scaffoldProjectFiles } from './newProject';
 
 describe('sanitizeProjectName', () => {
   it('strips path separators and illegal characters', () => {
@@ -41,7 +36,6 @@ describe('scaffoldProjectFiles', () => {
   it('adds a notes folder file for the notes template', () => {
     const files = scaffoldProjectFiles('/p/app', 'app', 'notes');
     expect(files.map((f) => f.path)).toContain('/p/app/notes/welcome.md');
-    expect(scaffoldDirectories('/p/app', 'notes')).toContain('/p/app/notes');
   });
 
   it('adds a spec.md for the spec template', () => {

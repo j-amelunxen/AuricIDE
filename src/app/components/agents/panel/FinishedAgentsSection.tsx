@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentColor } from '@/lib/agents/colors';
 import { CompactAgentRow } from '../CompactAgentRow';
 

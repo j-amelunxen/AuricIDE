@@ -247,7 +247,7 @@ fn a_full_store_drops_tombstones_before_it_refuses() {
         version: STORE_VERSION,
         grants: (0..MAX_GRANTS).map(|i| grant(i, i == 3)).collect(),
     };
-    write_json_atomic(&store_path_in(dir.path()), &full).unwrap();
+    write_json(&store_path_in(dir.path()), &full).unwrap();
     issue(dir.path(), request("ext-new", 3600), NOW).unwrap();
     let file = read(dir.path()).unwrap();
     assert_eq!(file.grants.len(), MAX_GRANTS);

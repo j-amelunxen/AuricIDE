@@ -113,11 +113,6 @@ export function fleetHeartbeatMax(series: Iterable<HeartbeatSample[]>): number {
   return max;
 }
 
-/** The busiest single minute in one agent's series — its own peak, for a label. */
-export function heartbeatPeak(samples: HeartbeatSample[]): number {
-  return samples.reduce((max, s) => (s.total > max ? s.total : max), 0);
-}
-
 /** How much happened in the most recent minute — the number shown beside the chart. */
 export function heartbeatLatest(samples: HeartbeatSample[]): number {
   return samples.length === 0 ? 0 : samples[samples.length - 1].total;

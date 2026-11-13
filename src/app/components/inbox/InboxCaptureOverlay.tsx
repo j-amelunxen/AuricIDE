@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -42,10 +42,6 @@ function InboxCaptureOverlayDialog({
   const dialogRef = useDialogA11y<HTMLDivElement>();
   useOverlayLayer({ id: 'inbox-capture-overlay', kind: 'tool', active: true, onEscape: onClose });
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 10);
-  }, []);
-
   const submit = async (keepOpen: boolean) => {
     const trimmed = trimmedCaptureTitle(title);
     if (trimmed === null) return;
@@ -82,6 +78,7 @@ function InboxCaptureOverlayDialog({
           <AuricIcon name="inbox" className="text-foreground-muted" />
           <input
             ref={inputRef}
+            autoFocus
             type="text"
             value={title}
             onChange={(e) => {

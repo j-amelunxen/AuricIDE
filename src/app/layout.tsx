@@ -6,6 +6,7 @@ import { FreezeProbe } from './components/FreezeProbe';
 import { SharedPrefsGate } from './components/SharedPrefsGate';
 import { WdioTauriBridge } from './components/WdioTauriBridge';
 import { TITLEBAR_BOOT_SCRIPT } from '@/lib/platform/titlebar';
+import { THEME_BOOT_SCRIPT } from '@/lib/theme/catalog/storage';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -30,12 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
         {/* Apply the saved theme before paint (snapshot bag, else data-accent). */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var r=document.documentElement;var s=localStorage.getItem('auric.theme.snapshot')||localStorage.getItem('auric.seeming.snapshot');if(s){var bag=JSON.parse(s);for(var k in bag){if(k.indexOf('--')===0&&typeof bag[k]==='string')r.style.setProperty(k,bag[k]);}}else{var a=localStorage.getItem('auric.theme')||localStorage.getItem('auric.seeming')||localStorage.getItem('auric.accent');if(a)r.setAttribute('data-accent',a);}}catch(e){}",
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         {/* Reserve the traffic lights' gutter before the header first paints,
             so the logo is never drawn underneath them for a frame. */}
         <script dangerouslySetInnerHTML={{ __html: TITLEBAR_BOOT_SCRIPT }} />

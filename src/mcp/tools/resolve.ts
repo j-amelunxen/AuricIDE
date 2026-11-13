@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 
-type ResolvableTable = 'pm_tickets' | 'pm_epics' | 'blueprints' | 'pm_requirements' | 'pm_goals';
+type ResolvableTable =
+  'pm_tickets' | 'pm_epics' | 'blueprints' | 'pm_requirements' | 'pm_goals' | 'pm_goal_stations';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN_PREFIX_LENGTH = 4;
@@ -11,10 +12,13 @@ const TABLE_LABELS: Record<ResolvableTable, string> = {
   blueprints: 'blueprints',
   pm_requirements: 'requirements',
   pm_goals: 'goals',
+  pm_goal_stations: 'stations',
 };
 
 /**
  * Resolves a full UUID or unique prefix to a full ID from the given table.
+ * Stations keep their legacy exact-first, any-length prefix and error contract.
+ * Other tables:
  * - Full UUID (36 chars): returned directly without a DB query.
  * - Prefix (min 4 chars): `SELECT id FROM <table> WHERE id LIKE '<prefix>%'`
  *   - 1 match  -> return the full ID
@@ -22,11 +26,18 @@ const TABLE_LABELS: Record<ResolvableTable, string> = {
  *   - 2+ matches -> throw (with example IDs)
  */
 export function resolveId(db: Database.Database, table: ResolvableTable, prefix: string): string {
-  if (UUID_RE.test(prefix)) return prefix;
+  // Stations predate the four-character prefix contract: exact IDs win,
+  // short prefixes are valid, and even a full UUID must exist in the table.
+  const station = table === 'pm_goal_stations';
+  if (station) {
+    const exact = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(prefix) as
+      { id: string } | undefined;
+    if (exact) return exact.id;
+  } else if (UUID_RE.test(prefix)) return prefix;
 
   const label = TABLE_LABELS[table];
 
-  if (prefix.length < MIN_PREFIX_LENGTH) {
+  if (!station && prefix.length < MIN_PREFIX_LENGTH) {
     throw new Error(`ID prefix '${prefix}' is too short (minimum ${MIN_PREFIX_LENGTH} characters)`);
   }
 
@@ -35,9 +46,13 @@ export function resolveId(db: Database.Database, table: ResolvableTable, prefix:
   }[];
 
   if (rows.length === 0) {
+    if (station) throw new Error(`Station '${prefix}' not found`);
     throw new Error(`No ${label} found for ID prefix '${prefix}'`);
   }
   if (rows.length > 1) {
+    if (station) {
+      throw new Error(`Station prefix '${prefix}' is ambiguous (${rows.length} matches)`);
+    }
     const examples = rows
       .slice(0, 5)
       .map((r) => r.id)
@@ -96,7 +111,6 @@ export function resolveRequirementId(db: Database.Database, idOrReqId: string): 
     }
     throw new Error(`No requirement found for req_id '${idOrReqId}'`);
   }
-  // Fall back to UUID/prefix resolution
   return resolveId(db, 'pm_requirements', idOrReqId);
 }
 

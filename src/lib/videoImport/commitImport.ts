@@ -1,6 +1,6 @@
 import { planToStations } from '@/lib/goals/planner/commitPlan';
-import type { PmGoal, PmGoalStation, StationSourceContext } from '@/lib/tauri/goals';
-import type { PmDependency, PmEpic, PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation, StationSourceContext } from '@/lib/goals/types';
+import type { PmDependency, PmEpic, PmTicket } from '@/lib/pm/types';
 import type { VideoMediaAnalysis } from '@/lib/tauri/videoImport';
 import type { ExtractedProcess, TranscriptSegment } from './processExtraction';
 import { processToPlannerGraph } from './processExtraction';

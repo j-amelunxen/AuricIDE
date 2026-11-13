@@ -19,7 +19,7 @@ import {
 } from '@/lib/config/supervisorPolicyEdit';
 import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
 import { isModelAvailable, type ModelOption, type ProviderInfo } from '@/lib/tauri/providers';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { DESCRIPTION_MAX_CHARS } from '@/lib/quickAccess/description';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {

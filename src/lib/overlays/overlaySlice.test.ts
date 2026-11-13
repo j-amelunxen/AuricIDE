@@ -1,19 +1,11 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createOverlaySlice, type OverlaySlice } from './overlaySlice';
 
 function createTestStore() {
-  let state: OverlaySlice;
-  const setState = (
-    partial: Partial<OverlaySlice> | ((s: OverlaySlice) => Partial<OverlaySlice>)
-  ) => {
-    const updates = typeof partial === 'function' ? partial(state) : partial;
-    state = { ...state, ...updates };
-  };
-  const getState = () => state;
-  state = createOverlaySlice(setState as never, getState as never, {} as never);
+  const store = createFullTestStore();
   return {
     get current() {
-      return state;
+      return store.getState();
     },
   };
 }

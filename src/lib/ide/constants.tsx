@@ -1,6 +1,6 @@
 'use client';
 
-import { type ActivityItem } from '@/app/components/ide/ActivityBar';
+import type { ActivityItem } from '@/lib/ide/types';
 
 /**
  * The rail leads with the loop: Cockpit → Files → Git → Work.

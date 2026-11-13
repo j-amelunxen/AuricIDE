@@ -11,16 +11,9 @@ vi.mock('@codemirror/view', () => ({
   EditorView: class {},
 }));
 
-import { nlpHighlightExtension } from './nlpHighlightExtension';
 import { analyzeText } from '../nlp/highlighter';
 
 describe('nlpHighlightExtension', () => {
-  describe('exports', () => {
-    it('exports nlpHighlightExtension as defined', () => {
-      expect(nlpHighlightExtension).toBeDefined();
-    });
-  });
-
   describe('highlighter integration', () => {
     it('analyzeText leaves PascalCase prose alone (no variable-hash spans)', () => {
       const spans = analyzeText('Using DataPipeline for processing');

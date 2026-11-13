@@ -36,13 +36,15 @@ export const APP_CONFIG_KEYS = {
   spawnDefaults: 'auric.agent-spawn-defaults',
   customSlashCommands: 'auric-custom-slash-commands',
   recentCommands: 'auric-recent-commands',
+  recentProjects: 'auric-recent-projects',
+  starredProjects: 'auric-starred-projects',
+  skillComboRuns: 'auric-skill-combo-runs',
   blueprintServerUrl: 'auric-blueprint-server-url',
   enableDeepNlp: 'auric.editor.deep-nlp',
   markdownLintEnabled: 'auric.editor.markdown-lint',
   formatOnSave: 'auric.editor.format-on-save',
   formatOnBlur: 'auric.editor.format-on-blur',
   formatLanguages: 'auric.editor.format-languages',
-  mcpAutoStart: 'auric.mcp.auto-start',
   cliUsageLimits: 'auric.cli-usage-limits',
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
   agentConsoleAutoOpen: 'auric.agent-console-auto-open',
@@ -66,6 +68,7 @@ export const APP_CONFIG_KEYS = {
   pmTicketUsageColumns: 'auric.pm.ticket-usage-columns',
   goalTableColumns: 'auric.goals.table-columns',
   goalsDetailView: 'auric.goals.detail-view',
+  goalsWorkflowStripDismissed: 'auric.goals.workflow-strip-dismissed',
   gitGraphInspectorWidth: 'auric.git-graph.inspector-width',
   commandCenterScheduleView: 'auric.command-center.schedule-view',
   notificationSoundEnabled: 'auric.notifications.sound',
@@ -73,7 +76,7 @@ export const APP_CONFIG_KEYS = {
 } as const;
 
 /** Lets mounted UI react to a preference written in this same webview. */
-export const APP_CONFIG_CHANGED_EVENT = 'auric:app-config-changed';
+const APP_CONFIG_CHANGED_EVENT = 'auric:app-config-changed';
 
 /** Every supported point size, shared by persistence validation and the UI. */
 export const AGENT_TERMINAL_FONT_SIZES = [
@@ -112,7 +115,6 @@ export interface AppConfig {
   formatOnSave: boolean;
   /** Format and save when the editor loses focus. Off by default. */
   formatOnBlur: boolean;
-  mcpAutoStart: boolean;
   /**
    * Reads the agent CLIs' remaining quota and shows it in the status bar.
    *
@@ -170,7 +172,6 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   markdownLintEnabled: true,
   formatOnSave: true,
   formatOnBlur: false,
-  mcpAutoStart: false,
   cliUsageLimits: false,
   agentTerminalFontSize: 14,
   agentConsoleAutoOpen: false,
@@ -207,9 +208,55 @@ export function removeAppPref(key: string): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.removeItem(key);
+    window.dispatchEvent(
+      new CustomEvent(APP_CONFIG_CHANGED_EVENT, { detail: { key, value: null } })
+    );
   } catch {
     // Same reasoning as writeAppPref.
   }
+}
+
+/**
+ * Calls `onChange` with the key whenever one of `keys` changes: a write in this
+ * webview, or a value that arrived from outside it (another window, or the
+ * shared-prefs file adopted at start, both of which surface as `storage`).
+ */
+export function subscribeAppPrefs(
+  keys: readonly string[],
+  onChange: (key: string) => void
+): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const watched = new Set(keys);
+  const onWrite = (event: Event) => {
+    const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+    if (key && watched.has(key)) onChange(key);
+  };
+  const onStorage = (event: StorageEvent) => {
+    // A null key is a clear(): every watched key may have changed.
+    if (event.key === null) keys.forEach((key) => onChange(key));
+    else if (watched.has(event.key)) onChange(event.key);
+  };
+  window.addEventListener(APP_CONFIG_CHANGED_EVENT, onWrite);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onWrite);
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+/** A JSON value stored under `key`; null when absent or not valid JSON. */
+export function readAppJson(key: string): unknown {
+  const raw = readAppPref(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+export function writeAppJson(key: string, value: unknown): void {
+  writeAppPref(key, JSON.stringify(value));
 }
 
 function decodeBoolean(raw: string | null, fallback: boolean): boolean {
@@ -252,10 +299,6 @@ export function loadAppConfig(): AppConfig {
     formatOnBlur: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.formatOnBlur),
       APP_CONFIG_DEFAULTS.formatOnBlur
-    ),
-    mcpAutoStart: decodeBoolean(
-      readAppPref(APP_CONFIG_KEYS.mcpAutoStart),
-      APP_CONFIG_DEFAULTS.mcpAutoStart
     ),
     cliUsageLimits: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.cliUsageLimits),

@@ -1,3 +1,4 @@
+import { matchHeadingLine } from '@/lib/markdown/markdownHeadingParser';
 export interface MindmapNode {
   id: string;
   content: string;
@@ -17,7 +18,6 @@ export interface MindmapData {
   edges: MindmapEdge[];
 }
 
-const HEADING_REGEX = /^(#{1,6})\s+(.+)$/;
 const X_SPACING = 250;
 const Y_SPACING = 150;
 
@@ -104,13 +104,15 @@ export function parseMindmapMarkdown(content: string): MindmapData {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const headingMatch = line.match(HEADING_REGEX);
+    const parsed = matchHeadingLine(line);
+    // A bare "#" names no node.
+    const headingMatch = parsed?.title ? parsed : null;
 
     if (headingMatch) {
       flushLeaf(i - 1);
 
-      const level = headingMatch[1].length;
-      const text = headingMatch[2];
+      const level = headingMatch.level;
+      const text = headingMatch.title;
       const id = `node-${counter++}`;
 
       while (parentStack.length > 0 && parentStack[parentStack.length - 1].level >= level) {

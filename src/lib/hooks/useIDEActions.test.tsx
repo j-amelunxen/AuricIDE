@@ -8,7 +8,7 @@ import { renderHook } from '@testing-library/react';
  */
 
 const flushAgentLog = vi.fn(async () => undefined);
-const mockSetInboxCaptureOpen = vi.fn();
+const mockSetInboxCaptureOpen = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/agents/events/persistence', () => ({
   flushAgentLog: () => flushAgentLog(),
 }));
@@ -41,7 +41,10 @@ vi.mock('@/lib/hooks/useNotificationInbox', () => ({ useNotificationInbox: () =>
 vi.mock('@/lib/hooks/useAgentUsageSync', () => ({ useAgentUsageSync: () => undefined }));
 vi.mock('@/lib/hooks/useTitleBarGutter', () => ({ useTitleBarGutter: () => undefined }));
 
-vi.mock('@/lib/tauri/providers', () => ({ listProviders: vi.fn(async () => []) }));
+vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),
+  listProviders: vi.fn(async () => []),
+}));
 vi.mock('@/lib/tauri/fs', () => ({
   getProjectFilesInfo: vi.fn(async () => []),
   listAllFiles: vi.fn(async () => []),
@@ -90,21 +93,24 @@ vi.mock('@/lib/hooks/useMergeStateSync', () => ({
   useMergeStateSync: () => useMergeStateSyncMock(),
 }));
 
-vi.mock('@/lib/store', () => ({
-  useStore: {
-    getState: () => ({
+vi.mock('@/lib/store', async () => {
+  const { createTestStore } = await import('@/lib/store/testing');
+  return {
+    useStore: createTestStore({
       initScratches: vi.fn(),
       loadInterruptedAgents: vi.fn(async () => undefined),
       loadProjectAgentSettings: vi.fn(async () => undefined),
       showToast: vi.fn(),
-      // A non-DB change feeds the evidence lane as well as the tree; with no
-      // open stations that lane returns immediately, which is what this is for.
       goalStationsDraft: [],
       setInboxCaptureOpen: mockSetInboxCaptureOpen,
-      // The project-open link index commits through the store directly.
       bulkSetLinkEntries: vi.fn(),
     }),
-  },
+  };
+});
+
+vi.mock('@/lib/tauri/agentWaiting', () => ({
+  agentWaitingList: vi.fn(async () => []),
+  onAgentWaitingChanged: vi.fn(() => () => undefined),
 }));
 
 import type { FsChangeEvent } from '@/lib/tauri/watcher';
@@ -187,7 +193,7 @@ describe('useIDEActions – the file watcher’s route to the tree refresh', () 
     try {
       renderHook(() => useIDEActions(state, handlers));
 
-      notifyWatcher?.({ path: '/p/src/lib/example.ts', kind: 'Modify(Data(Content))' });
+      notifyWatcher?.({ path: '/p/src/lib/example.ts', contentOnly: true });
       // Past the router's tree debounce, whose timing is its own file's business.
       vi.advanceTimersByTime(1_000);
 

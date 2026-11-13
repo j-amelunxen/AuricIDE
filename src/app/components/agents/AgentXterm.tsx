@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { agentSessionId } from '@/lib/agents/sessionId';
 import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import {
   attachImagePaste,
@@ -11,20 +12,22 @@ import {
   absoluteImagePaths,
   rewriteSupervisorImagePaths,
 } from '@/lib/terminal/imageInsert';
-import type { AgentRole } from '@/lib/tauri/agents';
+import type { AgentRole } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
-import { accentColor, accentRgb } from '@/lib/theme/accent';
-import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
+import { TERMINAL_FONT_FAMILY, TERMINAL_SCROLLBACK, terminalTheme } from '@/lib/terminal/theme';
+import { APP_CONFIG_KEYS, loadAppConfig, subscribeAppPrefs } from '@/lib/config/appConfig';
 import {
   TERMINAL_INTERACTION_OPTIONS,
   buildTerminalMenu,
   copyText,
   handleTerminalClipboardKey,
-  readClipboardText,
   terminalMenuActions,
 } from '@/lib/terminal/interactions';
+import { readClipboardText } from '@/lib/tauri/clipboard';
 import { visibleTerminalText, type ViewportTerminal } from '@/lib/terminal/viewportText';
+import { forwardResizeToPty, observeFit, safeFit } from '@/lib/terminal/fit';
 
 export interface AgentXtermProps {
   agentId: string;
@@ -86,22 +89,9 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
       const term = new Terminal({
         cursorBlink: true,
         fontSize: loadAppConfig().agentTerminalFontSize,
-        fontFamily: "'JetBrains Mono', monospace",
-        theme: {
-          background: '#050510',
-          foreground: '#ffffff',
-          cursor: accentColor(),
-          selectionBackground: `rgba(${accentRgb()}, 0.4)`,
-          black: '#000000',
-          red: '#ff5555',
-          green: '#50fa7b',
-          yellow: '#f1fa8c',
-          blue: '#bd93f9',
-          magenta: '#ff79c6',
-          cyan: '#8be9fd',
-          white: '#ffffff',
-        },
-        scrollback: 1000,
+        fontFamily: TERMINAL_FONT_FAMILY,
+        theme: terminalTheme('#050510'),
+        scrollback: TERMINAL_SCROLLBACK,
         ...TERMINAL_INTERACTION_OPTIONS,
       });
       term.attachCustomKeyEventHandler((event) => handleTerminalClipboardKey(event, term));
@@ -111,27 +101,20 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
       term.open(containerRef.current);
       const applyFontSize = () => {
         term.options.fontSize = loadAppConfig().agentTerminalFontSize;
-        try {
-          fitAddon.fit();
-        } catch {}
+        safeFit(fitAddon);
       };
-      const onConfigChange = (event: Event) => {
-        const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-        if (key === APP_CONFIG_KEYS.agentTerminalFontSize) applyFontSize();
-      };
-      window.addEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
+      const unsubFontSize = subscribeAppPrefs(
+        [APP_CONFIG_KEYS.agentTerminalFontSize],
+        applyFontSize
+      );
       // Fit BEFORE attaching, and only attach once the layout has settled
       // (fit again after a frame): TUI agents redraw via cursor-relative
       // escape sequences, so writing the screen at one width and reflowing
       // it afterwards leaves duplicated fragments on screen.
-      try {
-        fitAddon.fit();
-      } catch {}
+      safeFit(fitAddon);
       await new Promise((resolve) => setTimeout(resolve, 50));
       if (disposed || !containerRef.current) return;
-      try {
-        fitAddon.fit();
-      } catch {}
+      safeFit(fitAddon);
       termRef.current = term;
       focusRef.current = () => term.focus();
 
@@ -168,7 +151,8 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
       // Sync PTY + mirror to the settled size BEFORE attaching, so the
       // screen snapshot is laid out for the width it is displayed at.
       const { writeToShell, resizeShell } = await import('@/lib/tauri/terminal');
-      const sessionId = `agent-${agentId}`;
+      const sessionId = agentSessionId(agentId);
+      // A refused resize leaves the old size; the next fit sends it again.
       resizeShell(sessionId, term.rows, term.cols).catch(() => {});
 
       // Single source of truth: the store (see attachAgentStream). A second
@@ -261,24 +245,10 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
             )
           : attachFileDrop(containerRef.current, sendText, setIsDropTarget, () => term.focus());
 
-      // Propagate xterm resize events to PTY backend
-      term.onResize(({ rows, cols }) => {
-        resizeShell(sessionId, rows, cols).catch(() => {});
-      });
-
-      // ResizeObserver triggers fitAddon.fit() on container size changes
-      let resizeTimer: ReturnType<typeof setTimeout>;
-      const resizeObserver = new ResizeObserver(() => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          try {
-            fitAddon.fit();
-          } catch {}
-        }, 50);
-      });
-      if (containerRef.current) {
-        resizeObserver.observe(containerRef.current);
-      }
+      forwardResizeToPty(term, sessionId);
+      const stopFitting = containerRef.current
+        ? observeFit(containerRef.current, fitAddon)
+        : () => {};
 
       // Another view of this agent — the bottom panel, or the other window —
       // may have taken the PTY size while this one was not being looked at,
@@ -290,7 +260,9 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
           const fitted = fitAddon.proposeDimensions();
           if (!fitted || (fitted.rows === term.rows && fitted.cols === term.cols)) return;
           fitAddon.fit();
-        } catch {}
+        } catch {
+          /* no size yet */
+        }
       };
       window.addEventListener('focus', reclaimSize);
       host.addEventListener('focusin', reclaimSize);
@@ -303,12 +275,11 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         detachStream();
         detachImagePaste();
         detachFileDrop();
-        clearTimeout(resizeTimer);
-        resizeObserver.disconnect();
+        stopFitting();
         window.removeEventListener('focus', reclaimSize);
         host.removeEventListener('focusin', reclaimSize);
         host.removeEventListener('contextmenu', handleContextMenu);
-        window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
+        unsubFontSize();
         if (termRef.current === term) {
           termRef.current = null;
           focusRef.current = null;

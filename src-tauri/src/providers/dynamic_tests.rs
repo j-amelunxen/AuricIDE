@@ -1,3 +1,5 @@
+use super::crush::CrushProvider;
+use super::dynamic::DynamicProvider;
 use super::*;
 use std::fs;
 use std::path::PathBuf;
@@ -360,7 +362,12 @@ fn the_provider_list_for_mcp_leaves_out_providers_without_an_isolated_binding() 
         .with_mcp_config_path("/a/p.mcp.json")
         .with_crush_config_path("/a/p.crush.json")
         .with_runtime_entrypoint("/rt/server.mjs");
-    let error = project_binding_injection_for("plain", plain.as_ref(), &binding).unwrap_err();
+    let error = binding_injection_for(
+        "plain",
+        project_binding_material(plain.as_ref(), &binding).unwrap(),
+        false,
+    )
+    .unwrap_err();
     assert!(error.contains("does not support an isolated Auric MCP project binding"));
 }
 
@@ -1051,7 +1058,7 @@ fn an_environment_only_binding_is_a_binding() {
     let provider = DynamicProvider::new(serde_json::from_value(value).unwrap());
     let binding = ProviderProjectBinding::new("/repo/A", "/repo/A/.auric/project.db")
         .with_mcp_config_path("/app data/project-a.mcp.json");
-    let injection = project_binding_injection_for("antigravity", &provider, &binding).unwrap();
+    let injection = project_binding_material(&provider, &binding).unwrap();
     assert!(injection.arguments.is_empty());
     assert_eq!(
         injection.env_vars,
@@ -1345,4 +1352,91 @@ fn permission_info_answers_from_the_config_without_running_the_discovery() {
     };
     assert_eq!(values(&permissions.modes), values(&info.permission_modes));
     assert_eq!(permissions.default_mode, info.default_permission_mode);
+}
+
+fn bound_provider(id: &str, project_binding: serde_json::Value) -> DynamicProvider {
+    DynamicProvider::new(
+        serde_json::from_value(serde_json::json!({
+            "id": id, "name": id, "executable": "printf", "arguments": [],
+            "projectBinding": project_binding,
+            "info": { "models": [], "permissionModes": [], "defaultModel": "auto",
+                      "defaultPermissionMode": "default" },
+            "versionCheck": { "command": "printf", "args": [] }, "promptTemplate": "printf "
+        }))
+        .unwrap(),
+    )
+}
+
+/// The capability follows the declaration, not the id: a renamed Codex config
+/// keeps its binding, a template under the id `codex` is a template, and only
+/// an undeclared `codex` falls back to the format it had before the field.
+#[test]
+fn mcp_binding_is_read_from_the_declaration() {
+    use serde_json::{json, Value};
+    let cases = [
+        ("codex", Value::Null, McpBinding::CodexToml),
+        (
+            "codex-work",
+            json!({ "format": "codex-toml" }),
+            McpBinding::CodexToml,
+        ),
+        (
+            "codex",
+            json!({ "format": "template", "arguments": ["--mcp", "{mcpConfigPath}"] }),
+            McpBinding::Template {
+                reads_mcp_config: true,
+            },
+        ),
+        (
+            "antigravity",
+            json!({ "environment": { "AURIC_MCP_CONFIG": "{mcpConfigPath}" } }),
+            McpBinding::Template {
+                reads_mcp_config: false,
+            },
+        ),
+        (
+            "custom",
+            json!({ "environment": { "CRUSH_GLOBAL_CONFIG": "{mcpConfigPath}" } }),
+            McpBinding::Template {
+                reads_mcp_config: true,
+            },
+        ),
+        (
+            "custom",
+            json!({ "arguments": ["--root", "{projectRoot}"] }),
+            McpBinding::Template {
+                reads_mcp_config: false,
+            },
+        ),
+        ("plain", Value::Null, McpBinding::Unbound),
+        ("plain", json!({}), McpBinding::Unbound),
+    ];
+    for (id, declared, expected) in cases {
+        assert_eq!(
+            bound_provider(id, declared.clone()).mcp_binding(),
+            expected,
+            "{id} {declared}"
+        );
+    }
+}
+
+#[test]
+fn a_renamed_codex_config_gets_the_codex_overrides() {
+    let provider = bound_provider("codex-work", serde_json::json!({ "format": "codex-toml" }));
+    let binding = ProviderProjectBinding::new("/p", "/p/.auric/project.db")
+        .with_runtime_entrypoint("/rt/server.mjs");
+    let material = project_binding_material(&provider, &binding).unwrap();
+    assert!(material.arguments.iter().any(|a| a.contains("mcp_servers")));
+}
+
+#[test]
+fn an_unknown_binding_format_fails_the_config() {
+    let config: Result<ProviderConfig, _> = serde_json::from_value(serde_json::json!({
+        "id": "x", "name": "x", "executable": "printf", "arguments": [],
+        "projectBinding": { "format": "yaml" },
+        "info": { "models": [], "permissionModes": [], "defaultModel": "auto",
+                  "defaultPermissionMode": "default" },
+        "versionCheck": { "command": "printf", "args": [] }, "promptTemplate": "printf "
+    }));
+    assert!(config.is_err());
 }

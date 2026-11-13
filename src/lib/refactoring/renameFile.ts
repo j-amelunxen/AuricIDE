@@ -1,4 +1,4 @@
-import { parseWikiLinks } from '@/lib/editor/wikiLinkParser';
+import { parseWikiLinks } from '@/lib/markdown/wikiLinkParser';
 import type { HeadingRenameChange } from './applyRenameChanges';
 
 /**

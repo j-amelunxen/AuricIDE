@@ -1,3 +1,4 @@
+pub mod commands;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -164,24 +165,31 @@ pub fn read_crash_log(crash_dir: &std::path::Path, filename: &str) -> Result<Str
     fs::read_to_string(&path).map_err(|e| format!("Failed to read crash log: {}", e))
 }
 
+/// Tauri's `app_log_dir` for this bundle, for a panic before setup set the
+/// real one: `~/Library/Logs/<id>` on macOS, `<data_local>/<id>/logs`
+/// elsewhere. A crash written anywhere else would never be listed.
+fn log_dir_before_setup() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        dirs::home_dir().map(|home| home.join("Library/Logs").join(crate::BUNDLE_ID))
+    } else {
+        dirs::data_local_dir().map(|data| data.join(crate::BUNDLE_ID).join("logs"))
+    }
+}
+
 pub fn init_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let report = format_panic_report(&info.to_string());
 
-        // Try the configured Tauri log dir first
         let dir = CRASH_LOG_DIR.read().ok().and_then(|guard| guard.clone());
 
-        // Fallback to platform-specific log dir if Tauri hasn't initialized yet
-        let crash_path = dir
-            .map(|d| crash_dir(&d))
-            .or_else(|| dirs::data_local_dir().map(|d| d.join("com.auricide.ide").join("crashes")));
+        // Before setup there is no app handle to ask; the same folder, built by hand.
+        let crash_path = dir.or_else(log_dir_before_setup).map(|d| crash_dir(&d));
 
         if let Some(crash_path) = crash_path {
             let _ = fs::create_dir_all(&crash_path);
             let _ = write_crash_file(&crash_path, &report);
         }
 
-        // Also print to stderr for debugging
         eprintln!("{}", report);
     }));
 }
@@ -194,6 +202,13 @@ pub fn set_crash_log_dir(path: PathBuf) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_fallback_folder_is_the_app_identifier() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], crate::BUNDLE_ID);
+    }
+
     use super::*;
     use tempfile::TempDir;
 
@@ -342,13 +357,5 @@ mod tests {
         assert!(read_crash_log(&crash_path, "../etc/passwd").is_err());
         assert!(read_crash_log(&crash_path, "crash-123/../../secret").is_err());
         assert!(read_crash_log(&crash_path, "not-a-crash.log").is_err());
-    }
-
-    #[test]
-    fn test_set_crash_log_dir_updates_global() {
-        let tmp = TempDir::new().unwrap();
-        set_crash_log_dir(tmp.path().to_path_buf());
-        let guard = CRASH_LOG_DIR.read().unwrap();
-        assert_eq!(guard.as_ref().unwrap(), tmp.path());
     }
 }

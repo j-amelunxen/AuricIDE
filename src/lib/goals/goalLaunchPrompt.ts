@@ -1,4 +1,4 @@
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
 import type { GoalWorkMode } from './workMode';
 
 /**

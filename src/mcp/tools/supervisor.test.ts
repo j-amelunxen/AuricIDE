@@ -6,7 +6,7 @@ import linkFixtures from '../../lib/agents/supervisorLink.fixtures.json';
 import tokenFixtures from '../../lib/agents/capabilityTokens.fixtures.json';
 import { ControlError, parseControlResponse } from '../../lib/agents/agentControl.contract';
 import { createSupervisorServer } from '../server';
-import type { ControlCaller } from './agentControl';
+import type { ControlCaller } from '../controlTypes';
 import { registerSupervisorTools } from './supervisor';
 
 /** Tool name → socket method, as the design doc's supervisor tool table names them. */

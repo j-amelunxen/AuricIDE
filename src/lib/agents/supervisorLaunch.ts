@@ -6,7 +6,7 @@ import {
   type OfferedModels,
   type SupervisorPolicy,
 } from '@/lib/config/supervisorPolicy';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import { projectProviderPolicyGet } from '@/lib/tauri/providerPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { ManagerMemorySummary, SupervisorManager } from '@/lib/tauri/supervisorManagers';
@@ -41,8 +41,6 @@ export function supervisorWithKey(agents: AgentInfo[], key: string): AgentInfo |
   return runningSupervisors(agents).find((agent) => agent.supervisorKey === key);
 }
 
-const withoutTrailingSlash = (path: string) => path.replace(/\/+$/, '');
-
 /**
  * The live supervisor already working in this run folder (its cwd is the
  * folder). A run folder holds one supervisor at a time; Rust refuses a second
@@ -60,6 +58,7 @@ import {
   writeSupervisorInstructions,
   readAllSupervisorInstructions,
 } from '@/lib/config/supervisorProviders';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
 export { readSupervisorInstructions, writeSupervisorInstructions, readAllSupervisorInstructions };
 

@@ -423,15 +423,19 @@ fn concept_files(section: &Path, budget: &mut usize) -> (Vec<String>, bool) {
 }
 
 fn read_limited(file: &Path, limit: u64) -> String {
-    let mut text = String::new();
     // A pipe would block the open, and a link leads out of the run folder.
     if !std::fs::symlink_metadata(file).is_ok_and(|meta| meta.is_file()) {
-        return text;
+        return String::new();
     }
+    let mut bytes = Vec::new();
     if let Ok(opened) = std::fs::File::open(file) {
-        let _ = opened.take(limit).read_to_string(&mut text);
+        // What was read before an error still counts; nothing is better than
+        // a guess only when nothing arrived.
+        let _ = opened.take(limit).read_to_end(&mut bytes);
     }
-    text
+    // The limit can cut a character in two; that last one is replaced, the
+    // front matter before it is kept.
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// `superseded_by` is a concept id (`facts/old-one`) or a file name; either
@@ -538,6 +542,17 @@ mod tests {
             format!("{section}/index.md"),
             format!("# {section}\n* [t]({file}) - d\n"),
         )
+    }
+
+    /// A long German concept whose read limit falls inside an umlaut still
+    /// has its front matter: losing the whole text would report it missing.
+    #[test]
+    fn a_concept_cut_inside_a_character_keeps_its_front_matter() {
+        let pad = (FRONT_MATTER_READ_LIMIT as usize) - GOOD.len() - 1;
+        let long = format!("{GOOD}{}ü und mehr", "x".repeat(pad));
+        let (index_path, index) = listed("decisions", "cadence.md");
+        let bundle = bundle_with(&[("decisions/cadence.md", &long), (&index_path, &index)]);
+        assert_eq!(scan(bundle.path()).findings, vec![]);
     }
 
     #[test]

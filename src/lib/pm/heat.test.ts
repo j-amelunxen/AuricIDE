@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateHeat } from './heat';
-import type { PmDependency } from '../tauri/pm';
+import type { PmDependency } from './types';
 
 describe('calculateHeat', () => {
   const mockDeps: PmDependency[] = [

@@ -1,10 +1,6 @@
-import { Facet, type Extension } from '@codemirror/state';
+import type { Extension } from '@codemirror/state';
 import { linter, lintGutter } from '@codemirror/lint';
 import { createStructuredLinterSource } from './structuredLintHelper';
-
-export const currentFilePathFacetXml = Facet.define<string, string>({
-  combine: (values) => values[0] ?? '',
-});
 
 export interface XmlParseError {
   line: number;
@@ -34,10 +30,6 @@ export function parseXmlErrors(text: string): XmlParseError[] {
   return [{ line, column, message }];
 }
 
-export const xmlLintSource = createStructuredLinterSource(
-  parseXmlErrors,
-  currentFilePathFacetXml,
-  'xml'
-);
+export const xmlLintSource = createStructuredLinterSource(parseXmlErrors, 'xml');
 
 export const xmlLintExtension: Extension = [linter(xmlLintSource, { delay: 300 }), lintGutter()];

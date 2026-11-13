@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FastMCP } from 'fastmcp';
 import { buildControlRequest, CONTROL_LIMITS } from '../../lib/agents/agentControl.contract';
-import type { ControlCaller } from './agentControl';
+import type { ControlCaller } from '../controlTypes';
 import { offersAskSupervisor, registerAskSupervisorTool } from './askSupervisor';
 
 interface Tool {

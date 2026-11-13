@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 /**
  * "Does this still parse?" for a merge result, before a person signs it.
  *
@@ -35,13 +36,13 @@ function extensionOf(filePath: string): string {
   return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
-function baseName(filePath: string): string {
-  return (filePath.split('/').pop() ?? '').toLowerCase();
+function lowerBaseName(filePath: string): string {
+  return baseName(filePath).toLowerCase();
 }
 
 /** Files whose tools read JSON with comments and trailing commas. */
 function isJsoncName(filePath: string): boolean {
-  const name = baseName(filePath);
+  const name = lowerBaseName(filePath);
   return (
     extensionOf(filePath) === 'jsonc' ||
     /^[tj]sconfig(\..*)?\.json$/.test(name) ||

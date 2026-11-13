@@ -9,6 +9,7 @@ import {
   readAppPref,
   removeAppPref,
   setAppConfigValue,
+  subscribeAppPrefs,
   writeAppPref,
 } from './appConfig';
 
@@ -27,7 +28,6 @@ describe('app config', () => {
     setAppConfigValue('markdownLintEnabled', false);
     setAppConfigValue('formatOnSave', false);
     setAppConfigValue('formatOnBlur', true);
-    setAppConfigValue('mcpAutoStart', true);
     setAppConfigValue('cliUsageLimits', true);
     setAppConfigValue('agentTerminalFontSize', 16);
     setAppConfigValue('agentConsoleAutoOpen', true);
@@ -43,7 +43,6 @@ describe('app config', () => {
       markdownLintEnabled: false,
       formatOnSave: false,
       formatOnBlur: true,
-      mcpAutoStart: true,
       cliUsageLimits: true,
       agentTerminalFontSize: 16,
       agentConsoleAutoOpen: true,
@@ -104,9 +103,9 @@ describe('app config', () => {
     // Anything written to localStorage is mirrored to webview-prefs.json, which
     // is what makes these settings survive the switch between the dev build and
     // the installed app. A key written anywhere else would not.
-    setAppConfigValue('mcpAutoStart', true);
+    setAppConfigValue('formatOnBlur', true);
 
-    expect(localStorage.getItem(APP_CONFIG_KEYS.mcpAutoStart)).toBe('true');
+    expect(localStorage.getItem(APP_CONFIG_KEYS.formatOnBlur)).toBe('true');
   });
 
   it('lists every application-wide key, including ones other modules own', () => {
@@ -217,5 +216,43 @@ describe('preference accessors', () => {
     removeAppPref('auric.test-key');
 
     expect(readAppPref('auric.test-key')).toBeNull();
+  });
+});
+
+describe('subscribeAppPrefs', () => {
+  it('reports writes and removals of a watched key, and nothing else', () => {
+    const changed = vi.fn();
+    const unsubscribe = subscribeAppPrefs([APP_CONFIG_KEYS.statusBarClock], changed);
+
+    writeAppPref(APP_CONFIG_KEYS.statusBarClock, 'false');
+    writeAppPref(APP_CONFIG_KEYS.theme, 'dark');
+    removeAppPref(APP_CONFIG_KEYS.statusBarClock);
+
+    expect(changed.mock.calls).toEqual([
+      [APP_CONFIG_KEYS.statusBarClock],
+      [APP_CONFIG_KEYS.statusBarClock],
+    ]);
+    unsubscribe();
+    writeAppPref(APP_CONFIG_KEYS.statusBarClock, 'true');
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a value that arrived from outside this webview', () => {
+    const changed = vi.fn();
+    const unsubscribe = subscribeAppPrefs(
+      [APP_CONFIG_KEYS.notificationSound, APP_CONFIG_KEYS.theme],
+      changed
+    );
+
+    window.dispatchEvent(new StorageEvent('storage', { key: APP_CONFIG_KEYS.theme }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+
+    expect(changed.mock.calls).toEqual([
+      [APP_CONFIG_KEYS.theme],
+      [APP_CONFIG_KEYS.notificationSound],
+      [APP_CONFIG_KEYS.theme],
+    ]);
+    unsubscribe();
   });
 });

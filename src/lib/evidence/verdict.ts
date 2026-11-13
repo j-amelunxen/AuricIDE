@@ -1,5 +1,6 @@
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTestCase, PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import type { PmTestCase, PmTicket } from '@/lib/pm/types';
+import { sliceModelJson } from '@/lib/text/modelJson';
 
 // Pure, store-free judge-verdict helpers. They live apart from engine.ts (which
 // imports the store) so the conductor and the judge backend can use them
@@ -12,11 +13,9 @@ import type { PmTestCase, PmTicket } from '@/lib/tauri/pm';
  * JSON or a non-boolean `pass` — a broken judge must never read as a pass.
  */
 export function parseVerdictJson(raw: string): { pass: boolean; reason: string } {
-  const cleaned = raw.replace(/```(?:json)?/g, '');
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start === -1 || end <= start) throw new Error('judge returned no JSON');
-  const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
+  const slice = sliceModelJson(raw);
+  if (!slice.ok) throw new Error('judge returned no JSON');
+  const parsed = JSON.parse(slice.text) as {
     pass?: unknown;
     reason?: unknown;
   };

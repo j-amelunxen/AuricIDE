@@ -1,7 +1,7 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 
 export interface GoalSatisfactionCardProps {
   goal: PmGoal;

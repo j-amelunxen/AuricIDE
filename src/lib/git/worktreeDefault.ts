@@ -1,10 +1,9 @@
 import type { GitRepoRef } from '@/lib/tauri/git';
 import { exists } from '@/lib/tauri/fs';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
-function stripSlash(path: string): string {
-  const normalized = path.trim().replace(/\\/g, '/');
-  if (!normalized) return '';
-  return normalized.endsWith('/') && normalized !== '/' ? normalized.slice(0, -1) : normalized;
+function comparablePath(path: string): string {
+  return withoutTrailingSlash(path.trim().replace(/\\/g, '/'));
 }
 
 /**
@@ -13,9 +12,9 @@ function stripSlash(path: string): string {
  * source file must not count.
  */
 export function isGitRepoRoot(workingDirectory: string, repos: readonly GitRepoRef[]): boolean {
-  const target = stripSlash(workingDirectory);
+  const target = comparablePath(workingDirectory);
   if (!target) return false;
-  return repos.some((repo) => stripSlash(repo.path) === target);
+  return repos.some((repo) => comparablePath(repo.path) === target);
 }
 
 /**
@@ -28,7 +27,7 @@ export async function workingDirectoryHasGitRepo(
   knownRepos: readonly GitRepoRef[] = []
 ): Promise<boolean> {
   if (isGitRepoRoot(workingDirectory, knownRepos)) return true;
-  const target = stripSlash(workingDirectory);
+  const target = comparablePath(workingDirectory);
   if (!target) return false;
   try {
     return await exists(`${target}/.git`);

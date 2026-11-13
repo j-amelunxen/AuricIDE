@@ -1,28 +1,21 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
+import { subscribeAppPrefs } from '@/lib/config/appConfig';
 import {
   loadNotificationSoundEnabled,
   loadNotificationSoundId,
-  NOTIFICATION_SOUND_CHANGE_EVENT,
+  NOTIFICATION_SOUND_KEYS,
   saveNotificationSoundEnabled,
   saveNotificationSoundId,
   type NotificationSoundId,
 } from '@/lib/notifications/sound';
 
 function subscribe(callback: () => void): () => void {
-  window.addEventListener('storage', callback);
-  window.addEventListener(NOTIFICATION_SOUND_CHANGE_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(NOTIFICATION_SOUND_CHANGE_EVENT, callback);
-  };
+  return subscribeAppPrefs(NOTIFICATION_SOUND_KEYS, callback);
 }
 
-/**
- * The notification chime belongs to the install, not to a project. Same-tab
- * writes notify through a custom event; other origins through `storage`.
- */
+/** The notification chime belongs to the install, not to a project. */
 export function useNotificationSound(): {
   enabled: boolean;
   sound: NotificationSoundId;

@@ -1,0 +1,11 @@
+{
+  "$comment": "The AURIC_* environment variables Rust sets for agents and MCP servers and the MCP server reads. Read by src/lib/config/auricEnv.test.ts and src-tauri/src/auric_env.rs; change it first.",
+  "notificationsDb": "AURIC_NOTIFICATIONS_DB",
+  "agentProviders": "AURIC_AGENT_PROVIDERS",
+  "agentCwd": "AURIC_AGENT_CWD",
+  "controlSocket": "AURIC_CONTROL_SOCKET",
+  "askSupervisor": "AURIC_ASK_SUPERVISOR",
+  "pmChildEnv": "AURIC_PM_CHILD_ENV",
+  "projectRoot": "AURIC_PROJECT_ROOT",
+  "mcpDbPath": "AURIC_MCP_DB_PATH"
+}

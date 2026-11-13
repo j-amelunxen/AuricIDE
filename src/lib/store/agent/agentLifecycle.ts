@@ -1,8 +1,11 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
+import type { StoreGet, StoreSet, StoreState } from '@/lib/store/types';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { pushHeartbeat } from '@/lib/agents/events/heartbeat';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
+import { stopAgentProcess, stopAgentProcesses } from '@/lib/agents/stop';
 import { stampTimelineEnded, upsertTimelineHistory } from '@/lib/agents/timelineHistory';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
 import { uniqueAgentName } from '@/lib/agents/naming';
@@ -22,12 +25,10 @@ import {
 } from '@/lib/config/supervisorProviders';
 import { presentationOf, readManagerPresentations } from '@/lib/quickAccess/managerPresentation';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import {
   discardInterruptedAgent as discardInterruptedAgentApi,
   forgetSupervisorRunResults,
-  killAgent,
-  killAgentsForRepo,
   recordAgentPromptHistory,
   renameAgent,
   resumeInterruptedAgent as resumeInterruptedAgentApi,
@@ -38,25 +39,19 @@ import {
   managerMemory,
   supervisorManagersList,
 } from '@/lib/tauri/supervisorManagers';
-import type { PmGoalRun } from '@/lib/tauri/goals';
-import type { NotificationInput } from '@/lib/tauri/notifications';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoalRun } from '@/lib/goals/types';
 import { listProviders, type ProviderInfo } from '@/lib/tauri/providers';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { supervisorPolicyGet } from '@/lib/tauri/supervisorPolicy';
-import type { GoalsSlice } from '../goalsSlice';
-import type { EndedStep } from '../skillComboSlice';
 import {
   completeRunForAgent,
   reconcileAgentRuntimeState,
   willConductorRetry,
   withoutAgentRecords,
   withoutColors,
+  persistLaunchGoalRun,
 } from './agentStateHelpers';
 import {
   MAX_FINISHED_AGENTS,
-  UNGROUPED_REPO_KEY,
-  type AgentSlice,
   type LinkedSupervisorLaunch,
   type LinkedSupervisorSpawn,
   type SupervisorLaunch,
@@ -64,26 +59,23 @@ import {
 } from './agentTypes';
 import { markAgentsRemoved } from './removedAgents';
 
-function rememberTimeline(get: () => AgentSlice, agents: readonly AgentInfo[]): AgentInfo[] {
+function rememberTimeline(get: StoreGet, agents: readonly AgentInfo[]): AgentInfo[] {
   return upsertTimelineHistory(get().agentTimelineHistory, agents, Date.now());
 }
 
 export async function handleSpawnNewAgent(
   config: AgentConfig,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): Promise<AgentInfo> {
   let spawnConfig = config;
   let worktreeCarriedOver: string[] | undefined;
   if (config.useWorktree) {
     const repo = config.worktreeRepoPath || config.cwd;
-    const toast = get() as AgentSlice & {
-      showToast?: (message: string, variant?: 'info' | 'success' | 'error') => number;
-      refreshAgentWorktrees?: () => Promise<void>;
-    };
+    const toast = get();
     if (!repo) {
       const msg = 'A git worktree needs a working directory.';
-      toast.showToast?.(msg, 'error');
+      toast.showToast(msg, 'error');
       throw new Error(msg);
     }
     try {
@@ -98,16 +90,16 @@ export async function handleSpawnNewAgent(
         projectPath: config.projectPath === undefined ? (config.cwd ?? null) : config.projectPath,
         cwd: worktree.path,
       };
-      void toast.refreshAgentWorktrees?.();
+      void toast.refreshAgentWorktrees();
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       const msg = `Could not create a git worktree: ${detail}`;
-      toast.showToast?.(msg, 'error');
+      toast.showToast(msg, 'error');
       throw err instanceof Error ? err : new Error(msg);
     }
   }
   if (spawnConfig.spawnedByTicketId) {
-    const tickets = (get() as AgentSlice & { pmDraftTickets?: PmTicket[] }).pmDraftTickets ?? [];
+    const tickets = get().pmDraftTickets ?? [];
     const ticket = tickets.find((entry) => entry.id === spawnConfig.spawnedByTicketId);
     if (ticket) {
       spawnConfig = {
@@ -141,7 +133,7 @@ export async function handleSpawnNewAgent(
     }
   }
 
-  const { rootPath } = get() as AgentSlice & { rootPath?: string | null };
+  const { rootPath } = get();
   const remembered = config.historyPrompt ?? config.task;
   const historyProjectPath = spawnConfig.projectPath ?? rootPath;
   if (historyProjectPath && remembered.trim()) {
@@ -153,12 +145,13 @@ export async function handleSpawnNewAgent(
       provider: config.provider ?? agent.provider,
       cwd: spawnConfig.cwd ?? agent.repoPath ?? null,
       source: config.runSource ?? 'ui',
+      // The history only feeds the prompt recall list; the launch must not fail over it.
     }).catch(() => {});
   }
 
   const goalId = agent.spawnedByGoalId ?? config.spawnedByGoalId;
   if (goalId) {
-    const goalsSlice = get() as AgentSlice & Partial<GoalsSlice>;
+    const goalsSlice = get();
     if (goalsSlice.recordGoalRun) {
       const run: PmGoalRun = {
         id: crypto.randomUUID(),
@@ -179,16 +172,11 @@ export async function handleSpawnNewAgent(
               : (config.runSource ?? 'ui'),
         outcome: 'running',
         summary: '',
-        startedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        startedAt: formatUtcStamp(),
         finishedAt: null,
       };
       goalsSlice.recordGoalRun(run);
-      const persistPath = spawnConfig.projectPath ?? rootPath;
-      if (spawnConfig.launchRequestUid && persistPath && goalsSlice.persistGoalRun) {
-        // A launch request has no dialog that saves afterwards; best effort,
-        // the run stays in the draft if the write fails.
-        goalsSlice.persistGoalRun(persistPath, run.id).catch(() => undefined);
-      }
+      persistLaunchGoalRun(get(), spawnConfig, run.id);
     }
   }
   replayEarlyStop(agent.id, get, set);
@@ -205,7 +193,7 @@ export async function handleSpawnNewAgent(
  * brings the newest running supervisor forward instead.
  */
 export async function handleSpawnSupervisor(
-  get: () => AgentSlice,
+  get: StoreGet,
   skill?: SupervisorSkillLaunch
 ): Promise<SupervisorLaunch> {
   const task = skill?.task.trim() ?? '';
@@ -224,13 +212,7 @@ export async function handleSpawnSupervisor(
   }
 
   const { policy } = await supervisorPolicyGet();
-  const host = get() as AgentSlice & {
-    providers?: ProviderInfo[];
-    starredProjects?: StarredProject[];
-    openSupervisorProviderChoice?: (
-      candidates: { id: string; name: string }[]
-    ) => Promise<string | null>;
-  };
+  const host = get();
 
   const candidates = supervisorProvidersOf(policy);
   const providers = await listProviders().catch(() => host.providers ?? []);
@@ -268,15 +250,13 @@ export async function handleSpawnSupervisor(
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
 }
 
-type SupervisorHost = AgentSlice & { starredProjects?: StarredProject[] };
-
 /**
  * The launch config every supervisor gets, whoever asked for it: the policy's
  * projects, the human's standing instructions, the first task. `null` when
  * the policy shows it no project.
  */
 async function supervisorConfigFor(
-  host: SupervisorHost,
+  host: StoreState,
   policy: Awaited<ReturnType<typeof supervisorPolicyGet>>['policy'],
   providers: ProviderInfo[],
   launch: {
@@ -341,11 +321,11 @@ async function managerLaunchFor(target: {
  * picker, and only on a provider the policy lists for supervisors.
  */
 export async function handleSpawnLinkedSupervisor(
-  get: () => AgentSlice,
+  get: StoreGet,
   launch: LinkedSupervisorLaunch
 ): Promise<LinkedSupervisorSpawn> {
   const { policy } = await supervisorPolicyGet();
-  const host = get() as SupervisorHost & { providers?: ProviderInfo[] };
+  const host = get();
   const allowed = supervisorProvidersOf(policy);
   const provider = launch.provider ?? allowed[0];
   if (!provider || !allowed.includes(provider)) {
@@ -376,7 +356,7 @@ export async function handleSpawnLinkedSupervisor(
 
 export async function handleRetryFailedAgent(
   agentId: string,
-  get: () => AgentSlice
+  get: StoreGet
 ): Promise<AgentInfo | null> {
   const state = get();
   const failed = state.agents.find((a) => a.id === agentId);
@@ -393,32 +373,24 @@ export async function handleRetryFailedAgent(
     spawnedByGoalId: failed.spawnedByGoalId,
   };
   const replacement = await get().spawnNewAgent(config);
-  const combo = get() as AgentSlice & {
-    rebindSkillComboAgent?: (fromAgentId: string, toAgentId: string) => void;
-  };
-  combo.rebindSkillComboAgent?.(agentId, replacement.id);
+  const combo = get();
+  combo.rebindSkillComboAgent(agentId, replacement.id);
   get().dismissFinishedAgent(agentId);
   return replacement;
 }
 
 export async function handleKillRunningAgent(
   agentId: string,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): Promise<void> {
   const agent = get().agents.find((a) => a.id === agentId);
-  try {
-    await killAgent(agentId);
-  } catch {
-    // Agent may have already terminated naturally
-  }
+  await stopAgentProcess(agentId);
+  // A concurrent stop already removed it and did the bookkeeping.
+  if (agent && !get().agents.some((a) => a.id === agentId)) return;
   const endedLogs = get().agentLogs[agentId] ?? [];
 
-  const conductor = get() as AgentSlice & {
-    conductorAssignments?: Record<string, string>;
-    conductorReviewAssignments?: Record<string, string>;
-    conductorHandleAgentKilled?: (agentId: string) => void;
-  };
+  const conductor = get();
   const isConductorAgent =
     (!!conductor.conductorAssignments &&
       Object.values(conductor.conductorAssignments).includes(agentId)) ||
@@ -426,14 +398,9 @@ export async function handleKillRunningAgent(
       Object.values(conductor.conductorReviewAssignments).includes(agentId));
 
   if (isConductorAgent) {
-    conductor.conductorHandleAgentKilled?.(agentId);
+    conductor.conductorHandleAgentKilled(agentId);
   } else if (agent?.spawnedByTicketId) {
-    const pmSlice = get() as AgentSlice & {
-      updateTicket?: (id: string, updates: { status: string }) => void;
-    };
-    if (pmSlice.updateTicket) {
-      pmSlice.updateTicket(agent.spawnedByTicketId, { status: 'done' });
-    }
+    get().updateTicket(agent.spawnedByTicketId, { status: 'done' });
   }
 
   completeRunForAgent(get(), agentId, 'killed');
@@ -455,10 +422,8 @@ export async function handleKillRunningAgent(
 
   void flushAgentLog();
 
-  const combo = get() as AgentSlice & {
-    skillComboHandleAgentEnded?: (agentId: string, ended: EndedStep) => Promise<void>;
-  };
-  await combo.skillComboHandleAgentEnded?.(agentId, {
+  const combo = get();
+  await combo.skillComboHandleAgentEnded(agentId, {
     logs: endedLogs,
     failed: agent?.status === 'error',
   });
@@ -479,11 +444,7 @@ function forgetRunResultsOf(agents: Iterable<AgentInfo>): void {
   }
 }
 
-export function handleDismissFinishedAgent(
-  agentId: string,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
-): void {
+export function handleDismissFinishedAgent(agentId: string, get: StoreGet, set: StoreSet): void {
   const { agents, agentLogs, minimizedAgentIds } = get();
   const agent = agents.find((a) => a.id === agentId);
   if (!agent || !isFinishedAgent(agent)) return;
@@ -507,10 +468,8 @@ export function handleDismissFinishedAgent(
     reviewedAgentIds: get().reviewedAgentIds.filter((id) => id !== agentId),
   });
 
-  const combo = get() as AgentSlice & {
-    skillComboHandleAgentEnded?: (agentId: string, ended: EndedStep) => Promise<void>;
-  };
-  void combo.skillComboHandleAgentEnded?.(agentId, {
+  const combo = get();
+  void combo.skillComboHandleAgentEnded(agentId, {
     logs: endedLogs,
     failed: agent.status === 'error',
   });
@@ -550,11 +509,7 @@ function rememberEarlyStop(agentId: string, status: AgentInfo['status']): void {
 }
 
 /** Applies a stop that arrived before `agentId` was registered, if any. */
-function replayEarlyStop(
-  agentId: string,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
-): void {
+function replayEarlyStop(agentId: string, get: StoreGet, set: StoreSet): void {
   const early = earlyStops.get(agentId);
   if (!early) return;
   earlyStops.delete(agentId);
@@ -564,8 +519,8 @@ function replayEarlyStop(
 export function handleUpdateAgentStatus(
   agentId: string,
   status: AgentInfo['status'],
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): void {
   const agent = get().agents.find((a) => a.id === agentId);
   // Everything below is a no-op for an agent the store does not know; the
@@ -573,14 +528,10 @@ export function handleUpdateAgentStatus(
   if (!agent && (status === 'idle' || status === 'error')) rememberEarlyStop(agentId, status);
   if (status === 'error') {
     if (agent && agent.status !== 'error' && !willConductorRetry(get(), agentId)) {
-      const toaster = get() as AgentSlice & {
-        showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
-      };
-      toaster.showToast?.(`${agent.name} failed · see row output`, 'error');
-      const inbox = get() as AgentSlice & {
-        dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
-      };
-      void inbox.dispatchNotification?.({
+      const toaster = get();
+      toaster.showToast(`${agent.name} failed · see row output`, 'error');
+      const inbox = get();
+      void inbox.dispatchNotification({
         source: 'system',
         origin: agent.name,
         severity: 'error',
@@ -605,11 +556,7 @@ export function handleUpdateAgentStatus(
   ) {
     const spawn = get().agentSpawnConfigs[agentId];
     const repoPath = agent.repoPath ?? spawn?.cwd ?? null;
-    const inbox = get() as AgentSlice & {
-      dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
-      llmConfigured?: boolean;
-      rootPath?: string | null;
-    };
+    const inbox = get();
     void announceHeadlessFinish({
       agentId,
       name: agent.name,
@@ -623,10 +570,8 @@ export function handleUpdateAgentStatus(
   }
   if (status === 'idle' || status === 'error') {
     completeRunForAgent(get(), agentId, status === 'idle' ? 'completed' : 'failed');
-    const conductor = get() as AgentSlice & {
-      conductorHandleAgentStatus?: (agentId: string, status: AgentInfo['status']) => void;
-    };
-    conductor.conductorHandleAgentStatus?.(agentId, status);
+    const conductor = get();
+    conductor.conductorHandleAgentStatus(agentId, status);
   }
   const { agentLogs, agentLogMeta } = get();
   const stopped = status === 'idle' || status === 'error';
@@ -689,39 +634,29 @@ export function handleUpdateAgentStatus(
   });
 }
 
-export async function handleKillAgentsForRepoPath(
-  repoPath: string,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+/**
+ * Stops exactly `agentIds` — the selection the user confirmed — and clears the
+ * ones the backend confirmed stopped. Agents it could not stop keep their card,
+ * logs and records; the rejection names them.
+ */
+export async function handleStopAgents(
+  agentIds: readonly string[],
+  get: StoreGet,
+  set: StoreSet
 ): Promise<void> {
-  const ungrouped = repoPath === UNGROUPED_REPO_KEY;
-  const belongs = (a: AgentInfo) => (ungrouped ? !a.repoPath : a.repoPath === repoPath);
-  if (ungrouped) {
-    await Promise.all(
-      get()
-        .agents.filter(belongs)
-        .map((a) => killAgent(a.id).catch(() => undefined))
-    );
-  } else {
-    try {
-      await killAgentsForRepo(repoPath);
-    } catch {
-      // Best effort: backend may have already exited
-    }
-  }
+  const { stoppedIds, error } = await stopAgentProcesses(agentIds);
   const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
-  const killedIds = new Set(agents.filter(belongs).map((a) => a.id));
-  const combo = get() as AgentSlice & {
-    cancelSkillCombosForAgents?: (agentIds: string[]) => void;
-  };
-  combo.cancelSkillCombosForAgents?.([...killedIds]);
+  const killedIds = new Set(stoppedIds);
+  const killed = agents.filter((a) => killedIds.has(a.id));
+  const combo = get();
+  combo.cancelSkillCombosForAgents(stoppedIds);
   const remainingAgents = agents.filter((a) => !killedIds.has(a.id));
   markAgentsRemoved(killedIds);
   const now = Date.now();
   set({
     agentTimelineHistory: rememberTimeline(
       get,
-      agents.filter(belongs).map((a) => stampTimelineEnded(a, now))
+      killed.map((a) => stampTimelineEnded(a, now))
     ),
     agents: remainingAgents,
     agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),
@@ -737,6 +672,7 @@ export async function handleKillAgentsForRepoPath(
   });
 
   void flushAgentLog();
+  if (error) throw error;
 }
 
 /**
@@ -748,10 +684,10 @@ function rebindRunningGoalRun(
   fromAgentId: string,
   toAgentId: string,
   launchRequestUid: string | null | undefined,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): void {
-  const goals = get() as AgentSlice & Partial<GoalsSlice> & { rootPath?: string | null };
+  const goals = get();
   const run = goals.goalRunsDraft?.find(
     (entry) => entry.agentId === fromAgentId && entry.outcome === 'running'
   );
@@ -760,17 +696,19 @@ function rebindRunningGoalRun(
     goalRunsDraft: goals.goalRunsDraft.map((entry) =>
       entry.id === run.id ? { ...entry, agentId: toAgentId } : entry
     ),
-  } as Partial<AgentSlice>);
-  const projectPath = get().agentSpawnConfigs[toAgentId]?.projectPath ?? goals.rootPath;
-  if (launchRequestUid && projectPath && goals.persistGoalRun) {
-    goals.persistGoalRun(projectPath, run.id).catch(() => undefined);
-  }
+  });
+  const config = get().agentSpawnConfigs[toAgentId];
+  persistLaunchGoalRun(
+    get(),
+    { projectPath: config?.projectPath, launchRequestUid: launchRequestUid ?? undefined },
+    run.id
+  );
 }
 
 export async function handleResumeInterruptedAgent(
   agentId: string,
-  get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): Promise<AgentInfo> {
   const interrupted = get().interruptedAgents.find((a) => a.id === agentId);
   const agent = await registering(() => resumeInterruptedAgentApi(agentId));
@@ -807,17 +745,15 @@ export async function handleResumeInterruptedAgent(
   rebindRunningGoalRun(agentId, agent.id, interrupted?.launchRequestUid, get, set);
   // A resumed run can end before this call returned, just like a new one.
   replayEarlyStop(agent.id, get, set);
-  const comboResume = get() as AgentSlice & {
-    rebindSkillComboAgent?: (fromAgentId: string, toAgentId: string) => void;
-  };
-  comboResume.rebindSkillComboAgent?.(agentId, agent.id);
+  const comboResume = get();
+  comboResume.rebindSkillComboAgent(agentId, agent.id);
   return agent;
 }
 
 export async function handleDiscardInterruptedAgent(
   agentId: string,
-  get: () => AgentSlice,
-  set: (update: Partial<AgentSlice>) => void
+  get: StoreGet,
+  set: StoreSet
 ): Promise<void> {
   try {
     await discardInterruptedAgentApi(agentId);
@@ -827,18 +763,14 @@ export async function handleDiscardInterruptedAgent(
     // of its run could not be recorded, and the backend kept the agent so the
     // discard can be tried again.
     if (!message.includes('not found')) {
-      const toaster = get() as AgentSlice & {
-        showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
-      };
-      toaster.showToast?.(`Could not discard the agent: ${message}`, 'error');
+      const toaster = get();
+      toaster.showToast(`Could not discard the agent: ${message}`, 'error');
       return;
     }
   }
   set({ interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId) });
   // Its process is long gone; the goal run it left running ends here.
   completeRunForAgent(get(), agentId, 'killed');
-  const combo = get() as AgentSlice & {
-    cancelSkillCombosForAgents?: (agentIds: string[]) => void;
-  };
-  combo.cancelSkillCombosForAgents?.([agentId]);
+  const combo = get();
+  combo.cancelSkillCombosForAgents([agentId]);
 }

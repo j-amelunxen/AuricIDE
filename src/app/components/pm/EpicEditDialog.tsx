@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { PmEpic } from '@/lib/tauri/pm';
+import type { PmEpic } from '@/lib/pm/types';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';

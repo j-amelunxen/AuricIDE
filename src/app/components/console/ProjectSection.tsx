@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { HeartbeatBucket } from '@/lib/agents/events/heartbeat';
 import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
@@ -12,18 +12,18 @@ import type { AgentColor } from '@/lib/agents/colors';
 import { useNowWhen } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
-import {
-  quickAccessSkills,
-  quickAccessCombos,
-  type QuickAccessSkill,
-  type QuickAccessCombo,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessSkills, quickAccessCombos } from '@/lib/quickAccess/projectEntries';
+import type { QuickAccessSkill, QuickAccessCombo } from '@/lib/quickAccess/types';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import type { TreemapGroupCell } from '@/lib/agents/treemap';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
+import { repoStopSelection } from '@/lib/agents/fleet';
+import { stopWithFeedback } from '@/app/components/agents/endAgent';
 import { ConsoleAgentCard } from './ConsoleAgentCard';
 import { TreemapAgentCell } from './TreemapAgentCell';
+import { needsAttention as agentNeedsAttention } from '@/lib/agents/attention';
 
 export interface ProjectSectionProps {
   repoPath: string;
@@ -40,11 +40,12 @@ export interface ProjectSectionProps {
   agentColors?: Record<string, AgentColor>;
   onFocus?: (agentId: string) => void;
   onOpenTerminal: (agentId: string) => void;
-  onStop: (agentId: string) => void;
+  onStop: (agentId: string) => void | Promise<void>;
   onRetry: (agentId: string) => void;
   onMarkReviewed: (agentId: string) => void;
   onDismiss: (agentId: string) => void;
-  onStopAll: (repoPath: string) => void;
+  /** Stops exactly these agents (the selection the confirmation counted). */
+  onStopAgents: (agentIds: string[]) => void | Promise<void>;
   onOpenProject?: (repoPath: string) => void;
   /**
    * When set, this section is one cluster in the fleet treemap: absolutely
@@ -78,7 +79,7 @@ export function ProjectSection({
   onRetry,
   onMarkReviewed,
   onDismiss,
-  onStopAll,
+  onStopAgents,
   onOpenProject,
   layout,
 }: ProjectSectionProps) {
@@ -114,22 +115,18 @@ export function ProjectSection({
     (a, b) => CONSOLE_STATE_RANK[a.state] - CONSOLE_STATE_RANK[b.state]
   );
 
-  const running = withReview.filter((x) => x.state !== 'done' && x.state !== 'error').length;
+  const running = agents.filter((a) => a.status === 'running').length;
   const doneUnreviewed = agents.filter(
     (a) => a.status === 'idle' && !reviewedAgentIds.includes(a.id)
   ).length;
-  const needsAttention = withReview.some(
-    (x) => x.state === 'yours' || x.state === 'stalled' || (x.state === 'error' && !x.reviewed)
+  const needsAttention = withReview.some((x) =>
+    agentNeedsAttention({ ...x.agent, reviewed: x.reviewed }, now)
   );
 
-  const runningAgentIds = agents.filter((a) => a.status === 'running').map((a) => a.id);
-
   const confirmStopAll = async () => {
-    if (runningAgentIds.length > 0) {
-      const what =
-        runningAgentIds.length === 1
-          ? '1 running agent'
-          : `${runningAgentIds.length} running agents`;
+    const { running, finished } = repoStopSelection(agents, repoPath);
+    if (running.length > 0) {
+      const what = running.length === 1 ? '1 running agent' : `${running.length} running agents`;
       const go = await confirm({
         title: 'Stop all agents?',
         message: `Stop ${what} in ${projectLabel(repoPath)}? Their work in progress is lost.`,
@@ -137,7 +134,8 @@ export function ProjectSection({
       });
       if (!go) return;
     }
-    onStopAll(repoPath);
+    finished.forEach((id) => onDismiss(id));
+    if (running.length > 0) await stopWithFeedback(() => onStopAgents(running));
   };
 
   const menuOptions: ContextMenuOption[] = [

@@ -8,12 +8,18 @@ import {
   getAnswerForProject,
   listSchedulesForProject,
 } from '../notificationsDb';
+import { NOTIFICATION_SEVERITIES } from '../../lib/notifications/types';
 import { placeSpawnActions } from '../requesterFolder';
 import {
   isReservedLaunchMarker,
   LAUNCH_REQUEST_KEY_PREFIX,
   LAUNCH_REQUEST_ORIGIN,
 } from '../../lib/notifications/launchRequest';
+import {
+  SCHEDULE_CATCH_UPS,
+  SCHEDULE_EVERY_UNITS,
+  SCHEDULE_SPEC_KINDS,
+} from '@/lib/notifications/scheduleVocabulary';
 
 /**
  * Lets an agent reach the human.
@@ -124,7 +130,7 @@ export function registerNotificationTools(
       title: z.string().describe('One line. This is what gets read.'),
       body: z.string().optional().describe('Optional detail, a sentence or two'),
       severity: z
-        .enum(['info', 'success', 'warn', 'error'])
+        .enum(NOTIFICATION_SEVERITIES)
         .optional()
         .describe('warn and error also raise an OS banner when the window is in the background'),
       origin: z.string().optional().describe('Who is speaking, e.g. your agent name'),
@@ -180,7 +186,7 @@ export function registerNotificationTools(
         )
         .min(1)
         .describe('The choices. Each becomes a button; the chosen value comes back as the answer.'),
-      severity: z.enum(['info', 'success', 'warn', 'error']).optional(),
+      severity: z.enum(NOTIFICATION_SEVERITIES).optional(),
       origin: z.string().optional().describe('Who is asking, e.g. your agent name'),
       dedupeKey: z
         .string()
@@ -255,7 +261,7 @@ export function registerNotificationTools(
         .string()
         .optional()
         .describe('If set, the reminder offers a button that starts an agent with this task'),
-      specKind: z.enum(['cron', 'every']).describe('A cron expression, or a fixed interval'),
+      specKind: z.enum(SCHEDULE_SPEC_KINDS).describe('A cron expression, or a fixed interval'),
       cronExpr: z
         .string()
         .optional()
@@ -269,7 +275,7 @@ export function registerNotificationTools(
         .positive()
         .optional()
         .describe('Interval size, for specKind "every"'),
-      everyUnit: z.enum(['hour', 'day', 'week']).optional(),
+      everyUnit: z.enum(SCHEDULE_EVERY_UNITS).optional(),
       anchorAt: z
         .string()
         .optional()
@@ -280,7 +286,7 @@ export function registerNotificationTools(
         .optional()
         .describe('IANA name, e.g. "Europe/Berlin". Keeps a wall-clock time stable across DST.'),
       catchUp: z
-        .enum(['coalesce', 'skip', 'all'])
+        .enum(SCHEDULE_CATCH_UPS)
         .optional()
         .describe(
           'What happens to occurrences missed while the app was closed. Default "coalesce": ' +

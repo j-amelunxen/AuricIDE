@@ -1,12 +1,12 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { CATCH_UP_HINTS, CATCH_UP_LABELS } from '@/lib/notifications/scheduleFormat';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
-import type { ScheduleCatchUp } from '@/lib/tauri/schedules';
+import type { ScheduleCatchUp } from '@/lib/notifications/scheduleVocabulary';
 import { ComboActionSection } from './scheduleEditor/ComboActionSection';
 import { ConductorActionSection } from './scheduleEditor/ConductorActionSection';
 import { ManagerActionSection } from './scheduleEditor/ManagerActionSection';

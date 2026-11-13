@@ -7,9 +7,12 @@
  * additions responsible (edge removed, bundle label reset to the persisted
  * value), never a problem that was already there before the local edit.
  */
-import type { PmGoal, PmGoalDependency } from '../../tauri/goals';
+import type { PmGoal, PmGoalDependency } from '../../goals/types';
 import { normalizeBundle } from '../../goals/goalDependencies';
-import { getIntroducedDependencyErrors, toDependencyEdges } from './goalDependencyAdapters';
+import {
+  getIntroducedDependencyErrors,
+  toDependencyEdges,
+} from '../../goals/model/goalDependencyAdapters';
 
 export interface DependencyDraftRepair {
   goals: PmGoal[];

@@ -1,5 +1,5 @@
 import type { RecentProject } from '@/lib/store/recentProjectsSlice';
-import type { ProjectIconOverride, StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { ProjectIconOverride, StarredProject } from '@/lib/quickAccess/types';
 
 /** One entry in a project picker (the schedule editor, the inbox assign flow, …). */
 export interface ProjectPickerOption {

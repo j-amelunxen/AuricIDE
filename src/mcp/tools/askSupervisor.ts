@@ -2,7 +2,9 @@ import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
 import { CONTROL_LIMITS } from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
-import { runControl, type ControlCaller } from './agentControl';
+import { runControl } from './agentControl';
+import { type ControlCaller } from '../controlTypes';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
 
 /**
  * Whether this `auric-pm` runs for an agent a supervisor started. Rust sets it
@@ -12,7 +14,7 @@ import { runControl, type ControlCaller } from './agentControl';
 export function offersAskSupervisor(
   env: Readonly<Record<string, string | undefined>> = process.env
 ): boolean {
-  return env.AURIC_ASK_SUPERVISOR === '1';
+  return env[AURIC_ENV.askSupervisor] === '1';
 }
 
 /**

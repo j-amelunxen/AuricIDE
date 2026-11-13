@@ -16,21 +16,6 @@ export function parentDirOf(path: string): string {
 }
 
 /**
- * True for watcher event kinds that change a file's bytes or metadata but not
- * which paths exist. `kind` is notify's `EventKind` in Debug form
- * (`Modify(Data(Content))`, `Create(File)`, …). Anything unrecognised counts
- * as structural: the cost of guessing wrong that way is a slower refresh,
- * the other way a file list that misses a new file.
- */
-export function isContentOnlyKind(kind: string): boolean {
-  return (
-    kind.startsWith('Modify(Data') ||
-    kind.startsWith('Modify(Metadata') ||
-    kind.startsWith('Access')
-  );
-}
-
-/**
  * Whether an event can change which paths exist. A kind that only touches
  * content never can. Otherwise the watcher's `exists` settles it against the
  * file index: a rename over a file the index already lists (how agents and
@@ -42,7 +27,7 @@ export function changesPathSet(
   event: FsChangeEvent,
   isIndexedPath?: (path: string) => boolean
 ): boolean {
-  if (isContentOnlyKind(event.kind)) return false;
+  if (event.contentOnly) return false;
   if (event.exists === undefined || !isIndexedPath) return true;
   return event.exists !== isIndexedPath(event.path);
 }

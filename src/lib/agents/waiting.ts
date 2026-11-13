@@ -1,4 +1,4 @@
-import type { AgentWaiting } from '../tauri/agentWaiting';
+import type { AgentWaiting } from './types';
 
 /** The slice of an agent the waiting mark is read from. */
 interface WaitingInput {

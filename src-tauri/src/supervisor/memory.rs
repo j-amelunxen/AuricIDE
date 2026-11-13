@@ -12,14 +12,15 @@ mod okf;
 
 pub use layout::LastSession;
 
+use super::app_data_dir;
 use super::managers::{
     find_record, list, record_session_noted, resolve_manager_run, timestamp_now, ManagerRecord,
     REGISTRY_FILE_NAME, VALIDATION_FILE_NAME,
 };
 use super::runs::runs_root;
-use super::{app_data_dir, write_json_atomic};
 use crate::agents::run_results::RunResultsState;
 use crate::agents::AgentInfo;
+use crate::json_store::write_json;
 use crate::notifications::NotificationInput;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -260,7 +261,7 @@ async fn store_validation(
         promoted_at: record.promoted_at.clone(),
         summary,
     };
-    write_json_atomic(&file, &stored)?;
+    write_json(&file, &stored)?;
     let summary = stored.summary;
     Ok(Validation {
         manager_name: record.name.clone(),
@@ -396,15 +397,7 @@ fn session_end_notification(
 }
 
 fn notify(app: &tauri::AppHandle, input: &NotificationInput) {
-    let Some(state) = app.try_state::<crate::notifications::NotificationsState>() else {
-        return;
-    };
-    let Ok(mut conn) = state.conn.lock() else {
-        return;
-    };
-    if let Err(error) = crate::notifications::dispatch_impl(&mut conn, input) {
-        eprintln!("Project Manager memory: could not record a notification: {error}");
-    }
+    crate::notifications::dispatch_logged(app, input, "Project Manager memory");
 }
 
 // ---- after a session ----

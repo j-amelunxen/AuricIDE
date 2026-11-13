@@ -44,7 +44,6 @@ export function BlueprintListColumn({
 }: BlueprintListColumnProps) {
   return (
     <div className="w-[340px] flex-shrink-0 flex flex-col border-r border-white/10">
-      {/* Filters */}
       <div className="p-3 border-b border-white/5 flex flex-col gap-2.5 flex-shrink-0">
         <div className="relative">
           <AuricIcon
@@ -111,7 +110,6 @@ export function BlueprintListColumn({
         </div>
       </div>
 
-      {/* Card grid */}
       <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -178,7 +176,6 @@ export function BlueprintListColumn({
         )}
       </div>
 
-      {/* Save/Discard bar */}
       {isDirty && (
         <div className="flex gap-2 p-3 border-t border-white/5 flex-shrink-0">
           <button

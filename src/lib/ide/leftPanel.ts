@@ -6,8 +6,8 @@
  * to close it again. Both answers live here so the rail and the shell agree.
  */
 
-/** Activities that render something in `LeftSidebarPanel`. Keep in step with its switch. */
-const LEFT_PANEL_ACTIVITIES: ReadonlySet<string> = new Set([
+/** Activities that render something in `LeftSidebarPanel`; its switch is exhaustive over these. */
+const LEFT_PANEL_ACTIVITIES = [
   'explorer',
   'source-control',
   'outline',
@@ -17,7 +17,12 @@ const LEFT_PANEL_ACTIVITIES: ReadonlySet<string> = new Set([
   'supervisor-runs',
   'notifications',
   'inbox',
-]);
+] as const;
+type LeftPanelActivity = (typeof LEFT_PANEL_ACTIVITIES)[number];
+
+export function isLeftPanelActivity(id: string): id is LeftPanelActivity {
+  return (LEFT_PANEL_ACTIVITIES as readonly string[]).includes(id);
+}
 
 export function leftPanelVisible({
   activeActivity,
@@ -29,7 +34,7 @@ export function leftPanelVisible({
   collapsed: boolean;
 }): boolean {
   if (collapsed) return false;
-  return LEFT_PANEL_ACTIVITIES.has(activeActivity) && availableIds.includes(activeActivity);
+  return isLeftPanelActivity(activeActivity) && availableIds.includes(activeActivity);
 }
 
 /**
@@ -48,5 +53,5 @@ export function activityClick({
 }): 'toggle' | 'select' {
   if (workPlaceOpen) return 'select';
   if (clicked !== activeActivity) return 'select';
-  return LEFT_PANEL_ACTIVITIES.has(clicked) ? 'toggle' : 'select';
+  return isLeftPanelActivity(clicked) ? 'toggle' : 'select';
 }

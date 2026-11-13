@@ -66,7 +66,6 @@ vi.mock('@/lib/tauri/terminal', () => ({
 
 // Capture the sendText callbacks wired into the image paste / file drop handlers
 let pasteSendText: ((text: string) => void) | null = null;
-let dropSendText: ((text: string) => void) | null = null;
 const mockDetachImagePaste = vi.fn();
 const mockDetachFileDrop = vi.fn();
 const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) => void) => {
@@ -78,7 +77,6 @@ const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) =>
 let dropInsertNotify: (() => void) | null = null;
 const mockAttachFileDrop = vi.fn(
   (_c: HTMLElement, sendText: (text: string) => void, onInsert?: () => void) => {
-    dropSendText = sendText;
     dropInsertNotify = onInsert ?? null;
     return mockDetachFileDrop;
   }
@@ -93,29 +91,6 @@ vi.mock('@/lib/terminal/imageInsert', () => ({
     _onDragState?: (inside: boolean) => void,
     onInsert?: () => void
   ) => mockAttachFileDrop(container, sendText, onInsert),
-}));
-
-// Agent-mode collaborators: stream attach + PTY resize notifications
-const mockDetachAgentStream = vi.fn();
-const mockAttachAgentStream = vi.fn((..._args: unknown[]) => ({
-  detach: mockDetachAgentStream,
-  restored: Promise.resolve(),
-}));
-vi.mock('@/lib/terminal/agentStream', () => ({
-  attachAgentStream: (...args: unknown[]) => mockAttachAgentStream(...args),
-}));
-
-let ptyResizeCb: ((size: { rows: number; cols: number }) => void) | null = null;
-const mockUnsubPtyResize = vi.fn();
-const mockOnAgentPtyResize = vi.fn(
-  (_agentId: string, cb: (size: { rows: number; cols: number }) => void) => {
-    ptyResizeCb = cb;
-    return mockUnsubPtyResize;
-  }
-);
-vi.mock('@/lib/terminal/agentMirror', () => ({
-  onAgentPtyResize: (agentId: string, cb: (size: { rows: number; cols: number }) => void) =>
-    mockOnAgentPtyResize(agentId, cb),
 }));
 
 vi.mock('@/lib/tauri/providers', async (importOriginal) => {
@@ -153,9 +128,7 @@ describe('XtermTerminal', () => {
     keyEventHandler = null;
     resizeHandler = null;
     pasteSendText = null;
-    dropSendText = null;
     dropInsertNotify = null;
-    ptyResizeCb = null;
     mockTerminalOptions.length = 0;
     mockGetSelection.mockReturnValue('');
     mockHasSelection.mockReturnValue(false);
@@ -239,27 +212,6 @@ describe('XtermTerminal', () => {
     );
   });
 
-  it('uses the global font size for an agent terminal', () => {
-    localStorage.setItem('auric.agent-terminal-font-size', '17');
-
-    render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
-
-    expect(mockTerminalOptions[0]).toEqual(expect.objectContaining({ fontSize: 17 }));
-  });
-
-  it('updates an already-open agent terminal when the setting changes', () => {
-    render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
-    localStorage.setItem('auric.agent-terminal-font-size', '18');
-
-    window.dispatchEvent(
-      new CustomEvent('auric:app-config-changed', {
-        detail: { key: 'auric.agent-terminal-font-size' },
-      })
-    );
-
-    expect(mockTerminal.options.fontSize).toBe(18);
-  });
-
   it('loads only the FitAddon on open', () => {
     render(<XtermTerminal id="test-session" />);
     expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1);
@@ -280,59 +232,6 @@ describe('XtermTerminal', () => {
     expect(mockResizeShell).toHaveBeenCalledWith('test-session', 50, 120);
   });
 
-  describe('agent mode (bottom panel preview)', () => {
-    const renderAgent = async () => {
-      const utils = render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
-      await vi.waitFor(() => expect(mockAttachAgentStream).toHaveBeenCalledTimes(1));
-      return utils;
-    };
-
-    it('syncs the agent PTY to the fitted size before attaching the stream', async () => {
-      await renderAgent();
-      expect(mockResizeShell).toHaveBeenCalledWith('agent-a1', 24, 80);
-      // Sync must precede the attach so the mirror snapshot is laid out for
-      // the geometry this view displays at.
-      expect(mockResizeShell.mock.invocationCallOrder[0]).toBeLessThan(
-        mockAttachAgentStream.mock.invocationCallOrder[0]
-      );
-    });
-
-    it('propagates xterm resizes to the agent PTY', async () => {
-      await renderAgent();
-      expect(resizeHandler).not.toBeNull();
-      resizeHandler!({ rows: 8, cols: 220 });
-      expect(mockResizeShell).toHaveBeenCalledWith('agent-a1', 8, 220);
-    });
-
-    it('adopts an external PTY resize by re-attaching at the new geometry', async () => {
-      await renderAgent();
-      expect(ptyResizeCb).not.toBeNull();
-
-      ptyResizeCb!({ rows: 40, cols: 160 });
-
-      expect(mockDetachAgentStream).toHaveBeenCalledTimes(1);
-      expect(mockTerminal.resize).toHaveBeenCalledWith(160, 40);
-      expect(mockTerminal.reset).toHaveBeenCalledTimes(1);
-      expect(mockAttachAgentStream).toHaveBeenCalledTimes(2);
-    });
-
-    it('ignores external resize notifications that match the current size', async () => {
-      await renderAgent();
-
-      ptyResizeCb!({ rows: 24, cols: 80 });
-
-      expect(mockTerminal.reset).not.toHaveBeenCalled();
-      expect(mockAttachAgentStream).toHaveBeenCalledTimes(1);
-    });
-
-    it('unsubscribes from PTY resize events and detaches on unmount', async () => {
-      const { unmount } = await renderAgent();
-      unmount();
-      expect(mockUnsubPtyResize).toHaveBeenCalledTimes(1);
-      expect(mockDetachAgentStream).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('image paste & file drop', () => {
     it('attaches paste and drop handlers to the terminal container', () => {
       render(<XtermTerminal id="test-session" />);
@@ -346,21 +245,6 @@ describe('XtermTerminal', () => {
       render(<XtermTerminal id="test-session" />);
       pasteSendText!('/cache/screenshot_1.png ');
       expect(mockWriteToShell).toHaveBeenCalledWith('test-session', '/cache/screenshot_1.png ');
-    });
-
-    it('routes pasted image paths through onInput (agent mode)', () => {
-      const onInput = vi.fn();
-      render(<XtermTerminal id="test-session" onInput={onInput} />);
-      pasteSendText!('/cache/screenshot_1.png ');
-      expect(onInput).toHaveBeenCalledWith('/cache/screenshot_1.png ');
-      expect(mockWriteToShell).not.toHaveBeenCalled();
-    });
-
-    it('routes dropped file paths through onInput (agent mode)', () => {
-      const onInput = vi.fn();
-      render(<XtermTerminal id="test-session" onInput={onInput} />);
-      dropSendText!('/Users/j/pic.png ');
-      expect(onInput).toHaveBeenCalledWith('/Users/j/pic.png ');
     });
 
     // A native drag leaves the keyboard wherever it was, so without this the

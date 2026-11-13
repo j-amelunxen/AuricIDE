@@ -15,13 +15,15 @@
  * handshake blocks the Antigravity CLI's whole turn until its print timeout,
  * so "nothing to offer" has to be a fast, valid answer rather than an exit.
  */
+
+import { AURIC_PM_SERVER } from '@/lib/config/mcpServerName';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
 export const BRIDGE_CONFIG_ENV = 'AURIC_MCP_CONFIG';
-const SERVER_NAME = 'auric-pm';
+const SERVER_NAME = AURIC_PM_SERVER;
 
 export interface BridgeTarget {
   command: string;

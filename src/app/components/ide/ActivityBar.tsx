@@ -1,22 +1,10 @@
 'use client';
 
+import type { ActivityItem } from '@/lib/ide/types';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-
-export interface ActivityItem {
-  id: string;
-  icon: string;
-  label: string;
-  badge?: number;
-  /**
-   * 'tools' demotes an item below the separator with compact styling —
-   * means, not destinations. Omitted = primary loop surface.
-   */
-  section?: 'primary' | 'tools';
-  /** Hidden from the rail when no project is open. */
-  requiresProject?: boolean;
-}
 
 export interface ActivityBarProps {
   items: ActivityItem[];
@@ -152,7 +140,6 @@ function ActivityButton({
           } ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
         />
 
-        {/* Active Indicator Pips */}
         {isActive && (
           <span className="absolute -left-1 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
         )}

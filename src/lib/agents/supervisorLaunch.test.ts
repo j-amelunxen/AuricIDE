@@ -4,7 +4,7 @@ import {
   emptySupervisorPolicy,
   type SupervisorPolicy,
 } from '@/lib/config/supervisorPolicy';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import controlFixtures from './agentControl.fixtures.json';
 

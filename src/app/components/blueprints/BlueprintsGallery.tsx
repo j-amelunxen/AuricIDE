@@ -149,7 +149,6 @@ function BlueprintsGalleryContent() {
         aria-labelledby="blueprints-gallery-title"
         className="w-[95vw] h-[90vh] flex flex-col bg-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <AuricIcon name="library_books" className="text-primary-light text-[20px]" />
@@ -197,7 +196,6 @@ function BlueprintsGalleryContent() {
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
           <BlueprintListColumn
             search={search}

@@ -1,13 +1,16 @@
 'use client';
 
 import type { ConsoleAgentState } from '@/lib/agents/consoleState';
+import { STATE_CHIP } from '../agents/card/cardConstants';
 
+/** The card's state colours, per console bucket: a phase looks like the card state it summarises. */
 const PHASE_CHIP: Record<ConsoleAgentState, string> = {
-  yours: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
-  error: 'border-red-400/30 bg-red-400/10 text-red-400',
-  stalled: 'border-orange-400/25 bg-orange-400/10 text-orange-300',
-  working: 'border-primary/30 bg-primary/10 text-primary-light',
-  done: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400/90',
+  yours: STATE_CHIP['needs-input'],
+  error: STATE_CHIP.error,
+  stalled: STATE_CHIP.stalled,
+  working: STATE_CHIP.working,
+  queued: STATE_CHIP.queued,
+  done: STATE_CHIP.done,
 };
 
 export interface PhaseChipProps {

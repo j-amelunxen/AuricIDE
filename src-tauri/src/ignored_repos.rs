@@ -6,7 +6,8 @@
 //! decides which repos get walked. Both are tested against
 //! `src/lib/config/ignoredRepos.fixtures.json`.
 
-use rusqlite::{Connection, OpenFlags};
+#[cfg(test)]
+use rusqlite::Connection;
 use std::path::Path;
 
 /// The namespace and key the list lives under in the project database.
@@ -71,23 +72,11 @@ pub fn is_ignored_repo_path(relative_path: &str, ignored: &[String]) -> bool {
 /// and the dirty probe, including for starred projects that were never
 /// opened in this session. A missing database is "ignore nothing".
 pub fn ignored_repos_for_project(cwd: &Path) -> Vec<String> {
-    let db_path = cwd.join(".auric").join("project.db");
-    if !db_path.is_file() {
-        return Vec::new();
-    }
-
-    let Ok(conn) = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
-        return Vec::new();
-    };
-
-    let raw: Option<String> = conn
-        .query_row(
-            "SELECT value FROM kv_store WHERE namespace = ?1 AND key = ?2",
-            rusqlite::params![IGNORED_REPOS_NAMESPACE, IGNORED_REPOS_KEY],
-            |row| row.get(0),
-        )
-        .ok();
-
+    let raw = crate::database::read_project_kv(cwd, IGNORED_REPOS_NAMESPACE, IGNORED_REPOS_KEY)
+        .unwrap_or_else(|error| {
+            eprintln!("Ignored repositories unreadable, ignoring none: {error}");
+            None
+        });
     parse_ignored_repos(raw.as_deref())
 }
 

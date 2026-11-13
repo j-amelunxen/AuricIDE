@@ -17,7 +17,8 @@ export function isNotificationSoundId(value: string): value is NotificationSound
 
 const ENABLED_KEY = APP_CONFIG_KEYS.notificationSoundEnabled;
 const SOUND_KEY = APP_CONFIG_KEYS.notificationSound;
-export const NOTIFICATION_SOUND_CHANGE_EVENT = 'auric-notification-sound-change';
+/** The keys a mounted settings view watches. */
+export const NOTIFICATION_SOUND_KEYS = [ENABLED_KEY, SOUND_KEY] as const;
 
 /** Default is OFF — a chime on a fresh install would be a surprise. */
 export function loadNotificationSoundEnabled(): boolean {
@@ -26,9 +27,6 @@ export function loadNotificationSoundEnabled(): boolean {
 
 export function saveNotificationSoundEnabled(value: boolean): void {
   writeAppPref(ENABLED_KEY, String(value));
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(NOTIFICATION_SOUND_CHANGE_EVENT));
-  }
 }
 
 export function loadNotificationSoundId(): NotificationSoundId {
@@ -38,9 +36,6 @@ export function loadNotificationSoundId(): NotificationSoundId {
 
 export function saveNotificationSoundId(value: NotificationSoundId): void {
   writeAppPref(SOUND_KEY, value);
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(NOTIFICATION_SOUND_CHANGE_EVENT));
-  }
 }
 
 type Arrival = {

@@ -48,7 +48,6 @@ export function collectStoreMetrics(): StoreMetrics {
     agentsByStatus,
     entityIndexSize: state.entityIndex.size,
     entityOccurrencesTotal,
-    headingIndexSize: state.headingIndex.size,
     linkIndexSize: state.linkIndex.size,
     diagnosticsSize: state.diagnostics.size,
     canvasNodesCount: state.canvasNodes.length,

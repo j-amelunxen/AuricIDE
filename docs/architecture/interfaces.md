@@ -227,7 +227,9 @@ configuration, not a method.
   `<app_data_dir>/dynamic-providers/`. Schema and examples:
   `dynamic-providers/README.md`. Fields used elsewhere: `info.models[].rank`, `useFor`,
   `relativeCost`, `usage` capture block, optional `writeSandbox` (macOS Seatbelt,
-  `agents/write_sandbox.rs`; refused on other platforms), `projectBinding.environment`.
+  `agents/write_sandbox.rs`; refused on other platforms), `projectBinding.environment`,
+  `projectBinding.format` (`template` or `codex-toml`; a `codex` id without it keeps
+  `codex-toml`).
 - **Process model:** PTY children via `portable-pty`; headless runs (`claude -p`) for
   conductor, jobs and supervisors' children as configured. Output stream cleaned on
   append (`agents/output_buffer.rs`).
@@ -286,7 +288,9 @@ macOS menu-bar icon can launch supervisor skills and global shortcuts.
 
 ## 9. Environment variables
 
-Set by the IDE on child processes (found in `src-tauri/src/agents`, `mcp.rs`):
+Set by the IDE on child processes. The names live in `src-tauri/src/auric_env.rs` and
+`src/lib/config/auricEnv.ts`, both pinned by `auricEnv.fixtures.json`
+(`AURIC_IDE_AGENT` by `agentControl.fixtures.json`):
 
 | Variable                                                            | Meaning                                                                                       |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -296,6 +300,8 @@ Set by the IDE on child processes (found in `src-tauri/src/agents`, `mcp.rs`):
 | `AURIC_AGENT_PROVIDERS`                                             | providers that support an isolated MCP project binding                                        |
 | `AURIC_MCP_CONFIG`                                                  | path of the MCP config for CLIs with only a global config (`bridge.mjs`)                      |
 | `AURIC_CONTROL_SOCKET`                                              | control socket path handed to a supervisor's MCP server                                       |
+| `AURIC_ASK_SUPERVISOR=1`                                            | the agent's supervisor can be asked; switches on `ask_supervisor`                             |
+| `AURIC_PM_CHILD_ENV`                                                | JSON environment of a supervisor's per-project PM children                                    |
 | `AURIC_PROJECT_NAME`                                                | substitution allowed in connector args (with `AURIC_PROJECT_ROOT`)                            |
 
 Test and probe switches: `AURIC_EXCALIDRAW_MOCK=1`, `AURIC_DENY_CONTROL`,

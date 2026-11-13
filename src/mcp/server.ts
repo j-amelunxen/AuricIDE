@@ -1,3 +1,4 @@
+import { AURIC_PM_SERVER } from '@/lib/config/mcpServerName';
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { resolveMcpCliMode } from './cli';
@@ -26,6 +27,7 @@ import { offersAskSupervisor, registerAskSupervisorTool } from './tools/askSuper
 import { callControl } from './controlClient';
 import { openNotificationsDb } from './notificationsDb';
 import { closeWithParent, createPmGateway, type PmGateway } from './supervisorPm';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
 
 /**
  * Attaches the notify tools, if the app told us where the inbox lives.
@@ -42,7 +44,7 @@ function attachNotificationTools(
   db: Database.Database,
   projectRoot: string
 ): Database.Database | null {
-  const dbPath = process.env.AURIC_NOTIFICATIONS_DB;
+  const dbPath = process.env[AURIC_ENV.notificationsDb];
   if (!dbPath) return null;
 
   try {
@@ -54,14 +56,14 @@ function attachNotificationTools(
       // as trustworthy as that environment: a shell agent could start its own
       // server with a forged AURIC_AGENT_CWD (review r3, blocker 1). That is the
       // excluded shell agent of the threat model, see `requesterFolder.ts`.
-      agentCwd: process.env.AURIC_AGENT_CWD,
+      agentCwd: process.env[AURIC_ENV.agentCwd],
     };
     registerNotificationTools(server, inbox, defaults);
     // Launch requests travel through the same inbox, so they exist exactly
     // when the inbox does: a request that reaches no one must not be offered.
     registerAgentLaunchTools(server, db, inbox, {
       ...defaults,
-      installedProviders: process.env.AURIC_AGENT_PROVIDERS,
+      installedProviders: process.env[AURIC_ENV.agentProviders],
     });
     return inbox;
   } catch (error) {
@@ -74,7 +76,7 @@ function attachNotificationTools(
 
 export function createMcpServer(db: Database.Database, projectRoot: string): FastMCP {
   const server = new FastMCP({
-    name: 'auric-pm',
+    name: AURIC_PM_SERVER,
     version: '1.0.0',
   });
 

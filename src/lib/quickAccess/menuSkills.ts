@@ -1,4 +1,4 @@
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
 import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
 
 /**

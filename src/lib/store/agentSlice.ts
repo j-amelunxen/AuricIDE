@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { isFinishedAgent } from '../agents/fleet';
 import {
@@ -10,7 +11,7 @@ import {
 import {
   handleDiscardInterruptedAgent,
   handleDismissFinishedAgent,
-  handleKillAgentsForRepoPath,
+  handleStopAgents,
   handleKillRunningAgent,
   handleResumeInterruptedAgent,
   handleRetryFailedAgent,
@@ -37,16 +38,13 @@ export {
   MAX_LOADED_HISTORY,
   MAX_RECALLED_PROMPTS,
   MAX_SENT_MESSAGES,
-  UNGROUPED_REPO_KEY,
   type AgentLogMeta,
   type AgentRoster,
   type AgentSlice,
   type SentMessage,
 } from './agent/agentTypes';
 
-export { groupAgentsByRepo } from './agent/agentStateHelpers';
-
-export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
+export const createAgentSlice: StateCreator<StoreState, [], [], AgentSlice> = (set, get) => ({
   agents: [],
   agentLogs: {},
   agentLogMeta: {},
@@ -241,10 +239,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     try {
       const interrupted = await listInterruptedAgents();
       set({ interruptedAgents: interrupted });
-      const combo = get() as AgentSlice & {
-        reconcileSkillCombos?: (reachableAgentIds: string[]) => void;
-      };
-      combo.reconcileSkillCombos?.([
+      const combo = get();
+      combo.reconcileSkillCombos([
         ...interrupted.map((a) => a.id),
         ...get().agents.map((a) => a.id),
       ]);
@@ -257,5 +253,5 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   discardInterruptedAgent: (agentId) => handleDiscardInterruptedAgent(agentId, get, set),
 
-  killAgentsForRepoPath: (repoPath) => handleKillAgentsForRepoPath(repoPath, get, set),
+  stopAgents: (agentIds) => handleStopAgents(agentIds, get, set),
 });

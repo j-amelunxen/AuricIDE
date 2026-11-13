@@ -17,13 +17,12 @@
 //!   grant stays as a tombstone until it would have expired, so its holder hears
 //!   `token_revoked` rather than `token_unknown`.
 
-use crate::file_lock::FileLock;
-use crate::supervisor::write_json_atomic;
+use crate::json_store::{self, write_json, FileLock, Unreadable};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
-use std::io::{ErrorKind, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const STORE_VERSION: u32 = 1;
@@ -201,20 +200,13 @@ pub fn store_path_in(app_data: &Path) -> PathBuf {
 /// Absent is empty. Anything else that cannot be read is refused rather than
 /// treated as empty, or the next write would replace it.
 fn read(app_data: &Path) -> Result<TokenFile, TokenError> {
-    let unreadable = |reason: String| TokenError::Unreadable(reason);
-    let text = match std::fs::read_to_string(store_path_in(app_data)) {
-        Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(TokenFile::default()),
-        Err(error) => return Err(unreadable(error.to_string())),
-    };
-    let file: TokenFile = serde_json::from_str(&text)
-        .map_err(|error| unreadable(format!("it is not valid ({error})")))?;
-    if file.version != STORE_VERSION {
-        return Err(unreadable(format!(
-            "this build reads version {STORE_VERSION} only"
-        )));
-    }
-    Ok(file)
+    json_store::load(
+        &store_path_in(app_data),
+        Some(u64::from(STORE_VERSION)),
+        Unreadable::Refuse,
+    )
+    .map(Option::unwrap_or_default)
+    .map_err(TokenError::Unreadable)
 }
 
 fn update<T>(
@@ -228,7 +220,7 @@ fn update<T>(
     let pruned = file.prune(now);
     let (result, touched) = change(&mut file)?;
     if touched || pruned {
-        write_json_atomic(&store_path_in(app_data), &file).map_err(TokenError::Storage)?;
+        write_json(&store_path_in(app_data), &file).map_err(TokenError::Storage)?;
     }
     Ok(result)
 }

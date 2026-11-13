@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoalStation } from '@/lib/goals/types';
 
 // Controlled store + judge model, so the sweep runs end-to-end (buildEvidenceContext
 // → llmJudge → parseVerdictJson → applyJudgeVerdict → updateStation) without IPC.

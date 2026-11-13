@@ -20,18 +20,15 @@ export async function applyExtractSection(
 ): Promise<string> {
   const sourceContent = await readFile(sourceFilePath);
 
-  // Compute the directory of the source file
   const lastSlash = sourceFilePath.lastIndexOf('/');
   const sourceDir = lastSlash >= 0 ? sourceFilePath.slice(0, lastSlash) : '.';
   const newFilePath = `${sourceDir}/${targetFileName}`;
 
-  // Replace the section in the source with the wiki-link
   const updatedSource =
     sourceContent.slice(0, extraction.sectionFrom) +
     extraction.replacementText +
     sourceContent.slice(extraction.sectionTo);
 
-  // Write both files
   await writeFile(newFilePath, extraction.sectionContent);
   await writeFile(sourceFilePath, updatedSource);
 

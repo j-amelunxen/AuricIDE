@@ -1,7 +1,7 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { patchForHunkAction } from '../git/hunkPatch';
 import { commitRouteFor } from '../git/merge/commitRoute';
-import type { GitMergeState } from '../tauri/gitMerge';
 import { markCommentsSent, newReviewCommentId, type ReviewComment } from '../git/reviewComments';
 import { isStaged, isUnstagedTracked, isUntracked } from '../git/statusSplit';
 import type { BranchInfo, GitFileStatus, GitRepoRef, GitWorktree } from '../tauri/git';
@@ -57,14 +57,7 @@ export {
   selectBranchNameForPath,
 };
 
-/** What `commit` reads from the merge slice and the toasts, duck-typed like agentSlice does. */
-interface CommitHost {
-  mergeStates?: Record<string, GitMergeState>;
-  concludeMerge?: (repoPath: string, message: string) => Promise<string>;
-  showToast?: (message: string, variant?: 'info' | 'success' | 'error') => unknown;
-}
-
-export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
+export const createGitSlice: StateCreator<StoreState, [], [], GitSlice> = (set, get) => {
   /**
    * Writes fetched statuses back, all repos in one store update, and only for
    * repos that are still discovered.
@@ -315,10 +308,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
       } catch (error) {
         // Refresh is read-only bookkeeping: it must never replace a completed
         // merge/push outcome with a misleading "Could not merge" error.
-        (get() as GitSlice & CommitHost).showToast?.(
-          `Could not refresh Git status after the merge: ${String(error)}`,
-          'error'
-        );
+        get().showToast(`Could not refresh Git status after the merge: ${String(error)}`, 'error');
       }
       return result;
     },
@@ -374,11 +364,11 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
 
     commit: async (repoPath) => {
       const repoState = get().repoStates[repoPath];
-      const host = get() as GitSlice & CommitHost;
+      const host = get();
       const mergeState = host.mergeStates?.[repoPath];
       const route = commitRouteFor(mergeState, { agentic: false });
       if (route.kind === 'refuse') {
-        host.showToast?.(route.message, 'error');
+        host.showToast(route.message, 'error');
         return null;
       }
       if (route.kind === 'conclude-merge' && host.concludeMerge) {

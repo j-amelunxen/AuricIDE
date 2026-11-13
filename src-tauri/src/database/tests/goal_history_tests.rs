@@ -135,17 +135,3 @@ fn test_deleting_a_goal_drops_its_history() {
         .unwrap()
         .is_empty());
 }
-
-#[test]
-fn test_goals_clear_also_clears_goal_history() {
-    let conn = setup_in_memory_db();
-    goals_sync_impl(
-        &conn,
-        &sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]),
-    )
-    .unwrap();
-    goals_clear_impl(&conn).unwrap();
-    assert!(goal_status_history_load_impl(&conn, None)
-        .unwrap()
-        .is_empty());
-}

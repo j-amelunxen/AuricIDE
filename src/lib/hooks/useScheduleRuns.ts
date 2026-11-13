@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type { Notification } from '@/lib/notifications/types';
 import {
   firedRuns,
-  formatUtcStamp,
   runsInRange,
   upcomingRuns,
   type ScheduleRun,

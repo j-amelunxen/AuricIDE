@@ -1,5 +1,7 @@
 import type { Schedule, ScheduleException } from '@/lib/tauri/schedules';
-import { DAY, formatUtcStamp } from './scheduleCalendar';
+import { DAY } from './scheduleCalendar';
+import { formatUtcStamp, parseUtcStamp } from '@/lib/time/utcStamp';
+import { CRON_WEEKDAYS, readSimpleCron } from './scheduleFormat';
 
 /**
  * Moving a run on the calendar or the timeline, as a change to the schedule.
@@ -11,9 +13,6 @@ import { DAY, formatUtcStamp } from './scheduleCalendar';
  * itself would write. Anything else returns `null` and the caller falls back
  * to the single occurrence.
  */
-
-const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const WEEKDAY_LIST = new RegExp(`^(${WEEKDAYS.join('|')})(,(${WEEKDAYS.join('|')}))*$`);
 
 interface Civil {
   /** Days since 1970-01-01 of the local calendar date. */
@@ -88,34 +87,32 @@ export function moveOccurrence(schedule: Schedule, at: number, to: number): Sche
 }
 
 function shiftCron(schedule: Schedule, from: Civil, to: Civil): Schedule | null {
-  const fields = schedule.cronExpr?.trim().split(/\s+/) ?? [];
-  if (fields.length === 5) fields.unshift('0');
-  if (fields.length !== 6) return null;
-  const [second, minute, hour, dom, month, dow] = fields;
-  if (!/^\d+$/.test(minute) || !/^\d+$/.test(hour) || dom !== '*' || month !== '*') return null;
-  if (dow !== '*' && !WEEKDAY_LIST.test(dow)) return null;
+  const simple = readSimpleCron(schedule.cronExpr);
+  if (simple === null) return null;
 
   const dayShift = to.day - from.day;
   const nextDow =
-    dow === '*'
+    simple.weekdays === null
       ? '*'
-      : dow
-          .split(',')
-          .map((name) => (WEEKDAYS.indexOf(name) + dayShift + 7 * 7) % 7)
+      : simple.weekdays
+          .map(
+            (name) =>
+              (CRON_WEEKDAYS.indexOf(name as (typeof CRON_WEEKDAYS)[number]) + dayShift + 7 * 7) % 7
+          )
           // Monday first, the order the editor writes them in.
           .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-          .map((index) => WEEKDAYS[index])
+          .map((index) => CRON_WEEKDAYS[index])
           .join(',');
   return {
     ...schedule,
-    cronExpr: [second, String(to.minute), String(to.hour), dom, month, nextDow].join(' '),
+    cronExpr: [simple.second, String(to.minute), String(to.hour), '*', '*', nextDow].join(' '),
   };
 }
 
 function shiftEvery(schedule: Schedule, at: number, to: number, from: Civil, dest: Civil) {
   if (schedule.anchorAt === null || schedule.anchorAt === undefined) return null;
-  const anchor = Date.parse(`${schedule.anchorAt.replace(' ', 'T')}Z`);
-  if (Number.isNaN(anchor)) return null;
+  const anchor = parseUtcStamp(schedule.anchorAt);
+  if (anchor === null) return null;
   if (schedule.everyUnit === 'hour') {
     return { ...schedule, anchorAt: formatUtcStamp(anchor + (to - at)) };
   }

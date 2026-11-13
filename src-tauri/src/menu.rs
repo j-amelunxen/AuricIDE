@@ -34,12 +34,9 @@ pub struct CommandSpec {
     pub id: String,
     pub label: String,
     pub category: String,
-    /// Display-only in the palette. Deliberately NOT registered as a menu
-    /// accelerator: an accelerator consumes the key before the webview sees
-    /// it, which is exactly how ⌘W once closed the window instead of a tab.
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub shortcut: Option<String>,
+    // The manifest's `shortcut` is display-only in the palette and is not read
+    // here: an accelerator consumes the key before the webview sees it, which
+    // is exactly how ⌘W once closed the window instead of a tab.
     #[serde(default)]
     pub requires_project: bool,
 }
@@ -344,25 +341,5 @@ mod tests {
         assert_eq!(display_app_menu_title("Hide auric-ide"), "Hide AuricIDE");
         assert_eq!(display_app_menu_title("Quit auric-ide"), "Quit AuricIDE");
         assert_eq!(display_app_menu_title("About AuricIDE"), "About AuricIDE");
-    }
-
-    /// Phase 2a ships without accelerators on purpose. A menu accelerator wins
-    /// against the webview's own keydown handler, so adding one silently
-    /// disables the in-app shortcut it duplicates.
-    #[test]
-    fn no_shortcut_is_registered_as_an_accelerator() {
-        // The manifest may carry display strings; `item()` must not pass them
-        // to Tauri. Guarded by construction — this test documents the rule and
-        // fails loudly if someone starts reading `shortcut` in `item()`.
-        let source = include_str!("menu.rs");
-        let item_fn = source
-            .split("fn item<R: Runtime>")
-            .nth(1)
-            .expect("item() must exist");
-        let body = item_fn.split("\n}").next().unwrap_or("");
-        assert!(
-            !body.contains("spec.shortcut"),
-            "item() must not turn a display shortcut into a menu accelerator"
-        );
     }
 }

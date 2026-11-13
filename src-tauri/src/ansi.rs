@@ -119,6 +119,47 @@ pub fn strip_ansi(raw: &str) -> String {
     out
 }
 
+/// Longest output tail worth keeping in memory for the UI fold. The full text
+/// goes to a log file; this is the part that gets rendered.
+pub const DETAIL_LINES: usize = 40;
+const DETAIL_CHARS: usize = 4_000;
+
+/// Strip the terminal decoration that makes tool output unreadable in a web
+/// view, then keep only the tail — the cause is at the bottom of a traceback,
+/// never at the top.
+pub fn readable_details(raw: &str) -> String {
+    let cleaned = strip_decoration(raw);
+    let lines: Vec<&str> = cleaned
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let tail = if lines.len() > DETAIL_LINES {
+        &lines[lines.len() - DETAIL_LINES..]
+    } else {
+        &lines[..]
+    };
+    let mut text = tail.join("\n");
+    if text.chars().count() > DETAIL_CHARS {
+        let skip = text.chars().count() - DETAIL_CHARS;
+        text = text.chars().skip(skip).collect();
+    }
+    text
+}
+
+/// Remove ANSI escape sequences and the box-drawing characters `rich` uses to
+/// frame its error panels. Both survive into a `<p>` as visual noise.
+fn strip_decoration(raw: &str) -> String {
+    strip_ansi(raw)
+        .chars()
+        .map(|ch| if is_box_drawing(ch) { ' ' } else { ch })
+        .collect()
+}
+
+fn is_box_drawing(ch: char) -> bool {
+    matches!(ch, '\u{2500}'..='\u{257f}' | '\u{2580}'..='\u{259f}')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

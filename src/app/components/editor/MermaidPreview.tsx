@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -37,13 +38,12 @@ async function loadMermaid() {
 function MermaidFullscreen({ svg, onClose }: { svg: string; onClose: () => void }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useOverlayLayer({
+    id: `mermaid-fullscreen-${useId()}`,
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
 
   return createPortal(
     <div

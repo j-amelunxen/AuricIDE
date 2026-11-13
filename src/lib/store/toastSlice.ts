@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 export type ToastVariant = 'error' | 'success' | 'info';
@@ -25,7 +26,7 @@ export interface ToastSlice {
 // Module-level counter keeps ids unique without depending on Date.now().
 let toastCounter = 0;
 
-export const createToastSlice: StateCreator<ToastSlice> = (set) => ({
+export const createToastSlice: StateCreator<StoreState, [], [], ToastSlice> = (set) => ({
   toasts: [],
   showToast: (message, variant = 'info', action) => {
     const id = ++toastCounter;

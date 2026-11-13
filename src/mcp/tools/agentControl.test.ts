@@ -6,7 +6,8 @@ import fixtures from '../../lib/agents/agentControl.fixtures.json';
 import { ControlError } from '../../lib/agents/agentControl.contract';
 import { createTestDb } from '../db';
 import { createControlServer, createMcpServer } from '../server';
-import { registerAgentControlTools, type ControlCaller } from './agentControl';
+import { registerAgentControlTools } from './agentControl';
+import { type ControlCaller } from '../controlTypes';
 
 const CONTROL_TOOLS = [
   'await_agent_result',

@@ -1,0 +1,205 @@
+{
+  "formatVersion": 1,
+  "id": "system.foundations",
+  "title": "Shared Rust foundations",
+  "description": "Shared file storage, project identity, provider identifiers and login-shell environment live below the agent and supervisor runtimes. Consumers use the foundation that owns the operation directly; missing-path and missing-PATH fallbacks remain explicit.",
+  "nodes": [
+    {
+      "id": "agents",
+      "label": "Agent runtime",
+      "preset": "rings",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.8,
+      "detail": "./agents.scene.json",
+      "position": [-10.55, 0, 0]
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor and policy",
+      "preset": "rings",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.7,
+      "position": [-6.05, 0, 0]
+    },
+    {
+      "id": "git",
+      "label": "Git commands",
+      "preset": "rings",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.5,
+      "detail": "./git.scene.json",
+      "position": [2.35, 0, 0]
+    },
+    {
+      "id": "mcp",
+      "label": "MCP and Node selection",
+      "preset": "rings",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.6,
+      "position": [6.45, 0, 0]
+    },
+    {
+      "id": "tools",
+      "label": "Formatting and video import",
+      "preset": "rings",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.5,
+      "position": [10.55, 0, 0]
+    },
+    {
+      "id": "stores",
+      "label": "Rust-owned JSON stores",
+      "preset": "stack",
+      "group": "consumers",
+      "level": 0,
+      "weight": 0.6,
+      "position": [-1.75, 0, 0]
+    },
+    {
+      "id": "machine",
+      "label": "machine/ + shell_env",
+      "preset": "box",
+      "group": "foundations",
+      "level": 1,
+      "weight": 0.8,
+      "position": [6.4, -5.6, 0]
+    },
+    {
+      "id": "projectPath",
+      "label": "project_path.rs",
+      "preset": "box",
+      "group": "foundations",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-6.4, -5.6, 0]
+    },
+    {
+      "id": "providers",
+      "label": "providers: normalize_provider_id",
+      "preset": "box",
+      "group": "foundations",
+      "level": 1,
+      "weight": 0.5,
+      "position": [-2.3, -5.6, 0]
+    },
+    {
+      "id": "jsonStore",
+      "label": "json_store.rs",
+      "preset": "box",
+      "group": "foundations",
+      "level": 1,
+      "weight": 0.7,
+      "position": [1.9, -5.6, 0]
+    },
+    {
+      "id": "fileLock",
+      "label": "file_lock.rs",
+      "preset": "box",
+      "group": "foundations",
+      "level": 2,
+      "weight": 0.4,
+      "position": [0, -10.8, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "agents",
+      "to": "machine",
+      "kind": "dependency",
+      "label": "login-shell environment"
+    },
+    {
+      "from": "agents",
+      "to": "projectPath",
+      "kind": "dependency",
+      "label": "project identity"
+    },
+    {
+      "from": "supervisor",
+      "to": "machine",
+      "kind": "dependency",
+      "label": "executable resolution"
+    },
+    {
+      "from": "supervisor",
+      "to": "projectPath",
+      "kind": "dependency",
+      "label": "policy path keys"
+    },
+    {
+      "from": "supervisor",
+      "to": "providers",
+      "kind": "dependency",
+      "label": "normalize identifiers"
+    },
+    {
+      "from": "git",
+      "to": "machine",
+      "kind": "dependency",
+      "label": "tool resolution"
+    },
+    {
+      "from": "mcp",
+      "to": "machine",
+      "kind": "dependency",
+      "label": "PATH and executable checks"
+    },
+    {
+      "from": "tools",
+      "to": "machine",
+      "kind": "dependency",
+      "label": "environment and tool paths"
+    },
+    {
+      "from": "stores",
+      "to": "jsonStore",
+      "kind": "dependency",
+      "label": "read policy, atomic update"
+    },
+    {
+      "from": "supervisor",
+      "to": "jsonStore",
+      "kind": "dependency",
+      "label": "atomic JSON writes"
+    },
+    {
+      "from": "jsonStore",
+      "to": "fileLock",
+      "kind": "dependency",
+      "label": "locked read-modify-write"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "contracts",
+      "preset": "hud-panel",
+      "text": "Preserved boundary contracts",
+      "rows": [
+        {
+          "label": "PATH",
+          "value": "absent vs empty"
+        },
+        {
+          "label": "Node ABI",
+          "value": "all candidates, ordered"
+        },
+        {
+          "label": "Project identity",
+          "value": "distinct fallbacks"
+        },
+        {
+          "label": "Unreadable JSON",
+          "value": "per-store policy"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

@@ -57,7 +57,7 @@ pub fn agent_usage_reprice(
         .map_err(|e| format!("No home directory: {e}"))?;
     let claude = app
         .try_state::<crate::cc_usage::CcUsageService>()
-        .and_then(|service| service.plugin_from_disk("claude-code"));
+        .and_then(|service| service.plugin_from_disk(crate::cc_usage::CLAUDE_CODE_PLUGIN_ID));
     let registry = providers.inner().clone();
     reprice::reprice_unpriced(
         &mut conn,

@@ -1,0 +1,19 @@
+{
+  "$comment": "Names an extra MCP server may have: a JSON key, a Claude tool prefix and an unquoted TOML key. Read by src/lib/config/extraMcpName.test.ts and src-tauri/src/extra_mcp.rs.",
+  "valid": [
+    "github",
+    "my_server",
+    "a-b",
+    "A1",
+    "x",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalid": [
+    "",
+    "has space",
+    "dot.name",
+    "ümlaut",
+    "slash/name",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ]
+}

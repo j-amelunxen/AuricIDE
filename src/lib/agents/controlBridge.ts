@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { buildSpawnConfig, NotificationActionError } from '@/lib/notifications/execute';
 import type { NotificationAction } from '@/lib/notifications/types';
-import type { AgentConfig, AgentInfo, PermissionMode } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo, PermissionMode } from '@/lib/agents/types';
 import { isDir } from '@/lib/tauri/fs';
 import { invoke } from '@/lib/tauri/invoke';
 import type { ProviderInfo } from '@/lib/tauri/providers';

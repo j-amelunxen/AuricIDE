@@ -10,18 +10,18 @@
 //! app went away is failed as `interrupted` on load: its agent did not
 //! survive the quit.
 
+use crate::json_store::{self, Unreadable};
 use git2::{Delta, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::documents::{self, blob_hash, parse_document, DocumentError};
 use super::glob;
 use super::instructions::Instructions;
-use super::policy::{write_private_atomic, JobLimits, ProjectConfig};
+use super::policy::{JobLimits, ProjectConfig};
 use super::protocol::JobStatus;
 
 /// Fixture `jobs.fileName`.
@@ -36,12 +36,6 @@ const KEEP_FINISHED_MAX: usize = 500;
 const EVENT_BACKLOG: usize = 1000;
 /// Paths listed per job in `changed`, `files` and `otherFiles`.
 pub const MAX_LISTED_PATHS: usize = 200;
-
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |at| at.as_millis() as u64)
-}
 
 /// A document the job wrote, as the branch holds it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -155,42 +149,37 @@ pub fn jobs_path_in(app_data: &Path) -> PathBuf {
     app_data.join(JOBS_FILE_NAME)
 }
 
+/// For counting only: the register `Jobs::load` moves aside when it cannot
+/// read it, so here an unreadable file simply counts nothing.
 fn read_file(path: &Path) -> Vec<JobRecord> {
-    std::fs::read_to_string(path)
+    json_store::load::<JobsFile>(path, None, Unreadable::Empty)
         .ok()
-        .and_then(|text| serde_json::from_str::<JobsFile>(&text).ok())
+        .flatten()
         .map(|file| file.jobs)
         .unwrap_or_default()
 }
 
 /// The register as `load` finds it. A file that exists but does not parse is
 /// moved aside rather than overwritten, so the jobs it held can still be
-/// looked at; the counter starts empty.
-fn read_register(path: &Path, now: u64) -> Vec<JobRecord> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    if let Ok(file) = serde_json::from_str::<JobsFile>(&text) {
-        return file.jobs;
-    }
-    let aside = path.with_extension(format!("json.unreadable-{now}"));
-    match std::fs::rename(path, &aside) {
-        Ok(()) => eprintln!(
-            "Supervisor link: the job register could not be read; kept it as {} and started \
-             an empty one",
-            aside.display()
-        ),
-        Err(error) => eprintln!(
-            "Supervisor link: the job register could not be read nor moved aside: {error}"
-        ),
-    }
-    Vec::new()
+/// looked at; the counter starts empty. `Err` when it could not even be moved:
+/// then nothing may be written over it.
+fn read_register(path: &Path) -> Result<Vec<JobRecord>, String> {
+    json_store::load::<JobsFile>(path, None, Unreadable::MoveAside)
+        .map(|file| file.map(|file| file.jobs).unwrap_or_default())
 }
 
 impl Jobs {
     /// Loads the register; jobs that were running are failed as interrupted.
     pub fn load(path: PathBuf, now: u64) -> Self {
-        let mut jobs = read_register(&path, now);
+        let (mut jobs, path) = match read_register(&path) {
+            Ok(jobs) => (jobs, Some(path)),
+            Err(error) => {
+                // Kept read-only for this run: the file still holds jobs (and
+                // the daily count) that a write would erase.
+                eprintln!("Supervisor link: the job register cannot be used: {error}");
+                (Vec::new(), None)
+            }
+        };
         for job in jobs
             .iter_mut()
             .filter(|job| job.status == JobStatus::Running)
@@ -203,7 +192,7 @@ impl Jobs {
             });
         }
         let register = Self {
-            path: Some(path),
+            path,
             state: Mutex::new(State {
                 jobs,
                 ..State::default()
@@ -231,7 +220,9 @@ impl Jobs {
         };
         let written = serde_json::to_vec_pretty(&file)
             .map_err(|error| error.to_string())
-            .and_then(|payload| write_private_atomic(path, &payload));
+            .and_then(|payload| {
+                crate::json_store::write_atomic(path, &payload, crate::json_store::Mode::Private)
+            });
         if let Err(error) = written {
             eprintln!("Supervisor link: could not write the job register: {error}");
         }
@@ -283,12 +274,14 @@ impl Jobs {
         let Some(job) = state.jobs.iter_mut().find(|job| job.job_id == job_id) else {
             return;
         };
+        let was_cancel_requested = job.cancel_requested;
         let event = change(job);
         let ended = job.status != JobStatus::Running;
+        let cancellation_started = !was_cancel_requested && job.cancel_requested;
         if let Some((name, data)) = event {
             Self::push_event(&mut state, name, data);
         }
-        if ended {
+        if ended || cancellation_started {
             self.persist(&state, now);
         }
     }

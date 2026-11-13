@@ -1,11 +1,13 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
 import { managerAction } from '@/lib/notifications/managerAction';
 import { dailyCron, weeklyCron } from '@/lib/notifications/scheduleFormat';
 import type { NotificationAction, NotificationLaunch } from '@/lib/notifications/types';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
-import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/quickAccess/types';
 import type { ProjectSkill, ProjectSkillScope } from '@/lib/tauri/projectSkills';
-import type { Schedule, ScheduleCatchUp, SchedulePayload } from '@/lib/tauri/schedules';
+import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
+import type { ScheduleCatchUp } from '@/lib/notifications/scheduleVocabulary';
 import {
   DISCOVERED_PREFIX,
   type ActionDraft,
@@ -14,6 +16,7 @@ import {
   type RunConductorAction,
   type RunSkillAction,
 } from './types';
+import { readSimpleCron } from '@/lib/notifications/scheduleFormat';
 
 export function clampInt(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
@@ -47,7 +50,7 @@ export function anchorFor(time: string): string {
   const [hour = '9', minute = '0'] = time.split(':');
   const local = new Date();
   local.setHours(Number(hour), Number(minute), 0, 0);
-  return local.toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp(local.getTime());
 }
 
 export function parsePayload(raw: string): SchedulePayload {
@@ -62,10 +65,9 @@ export function parsePayload(raw: string): SchedulePayload {
 export function rhythmOf(schedule: Schedule | null): RhythmChoice {
   if (schedule === null) return 'weekly';
   if (schedule.specKind === 'every') return 'interval';
-  const fields = schedule.cronExpr?.trim().split(/\s+/) ?? [];
-  if (fields.length === 6 && fields[5] === '*') return 'daily';
-  if (fields.length === 6 && /^[A-Z,]+$/.test(fields[5])) return 'weekly';
-  return 'cron';
+  const simple = readSimpleCron(schedule.cronExpr);
+  if (simple === null) return 'cron';
+  return simple.weekdays === null ? 'daily' : 'weekly';
 }
 
 export function actionDraftOf(schedule: Schedule | null): ActionDraft {

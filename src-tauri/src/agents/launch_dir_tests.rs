@@ -139,9 +139,9 @@ fn refuses_a_relative_or_missing_stored_folder() {
 fn starts_in_a_fresh_ide_worktree_of_the_same_repository() {
     let (_guard, root) = sandbox();
     let folder = repo_at(&root.join("AuricIDE"));
-    let worktree = git_worktree_add_impl(s(&folder), "helper").unwrap();
     let conn = inbox();
     request(&conn, "r1", Some(s(&folder)), true);
+    let worktree = git_worktree_add_impl(s(&folder), "helper").unwrap();
 
     assert_eq!(
         check_launch_directory(&conn, "r1", Some(&worktree.path)),
@@ -174,9 +174,11 @@ fn a_requester_inside_a_worktree_may_ask_for_another_worktree_of_its_repository(
     let main = repo_at(&root.join("AuricIDE"));
     let requester = git_worktree_add_impl(s(&main), "requester").unwrap();
     let requester_path = Path::new(&requester.path).canonicalize().unwrap();
-    let fresh = git_worktree_add_impl(s(&requester_path), "helper").unwrap();
     let conn = inbox();
     request(&conn, "r1", Some(s(&requester_path)), true);
+    // Made for the request, so after it: made first, the check could see it
+    // as older whenever the clock crossed a second in between.
+    let fresh = git_worktree_add_impl(s(&requester_path), "helper").unwrap();
 
     assert_eq!(
         check_launch_directory(&conn, "r1", Some(&fresh.path)),

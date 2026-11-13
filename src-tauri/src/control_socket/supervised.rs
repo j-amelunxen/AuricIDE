@@ -12,16 +12,14 @@
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
-use crate::providers::ModelOption;
+use crate::project_path::canonical_project_path;
+use crate::providers::{normalize_provider_id, ModelOption};
 use crate::supervisor::pm_target::{pm_facts, resolve_pm_target, PmRefusal, PmTarget};
 use crate::supervisor::policy::{
-    balancing_with_blocks, check_spawn_with_blocks, normalize_provider_id, resolve_model,
-    visible_projects, Balancing, ModelChoice, ModelRequest, SpawnRequest, VisibleProject,
-    VisibleProvider, BALANCING_WINDOW_DAYS,
+    balancing_with_blocks, resolve_model, visible_projects, Balancing, ModelChoice, ModelRequest,
+    SpawnRequest, VisibleProject, VisibleProvider, BALANCING_WINDOW_DAYS,
 };
-use crate::supervisor::{
-    canonical_project_path, live_runs_by_provider, model_names, running_children,
-};
+use crate::supervisor::{live_runs_by_provider, model_names, running_children};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -345,15 +343,15 @@ impl Dispatcher {
             .project_provider_policy(Path::new(request.project_path));
         let running = running_children(&self.backend.agents(), supervisor);
         let quota_blocks = self.backend.quota_blocks();
-        check_spawn_with_blocks(
+        crate::supervisor::admission::ChildAdmission::new(
+            running,
             &policy,
             &project_policy,
             &offered,
             &modes,
-            &running,
             &quota_blocks,
-            request,
         )
+        .check_request(request)
         .map_err(|denied| {
             ControlError::new(ErrorCode::SupervisorDenied, denied.message)
                 .with_reason(denied.reason.key())

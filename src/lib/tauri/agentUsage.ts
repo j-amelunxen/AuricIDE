@@ -1,53 +1,8 @@
+import type { AgentUsageRow } from '../pm/usage/types';
 import { invoke } from './invoke';
 import { subscribeToTauriEvent } from './subscribe';
 
-export type UsageCostSource = 'cli' | 'estimated' | 'reported' | 'none';
-export type UsageRunKind = 'ticket' | 'goal' | 'review' | 'other';
-
-/** One finished agent run: what it consumed, and what it cost at list price. */
-export interface AgentUsageRow {
-  id: string;
-  agentId: string;
-  ticketId: string | null;
-  goalId: string | null;
-  runKind: UsageRunKind;
-  runSource: string;
-  provider: string;
-  model: string | null;
-  headless: boolean;
-  sessionId: string | null;
-  ticketStatusAtStart: string | null;
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  outcome: 'success' | 'error' | 'killed';
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  /** `null` = unknown (unpriced model or no usage source), never zero. */
-  costUsd: number | null;
-  costSource: UsageCostSource;
-  matchKind: 'exact' | 'heuristic';
-  estimateCostUsd: number | null;
-  estimateInputTokens: number | null;
-  estimateOutputTokens: number | null;
-  estimateCacheReadTokens: number | null;
-  estimateCacheWriteTokens: number | null;
-  unpricedModels: string[] | null;
-  numTurns: number | null;
-  /** External runs only (`docs/design-external-agents.md`). Real runtime as reported; `null` = unknown. */
-  activeMs: number | null;
-  /** The time the IDE was told the run was working. */
-  onMs: number | null;
-  agentRuns: number | null;
-  runtimePartial: boolean | null;
-  externalId: string | null;
-  externalRunId: string | null;
-  /** `human` when closed by hand from the timeline. */
-  closedBy: string | null;
-}
+export const AGENT_USAGE_RECORDED_EVENT = 'agent-usage-recorded';
 
 export interface AgentUsageRecorded {
   projectPath: string;
@@ -81,7 +36,7 @@ export async function agentUsageReprice(projectPath: string): Promise<RepriceRep
 /** Fires after Rust stored a run, so the open project can append without a reload. */
 export function onAgentUsageRecorded(callback: (event: AgentUsageRecorded) => void): () => void {
   return subscribeToTauriEvent(
-    'agent-usage-recorded',
+    AGENT_USAGE_RECORDED_EVENT,
     callback,
     '[Browser mode] Agent usage listener not available'
   );

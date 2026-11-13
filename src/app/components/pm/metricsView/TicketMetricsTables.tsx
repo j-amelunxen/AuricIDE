@@ -1,8 +1,9 @@
 'use client';
 
-import type { StatusDuration, TicketMetrics } from '@/lib/pm/metrics';
-import { formatDuration } from '@/lib/pm/metrics';
-import { MetricPanel, DASH, statusLabel } from './metricsUi';
+import type { StatusDuration, TicketMetrics } from '@/lib/pm/metrics/types';
+import { formatDuration } from '@/lib/pm/metrics/time';
+import { MetricPanel, DASH } from './metricsUi';
+import { statusName } from '@/lib/pm/labels';
 
 export interface TicketRow extends TicketMetrics {
   name: string;
@@ -30,7 +31,7 @@ export function StatusDurationsTable({ statusDurations }: StatusDurationsTablePr
         <tbody>
           {statusDurations.map((s) => (
             <tr key={s.status} className="border-b border-white/[0.04]">
-              <td className="py-2 text-foreground">{statusLabel(s.status)}</td>
+              <td className="py-2 text-foreground">{statusName(s.status)}</td>
               <td className="py-2 text-center text-foreground-muted">{s.ticketCount}</td>
               <td className="py-2 text-right text-foreground-muted">
                 {formatDuration(s.medianMs)}
@@ -127,7 +128,7 @@ export function OpenTicketsTable({ openTicketRows }: OpenTicketsTableProps) {
                   {t.name}
                 </td>
                 <td className="py-2 text-foreground-muted whitespace-nowrap pr-4">
-                  {statusLabel(t.currentStatus)}
+                  {statusName(t.currentStatus)}
                 </td>
                 <td className="py-2 text-right text-foreground-muted whitespace-nowrap">
                   {t.timeInCurrentStatus !== null ? formatDuration(t.timeInCurrentStatus) : DASH}

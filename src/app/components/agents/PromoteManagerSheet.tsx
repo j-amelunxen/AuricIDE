@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { keyFromName, nameFromKey } from '@/lib/agents/supervisorManagers';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { machineDependencies } from '@/lib/tauri/machine';
 import { managerPromote, type SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';

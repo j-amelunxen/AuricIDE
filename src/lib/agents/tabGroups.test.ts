@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { groupAgentTabs } from './tabGroups';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 
 function makeAgent(id: string, repoPath?: string, extra: Partial<AgentInfo> = {}): AgentInfo {
   return {

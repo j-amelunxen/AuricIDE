@@ -9,32 +9,13 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
 import type { ExcalidrawSceneSummary } from '@/lib/excalidraw/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { parseExcalidrawFileJson } from '@/lib/excalidraw/serialize';
 
 export interface ExcalidrawBrowserProps {
   /** Called after a scene was imported as spec so the file tree can refresh. */
   onImported?: () => void;
   /** Opens the settings modal (its open state lives outside the store). */
   onOpenSettings?: () => void;
-}
-
-interface ParsedPreview {
-  elements: unknown[];
-  appState: Record<string, unknown>;
-  files: Record<string, unknown>;
-}
-
-function parsePreview(fileJson: string): ParsedPreview | null {
-  try {
-    const value = JSON.parse(fileJson) as Record<string, unknown>;
-    if (!Array.isArray(value.elements)) return null;
-    return {
-      elements: value.elements,
-      appState: (value.appState as Record<string, unknown>) ?? {},
-      files: (value.files as Record<string, unknown>) ?? {},
-    };
-  } catch {
-    return null;
-  }
 }
 
 export function ExcalidrawBrowser(props: ExcalidrawBrowserProps) {
@@ -139,7 +120,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
     }
   };
 
-  const parsedPreview = preview ? parsePreview(preview.fileJson) : null;
+  const parsedPreview = preview ? parseExcalidrawFileJson(preview.fileJson) : null;
 
   return createPortal(
     <div
@@ -156,7 +137,6 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
         aria-labelledby="excalidraw-browser-title"
         className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl"
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
             <AuricIcon aria-hidden="true" name="draw" className="text-primary-light" />
@@ -193,7 +173,6 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
           </div>
         </div>
 
-        {/* Body */}
         {notConfigured ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <AuricIcon aria-hidden="true" name="key" className="text-3xl text-primary-light" />
@@ -222,7 +201,6 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
           </div>
         ) : (
           <div className="flex flex-1 overflow-hidden">
-            {/* Collections sidebar */}
             <div className="flex w-[280px] flex-col overflow-y-auto border-r border-white/5 p-2">
               <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
                 Collections
@@ -250,7 +228,6 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
               ))}
             </div>
 
-            {/* Scenes + preview */}
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto p-3">
                 {!selectedCollectionId ? (

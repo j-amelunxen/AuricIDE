@@ -12,12 +12,8 @@ vi.mock('@/lib/store', () => ({
   }),
 }));
 
-import {
-  xmlLintExtension,
-  currentFilePathFacetXml,
-  xmlLintSource,
-  parseXmlErrors,
-} from './xmlLintExtension';
+import { xmlLintSource, parseXmlErrors } from './xmlLintExtension';
+import { currentFilePathFacet } from './editorFacets';
 
 describe('parseXmlErrors', () => {
   it('returns empty for valid XML', () => {
@@ -64,18 +60,10 @@ describe('xmlLintExtension', () => {
     vi.clearAllMocks();
   });
 
-  it('exports xmlLintExtension as defined', () => {
-    expect(xmlLintExtension).toBeDefined();
-  });
-
-  it('exports currentFilePathFacetXml as defined', () => {
-    expect(currentFilePathFacetXml).toBeDefined();
-  });
-
   it('xmlLintSource returns no diagnostics for valid XML', () => {
     const state = EditorState.create({
       doc: '<root><child attr="value"/></root>',
-      extensions: [xml(), currentFilePathFacetXml.of('')],
+      extensions: [xml(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -88,7 +76,7 @@ describe('xmlLintExtension', () => {
   it('xmlLintSource returns diagnostic for invalid XML', () => {
     const state = EditorState.create({
       doc: '<root><unclosed>',
-      extensions: [xml(), currentFilePathFacetXml.of('')],
+      extensions: [xml(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -102,7 +90,7 @@ describe('xmlLintExtension', () => {
   it('pushes diagnostics to store when filePath facet is set', () => {
     const state = EditorState.create({
       doc: '<broken>',
-      extensions: [xml(), currentFilePathFacetXml.of('/path/to/file.xml')],
+      extensions: [xml(), currentFilePathFacet.of('/path/to/file.xml')],
     });
     const view = new EditorView({ state });
 

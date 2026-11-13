@@ -29,7 +29,7 @@ vi.mock('@codemirror/legacy-modes/mode/groovy', () => ({ groovy: 'groovy-parser'
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign(vi.fn(), {
     getState: vi.fn(() => ({
-      headingIndex: new Map(),
+      linkIndex: new Map(),
       lintConfig: { enabled: true, disabledRules: new Set() },
       allFilePaths: [],
       customSlashCommands: [],
@@ -51,7 +51,6 @@ vi.mock('@/lib/editor/wikiLinkBrokenExtension', () => ({
 }));
 vi.mock('@/lib/editor/wikiLinkCompletionExtension', () => ({
   wikiLinkCompletion: () => null,
-  fileListFacet: { of: () => [] },
   headingProviderFacet: { of: () => [] },
 }));
 vi.mock('@/lib/editor/markdownFoldExtension', () => ({ markdownFoldExtension: [] }));
@@ -60,7 +59,6 @@ vi.mock('@/lib/editor/markdownCompletionSource', () => ({
   headingLevelSource: () => null,
   linkTargetSource: () => null,
   imageTargetSource: () => null,
-  filePathsFacet: { of: () => [] },
 }));
 vi.mock('@/lib/editor/wikiLinkHoverExtension', () => ({
   wikiLinkHoverExtension: [],
@@ -83,23 +81,18 @@ vi.mock('@/lib/editor/slashCommandSource', () => ({
   slashCommands: [],
 }));
 vi.mock('@/lib/editor/markdownLintExtension', () => ({
-  markdownLintExtension: [],
+  markdownLintExtension: ['markdown-lint-ext'],
   lintConfigFacet: { of: () => [] },
-  fileListForLintFacet: { of: () => [] },
   headingIndexForLintFacet: { of: () => [] },
-  currentFilePathFacet: { of: () => [] },
 }));
 vi.mock('@/lib/editor/jsonLintExtension', () => ({
   jsonLintExtension: ['json-lint-ext'],
-  currentFilePathFacetJson: { of: () => [] },
 }));
 vi.mock('@/lib/editor/xmlLintExtension', () => ({
   xmlLintExtension: ['xml-lint-ext'],
-  currentFilePathFacetXml: { of: () => [] },
 }));
 vi.mock('@/lib/editor/yamlLintExtension', () => ({
   yamlLintExtension: ['yaml-lint-ext'],
-  currentFilePathFacetYaml: { of: () => [] },
 }));
 vi.mock('@/lib/editor/gitGutterExtension', () => ({
   createGitGutter: (changes: unknown[]) => ['git-gutter-ext', changes],
@@ -142,7 +135,12 @@ vi.mock('@codemirror/state', () => ({
   Facet: { define: () => ({ of: () => [] }) },
 }));
 
-import { buildHeadingTitleIndex, getLanguageExtension, getLintableFileType } from './setup';
+import {
+  buildHeadingTitleIndex,
+  getLanguageExtension,
+  getLintableFileType,
+  lintExtensionFor,
+} from './setup';
 import { useStore } from '@/lib/store';
 
 describe('getLanguageExtension', () => {
@@ -162,13 +160,11 @@ describe('getLanguageExtension', () => {
   });
 
   it('returns javascript for .js files', () => {
-    const ext = getLanguageExtension('app.js');
-    expect(ext).toBeDefined();
+    expect(getLanguageExtension('app.js')).toEqual(['js-ext', undefined]);
   });
 
   it('returns typescript for .ts files', () => {
-    const ext = getLanguageExtension('app.ts');
-    expect(ext).toBeDefined();
+    expect(getLanguageExtension('app.ts')).toEqual(['js-ext', { typescript: true }]);
   });
 
   it('returns rust for .rs files', () => {
@@ -342,8 +338,9 @@ describe('getLintableFileType', () => {
 // Every markdown tab switch reconfigures the lint facets. Rebuilding the title
 // map from an unchanged heading index hands the facet a new value for nothing.
 describe('buildHeadingTitleIndex', () => {
-  function withHeadingIndex(headingIndex: Map<string, Array<{ title: string }>>) {
-    vi.mocked(useStore.getState).mockReturnValue({ headingIndex } as unknown as ReturnType<
+  function withHeadingIndex(headings: Map<string, Array<{ title: string }>>) {
+    const linkIndex = new Map([...headings].map(([path, list]) => [path, { headings: list }]));
+    vi.mocked(useStore.getState).mockReturnValue({ linkIndex } as unknown as ReturnType<
       typeof useStore.getState
     >);
   }
@@ -361,5 +358,26 @@ describe('buildHeadingTitleIndex', () => {
     withHeadingIndex(new Map([['/a.md', [{ title: 'Other' }]]]));
     expect(buildHeadingTitleIndex().get('/a.md')).toEqual(['Other']);
     expect(buildHeadingTitleIndex()).not.toBe(first);
+  });
+});
+
+// The editor is created with this and reconfigured with it on every file
+// switch; a reconfiguration that left the linter out switched linting off.
+describe('lintExtensionFor', () => {
+  it.each([
+    ['/notes/a.md', 'markdown-lint-ext'],
+    ['/data/b.json', 'json-lint-ext'],
+    ['/data/c.xml', 'xml-lint-ext'],
+  ])('carries the linter for %s', (path, linter) => {
+    vi.mocked(useStore.getState).mockReturnValue({
+      linkIndex: new Map(),
+      lintConfig: { enabled: true, disabledRules: new Set() },
+      allFilePaths: [],
+    } as unknown as ReturnType<typeof useStore.getState>);
+    expect(lintExtensionFor(path).flat()).toContain(linter);
+  });
+
+  it('carries nothing for a file without a linter', () => {
+    expect(lintExtensionFor('/src/main.rs')).toEqual([]);
   });
 });

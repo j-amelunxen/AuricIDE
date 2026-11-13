@@ -22,11 +22,11 @@
 //! server rather than guessing.
 
 use super::*;
-use crate::agents::manager::binding_injection_for;
 use crate::agents::project_binding::resolve_project_binding;
 use crate::database::*;
+use crate::providers::dynamic::DynamicProvider;
 use crate::providers::{
-    project_binding_material, AgentProvider, DynamicProvider, ProviderConfig, SpawnInjection,
+    binding_injection_for, project_binding_material, AgentProvider, ProviderConfig, SpawnInjection,
 };
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
@@ -157,7 +157,7 @@ fn judge_command(root: &Path, goal_id: &str) -> (String, Vec<(String, String)>) 
         .with_runtime_entrypoint(runtime.to_string_lossy().into_owned());
     let injection = binding_injection_for(
         "codex",
-        project_binding_material("codex", &provider, &provider_binding).unwrap(),
+        project_binding_material(&provider, &provider_binding).unwrap(),
         provider.allows_unbound_mcp(),
     )
     .unwrap();

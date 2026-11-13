@@ -68,14 +68,18 @@ pub struct Resolved {
     pub skipped: Vec<Skipped>,
 }
 
-/// Names the IDE registers itself. A `.mcp.json` entry with one of these is
-/// never taken, so it cannot replace Auric PM or a connector.
+/// Names the IDE registers itself (`auric-pm`, `auric-supervisor`, a
+/// supervisor's `auric-pm-<folder>`, `connector-<id>`). A `.mcp.json` entry
+/// with one of these is never taken, so it cannot replace Auric PM or a connector.
 pub fn is_reserved(name: &str) -> bool {
-    name.starts_with("auric-") || name.starts_with("connector-") || name == "auric"
+    name == "auric"
+        || name.starts_with("auric-")
+        || name.starts_with(crate::connectors::CONNECTOR_SERVER_PREFIX)
 }
 
 /// Letters, digits, `_` and `-`: valid as a JSON key, a Claude tool prefix and
-/// an unquoted TOML key (Codex `-c mcp_servers.<name>.…`).
+/// an unquoted TOML key (Codex `-c mcp_servers.<name>.…`). Twin of
+/// `isValidExtraMcpName`; both read `extraMcpName.fixtures.json`.
 pub fn is_valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_NAME_LEN
@@ -216,21 +220,22 @@ pub fn resolve_names(names: &[String], root: &Path) -> Resolved {
 /// The project's supervisor rules name the servers; the project must be listed
 /// and allowed, like for connectors.
 pub fn resolve(policy: &crate::supervisor::policy::SupervisorPolicy, root: &Path) -> Resolved {
-    let canonical = crate::supervisor::canonical_project_path(&root.to_string_lossy());
+    let canonical = crate::project_path::canonical_project_path(&root.to_string_lossy());
     let names = policy
         .projects
         .iter()
         .find(|(path, rules)| {
-            rules.allowed && crate::supervisor::canonical_project_path(path) == canonical
+            rules.allowed && crate::project_path::canonical_project_path(path) == canonical
         })
         .map(|(_, rules)| rules.extra_mcp_servers.clone())
         .unwrap_or_default();
     resolve_names(&names, root)
 }
 
-/// Drops what the provider cannot carry. Codex speaks streamable HTTP only.
-pub fn for_provider(provider_id: &str, mut resolved: Resolved) -> Resolved {
-    if provider_id == "codex" {
+/// Drops what the provider's binding cannot carry: Codex's TOML speaks
+/// streamable HTTP only, so an SSE server is skipped there.
+pub fn for_provider(binding: crate::providers::McpBinding, mut resolved: Resolved) -> Resolved {
+    if !binding.carries_sse() {
         let (kept, dropped): (Vec<_>, Vec<_>) = resolved.servers.into_iter().partition(|s| {
             !matches!(
                 s.transport,

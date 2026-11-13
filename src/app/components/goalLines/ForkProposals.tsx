@@ -1,18 +1,19 @@
 'use client';
 
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { gitLogSince, type CommitInfo } from '@/lib/tauri/git';
 import { dbGet, dbSet } from '@/lib/tauri/db';
-import { getRootGoals } from '@/lib/store/goalsSlice';
+import { getRootGoals } from '@/lib/goals/model/goalTreeHelpers';
 import { detectForks } from '@/lib/evidence/forkDetector';
-import type { PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoalStation } from '@/lib/goals/types';
 
 const DISMISS_NS = 'goal_line_fork_dismissals';
 const DISMISS_KEY = '_global';
 
 function nowTimestamp(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp();
 }
 
 /**
@@ -52,6 +53,7 @@ export function ForkProposals() {
           // corrupt dismissal memory: start over rather than crash
         }
       })
+      // Unreadable dismissal memory means nothing is dismissed yet.
       .catch(() => {});
     return () => {
       cancelled = true;

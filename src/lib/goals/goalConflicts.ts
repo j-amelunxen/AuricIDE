@@ -8,7 +8,7 @@
  * the edit was made from is pinned, so no later reload or save can quietly
  * count the agent's value as seen. Only `resolveGoalConflict` lets go of it.
  */
-import type { PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
+import type { PmGoal, PmGoalRun, PmGoalStation } from './types';
 
 export type GoalConflictTable = 'pm_goals' | 'pm_goal_runs' | 'pm_goal_stations';
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
+import { graphTabId } from '@/lib/git/graphTabId';
 import { useStore } from './index';
 
 describe('tabsSlice', () => {
@@ -222,6 +223,18 @@ describe('tabsSlice - diff payload cleanup on tab close', () => {
     useStore.getState().closeTab(id);
 
     expect(Object.keys(useStore.getState().mergeDocs)).toEqual(['merge:/repo:src/b.ts']);
+  });
+
+  it('closeTab on a git graph drops that repository graph and keeps the others', () => {
+    const id = graphTabId('/repo');
+    useStore.setState({
+      graphs: { '/repo': {} as never, '/other': {} as never },
+    });
+    useStore.getState().openTab({ id, path: '/repo', name: 'repo Graph' });
+
+    useStore.getState().closeTab(id);
+
+    expect(Object.keys(useStore.getState().graphs)).toEqual(['/other']);
   });
 
   it('closeTab on a review: id drops its review session', () => {

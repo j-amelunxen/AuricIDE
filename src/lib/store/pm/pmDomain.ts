@@ -1,4 +1,4 @@
-import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '../../tauri/pm';
+import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '../../pm/types';
 import { applyVisibleOrder } from '../../pm/customOrder';
 
 /**

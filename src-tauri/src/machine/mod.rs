@@ -10,13 +10,20 @@ mod cache;
 mod check;
 mod probe;
 mod resolve;
+pub mod shell_env;
 mod table;
 mod version;
 
 pub use cache::VersionProbe;
 pub use check::Check;
 pub use probe::{run_probe, DEFAULT_PROBE_TIMEOUT};
-pub use resolve::{expand_home, on_disk, resolve_executable, resolve_with_extra_dirs, shell_path};
+pub use resolve::{
+    expand_home, is_executable, path_entries, resolve_executable, resolve_in_path,
+    resolve_with_extra_dirs, shell_path,
+};
+pub use shell_env::{
+    cached_login_shell_env, env_path, path_from_env, refresh_login_shell_env, warm_shell_env_cache,
+};
 pub use table::{dependency, DependencyReport};
 pub use version::{format_version, meets_minimum, parse_version};
 
@@ -26,7 +33,7 @@ pub use version::{format_version, meets_minimum, parse_version};
 #[tauri::command]
 pub async fn machine_dependencies(refresh: Option<bool>) -> Vec<DependencyReport> {
     if refresh.unwrap_or(false) {
-        crate::agents::refresh_login_shell_env().await;
+        refresh_login_shell_env().await;
     }
     table::inspect_all().await
 }

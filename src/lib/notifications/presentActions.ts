@@ -1,10 +1,5 @@
-import {
-  quickAccessCombos,
-  quickAccessSkills,
-  type QuickAccessCombo,
-  type QuickAccessSkill,
-  type StarredProject,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessCombos, quickAccessSkills } from '@/lib/quickAccess/projectEntries';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
 import type { NotificationAction } from './types';
 
 export interface PresentedAction {

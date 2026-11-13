@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 /**
@@ -22,7 +23,10 @@ export interface LaneSummariesSlice {
   clearLaneSummary: (agentId: string) => void;
 }
 
-export const createLaneSummariesSlice: StateCreator<LaneSummariesSlice> = (set, get) => ({
+export const createLaneSummariesSlice: StateCreator<StoreState, [], [], LaneSummariesSlice> = (
+  set,
+  get
+) => ({
   laneSummaries: NO_LANE_SUMMARIES,
 
   setLaneSummary: (agentId, summary) => {

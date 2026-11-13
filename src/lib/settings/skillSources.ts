@@ -1,4 +1,4 @@
-export const SKILL_SOURCES_KEY = 'auric.skill-sources';
+import { APP_CONFIG_KEYS, readAppJson, writeAppJson } from '@/lib/config/appConfig';
 
 /**
  * Where to look for skills, as data rather than as code.
@@ -54,28 +54,16 @@ function isRule(value: unknown): value is SkillSourceRule {
 
 /** Falls back to the Claude convention for anything unreadable. */
 export function loadSkillSources(): SkillSourceRule[] {
-  if (typeof localStorage === 'undefined') return [CLAUDE_SKILL_SOURCE];
-  try {
-    const raw = localStorage.getItem(SKILL_SOURCES_KEY);
-    if (!raw) return [CLAUDE_SKILL_SOURCE];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [CLAUDE_SKILL_SOURCE];
-    const rules = parsed.filter(isRule);
-    // An empty result means every stored rule was malformed, not that the user
-    // turned everything off — turning them off keeps the rules, disabled.
-    return rules.length > 0 ? rules : [CLAUDE_SKILL_SOURCE];
-  } catch {
-    return [CLAUDE_SKILL_SOURCE];
-  }
+  const parsed = readAppJson(APP_CONFIG_KEYS.skillSources);
+  if (!Array.isArray(parsed)) return [CLAUDE_SKILL_SOURCE];
+  const rules = parsed.filter(isRule);
+  // An empty result means every stored rule was malformed, not that the user
+  // turned everything off — turning them off keeps the rules, disabled.
+  return rules.length > 0 ? rules : [CLAUDE_SKILL_SOURCE];
 }
 
 export function saveSkillSources(sources: SkillSourceRule[]): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SKILL_SOURCES_KEY, JSON.stringify(sources));
-  } catch {
-    // Storage full or blocked — losing the preference is survivable.
-  }
+  writeAppJson(APP_CONFIG_KEYS.skillSources, sources);
 }
 
 export function enabledSkillSources(sources: SkillSourceRule[]): SkillSourceRule[] {

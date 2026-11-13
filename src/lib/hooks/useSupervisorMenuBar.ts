@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { runningSupervisors } from '@/lib/agents/supervisorLaunch';
 import { openManager, openSupervisor } from '@/lib/agents/openSupervisor';
-import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS } from '@/lib/config/appConfig';
+import { APP_CONFIG_KEYS, subscribeAppPrefs } from '@/lib/config/appConfig';
 import { useProjectManagers } from '@/lib/hooks/useProjectManagers';
 import { readManagerPresentations } from '@/lib/quickAccess/managerPresentation';
 import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
@@ -18,19 +18,19 @@ import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
 import {
-  MENU_BAR_LAUNCH_EVENT,
   menuBarSync,
+  onMenuBarLaunch,
   type MenuBarConfig,
   type MenuBarLaunchRequest,
   type ShortcutFailure,
 } from '@/lib/tauri/menuBar';
 
-const WATCHED_KEYS = new Set<string>([
+const WATCHED_KEYS = [
   APP_CONFIG_KEYS.auricSkills,
   APP_CONFIG_KEYS.supervisorMenuBar,
   APP_CONFIG_KEYS.supervisorGlobalShortcuts,
   APP_CONFIG_KEYS.supervisorManagers,
-]);
+];
 
 /** Which manager keys have a supervisor running, as one string: a primitive is a stable selector result. */
 const runningManagerKeys = (agents: Parameters<typeof runningSupervisors>[0]): string =>
@@ -57,14 +57,7 @@ export function useSupervisorMenuBar(onOpenSettings: (category: 'supervisor') =>
     openSettingsRef.current = onOpenSettings;
   }, [onOpenSettings]);
 
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-      if (key && WATCHED_KEYS.has(key)) setPrefsRevision((n) => n + 1);
-    };
-    window.addEventListener(APP_CONFIG_CHANGED_EVENT, onChange);
-    return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onChange);
-  }, []);
+  useEffect(() => subscribeAppPrefs(WATCHED_KEYS, () => setPrefsRevision((n) => n + 1)), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,26 +83,7 @@ export function useSupervisorMenuBar(onOpenSettings: (category: 'supervisor') =>
     };
   }, [presets, running, runningKeys, managers, prefsRevision]);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    void (async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const stop = await listen<MenuBarLaunchRequest>(MENU_BAR_LAUNCH_EVENT, (event) => {
-          void launch(event.payload ?? {}, openSettingsRef.current);
-        });
-        if (disposed) stop();
-        else unlisten = stop;
-      } catch {
-        // Browser mode — no menu bar to listen to.
-      }
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useEffect(() => onMenuBarLaunch((request) => void launch(request, openSettingsRef.current)), []);
 }
 
 /** Read at the moment of the pick, so an edit made since the last sync still counts. */

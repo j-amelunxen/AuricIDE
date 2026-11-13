@@ -9,7 +9,7 @@ import {
 import { resolveMcpCliMode } from '../cli';
 import { controlTimeoutMs } from '../controlClient';
 import { createSupervisorServer } from '../server';
-import type { ControlCaller } from './agentControl';
+import type { ControlCaller } from '../controlTypes';
 import { registerSupervisorTools } from './supervisor';
 
 /**

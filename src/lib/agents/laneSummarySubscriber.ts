@@ -1,5 +1,5 @@
 import { useStore, type StoreState } from '../store';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { deriveFinishSummary } from './finishSummary';
 import { extractAskSummary, resolveLaneSummary } from './laneSummary';
 

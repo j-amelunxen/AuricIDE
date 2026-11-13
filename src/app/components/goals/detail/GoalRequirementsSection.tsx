@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { PmGoalRequirementLink } from '@/lib/tauri/goals';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmGoalRequirementLink } from '@/lib/goals/types';
+import type { PmRequirement } from '@/lib/pm/types';
 
 export interface GoalRequirementsSectionProps {
   goalId: string;

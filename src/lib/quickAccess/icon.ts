@@ -1,6 +1,20 @@
 import { getGlyph } from '@/lib/icons/registry';
 import { generateProjectIcon } from '@/lib/projectIcon';
-import { isRenderableIcon, type ProjectIconOverride } from '@/lib/store/starredProjectsSlice';
+import type { ProjectIconOverride } from '@/lib/quickAccess/types';
+
+/**
+ * Counterpart to the backend's lenient icon struct: an unrecognised kind
+ * round-trips through this build untouched but renders as the generated tile.
+ */
+export function isRenderableIcon(icon: unknown): icon is ProjectIconOverride {
+  if (typeof icon !== 'object' || icon === null) return false;
+  const candidate = icon as { kind?: unknown; value?: unknown };
+  return (
+    (candidate.kind === 'glyph' || candidate.kind === 'emoji' || candidate.kind === 'image') &&
+    typeof candidate.value === 'string' &&
+    candidate.value.length > 0
+  );
+}
 
 /** What a tile actually draws, once the stored preference has been checked. */
 export type ResolvedTileIcon =

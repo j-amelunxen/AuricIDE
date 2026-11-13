@@ -3,7 +3,7 @@
 //! without a file.
 
 use crate::capability_tokens::{self, Grant, SecretToken, TokenError};
-use crate::supervisor::several::same_folder;
+use crate::project_path::same_folder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fmt;

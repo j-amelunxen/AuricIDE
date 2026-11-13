@@ -178,3 +178,21 @@ fn schedule_failure_removes_only_the_fresh_scaffold() {
         "keep me"
     );
 }
+
+/// The scheduler refuses a stored slug that is not valid, so every slug this
+/// side makes must be one it accepts.
+#[test]
+fn every_derived_slug_is_one_the_scheduler_accepts() {
+    let long = "Weekly ".repeat(30);
+    for name in [
+        "Weekly Report",
+        "  --Ünïcode Ärger--  ",
+        "!!!",
+        &long,
+        "a-b_c.d",
+        "日本語",
+    ] {
+        let slug = derive_slug(name);
+        assert!(is_valid_slug(&slug), "{name:?} -> {slug:?}");
+    }
+}

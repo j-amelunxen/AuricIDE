@@ -133,9 +133,7 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-editor-bg select-none">
-      {/* HUD Toolbar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 glass border border-white/10 rounded-full shadow-2xl">
-        {/* Zoom controls */}
         <button
           onClick={handleZoomOut}
           className="p-1 hover:text-primary transition-colors"
@@ -164,7 +162,6 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
         {numPages > 1 && (
           <>
             <div className="w-[1px] h-3 bg-white/10 mx-1" />
-            {/* Page navigation */}
             <button
               onClick={handlePrevPage}
               disabled={currentPage <= 1}
@@ -188,7 +185,6 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
         )}
       </div>
 
-      {/* PDF Canvas */}
       <div className="flex-1 flex items-center justify-center overflow-auto">
         {loading && <span className="text-foreground-muted text-sm">Loading PDF…</span>}
         {error && <span className="text-red-400 text-sm">Failed to load PDF: {error}</span>}
@@ -199,7 +195,6 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
         )}
       </div>
 
-      {/* Info Footer */}
       <div className="absolute bottom-4 right-4 px-3 py-1 glass border border-white/10 rounded text-[9px] text-foreground-muted font-mono uppercase tracking-widest pointer-events-none">
         {fileName}
       </div>

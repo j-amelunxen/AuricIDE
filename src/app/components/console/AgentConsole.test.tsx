@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { AgentInfo } from '@/lib/agents/types';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import {
   CONSOLE_FEED_DEFAULT_HEIGHT,
   CONSOLE_FEED_KEY_STEP,
@@ -12,8 +12,8 @@ import {
 import { AgentConsole } from './AgentConsole';
 import { useStore } from '@/lib/store';
 
-vi.mock('@/app/components/terminal/XtermTerminal', () => ({
-  XtermTerminal: ({ agentId }: { agentId?: string }) => (
+vi.mock('@/app/components/agents/AgentXterm', () => ({
+  AgentXterm: ({ agentId }: { agentId: string }) => (
     <div data-testid="stage-terminal">{agentId}</div>
   ),
 }));

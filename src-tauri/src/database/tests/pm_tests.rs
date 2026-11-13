@@ -374,3 +374,19 @@ fn test_validate_no_cycles_detects_cycle() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Cycle"));
 }
+
+/// A load that read unparseable skills as none would hand the UI a ticket
+/// without them, and the next save (which rewrites every ticket) would make
+/// that loss permanent.
+#[test]
+fn a_ticket_whose_skills_do_not_parse_fails_the_load() {
+    let conn = setup_in_memory_db();
+    pm_save_impl(&conn, &make_test_payload()).unwrap();
+    conn.execute(
+        "UPDATE pm_tickets SET skills = 'not json' WHERE id = 't1'",
+        [],
+    )
+    .unwrap();
+
+    assert!(pm_load_impl(&conn).is_err());
+}

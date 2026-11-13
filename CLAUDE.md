@@ -142,7 +142,7 @@ it still be right if you opened a different repository?**
 
 | Layer                    | What lives there                                                                                | Where it is stored                                                          | API                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Application**          | Theme, editor toggles, remembered launch choices, custom commands, MCP auto-start               | `localStorage`, mirrored to `<app_data_dir>/webview-prefs.json` (see above) | `src/lib/config/appConfig.ts`                                     |
+| **Application**          | Theme, editor toggles, remembered launch choices, custom commands                               | `localStorage`, mirrored to `<app_data_dir>/webview-prefs.json` (see above) | `src/lib/config/appConfig.ts`                                     |
 | **Application (secret)** | API keys and endpoints for LLM, Judge, Excalidraw+, video transcription                         | `<app_data_dir>/app-credentials.json`, written by Rust at mode 0600         | `src/lib/tauri/appCredentials.ts` ↔ `src-tauri/src/app_config.rs` |
 | **Project**              | Provider policy, commit conventions, ticket pattern, conductor provider, credential _overrides_ | `kv_store` in `<project>/.auric/project.db`                                 | `src/lib/config/projectConfig.ts`                                 |
 
@@ -208,15 +208,21 @@ and the ignored `agy_headless_end_to_end` test check the real CLI.
 
 ## State Management (Zustand)
 
-All frontend state lives in a single combined Zustand store (`src/lib/store/index.ts`), composed of slices using `StateCreator`. The `StoreState` intersection in that file is the authoritative list — read it rather than trusting a count copied into prose:
+All frontend state lives in one Zustand store. `src/lib/store/types.ts` owns the authoritative `StoreState` intersection and the `StoreGet`/`StoreSet` contracts derived from Zustand. Each slice is checked against that complete state; `createStore.ts` composes the 34 store slices and the overlay slice in their existing order. `index.ts` creates the application hook:
 
 ```typescript
 // Each slice follows this pattern:
-export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({ ... });
+export const createPmSlice: StateCreator<StoreState, [], [], PmSlice> = (set, get) => ({ ... });
 
-// Combined in index.ts:
+// Combined type in types.ts:
 export type StoreState = FileTreeSlice & TabsSlice & GitSlice & PmSlice & ...;
 ```
+
+Tests use `createTestStore(overrides)` from `src/lib/store/testing.ts`. It creates
+fresh complete state through the same composition factory, with explicit typed
+overrides for dependencies under test. A partial object must not masquerade as a
+complete store: that hides missing sibling actions from the compiler and can
+produce unhandled failures when a hook reaches them.
 
 Key store slices:
 
@@ -228,7 +234,6 @@ Key store slices:
 | `fileTreeSlice`, `projectDbSlice`                                                       | Explorer tree; project SQLite init/close lifecycle                                    |
 | `tabsSlice`                                                                             | Open editor tabs and active tab                                                       |
 | `qaSlice`                                                                               | Test-coverage summary, per-file coverage, heatmap config                              |
-| `mcpSlice`                                                                              | MCP server running state and PID                                                      |
 | `canvasSlice`                                                                           | XYFlow nodes/edges for workflow canvas                                                |
 | `uiSlice`                                                                               | Modal open/closed states, panel visibility                                            |
 | `diagnosticsSlice`                                                                      | remark-lint errors keyed by file path                                                 |
@@ -236,7 +241,7 @@ Key store slices:
 | `requirementsSlice`                                                                     | Application invariants, test links, freshness checks                                  |
 | `conductorSlice`                                                                        | Conductor run status, judge backend evaluation loops                                  |
 | `recentProjectsSlice`, `starredProjectsSlice`                                           | Multi-project history, pinned shortcuts                                               |
-| `wikiLinkSlice`, `headingIndexSlice`, `entityIndexSlice`                                | WikiLinks graph, document headings, NLP entity index                                  |
+| `wikiLinkSlice`, `entityIndexSlice`                                                     | WikiLinks graph and each file's headings, NLP entity index                            |
 | `blueprintsSlice`, `obsidianCanvasSlice`, `excalidrawSlice`                             | Canvas blueprints, Obsidian canvas view, Excalidraw scenes                            |
 | `slashCommandSlice`, `commandUsageSlice`, `scratchSlice`                                | Slash commands, usage telemetry, scratchpad                                           |
 | `toastSlice`, `notificationsSlice`, `schedulesSlice`, `skillComboSlice`, `overlaySlice` | System toasts, notification bus, recurring schedules, skill combos, overlay stack     |
@@ -623,6 +628,13 @@ method, limits, a minimal client). The contract is
 machine-checkable half `src/lib/agents/supervisorLink.fixtures.json` — change
 it first. AuricIDE knows no client, no document format and no job kind: all of
 that is per-project configuration.
+
+Job cancellation records intent before the dispatcher stop. A rejected stop
+is returned and reported to the inbox; ticks retry it while the agent remains
+live. A launched job without a worktree stays tracked until an ending is
+observed, then fails `internal`. Its null worktree is immutable launch evidence.
+App restart still marks active jobs `interrupted`; dispatcher observation does
+not establish a stronger native process-termination guarantee.
 
 - **A narrower door, not a new one.** WebSocket (`tungstenite`, sync) over
   `<app_data_dir>/supervisor-link.sock`, 0600. Agent work goes through the
@@ -1101,7 +1113,7 @@ UI (RequirementsModal)  →  Zustand (requirementsSlice)  →  IPC  →  Rust/SQ
                         MCP Tools (list/get/create/update/delete/import/link/unlink/verify/get_tests)
 ```
 
-- **Store:** `src/lib/store/requirementsSlice.ts` — same draft pattern as PM (draft + persisted + dirty flag); includes test link drafts and selector helpers (`getStaleRequirements`, `getUnverifiedRequirements`, `getTestLinksForRequirement`)
+- **Store:** `src/lib/store/requirementsSlice.ts` — same draft pattern as PM (draft + persisted + dirty flag); includes test link drafts and selector helpers (`getStaleRequirements`, `getUnverifiedRequirements`)
 - **IPC:** `src/lib/tauri/requirements.ts` — `requirementsLoad`, `requirementsSave`, `requirementsClear`; `RequirementsState` includes `testLinks: PmRequirementTestLink[]`
 - **MCP:** `src/mcp/tools/requirements.ts` — 10 tools, supports `resolveRequirementId` (UUID, prefix, or reqId like `REQ-AUTH-01`)
 - **UI:** `src/app/components/requirements/` — Modal with FilterPanel (includes verification freshness filter), List (verification indicator), DetailPanel (verify button, appliesTo chips, linked tests), CreateDialog (appliesTo input)
@@ -1185,7 +1197,7 @@ and one switch per language (`auric.editor.format-*`). Rules worth keeping:
 
 ## MCP Server
 
-`src/mcp/server.ts` (`src/mcp/cli.ts` mode switch) is a FastMCP server that runs in three modes across 25 tool files (~90 tool registrations):
+`src/mcp/server.ts` (`src/mcp/cli.ts` mode switch) is a FastMCP server that runs in three modes across 26 tool files (~90 tool registrations):
 
 - `--project-root <dir>` (`auric-pm`): project-bound PM tools (epics, tickets, tasks, dependencies, testcases, history, blueprints, context, canvas, requirements, goals, goal launch/reviews, stations, knowledge, reviews, agent usage, plus notifications and agent launch when `AURIC_NOTIFICATIONS_DB` is set).
 - `--control` (`auric-control`): outside-client fleet control over `control.sock` (`src/mcp/tools/agentControl.ts`; refused inside IDE agents).
@@ -1209,35 +1221,79 @@ Tool implementations are in `src/mcp/tools/` — one file per domain. Environmen
 
 The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirror), `CanvasView` (XYFlow), `MindmapView`, `DiffViewer`, `ImageViewer`, `VideoViewer`, `PDFViewer`, `HtmlViewer`, `ObsidianCanvasView`, `ExcalidrawViewer`, or `WorkView`.
 
+Shared frontend contracts live below the UI and IPC layers: domain types in
+`src/lib/{agents,goals,pm,quickAccess}/types.ts`, UI-shell contracts in
+`lib/ide/types.ts`, `lib/settings/types.ts`, `lib/terminal/types.ts`, and menu
+options in `lib/ui/contextMenu.ts`. Shared UI primitives live in
+`src/app/components/ui`; pure explorer tree helpers live in `lib/explorer/fileTree.ts`.
+Import contracts from their library owner instead of re-exporting them from a
+component or IPC wrapper. MCP uses domain types without importing `lib/tauri`.
+
+Shared diff rendering and shortcuts live in `components/diff`, consumed by the
+editor wrapper and git review/merge views. Markdown parsers and `LinkIndexEntry`
+live in `lib/markdown`; `EntityOccurrence` lives in `lib/nlp/nlpTypes.ts` and
+`ReferenceResult` in `lib/refactoring/types.ts`. Import these contracts directly
+instead of through index slices or the reference computation module.
+
+Pure goal rules live in `src/lib/goals/model/`: tree traversal/moves,
+satisfaction/completion/progress and dependency adapters. Import them directly
+instead of through `goalsSlice`. Store draft rebasing and mutation timestamps
+remain in `lib/store`; the model does not load store initialization or IPC.
+
+Supervisor-specific launch behavior lives in `src-tauri/src/supervisor/launch.rs`:
+role admission, CLI/MCP binding, manager booking and child adoption. The shared
+child-check input mapping lives in `supervisor/admission.rs`. Each gate captures
+fresh inputs at its original read points; running-child counts canonicalize
+project paths and must retain their position relative to the provider-mode
+callback. A control pre-check never bypasses final process admission.
+
+Agent process and PTY registration identity are grouped in `agents::AgentSession`.
+`agents::pty` owns terminal state, writes, resize announcements and session keys.
+Published writers are held by the registry and in-flight operations; a session's
+registration handle must not retain an extra writer reference after removal.
+Keep the publish/liveness recheck for agents that exit immediately. Completion
+steps live in `agents::finish`, retaining distinct Exit/Kill/Quit order and effects:
+result text before buffer eviction, first-remover bookkeeping, and the shared
+shutdown budget with restart anchors preserved.
+Native kill errors retain the live session and its PTY and return to the caller.
+Only an accepted kill claims the session under the manager lock; release that
+lock before dropping the writer. This is an accepted-stop contract, not proof
+that every descendant process died. The frontend ends nothing the backend did
+not confirm (`src/lib/agents/stop.ts`): a refused kill counts only when a fresh
+`list_agents` no longer shows the agent running, and "Stop all" stops exactly
+the IDs its confirmation counted, one `kill_agent` each, so a late spawn
+survives and a failed member keeps its card.
+
 ## Rust Backend Modules
 
-| Module                    | File                                                                                                       | Responsibility                                                                                                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commands                  | `lib.rs`, `commands/`                                                                                      | `lib.rs` registers `#[tauri::command]` handlers; implementations live in `commands/` (fs, db, app, agent, inbox, terminal, watcher) and the feature modules          |
-| Agents                    | `agents/`, `agent_persistence.rs`, `agent_log.rs`, `agent_window.rs`                                       | Spawn/kill AI agent processes, stream PTY output, persist run history (`agent_persistence.rs` and `agents/persistence.rs`), detached agent window                    |
-| Supervisor & Control      | `supervisor/`, `supervisor_link/`, `control_socket/`                                                       | Supervisor policy, run folders & named managers; Supervisor Control API WebSocket (`supervisor-link.sock`); NDJSON `control.sock` and shared dispatcher              |
-| Crashlog                  | `crashlog.rs`, `ui_watchdog.rs`                                                                            | Rust panic hook, frontend crash log reporting, and UI responsiveness watchdog                                                                                        |
-| CLI & Agent Usage         | `cc_usage/` (`mod.rs`, `manifest.rs`, `scan.rs`, `pricing.rs`, `report/`), `usage_limits/`, `agent_usage/` | Historical CLI transcript usage (`usage-plugins/*.json`), live quota window (`usage_limits/`), and per-run ticket/goal cost (`agent_usage/`, see below)              |
-| Database                  | `database/`                                                                                                | SQLite schema, migrations, PM CRUD (epics, tickets, test cases, goals, goal dependencies, requirements, reviews)                                                     |
-| Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                                                                    | Excalidraw integration REST API & scene listing                                                                                                                      |
-| Git                       | `git/`, `ignored_repos.rs`                                                                                 | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, graph, merge, worktrees. `lib.rs` only registers the commands. |
-| Inbox & Missions          | `inbox/`, `missions/`                                                                                      | App-level GTD inbox (`inbox.db`, assigning writes a ticket into `.auric/project.db`) and repository-owned markdown missions (`.auric/missions/`)                     |
-| Machine & Connectors      | `machine/`, `connectors.rs`                                                                                | Declared machine dependencies (`ffmpeg`, `ffprobe`, `go`, `okf`) resolved via login shell, and owner-approved stdio MCP connectors                                   |
-| Machine credentials       | `app_config.rs`                                                                                            | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                          |
-| Quota blocks              | `quota_blocks/`, `agents/quota_detection.rs`                                                               | Temporary provider/model-family blocks after quota exhaustion; refuses a supervisor's spawn                                                                          |
-| Provider policy           | `provider_policy.rs`                                                                                       | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                            |
-| LLM & Providers           | `llm.rs`, `providers/`                                                                                     | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`, plus `dynamic-providers/*.json`)                                 |
-| MCP                       | `mcp.rs`, `node_runtime.rs`                                                                                | Write per-agent MCP configs (absolute Node matching the bundle ABI) and start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)        |
-| Memory Report             | `memory_report.rs`                                                                                         | System & process tree memory monitoring for performance metrics                                                                                                      |
-| Menu                      | `menu.rs`, `menu_bar.rs`                                                                                   | Native macOS application menu and supervisor menu-bar icon / global shortcuts                                                                                        |
-| Notifications & Schedules | `notifications/`, `schedules/`, `delivery/`                                                                | Cross-project notification bus, cron & one-shot schedule execution engine, and outbound push delivery                                                                |
-| Configuration             | `app_config.rs`, `provider_policy.rs`                                                                      | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                |
-| Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects/`                                                | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                      |
-| Recent creations          | `recent_creations.rs`                                                                                      | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                     |
-| Themes                    | `themes.rs`                                                                                                | Custom theme JSON scanner and theme list API                                                                                                                         |
-| Utilities                 | `utf8_stream.rs`, `ansi.rs`, `clipboard.rs`, `webview_prefs.rs`                                            | UTF-8 PTY chunk reassembly, ANSI stripping, clipboard image helpers, cross-origin webview preferences sync                                                           |
-| External agents           | `external_agents/`, `control_socket/external_agents.rs`                                                    | Runs the IDE tracks without a process (`external-agents.json`); books them into `pm_agent_usage` and the task log. See "External agents" above                       |
-| Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)                                                   | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                |
+| Module                    | File                                                                                                       | Responsibility                                                                                                                                                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commands                  | `lib.rs`, `commands/`                                                                                      | `lib.rs` registers `#[tauri::command]` handlers; a feature's commands live in its own `commands.rs` (notifications, schedules, missions, mcp, llm, excalidraw, themes, crashlog, agent_log, providers, …), `commands/` holds fs, db, agent, inbox, terminal, watcher and the menu |
+| Agents                    | `agents/`, `agent_persistence.rs`, `agent_log.rs`, `agent_window.rs`                                       | Spawn/kill AI agent processes, stream PTY output, persist run history (`agent_persistence.rs` and `agents/persistence.rs`), detached agent window                                                                                                                                 |
+| Supervisor & Control      | `supervisor/`, `supervisor_link/`, `control_socket/`                                                       | Supervisor policy, run folders & named managers; Supervisor Control API WebSocket (`supervisor-link.sock`); NDJSON `control.sock` and shared dispatcher                                                                                                                           |
+| Crashlog                  | `crashlog.rs`, `ui_watchdog.rs`                                                                            | Rust panic hook, frontend crash log reporting, and UI responsiveness watchdog                                                                                                                                                                                                     |
+| CLI & Agent Usage         | `cc_usage/` (`mod.rs`, `manifest.rs`, `scan.rs`, `pricing.rs`, `report/`), `usage_limits/`, `agent_usage/` | Historical CLI transcript usage (`usage-plugins/*.json`), live quota window (`usage_limits/`), and per-run ticket/goal cost (`agent_usage/`, see below)                                                                                                                           |
+| Database                  | `database/`                                                                                                | SQLite schema, migrations, PM CRUD (epics, tickets, test cases, goals, goal dependencies, requirements, reviews)                                                                                                                                                                  |
+| Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                                                                    | Excalidraw integration REST API & scene listing                                                                                                                                                                                                                                   |
+| Git                       | `git/`, `ignored_repos.rs`                                                                                 | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, graph, merge, worktrees. `lib.rs` only registers the commands.                                                                                                              |
+| Inbox & Missions          | `inbox/`, `missions/`                                                                                      | App-level GTD inbox (`inbox.db`, assigning writes a ticket into `.auric/project.db`) and repository-owned markdown missions (`.auric/missions/`)                                                                                                                                  |
+| Machine & Connectors      | `machine/` (including `shell_env.rs`), `connectors.rs`                                                     | Shared login-shell environment cache, executable/PATH resolution, declared machine dependencies (`ffmpeg`, `ffprobe`, `go`, `okf`), and owner-approved stdio MCP connectors                                                                                                       |
+| Machine credentials       | `app_config.rs`                                                                                            | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                                                                                                                                       |
+| Quota blocks              | `quota_blocks/`, `agents/quota_detection.rs`                                                               | Temporary provider/model-family blocks after quota exhaustion; refuses a supervisor's spawn                                                                                                                                                                                       |
+| Provider policy           | `provider_policy.rs`                                                                                       | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                                                                                                                                         |
+| LLM & Providers           | `llm.rs`, `providers/`                                                                                     | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`, plus `dynamic-providers/*.json`)                                                                                                                                              |
+| MCP                       | `mcp.rs`, `node_runtime.rs`                                                                                | Write per-agent MCP configs (absolute Node matching the bundle ABI) and start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)                                                                                                                     |
+| Memory Report             | `memory_report.rs`                                                                                         | System & process tree memory monitoring for performance metrics                                                                                                                                                                                                                   |
+| Menu                      | `menu.rs`, `menu_bar.rs`                                                                                   | Native macOS application menu and supervisor menu-bar icon / global shortcuts                                                                                                                                                                                                     |
+| Notifications & Schedules | `notifications/`, `schedules/`, `delivery/`                                                                | Cross-project notification bus, cron & one-shot schedule execution engine, and outbound push delivery                                                                                                                                                                             |
+| Configuration             | `app_config.rs`, `provider_policy.rs`                                                                      | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                                                                                                                             |
+| Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects/`                                                | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                                                                                                                                   |
+| Recent creations          | `recent_creations.rs`                                                                                      | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                                                                                                                                  |
+| Themes                    | `themes.rs`                                                                                                | Custom theme JSON scanner and theme list API                                                                                                                                                                                                                                      |
+| Shared foundations        | `json_store.rs`, `file_lock.rs`, `project_path.rs`                                                         | Atomic JSON writes and explicit unreadable-file policies; advisory file locks; shared project identity with caller-specific missing-path fallbacks                                                                                                                                |
+| Utilities                 | `utf8_stream.rs`, `ansi.rs`, `clipboard.rs`, `webview_prefs.rs`                                            | UTF-8 PTY chunk reassembly, ANSI stripping, clipboard image helpers, cross-origin webview preferences sync                                                                                                                                                                        |
+| External agents           | `external_agents/`, `control_socket/external_agents.rs`                                                    | Runs the IDE tracks without a process (`external-agents.json`); books them into `pm_agent_usage` and the task log. See "External agents" above                                                                                                                                    |
+| Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)                                                   | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                                                                                                                             |
 
 ## Two usage features, two different questions
 

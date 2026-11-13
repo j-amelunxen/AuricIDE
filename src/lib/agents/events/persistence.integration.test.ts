@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { PersistedAgentEvent } from '@/lib/tauri/agentLog';
 
 /**
@@ -38,20 +38,17 @@ vi.mock('@/lib/tauri/agentLog', () => ({
 vi.mock('@/lib/tauri/agents', () => ({
   spawnAgent: vi.fn(),
   killAgent: vi.fn(async () => undefined),
-  killAgentsForRepo: vi.fn(async () => 0),
   renameAgent: vi.fn(async () => undefined),
   listAgents: vi.fn(async () => []),
   listInterruptedAgents: vi.fn(async () => []),
   resumeInterruptedAgent: vi.fn(),
   discardInterruptedAgent: vi.fn(async () => undefined),
-  sendToAgent: vi.fn(async () => undefined),
   sendMessageToAgent: vi.fn(async () => undefined),
   listAgentPromptHistory: vi.fn(async () => []),
   recordAgentPromptHistory: vi.fn(async () => undefined),
 }));
 
 import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
-import { createAgentSlice, type AgentSlice } from '@/lib/store/agentSlice';
 import { mergeFeedRows, toFeedRows } from './feed';
 import { resetAgentLogWriter } from './persistence';
 import { resetAgentExtractors } from './registry';
@@ -66,7 +63,7 @@ const AGENT = {
   repoPath: '/repos/acme-app',
 };
 
-let store: StoreApi<AgentSlice>;
+let store: ReturnType<typeof createFullTestStore>;
 
 /**
  * One agent doing three recognisable things, and then finishing.
@@ -94,7 +91,7 @@ beforeEach(() => {
   resetAgentLogWriter();
   resetAgentExtractors();
   vi.clearAllMocks();
-  store = createStore<AgentSlice>()((...a) => createAgentSlice(...a));
+  store = createFullTestStore();
 });
 
 afterEach(() => {
@@ -142,7 +139,7 @@ describe('invariant: a session survives a restart', () => {
 
     // A restart: fresh store, fresh extractors, same disk.
     resetAgentExtractors();
-    store = createStore<AgentSlice>()((...a) => createAgentSlice(...a));
+    store = createFullTestStore();
     await store.getState().loadAgentLogHistory();
 
     expect(store.getState().agentLogHistory).toHaveLength(3);
@@ -157,7 +154,7 @@ describe('invariant: a session survives a restart', () => {
     enable();
     runASession();
 
-    store = createStore<AgentSlice>()((...a) => createAgentSlice(...a));
+    store = createFullTestStore();
     await store.getState().loadAgentLogHistory();
 
     // No agents running at all — the rows must still identify themselves.

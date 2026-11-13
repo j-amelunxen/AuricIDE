@@ -27,6 +27,7 @@ function makeOverview(overrides: Partial<ProjectPmOverview> = {}): ProjectPmOver
     hasDb: true,
     open: 0,
     inProgress: 0,
+    toTest: 0,
     inReview: 0,
     done: 0,
     epics: [],

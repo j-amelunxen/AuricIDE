@@ -1,7 +1,7 @@
 import { moveId, type ListDropPlace } from '../pm/customOrder';
-import type { StarredProject } from '../tauri/starredProjects';
+import type { StarredProject } from './types';
 
-/** Twin of `DOCK_MAX` in `src-tauri/src/recent_projects/types.rs`. */
+/** Twin of `DOCK_MAX` in `src-tauri/src/recent_projects/types.rs`; both are checked against `backendNames.fixtures.json`. */
 export const DOCK_MAX = 8;
 
 /** What a dragged tile carries: its project path. */

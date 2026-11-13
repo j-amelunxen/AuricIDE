@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 
 /** Agents whose process is still live — parked ones included, finished ones not. */
 export function runningAgentCount(agents: Pick<AgentInfo, 'status'>[]): number {

@@ -1,7 +1,7 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import {
   formatNotificationAge,
   formatNotificationProject,
@@ -10,7 +10,7 @@ import {
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 export interface NotificationRowProps {
   notification: Notification;

@@ -1,11 +1,8 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createEntityIndexSlice, type EntityIndexSlice } from './entityIndexSlice';
 
 function createTestStore() {
-  return create<EntityIndexSlice>()((...a) => ({
-    ...createEntityIndexSlice(...a),
-  }));
+  return createFullTestStore();
 }
 
 describe('entityIndexSlice', () => {

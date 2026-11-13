@@ -9,6 +9,7 @@
 //! the parser recognised. Raw agent output stays in memory where it is: this is
 //! a record of what the fleet did, not a transcript.
 
+pub mod commands;
 use crate::database::apply_migration;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};

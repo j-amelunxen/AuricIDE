@@ -1,8 +1,9 @@
 import type { Schedule } from '@/lib/tauri/schedules';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
-import { formatNotificationProject, parseNotificationTimestamp } from './format';
+import type { StarredProject } from '@/lib/quickAccess/types';
+import { formatNotificationProject } from './format';
+import { parseUtcDate } from '@/lib/time/utcStamp';
 import { scheduleIdFromDedupeKey } from './scheduleLink';
-import type { Notification, NotificationAction } from './types';
+import { isOpenQuestion, type Notification, type NotificationAction } from './types';
 
 /**
  * The Command Center is a projection, not a place where state lives.
@@ -57,7 +58,7 @@ function nameFrom(draft: GroupDraft, candidate: string | null): void {
 
 function dueMs(nextDueAt: string | null): number {
   if (nextDueAt === null) return Number.POSITIVE_INFINITY;
-  const at = parseNotificationTimestamp(nextDueAt);
+  const at = parseUtcDate(nextDueAt);
   return at === null ? Number.POSITIVE_INFINITY : at.getTime();
 }
 
@@ -126,10 +127,7 @@ export function groupByProject(
       label: formatNotificationProject(draft.name, draft.path),
       notifications: draft.notifications,
       unread: draft.notifications.reduce((n, row) => n + (row.readAt === null ? 1 : 0), 0),
-      openQuestions: draft.notifications.reduce(
-        (n, row) => n + (row.kind === 'ask' && row.answeredAt === null ? 1 : 0),
-        0
-      ),
+      openQuestions: draft.notifications.reduce((n, row) => n + (isOpenQuestion(row) ? 1 : 0), 0),
       schedules: draft.schedules,
       nextDueAt: earliestDue(draft.schedules),
     });
@@ -213,7 +211,7 @@ export function centerSummary(notifications: Notification[], schedules: Schedule
 
   for (const notification of notifications) {
     if (notification.readAt === null) unread += 1;
-    if (notification.kind === 'ask' && notification.answeredAt === null) openQuestions += 1;
+    if (isOpenQuestion(notification)) openQuestions += 1;
   }
 
   return { unread, openQuestions, schedules: schedules.length };

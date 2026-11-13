@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalDependency } from '../../tauri/goals';
+import type { PmGoal, PmGoalDependency } from '../../goals/types';
 import { dropIntroducedDependencyDrafts } from './goalDependencyRebase';
 
 function goal(overrides: Partial<PmGoal> & { id: string }): PmGoal {

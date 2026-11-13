@@ -13,11 +13,12 @@
 //! appended to an audit log.
 
 use super::policy::{
-    self, check_stored, is_relative_file, read_stored, stored_payload, write_private_atomic,
-    write_stored, DocumentType, JobKind, ProjectEntry, StoredPolicy, MAX_DAILY_LIMIT,
+    self, check_stored, is_relative_file, read_stored_for_update, stored_payload, write_stored,
+    DocumentType, JobKind, ProjectEntry, StoredPolicy, MAX_DAILY_LIMIT,
 };
+use crate::json_store::{self, Unreadable};
 use crate::notifications::NotificationInput;
-use crate::supervisor::canonical_project_path;
+use crate::project_path::canonical_project_path;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -164,17 +165,18 @@ impl ProposalStore {
     }
 
     /// A file that does not parse holds no proposal: nothing can be applied
-    /// from it.
-    fn read(&self) -> PendingFile {
-        std::fs::read(self.pending_path())
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
+    /// from it. It is moved aside, so the next proposal does not write over
+    /// decisions a person may still want to read.
+    /// `Err` when the file could not even be moved aside: then nothing may be
+    /// written over the proposals it holds.
+    fn read(&self) -> Result<PendingFile, Refusal> {
+        json_store::load(&self.pending_path(), None, Unreadable::MoveAside)
+            .map(Option::unwrap_or_default)
     }
 
     fn write(&self, file: &PendingFile) -> Result<(), Refusal> {
         let payload = serde_json::to_vec_pretty(file).map_err(|error| error.to_string())?;
-        write_private_atomic(&self.pending_path(), &payload)
+        json_store::write_atomic(&self.pending_path(), &payload, json_store::Mode::Private)
     }
 
     /// Appends one line; created at 0600.
@@ -198,28 +200,46 @@ impl ProposalStore {
         }
     }
 
-    /// Drops expired proposals, logging each.
-    fn prune(&self, file: &mut PendingFile, now: u64) -> bool {
+    /// Takes the expired proposals out of `file`; they are logged once the
+    /// file without them is stored ([`Self::store`]).
+    fn prune(file: &mut PendingFile, now: u64) -> Vec<Proposal> {
         let (kept, expired): (Vec<_>, Vec<_>) = std::mem::take(&mut file.pending)
             .into_iter()
             .partition(|proposal| proposal.expires_at > now);
         file.pending = kept;
-        for proposal in &expired {
+        expired
+    }
+
+    /// Writes `file`, then logs `expired` as expired. Logged only after the
+    /// write: a file that still holds them would expire them again next time,
+    /// and the audit log would say so twice.
+    fn store(&self, file: &PendingFile, expired: Vec<Proposal>, now: u64) -> Result<(), Refusal> {
+        self.write(file)?;
+        for proposal in expired {
             self.audit(&AuditEntry {
                 at: now,
                 outcome: Outcome::Expired,
-                proposal: proposal.clone(),
+                proposal,
             });
         }
-        !expired.is_empty()
+        Ok(())
     }
 
     /// The proposals still waiting, oldest first.
     pub fn pending(&self, now: u64) -> Vec<Proposal> {
         let _guard = lock();
-        let mut file = self.read();
-        if self.prune(&mut file, now) {
-            let _ = self.write(&file);
+        let mut file = match self.read() {
+            Ok(file) => file,
+            Err(error) => {
+                eprintln!("Supervisor link: pending proposals cannot be read: {error}");
+                return Vec::new();
+            }
+        };
+        let expired = Self::prune(&mut file, now);
+        if !expired.is_empty() {
+            if let Err(error) = self.store(&file, expired, now) {
+                eprintln!("Supervisor link: expired proposals not removed: {error}");
+            }
         }
         file.pending
     }
@@ -240,14 +260,14 @@ impl ProposalStore {
             return Err(format!("changes holds 1 to {MAX_CHANGES} changes"));
         }
         let _guard = lock();
-        let current = read_stored(&self.dir);
+        let current = read_stored_for_update(&self.dir)?;
         let after = apply_changes(&current, &changes)?;
         let diff = diff_lines(&current, &after);
         if diff.is_empty() {
             return Err("the changes would leave the policy as it is".to_string());
         }
-        let mut file = self.read();
-        self.prune(&mut file, now);
+        let mut file = self.read()?;
+        let expired = Self::prune(&mut file, now);
         if file.pending.len() >= MAX_PENDING {
             return Err(format!(
                 "{MAX_PENDING} proposals already wait for the human; wait until they are decided"
@@ -264,7 +284,7 @@ impl ProposalStore {
             base: revision(&current)?,
         };
         file.pending.push(proposal.clone());
-        self.write(&file)?;
+        self.store(&file, expired, now)?;
         Ok(proposal)
     }
 
@@ -273,11 +293,11 @@ impl ProposalStore {
     /// gone afterwards and the outcome is logged.
     pub fn decide(&self, id: &str, apply: bool, now: u64) -> Result<Outcome, Refusal> {
         let _guard = lock();
-        let mut file = self.read();
-        let pruned = self.prune(&mut file, now);
+        let mut file = self.read()?;
+        let expired = Self::prune(&mut file, now);
         let Some(at) = file.pending.iter().position(|p| p.id == id) else {
-            if pruned {
-                self.write(&file)?;
+            if !expired.is_empty() {
+                self.store(&file, expired, now)?;
             }
             return Err(
                 "this proposal no longer exists: it was decided, or it expired after 24 hours"
@@ -290,7 +310,7 @@ impl ProposalStore {
         } else {
             Outcome::Discarded
         };
-        self.write(&file)?;
+        self.store(&file, expired, now)?;
         self.audit(&AuditEntry {
             at: now,
             outcome,
@@ -307,7 +327,7 @@ impl ProposalStore {
     }
 
     fn apply(&self, proposal: &Proposal) -> Result<Outcome, Refusal> {
-        let current = read_stored(&self.dir);
+        let current = read_stored_for_update(&self.dir)?;
         if revision(&current)? != proposal.base {
             return Ok(Outcome::Outdated);
         }
@@ -668,7 +688,7 @@ pub struct ProposalsOverview {
 pub fn supervisor_link_proposals(app: tauri::AppHandle) -> Result<ProposalsOverview, String> {
     let store = ProposalStore::new(&policy::app_data_dir(&app)?);
     Ok(ProposalsOverview {
-        pending: store.pending(super::jobs::now_ms()),
+        pending: store.pending(crate::json_store::now_ms()),
         recent: store.recent(20),
     })
 }
@@ -689,7 +709,7 @@ pub fn supervisor_link_proposal_decide(
     ProposalStore::new(&policy::app_data_dir(&app)?).decide(
         &proposal_id,
         apply,
-        super::jobs::now_ms(),
+        crate::json_store::now_ms(),
     )
 }
 

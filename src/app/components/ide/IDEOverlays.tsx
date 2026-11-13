@@ -2,13 +2,15 @@
 
 import { useEffect } from 'react';
 import { CommandPalette } from '@/app/components/ide/CommandPalette';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { NewItemModal } from '@/app/components/explorer/NewItemModal';
 import { RenameItemModal } from '@/app/components/explorer/RenameItemModal';
 import { FileSearch } from '@/app/components/ide/FileSearch';
 import { FileSelector } from '@/app/components/ide/FileSelector';
 import { FindInFilesModal } from '@/app/components/ide/FindInFilesModal';
-import { SettingsModal, type SettingsCategory } from '@/app/components/ide/SettingsModal';
+import { SettingsModal } from '@/app/components/ide/SettingsModal';
+import type { SettingsCategory } from '@/lib/settings/types';
 import { SpawnAgentDialog } from '@/app/components/agents/SpawnAgentDialog';
 import { useStore } from '@/lib/store';
 import { ImportSpecDialog } from '@/app/components/agents/ImportSpecDialog';
@@ -19,9 +21,9 @@ import { LinkGraphModal } from '@/app/components/graph/LinkGraphModal';
 import { BlueprintsGallery } from '@/app/components/blueprints/BlueprintsGallery';
 import { AgentConsole } from '@/app/components/console/AgentConsole';
 import { PerformanceMonitor } from '@/app/components/dev/PerformanceMonitor';
-import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
+import type { FileTreeNode } from '@/lib/explorer/fileTree';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
-import { type AgentInfo, type AgentConfig } from '@/lib/tauri/agents';
+import type { AgentInfo, AgentConfig } from '@/lib/agents/types';
 import { type Command } from '@/lib/commands/registry';
 import { type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
@@ -91,7 +93,6 @@ interface IDEOverlaysProps {
   setRenameDialog: (dialog: { path: string; oldName: string; isDirectory: boolean } | null) => void;
   handleRenameConfirm: (name: string) => void;
 
-  projectFiles: string[];
   fileSearchOpen: boolean;
   setFileSearchOpen: (open: boolean) => void;
 
@@ -156,7 +157,6 @@ export function IDEOverlays({
   renameDialog,
   setRenameDialog,
   handleRenameConfirm,
-  projectFiles,
   fileSearchOpen,
   setFileSearchOpen,
   findInFilesOpen,
@@ -168,6 +168,7 @@ export function IDEOverlays({
   ticketCwd,
 }: IDEOverlaysProps) {
   const goalsDraft = useStore((s) => s.goalsDraft);
+  const projectFiles = useStore((s) => s.allFilePaths);
   // The terminal modal only uses the list while an agent is open full-screen
   // (it renders nothing otherwise), so only then does this subscribe to it.
   // Detached means one place: while the agent window is open the terminals

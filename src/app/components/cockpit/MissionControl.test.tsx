@@ -2,10 +2,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MissionControl } from './MissionControl';
 import { useStore } from '@/lib/store';
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { PmRequirement } from '@/lib/tauri/requirements';
-import type { AgentInfo } from '@/lib/tauri/agents';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmRequirement, PmTicket } from '@/lib/pm/types';
+import type { AgentInfo } from '@/lib/agents/types';
+import type { PmGoal } from '@/lib/goals/types';
 
 function makeTicket(overrides: Partial<PmTicket>): PmTicket {
   return {

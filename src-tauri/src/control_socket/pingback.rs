@@ -76,7 +76,7 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
                 };
                 dispatcher.watchdog_tick_at(
                     Instant::now(),
-                    crate::supervisor_link::jobs::now_ms(),
+                    crate::json_store::now_ms(),
                     stall_timeout,
                     &busy,
                 );

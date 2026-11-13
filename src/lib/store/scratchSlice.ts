@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { getScratchDir } from '@/lib/tauri/scratch';
 import { readDirectory } from '@/lib/tauri/fs';
@@ -19,7 +20,7 @@ export interface ScratchSlice {
 
 // The file watcher only covers the project root, so this list never updates
 // itself — every mutation path must call refreshScratches() afterwards.
-export const createScratchSlice: StateCreator<ScratchSlice> = (set, get) => ({
+export const createScratchSlice: StateCreator<StoreState, [], [], ScratchSlice> = (set, get) => ({
   scratchDir: null,
   scratches: [],
   scratchStatus: 'idle',

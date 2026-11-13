@@ -8,13 +8,14 @@
 //! The contract is `src/lib/agents/supervisorManagers.fixtures.json`; the
 //! tests below run it.
 
+use super::app_data_dir;
 use super::runs::{resolve_run_dir, RunManager, SupervisorRun};
 use super::several::{
     is_live_supervisor, is_valid_key, is_well_formed, read_run_key, run_dir_holder,
 };
-use super::{app_data_dir, write_json_atomic};
 use super::{new_supervisor_run_dir, supervisor_runs_root};
 use crate::agents::{AgentInfo, AgentManagerState};
+use crate::json_store::{self, write_json};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -273,23 +274,13 @@ pub fn key_from_name(name: &str, taken: &[String]) -> String {
 // ---- the registry file ----
 
 fn read_registry(path: &Path) -> Result<Registry, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Registry::default())
-        }
-        Err(error) => return Err(registry_unreadable(&format!("{error}."))),
-    };
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|error| registry_unreadable(&format!("it is not valid JSON ({error}).")))?;
-    let version = value.get("version").and_then(serde_json::Value::as_u64);
-    if version != Some(u64::from(REGISTRY_VERSION)) {
-        return Err(registry_unreadable(&format!(
-            "this build reads version {REGISTRY_VERSION} only."
-        )));
-    }
-    let registry: Registry = serde_json::from_value(value)
-        .map_err(|error| registry_unreadable(&format!("an entry is malformed ({error}).")))?;
+    let registry: Registry = json_store::load(
+        path,
+        Some(u64::from(REGISTRY_VERSION)),
+        json_store::Unreadable::Refuse,
+    )
+    .map_err(|reason| registry_unreadable(&format!("{reason}.")))?
+    .unwrap_or_default();
     // Keys become folder names under `managers/`; a hand-edited one must not
     // be able to leave it. Only the shape counts here: a key made before the
     // dated agent ids (agent-7-2) is shaped like an id now, and refusing the
@@ -316,7 +307,7 @@ fn update_registry<T>(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut registry = read_registry(path)?;
     let outcome = change(&mut registry)?;
-    write_json_atomic(path, &registry)?;
+    write_json(path, &registry)?;
     Ok(outcome)
 }
 
@@ -828,7 +819,7 @@ pub async fn manager_create(
         .path()
         .home_dir()
         .map_err(|error| format!("The home directory is unavailable: {error}"))?;
-    let live = crate::agents::list_agents_impl(&state).await?;
+    let live = crate::agents::list_agents_impl(&state).await;
     create(&registry_path(&app)?, &home, &name, &live)
 }
 
@@ -839,13 +830,13 @@ pub async fn manager_promote(
     run_dir: String,
     name: String,
 ) -> Result<ManagerRecord, String> {
-    let live = crate::agents::list_agents_impl(&state).await?;
+    let live = crate::agents::list_agents_impl(&state).await;
     let runs_root = super::runs::runs_root(&app)?;
     let record = promote(&registry_path(&app)?, &runs_root, &run_dir, &name, &live)?;
     // A supervisor already working in the folder becomes addressable at once.
     let mut agents = state.lock().await;
     super::several::key_live_supervisor(
-        agents.agents.values_mut().map(|process| &mut process.info),
+        agents.infos_mut(),
         &runs_root.join(&record.run_dir),
         &record.key,
     );

@@ -30,13 +30,16 @@ use store::UsageLimitsState;
 /// Changing it here without changing it there turns the feature off silently.
 pub const ENABLED_PREF_KEY: &str = "auric.cli-usage-limits";
 
+/// Emitted when a new reading was stored.
+pub const CHANGED_EVENT: &str = "usage-limits-changed";
+
 /// How long a Codex reading counts as current for the background poller.
 /// The refresh button bypasses this — "Refresh quota now" means now.
-const REFRESH_TTL_SECS: i64 = 15 * 60;
+pub(super) const REFRESH_TTL_SECS: i64 = 15 * 60;
 
 /// How often the background timer looks. Matches the TTL so a reading
 /// that nobody has refreshed by hand is replaced every 15 minutes.
-const TIMER_TICK_SECS: u64 = 15 * 60;
+const TIMER_TICK_SECS: u64 = REFRESH_TTL_SECS as u64;
 
 /// Everything the commands need, managed by Tauri.
 pub struct UsageLimitsService {
@@ -153,12 +156,12 @@ pub async fn refresh_codex(
 
     if !force {
         let stored = service.store.read();
-        if !needs_refresh(stored.get("codex"), now, REFRESH_TTL_SECS) {
+        if !needs_refresh(stored.get(contract::CODEX), now, REFRESH_TTL_SECS) {
             return Ok(None);
         }
     }
 
-    let env = crate::agents::cached_login_shell_env().await;
+    let env = crate::machine::cached_login_shell_env().await;
     match codex::read_codex_limits(env, now).await {
         Ok(snapshot) => {
             // A store that will not take the value costs the persistence, not
@@ -170,7 +173,7 @@ pub async fn refresh_codex(
             // A source that has gone away must stop claiming a number. Leaving
             // the last one in place would show a percentage for a CLI that is
             // no longer installed or no longer signed in.
-            let _ = service.store.remove("codex");
+            let _ = service.store.remove(contract::CODEX);
             Err(error)
         }
     }
@@ -194,7 +197,7 @@ pub fn refresh_claude(service: &UsageLimitsService, now: i64) -> Result<UsageSna
             // simply not run yet, and wiping the last good reading would hide
             // Claude from the chip until the next interactive agent.
             if matches!(error, UsageError::NotSubscribed { .. }) {
-                let _ = service.store.remove("claude");
+                let _ = service.store.remove(contract::CLAUDE);
             }
             Err(error)
         }
@@ -258,7 +261,7 @@ pub fn spawn_usage_limits_runner(app: tauri::AppHandle) {
                 if service.is_enabled() {
                     let now = chrono::Utc::now().timestamp();
                     let stored = service.store.read();
-                    if needs_refresh(stored.get("codex"), now, REFRESH_TTL_SECS) {
+                    if needs_refresh(stored.get(contract::CODEX), now, REFRESH_TTL_SECS) {
                         match refresh_codex(&service, now, false).await {
                             Ok(Some(_)) => emit_changed(&app),
                             Ok(None) => {}
@@ -274,7 +277,7 @@ pub fn spawn_usage_limits_runner(app: tauri::AppHandle) {
 
 pub fn emit_changed(app: &tauri::AppHandle) {
     use tauri::Emitter;
-    let _ = app.emit("usage-limits-changed", ());
+    let _ = app.emit(CHANGED_EVENT, ());
 }
 
 /// Debounce for the drop-file watcher. The sidecar writes at most every

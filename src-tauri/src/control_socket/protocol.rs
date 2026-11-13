@@ -1063,6 +1063,15 @@ pub(crate) mod tests {
         assert_eq!(limits["defaultAwaitSeconds"], DEFAULT_AWAIT_SECONDS);
         assert_eq!(limits["maxAwaitSeconds"], MAX_AWAIT_SECONDS);
         assert_eq!(limits["inputQuietSeconds"], INPUT_QUIET_SECONDS);
+        assert_eq!(
+            limits["waitingReasonMaxChars"],
+            crate::agent_waiting::REASON_MAX_CHARS
+        );
+        assert_eq!(
+            limits["waitingDefaultMs"],
+            crate::agent_waiting::DEFAULT_WAIT_MS
+        );
+        assert_eq!(limits["waitingMaxMs"], crate::agent_waiting::MAX_WAIT_MS);
     }
 
     #[test]

@@ -20,7 +20,7 @@ const SHORT_OID_LEN: usize = 7;
 const BASE_LABEL: &str = "base";
 
 fn open(repo_path: &str) -> Result<Repository, String> {
-    Repository::open(repo_path).map_err(|e| format!("not a git repository: {e}"))
+    super::open_repo(repo_path)
 }
 
 fn short_oid(oid: Oid) -> String {
@@ -64,13 +64,18 @@ pub fn branch_from_merge_msg(msg: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-fn merge_heads(repo: &mut Repository) -> Vec<Oid> {
+/// The commits being merged in. No `MERGE_HEAD` is none; one git cannot read
+/// is an error, never "no merge in progress".
+fn merge_heads(repo: &mut Repository) -> Result<Vec<Oid>, String> {
     let mut heads = Vec::new();
-    let _ = repo.mergehead_foreach(|oid| {
+    match repo.mergehead_foreach(|oid| {
         heads.push(*oid);
         true
-    });
-    heads
+    }) {
+        Ok(()) => Ok(heads),
+        Err(error) if error.code() == git2::ErrorCode::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("MERGE_HEAD cannot be read: {}", error.message())),
+    }
 }
 
 fn read_merge_msg(repo: &Repository) -> Option<String> {
@@ -232,7 +237,7 @@ fn conflict_entries(repo: &Repository, index: &Index) -> Result<Vec<GitConflictE
 }
 
 pub fn git_merge_state_impl(repo_path: &str) -> Result<GitMergeState, String> {
-    let Ok(mut repo) = Repository::open(repo_path) else {
+    let Some(mut repo) = super::open_repo_if_any(repo_path)? else {
         return Ok(GitMergeState {
             in_progress: false,
             operation: "none".to_string(),
@@ -247,7 +252,7 @@ pub fn git_merge_state_impl(repo_path: &str) -> Result<GitMergeState, String> {
         });
     };
     let state = repo.state();
-    let theirs = merge_heads(&mut repo).first().copied();
+    let theirs = merge_heads(&mut repo)?.first().copied();
     let raw_msg = read_merge_msg(&repo);
     let index = fresh_index(&repo)?;
     Ok(GitMergeState {
@@ -341,7 +346,7 @@ pub fn git_conflict_file_impl(repo_path: &str, file_path: &str) -> Result<GitCon
     let mut index = fresh_index(&repo)?;
     let conflict = find_conflict(&index, file_path)?;
     let sides = read_sides(&repo, &conflict);
-    let theirs_oid = merge_heads(&mut repo).first().copied();
+    let theirs_oid = merge_heads(&mut repo)?.first().copied();
     let ours_label = ours_label(&repo).unwrap_or_else(|| "HEAD".to_string());
     let theirs_label = theirs_label(read_merge_msg(&repo).as_deref(), theirs_oid)
         .unwrap_or_else(|| "incoming".to_string());
@@ -549,7 +554,7 @@ fn signature(repo: &Repository) -> Result<git2::Signature<'static>, String> {
 pub fn git_merge_conclude_impl(repo_path: &str, message: &str) -> Result<String, String> {
     let mut repo = open(repo_path)?;
     require_merge(&repo)?;
-    let heads = merge_heads(&mut repo);
+    let heads = merge_heads(&mut repo)?;
     if heads.is_empty() {
         return Err("no merge in progress".to_string());
     }
@@ -985,7 +990,7 @@ pub fn git_conflict_origins_impl(
     require_merge(&repo)?;
     let path = checked_relative_path(file_path)?;
     let head = commit_id(&repo, "HEAD")?;
-    let theirs = *merge_heads(&mut repo)
+    let theirs = *merge_heads(&mut repo)?
         .first()
         .ok_or_else(|| "no merge in progress".to_string())?;
     let base = repo.merge_base(head, theirs).ok();

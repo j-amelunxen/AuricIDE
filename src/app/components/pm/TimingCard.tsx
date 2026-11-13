@@ -1,13 +1,45 @@
 'use client';
 
-export function statusLabel(status: string): string {
-  const words = status.replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
+import { formatDuration } from '@/lib/pm/metrics/time';
+import { statusName } from '@/lib/pm/labels';
 
 export interface TimingRow {
   label: string;
   value: string;
+}
+
+/** The lifecycle figures tickets and goals both have (`lib/pm/metrics/lifecycle.ts`). */
+interface LifecycleTiming {
+  currentStatus: string;
+  timeInCurrentStatus: number | null;
+  timeInStatus: Record<string, number>;
+  cycleTime: number | null;
+  leadTime: number | null;
+}
+
+/**
+ * The rows of a Timing box: the current status, every earlier spell, then
+ * `extra` (a goal's review rounds), cycle and lead time. Absent figures are left out.
+ */
+export function timingRows(metrics: LifecycleTiming, extra: TimingRow[] = []): TimingRow[] {
+  const rows: TimingRow[] = [];
+  if (metrics.timeInCurrentStatus !== null) {
+    rows.push({
+      label: statusName(metrics.currentStatus),
+      value: formatDuration(metrics.timeInCurrentStatus),
+    });
+  }
+  for (const [spellStatus, ms] of Object.entries(metrics.timeInStatus)) {
+    rows.push({ label: statusName(spellStatus), value: formatDuration(ms) });
+  }
+  rows.push(...extra);
+  if (metrics.cycleTime !== null) {
+    rows.push({ label: 'Cycle', value: formatDuration(metrics.cycleTime) });
+  }
+  if (metrics.leadTime !== null) {
+    rows.push({ label: 'Lead', value: formatDuration(metrics.leadTime) });
+  }
+  return rows;
 }
 
 interface TimingCardProps {

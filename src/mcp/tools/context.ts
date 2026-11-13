@@ -3,19 +3,11 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { resolveTicketId } from './resolve';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface ContextItem {
   id: string;
   type: 'snippet' | 'file';
   value: string;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function assertTicketExists(db: Database.Database, ticketId: string): void {
   const row = db.prepare('SELECT id FROM pm_tickets WHERE id = ?').get(ticketId);
@@ -60,10 +52,6 @@ function writeContext(db: Database.Database, ticketId: string, items: ContextIte
     ticketId
   );
 }
-
-// ---------------------------------------------------------------------------
-// Pure functions
-// ---------------------------------------------------------------------------
 
 /**
  * Returns the parsed context items for a ticket.
@@ -116,10 +104,6 @@ export function clearTicketContext(db: Database.Database, ticketId: string): voi
   assertTicketExists(db, ticketId);
   writeContext(db, ticketId, []);
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerContextTools(server: FastMCP, db: Database.Database): void {
   server.addTool({

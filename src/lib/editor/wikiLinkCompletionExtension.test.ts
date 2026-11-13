@@ -5,11 +5,11 @@ import { EditorView } from '@codemirror/view';
 import { CompletionContext } from '@codemirror/autocomplete';
 import {
   wikiLinkCompletionExtension,
-  fileListFacet,
   headingProviderFacet,
   wikiLinkCompletion,
 } from './wikiLinkCompletionExtension';
-import type { HeadingRange } from '@/lib/editor/markdownHeadingParser';
+import { projectFilesFacet } from './editorFacets';
+import type { HeadingRange } from '@/lib/markdown/markdownHeadingParser';
 
 type HeadingProvider = (filePath: string) => HeadingRange[];
 
@@ -19,7 +19,7 @@ function getCompletions(
   pos?: number,
   headingProvider?: HeadingProvider
 ) {
-  const extensions = [fileListFacet.of(filePaths)];
+  const extensions = [projectFilesFacet.of(filePaths)];
   if (headingProvider) {
     extensions.push(headingProviderFacet.of(headingProvider));
   }
@@ -37,8 +37,8 @@ describe('wikiLinkCompletionExtension', () => {
     expect(wikiLinkCompletionExtension).toBeDefined();
   });
 
-  it('exports fileListFacet as defined', () => {
-    expect(fileListFacet).toBeDefined();
+  it('exports projectFilesFacet as defined', () => {
+    expect(projectFilesFacet).toBeDefined();
   });
 
   it('can be added to an EditorView without error', () => {
@@ -49,7 +49,7 @@ describe('wikiLinkCompletionExtension', () => {
       doc: 'Type [[ to trigger',
       extensions: [
         wikiLinkCompletionExtension,
-        fileListFacet.of(['/project/readme.md', '/project/notes.md']),
+        projectFilesFacet.of(['/project/readme.md', '/project/notes.md']),
       ],
     });
     const view = new EditorView({ state, parent });
@@ -59,20 +59,20 @@ describe('wikiLinkCompletionExtension', () => {
     document.body.removeChild(parent);
   });
 
-  it('fileListFacet combines to first value', () => {
+  it('projectFilesFacet combines to first value', () => {
     const state = EditorState.create({
       doc: '',
-      extensions: [fileListFacet.of(['/a.md', '/b.md'])],
+      extensions: [projectFilesFacet.of(['/a.md', '/b.md'])],
     });
-    expect(state.facet(fileListFacet)).toEqual(['/a.md', '/b.md']);
+    expect(state.facet(projectFilesFacet)).toEqual(['/a.md', '/b.md']);
   });
 
-  it('fileListFacet defaults to empty array', () => {
+  it('projectFilesFacet defaults to empty array', () => {
     const state = EditorState.create({
       doc: '',
       extensions: [],
     });
-    expect(state.facet(fileListFacet)).toEqual([]);
+    expect(state.facet(projectFilesFacet)).toEqual([]);
   });
 
   // Completion function tests

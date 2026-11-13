@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '@/lib/store';
+import { isMindmapTabId, mindmapFilePath } from '@/lib/ide/mindmapTabId';
 import { createAutosave } from '@/lib/editor/autosave';
 import {
   formatForSave,
@@ -17,7 +18,9 @@ import { isMergeTabId } from '@/lib/git/mergeTabId';
 import { isReviewTabId } from '@/lib/git/review/reviewSession';
 import { tabBreadcrumbs } from '@/lib/ide/tabBreadcrumbs';
 import { isVirtualTabId } from '@/lib/git/virtualTabId';
-import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
+import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/markdown/markdownHeadingParser';
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
+import { findWikiTargetPath } from '@/lib/markdown/wikiLinkParser';
 import type { IDEState } from './liveIDEState';
 import type { StoreDiagnostic } from '@/lib/store/diagnosticsSlice';
 
@@ -53,8 +56,26 @@ export function useEditorAndScratchHandlers(
     return () => window.removeEventListener('beforeunload', flushPending);
   }, [autosave]);
 
-  const loadTabContent = useCallback(
+  // Tabs whose text has not arrived, or could not be read. Until it arrives
+  // the editor still shows the previous tab's text; saving or typing then
+  // must not write that text to this path.
+  const textNotLoaded = useRef(new Set<string>());
+
+  const loadPreview = useCallback(
     async (path: string) => {
+      if (isMindmapTabId(path)) {
+        // "Show as Mindmap": the file drawn as a map, never edited as text here.
+        const file = mindmapFilePath(path);
+        const content = await readFile(file);
+        if (useStore.getState().activeTabId !== path) return;
+        const { parseMindmapMarkdown } = await import('@/lib/mindmap/mindmapParser');
+        state.setMindmapData(parseMindmapMarkdown(content));
+        state.setEditorContent('');
+        state.setImageData(null);
+        state.setVideoSrc(null);
+        state.setPdfData(null);
+        return;
+      }
       const kind = previewKind(path);
       if (kind === 'image') {
         const data = await readFileBase64(path);
@@ -84,6 +105,7 @@ export function useEditorAndScratchHandlers(
         const content = await readFile(path);
         if (useStore.getState().activeTabId !== path) return;
         state.setEditorContent(content);
+        textNotLoaded.current.delete(path);
         state.setImageData(null);
         state.setVideoSrc(null);
         state.setPdfData(null);
@@ -100,6 +122,23 @@ export function useEditorAndScratchHandlers(
       }
     },
     [state]
+  );
+
+  const loadTabContent = useCallback(
+    async (path: string) => {
+      textNotLoaded.current.add(path);
+      try {
+        await loadPreview(path);
+      } catch (error) {
+        if (useStore.getState().activeTabId !== path) return;
+        state.setEditorContent('');
+        const reason = error instanceof Error ? error.message : String(error);
+        useStore
+          .getState()
+          .showToast(`Could not open ${path.split('/').pop()}: ${reason}`, 'error');
+      }
+    },
+    [state, loadPreview]
   );
 
   const loadFileContent = useCallback(
@@ -122,6 +161,7 @@ export function useEditorAndScratchHandlers(
       // tabs hold no editor text: ⌘S there must not write `editorContent`.
       const path = state.activeTabId;
       if (!path || isVirtualTabId(path) || previewKind(path) !== 'text') return;
+      if (textNotLoaded.current.has(path)) return;
       if (trigger === 'blur') {
         if (!editedSinceFormat.has(path) || !formatLanguageForTrigger(path, 'blur')) return;
       }
@@ -154,6 +194,7 @@ export function useEditorAndScratchHandlers(
       // Same rule as handleSave: a diff, merge or review tab is not a file, so
       // it is never dirty and nothing is scheduled to a path named after its id.
       if (!state.activeTabId || isVirtualTabId(state.activeTabId)) return;
+      if (textNotLoaded.current.has(state.activeTabId)) return;
       state.markDirty(state.activeTabId, true);
       editedSinceFormat.add(state.activeTabId);
       autosave.schedule(state.activeTabId, newContent);
@@ -231,18 +272,9 @@ export function useEditorAndScratchHandlers(
     [state, autosave]
   );
 
-  const handleImageDrop = useCallback((_agentId: string, _imageData: string) => {
-    // Basic implementation placeholder
-  }, []);
-
   const handleWikiLinkNavigate = useCallback(
     (target: string) => {
-      const allPaths = useStore.getState().allFilePaths;
-      const match = allPaths.find(
-        (p) =>
-          p.toLowerCase().endsWith('/' + target.toLowerCase()) ||
-          p.toLowerCase().endsWith('\\' + target.toLowerCase())
-      );
+      const match = findWikiTargetPath(useStore.getState().allFilePaths, target);
       if (match) state.selectFile(match);
     },
     [state]
@@ -254,7 +286,7 @@ export function useEditorAndScratchHandlers(
   }, [state.activeTabId]);
 
   const isMarkdownFile = useMemo(
-    () => !!state.activeTabId && /\.(md|markdown)$/i.test(state.activeTabId),
+    () => !!state.activeTabId && isMarkdownPath(state.activeTabId),
     [state.activeTabId]
   );
   // The cursor moves on every keystroke. Outside Markdown the breadcrumbs do
@@ -310,7 +342,9 @@ export function useEditorAndScratchHandlers(
   const isMergeTab = !!state.activeTabId && isMergeTabId(state.activeTabId);
   const isReviewTab = !!state.activeTabId && isReviewTabId(state.activeTabId);
   const isWorkflowFile = !!state.activeTabId?.endsWith('.workflow.md');
-  const isMindmapTab = !!state.activeTabId?.endsWith('.mindmap.md');
+  const isMindmapTab =
+    !!state.activeTabId &&
+    (state.activeTabId.endsWith('.mindmap.md') || isMindmapTabId(state.activeTabId));
   const isObsidianCanvas = !!state.activeTabId?.endsWith('.canvas');
   const isExcalidrawTab = !!state.activeTabId?.endsWith('.excalidraw');
   const isHtmlTab = /\.html?$/i.test(state.activeTabId ?? '');
@@ -326,7 +360,6 @@ export function useEditorAndScratchHandlers(
     handleDeleteScratch,
     handleCleanAllScratches,
     handleRenameScratch,
-    handleImageDrop,
     handleWikiLinkNavigate,
     breadcrumbs,
     headingBreadcrumbs,

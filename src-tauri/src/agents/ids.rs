@@ -19,9 +19,9 @@
 //! id. The state is written before the id leaves this module; a failed write
 //! refuses the spawn.
 
+use crate::json_store::{self, FileLock, Read};
 use chrono::{Local, NaiveDateTime, Timelike};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// File name inside the app data folder.
@@ -93,24 +93,14 @@ struct StoredState {
     seq: u64,
 }
 
-enum Loaded {
-    Missing,
-    Valid(IdState),
-    Unusable(String),
-}
-
-fn load(path: &Path) -> Loaded {
-    match std::fs::read_to_string(path) {
-        Ok(text) => match serde_json::from_str::<StoredState>(&text) {
-            Ok(stored) if stored.version == 1 => Loaded::Valid(IdState {
-                day: stored.day,
-                seq: stored.seq,
-            }),
-            Ok(stored) => Loaded::Unusable(format!("unknown version {}", stored.version)),
-            Err(error) => Loaded::Unusable(error.to_string()),
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Loaded::Missing,
-        Err(error) => Loaded::Unusable(error.to_string()),
+fn load(path: &Path) -> Read<IdState> {
+    match json_store::read_json::<StoredState>(path, Some(1)) {
+        Read::Valid(stored) => Read::Valid(IdState {
+            day: stored.day,
+            seq: stored.seq,
+        }),
+        Read::Missing => Read::Missing,
+        Read::Unreadable(reason) => Read::Unreadable(reason),
     }
 }
 
@@ -121,57 +111,7 @@ fn store(path: &Path, state: IdState) -> Result<(), String> {
         seq: state.seq,
     })
     .map_err(|error| error.to_string())?;
-    let temporary = path.with_extension(format!("json.{}.tmp", std::process::id()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
-    let written = file.write_all(&payload).and_then(|_| file.sync_all());
-    drop(file);
-    if let Err(error) = written {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    std::fs::rename(&temporary, path).map_err(|error| {
-        let _ = std::fs::remove_file(&temporary);
-        error.to_string()
-    })
-}
-
-/// Advisory cross-process lock on a sibling file, released when dropped.
-struct FileLock {
-    _file: std::fs::File,
-}
-
-impl FileLock {
-    fn acquire(path: &Path) -> Result<Self, String> {
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            loop {
-                // SAFETY: the descriptor belongs to `file`, which outlives the call.
-                let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-                if rc == 0 {
-                    break;
-                }
-                let error = std::io::Error::last_os_error();
-                if error.kind() != std::io::ErrorKind::Interrupted {
-                    return Err(format!("could not lock {}: {error}", path.display()));
-                }
-            }
-        }
-        Ok(Self { _file: file })
-    }
+    json_store::write_atomic(path, &payload, json_store::Mode::Private)
 }
 
 /// Hands out ids. Durable when it has a state file, in memory otherwise (tests).
@@ -247,11 +187,12 @@ impl IdAllocator {
                 .map_err(|error| format!("{}: {error}", parent.display()))?;
         }
         let lock_path = PathBuf::from(format!("{}{LOCK_SUFFIX}", path.display()));
-        let _lock = FileLock::acquire(&lock_path)?;
+        let _lock = FileLock::acquire_file(&lock_path)
+            .map_err(|error| format!("could not lock {}: {error}", lock_path.display()))?;
         let stored = match load(&path) {
-            Loaded::Missing => IdState::NONE,
-            Loaded::Valid(state) => state,
-            Loaded::Unusable(reason) => {
+            Read::Missing => IdState::NONE,
+            Read::Valid(state) => state,
+            Read::Unreadable(reason) => {
                 // Not trusted. Seeding the counter with the seconds since
                 // midnight keeps this day from reissuing low numbers.
                 eprintln!(

@@ -68,11 +68,3 @@ export function scaffoldProjectFiles(
       return [readme];
   }
 }
-
-/** Directories that must exist before the scaffold files can be written. */
-export function scaffoldDirectories(projectDir: string, template: NewProjectTemplate): string[] {
-  const sep = pathSeparator(projectDir);
-  const dirs = [projectDir];
-  if (template === 'notes') dirs.push(`${projectDir}${sep}notes`);
-  return dirs;
-}

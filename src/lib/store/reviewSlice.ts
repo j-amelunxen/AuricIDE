@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 import { riskFlagsForPatch } from '../git/review/riskFlags';
@@ -167,7 +168,7 @@ function keepUnchanged(previous: ReviewFile[], next: ReviewFile[]): ReviewFile[]
 const latestLoad = new Map<string, number>();
 let loadCounter = 0;
 
-export const createReviewSlice: StateCreator<ReviewSlice> = (set, get) => {
+export const createReviewSlice: StateCreator<StoreState, [], [], ReviewSlice> = (set, get) => {
   function patchSession(tabId: string, token: number, patch: Partial<ReviewSession>) {
     if (latestLoad.get(tabId) !== token) return;
     set((s) => {

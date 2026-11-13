@@ -1,18 +1,7 @@
-import type { AgentInfo } from '@/lib/tauri/agents';
-import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '@/lib/tauri/pm';
-import type { PmRequirement } from '@/lib/tauri/requirements';
-import type { AgentSlice } from '../agent/agentTypes';
-import type { GoalsSlice } from '../goalsSlice';
+import type { AgentInfo } from '@/lib/agents/types';
 
 export const MAX_TICKET_ATTEMPTS = 2;
 export const MAX_CONDUCTOR_DECISIONS = 200;
-
-export const PRIORITY_ORDER: Record<string, number> = {
-  critical: 0,
-  high: 1,
-  normal: 2,
-  low: 3,
-};
 
 /** Watchdog interval: recovers the loop from silent stalls (ms). */
 export const CONDUCTOR_HEARTBEAT_MS = 15_000;
@@ -104,33 +93,6 @@ export interface ConductorPreflight {
   /** Of those, the ones held by a dependency edge — not their turn yet. */
   stationGoalsBlocked: number;
 }
-
-export interface CrossSlices {
-  pmDraftEpics: PmEpic[];
-  pmDraftTickets: PmTicket[];
-  pmDraftDependencies: PmDependency[];
-  pmDraftTestCases: PmTestCase[];
-  updateTicket: (id: string, updates: Partial<PmTicket>) => void;
-  savePmData: (projectPath: string) => Promise<void>;
-  requirementsDraft: PmRequirement[];
-  rootPath: string | null;
-}
-
-export type FullConductorStore = ConductorSlice &
-  Partial<CrossSlices> &
-  Partial<AgentSlice> &
-  Partial<GoalsSlice> & {
-    dispatchNotification?: (
-      input: import('@/lib/tauri/notifications').NotificationInput
-    ) => Promise<unknown>;
-    rootPath?: string | null;
-    /** The inbox, read for launch requests already open on a goal. */
-    notifications?: import('@/lib/notifications/types').Notification[];
-    /** A judge is configured, so a fresh station claim still gets its verdict. */
-    judgeLlmConfigured?: boolean;
-    /** Providers the open project permits, default first (`uiSlice`). */
-    providers?: import('@/lib/tauri/providers').ProviderInfo[];
-  };
 
 export interface ConductorSlice {
   conductorRunning: boolean;

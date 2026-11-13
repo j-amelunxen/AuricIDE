@@ -1,5 +1,4 @@
 use super::*;
-use crate::git::staging::*;
 use crate::git::worktrees::git_worktree_add_impl;
 use std::fs;
 use std::path::Path;

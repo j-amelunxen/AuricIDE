@@ -6,12 +6,13 @@ import { buildControlAddCommand, buildMcpConfig, initMcpJson } from '@/lib/setti
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { mcpLaunchSpec, type McpLaunchSpec } from '@/lib/tauri/mcp';
+import { useCopyFeedback } from '@/lib/hooks/useCopyFeedback';
 
 type InitFeedback = { kind: 'success' | 'error'; message: string } | null;
 
 export function McpSettingsContent() {
   const rootPath = useStore((s) => s.rootPath);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback();
   const [initFeedback, setInitFeedback] = useState<InitFeedback>(null);
   const [resolvedLaunchSpec, setResolvedLaunchSpec] = useState<{
     projectPath: string;
@@ -68,11 +69,7 @@ export function McpSettingsContent() {
   };
 
   const handleCopy = async () => {
-    const ok = await copyToClipboard(configSnippet);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    await copy(configSnippet);
   };
 
   return (

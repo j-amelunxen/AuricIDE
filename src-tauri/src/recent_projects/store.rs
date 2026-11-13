@@ -2,7 +2,6 @@ use super::legacy::{import_legacy_starred_profiles, import_legacy_webkit_profile
 use super::types::*;
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -337,25 +336,17 @@ pub fn read_store(path: &Path) -> Result<Option<Vec<RecentProject>>, String> {
 }
 
 pub fn write_store_atomic(path: &Path, projects: &[RecentProject]) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Recent projects store has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     if path.exists() {
         fs::copy(path, path.with_extension("json.bak")).map_err(|error| error.to_string())?;
     }
-    let temporary = path.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&RecentProjectsFile {
-        version: STORE_VERSION,
-        projects: projects.to_vec(),
-    })
-    .map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_json_as(
+        path,
+        &RecentProjectsFile {
+            version: STORE_VERSION,
+            projects: projects.to_vec(),
+        },
+        crate::json_store::Mode::Default,
+    )
 }
 
 pub fn read_starred_store(path: &Path) -> Result<Option<Vec<StarredProject>>, String> {
@@ -369,25 +360,17 @@ pub fn read_starred_store(path: &Path) -> Result<Option<Vec<StarredProject>>, St
 }
 
 pub fn write_starred_store_atomic(path: &Path, projects: &[StarredProject]) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Starred projects store has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     if path.exists() {
         fs::copy(path, path.with_extension("json.bak")).map_err(|error| error.to_string())?;
     }
-    let temporary = path.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&StarredProjectsFile {
-        version: STORE_VERSION,
-        projects: projects.to_vec(),
-    })
-    .map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_json_as(
+        path,
+        &StarredProjectsFile {
+            version: STORE_VERSION,
+            projects: projects.to_vec(),
+        },
+        crate::json_store::Mode::Default,
+    )
 }
 
 pub fn preserve_corrupt_store(path: &Path) {
@@ -395,9 +378,5 @@ pub fn preserve_corrupt_store(path: &Path) {
 }
 
 pub fn preserve_corrupt_store_as(path: &Path, name: &str) {
-    if path.exists() {
-        let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-        let backup = path.with_file_name(format!("{name}.corrupt-{timestamp}.json.bak"));
-        let _ = fs::copy(path, backup);
-    }
+    crate::json_store::keep_corrupt_copy(path, name);
 }

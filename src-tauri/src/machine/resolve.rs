@@ -17,10 +17,8 @@ pub fn resolve_in_path(
         let candidate = PathBuf::from(name);
         return is_executable(&candidate).then_some(candidate);
     }
-    path_var
-        .split(':')
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| Path::new(entry).join(name))
+    path_entries(path_var)
+        .map(|entry| entry.join(name))
         .find(|candidate| is_executable(candidate))
 }
 
@@ -65,23 +63,32 @@ pub fn expand_home(folder: &str, home: Option<&Path>) -> PathBuf {
 
 /// A file that may be run: a plain `is_file` finds a download that never got
 /// its execute bit, and the later probe then fails instead of saying missing.
-pub fn on_disk(path: &Path) -> bool {
+#[cfg(unix)]
+pub fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     const ANY_EXECUTE_BIT: u32 = 0o111;
     path.metadata()
         .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & ANY_EXECUTE_BIT != 0)
 }
 
+#[cfg(not(unix))]
+pub fn is_executable(path: &Path) -> bool {
+    path.is_file()
+}
+
+/// Nonempty PATH entries, in their original order. Node ABI discovery needs
+/// every candidate; ordinary executable lookup stops at the first match.
+pub fn path_entries(path_var: &str) -> impl Iterator<Item = &Path> {
+    path_var
+        .split(':')
+        .filter(|entry| !entry.is_empty())
+        .map(Path::new)
+}
+
 /// The PATH the user's shell would give us, which is rarely the PATH a bundled
 /// app inherits from launchd.
 pub async fn shell_path() -> String {
-    crate::agents::cached_login_shell_env()
-        .await
-        .iter()
-        .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default()
+    super::path_from_env(super::cached_login_shell_env().await)
 }
 
 /// Absolute path to an executable, resolved through the login shell's PATH.
@@ -89,12 +96,12 @@ pub async fn shell_path() -> String {
 /// `Command::new("ffmpeg")` finds nothing when the app is launched from
 /// `/Applications`.
 pub async fn resolve_executable(name: &str) -> Option<PathBuf> {
-    resolve_in_path(name, &shell_path().await, &on_disk)
+    resolve_in_path(name, &shell_path().await, &is_executable)
 }
 
 /// Like [`resolve_executable`], also looking in `extra_dirs` after PATH.
 pub async fn resolve_executable_in(name: &str, extra_dirs: &[PathBuf]) -> Option<Resolved> {
-    resolve_with_extra_dirs(name, &shell_path().await, extra_dirs, &on_disk)
+    resolve_with_extra_dirs(name, &shell_path().await, extra_dirs, &is_executable)
 }
 
 #[cfg(test)]
@@ -204,8 +211,38 @@ mod tests {
         let tool = dir.path().join("okf");
         std::fs::write(&tool, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(!on_disk(&tool));
+        assert!(!is_executable(&tool));
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(on_disk(&tool));
+        assert!(is_executable(&tool));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn test_find_in_path_locates_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.path().join("npx");
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let path_var = format!("/nonexistent:{}", dir.path().display());
+        assert_eq!(resolve_in_path("npx", &path_var, &is_executable), Some(bin));
+    }
+
+    #[test]
+    fn test_find_in_path_returns_none_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_var = dir.path().display().to_string();
+        assert_eq!(resolve_in_path("npx", &path_var, &is_executable), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_find_in_path_skips_non_executable_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "not executable").unwrap();
+        let path_var = dir.path().display().to_string();
+        assert_eq!(resolve_in_path("npx", &path_var, &is_executable), None);
     }
 }

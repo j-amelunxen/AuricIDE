@@ -1,6 +1,7 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
-import type { AgentUsageRow } from '../tauri/agentUsage';
+import type { AgentUsageRow } from '../pm/usage/types';
 import { agentUsageLoad } from '../tauri/agentUsage';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -35,7 +36,10 @@ function mergeRows(held: AgentUsageRow[], incoming: AgentUsageRow[]): AgentUsage
   return [...byId.values()].sort(newestFirst);
 }
 
-export const createAgentUsageSlice: StateCreator<AgentUsageSlice> = (set, get) => ({
+export const createAgentUsageSlice: StateCreator<StoreState, [], [], AgentUsageSlice> = (
+  set,
+  get
+) => ({
   agentUsageRows: {},
   agentUsageStatus: {},
 

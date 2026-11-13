@@ -16,6 +16,9 @@ fn is_default_startup_timeout_s(value: &u64) -> bool {
     *value == DEFAULT_STARTUP_TIMEOUT_S
 }
 
+/// Every connector is registered with an agent as `connector-<id>`.
+pub const CONNECTOR_SERVER_PREFIX: &str = "connector-";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Launch {
@@ -84,7 +87,7 @@ impl ConnectorPolicy {
         let mut roots = BTreeSet::new();
         for (root, grants) in &self.bindings {
             if !Path::new(root).is_absolute()
-                || !roots.insert(crate::supervisor::canonical_project_path(root))
+                || !roots.insert(crate::project_path::canonical_project_path(root))
             {
                 return Err("Connector bindings need unique absolute logical project roots".into());
             }
@@ -221,7 +224,7 @@ pub struct ResolvedConnector {
 }
 impl ResolvedConnector {
     pub fn server_name(&self) -> String {
-        format!("connector-{}", self.id)
+        format!("{CONNECTOR_SERVER_PREFIX}{}", self.id)
     }
 }
 /// Disabled/missing/changed definitions contribute neither a server nor a briefing.
@@ -231,11 +234,11 @@ pub fn resolve(
     root: &Path,
 ) -> Vec<ResolvedConnector> {
     let root_text = root.to_string_lossy();
-    let canonical = crate::supervisor::canonical_project_path(&root_text);
+    let canonical = crate::project_path::canonical_project_path(&root_text);
     if !policy
         .projects
         .iter()
-        .any(|(p, r)| r.allowed && crate::supervisor::canonical_project_path(p) == canonical)
+        .any(|(p, r)| r.allowed && crate::project_path::canonical_project_path(p) == canonical)
     {
         return vec![];
     }
@@ -243,7 +246,7 @@ pub fn resolve(
         .connectors
         .bindings
         .iter()
-        .find(|(p, _)| crate::supervisor::canonical_project_path(p) == canonical)
+        .find(|(p, _)| crate::project_path::canonical_project_path(p) == canonical)
     else {
         return vec![];
     };
@@ -318,41 +321,17 @@ pub fn launch_context(task: &str, connectors: &[ResolvedConnector]) -> String {
     context
 }
 
-/// Whether the provider reads the per-agent MCP config files (or, for Codex,
-/// the `-c` overrides), so it can carry more servers than `auric-pm`. An
-/// env-only bridge (e.g. `AURIC_MCP_CONFIG`) can serve just Auric PM, so
-/// nonempty launch material alone is not support.
-pub fn provider_consumes_mcp_config(
-    provider_id: &str,
-    provider: &dyn crate::providers::AgentProvider,
-    mut binding: crate::providers::ProviderProjectBinding,
-) -> Result<bool, String> {
-    binding = binding
-        .with_mcp_config_path("connector-capability-probe")
-        .with_crush_config_path("connector-capability-probe")
-        .with_runtime_entrypoint("connector-capability-probe");
-    let material = crate::providers::project_binding_material(provider_id, provider, &binding)?;
-    Ok(provider_id == "codex"
-        || material
-            .arguments
-            .iter()
-            .any(|arg| arg.contains("connector-capability-probe"))
-        || material.env_vars.iter().any(|(key, value)| {
-            key == "CRUSH_GLOBAL_CONFIG" && value == "connector-capability-probe"
-        }))
-}
-
-/// Capability gate shared by spawn and tests. An unbound adapter must never receive even a briefing.
+/// Capability gate shared by spawn and tests. A provider that reads no
+/// per-agent MCP config (an env-only bridge serves Auric PM alone) gets no
+/// connector, and so never even a briefing.
 pub fn for_provider(
     connectors: Vec<ResolvedConnector>,
-    provider_id: &str,
     provider: &dyn crate::providers::AgentProvider,
-    binding: crate::providers::ProviderProjectBinding,
-) -> Result<Vec<ResolvedConnector>, String> {
-    if provider_consumes_mcp_config(provider_id, provider, binding)? {
-        Ok(connectors)
+) -> Vec<ResolvedConnector> {
+    if provider.mcp_binding().reads_mcp_config() {
+        connectors
     } else {
-        Ok(Vec::new())
+        Vec::new()
     }
 }
 

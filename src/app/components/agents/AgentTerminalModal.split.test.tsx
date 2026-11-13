@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { AgentTerminalModal } from './AgentTerminalModal';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { setAppConfigValue } from '@/lib/config/appConfig';
 
@@ -102,8 +102,10 @@ describe('AgentTerminalModal – terminals side by side', () => {
     localStorage.clear();
     useStore.setState({ terminalGridCells: null, agentColors: {} });
   });
-  afterEach(() => {
+  afterEach(async () => {
     useStore.setState({ terminalGridCells: null, overlayStack: { layers: [] } });
+    // A drag leaves its click swallower until the current task ends; let it end.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('opens with one terminal and no pane header', () => {

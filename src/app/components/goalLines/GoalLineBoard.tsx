@@ -1,7 +1,7 @@
 'use client';
 
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { PmGoal } from '@/lib/goals/types';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { GoalLine } from '@/lib/goals/goalLinesLayout';
 import { GoalLineCard } from './GoalLineCard';
 

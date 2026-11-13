@@ -1,4 +1,5 @@
 import { invoke } from './invoke';
+import { subscribeToTauriEvent } from './subscribe';
 
 /** Emitted to the main window when a menu bar item or a global shortcut asks for a supervisor. */
 export const MENU_BAR_LAUNCH_EVENT = 'menu-bar-launch';
@@ -52,4 +53,13 @@ export interface ShortcutFailure {
 /** Rebuilds the menu bar icon and re-registers the shortcuts; returns the ones macOS refused. */
 export async function menuBarSync(config: MenuBarConfig): Promise<ShortcutFailure[]> {
   return await invoke<ShortcutFailure[]>('menu_bar_sync', { config });
+}
+
+/** Calls `onLaunch` for every menu bar pick or global shortcut; returns the unsubscribe. */
+export function onMenuBarLaunch(onLaunch: (request: MenuBarLaunchRequest) => void): () => void {
+  return subscribeToTauriEvent<MenuBarLaunchRequest | null>(
+    MENU_BAR_LAUNCH_EVENT,
+    (request) => onLaunch(request ?? {}),
+    'Menu bar events unavailable (browser mode)'
+  );
 }

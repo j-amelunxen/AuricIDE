@@ -1,8 +1,9 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { useStore } from '@/lib/store';
 import { gitLogSince } from '@/lib/tauri/git';
 import { llmCall } from '@/lib/tauri/llm';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 import { orderedStations } from '@/lib/goals/stationOrder';
 import {
   evaluatePredicate,
@@ -25,7 +26,7 @@ export { applyJudgeVerdict, buildClaimJudgePrompt, parseVerdictJson, reopenStati
 export { globMatch };
 
 function nowTimestamp(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return formatUtcStamp();
 }
 
 /**

@@ -16,7 +16,6 @@ describe('MemoryMetricsCollector', () => {
       agentLogs: {},
       agents: [],
       entityIndex: new Map(),
-      headingIndex: new Map(),
       linkIndex: new Map(),
       diagnostics: new Map(),
       canvasNodes: [],

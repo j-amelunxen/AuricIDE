@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '../tauri/goals';
-import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { PmRequirement } from '../tauri/requirements';
-import type { AgentInfo } from '../tauri/agents';
+import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from './types';
+import type { PmDependency, PmRequirement, PmTicket } from '../pm/types';
+import type { AgentInfo } from '../agents/types';
 import { buildGoalLine, buildGoalLines, type GoalLinesInput } from './goalLinesLayout';
 
 // --- Fixture factories (generic names only) ---
@@ -433,15 +432,15 @@ describe('idleSince', () => {
       makeInput({ goals: [goal], tickets: [ticket], runs: [run] }),
       goal.id
     )!;
-    expect(line.idleSince).toBe(Date.parse('2026-01-10 11:00:00'.replace(' ', 'T')));
+    expect(line.idleSince).toBe(Date.parse('2026-01-10T11:00:00Z'));
   });
 });
 
 describe('station-backed lines', () => {
   function makeStation(
     goalId: string,
-    overrides: Partial<import('../tauri/goals').PmGoalStation> = {}
-  ): import('../tauri/goals').PmGoalStation {
+    overrides: Partial<import('./types').PmGoalStation> = {}
+  ): import('./types').PmGoalStation {
     return {
       id: uid('st'),
       goalId,
@@ -556,8 +555,8 @@ describe('station-backed lines', () => {
 describe('lines without tickets', () => {
   function station(
     goalId: string,
-    overrides: Partial<import('../tauri/goals').PmGoalStation> = {}
-  ): import('../tauri/goals').PmGoalStation {
+    overrides: Partial<import('./types').PmGoalStation> = {}
+  ): import('./types').PmGoalStation {
     return {
       id: uid('st'),
       goalId,

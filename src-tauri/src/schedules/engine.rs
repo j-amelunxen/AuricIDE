@@ -1,3 +1,4 @@
+use super::types::vocabulary;
 use super::types::*;
 use chrono::{DateTime, Days, NaiveTime, Utc};
 use chrono_tz::Tz;
@@ -20,7 +21,7 @@ pub fn every_occurrences(
         .every_n
         .filter(|n| *n > 0)
         .ok_or("every_n must be positive")?;
-    let unit = schedule.every_unit.as_deref().unwrap_or("day");
+    let unit = schedule.every_unit.as_deref().unwrap_or(vocabulary::DAY);
     let anchor = schedule
         .anchor_at
         .as_deref()
@@ -30,7 +31,7 @@ pub fn every_occurrences(
     let mut due = Vec::new();
     let mut next_due = None;
 
-    if unit == "hour" {
+    if unit == vocabulary::HOUR {
         let step = chrono::Duration::hours(n);
         let mut at = anchor;
         for _ in 0..MAX_ITERATIONS {
@@ -46,7 +47,7 @@ pub fn every_occurrences(
         return Ok((due, next_due));
     }
 
-    let step_days = if unit == "week" { n * 7 } else { n } as u64;
+    let step_days = if unit == vocabulary::WEEK { n * 7 } else { n } as u64;
     let anchor_local = anchor.with_timezone(&tz);
     let time = schedule
         .time_of_day
@@ -109,8 +110,8 @@ fn walk_series(
     now: DateTime<Utc>,
 ) -> Result<Walk, String> {
     match schedule.spec_kind.as_str() {
-        "cron" => cron_occurrences(schedule, tz, from, now),
-        "every" => every_occurrences(schedule, tz, from, now),
+        vocabulary::CRON => cron_occurrences(schedule, tz, from, now),
+        vocabulary::EVERY => every_occurrences(schedule, tz, from, now),
         other => Err(format!("Unknown schedule kind: {}", other)),
     }
 }
@@ -189,8 +190,8 @@ pub fn due_occurrences(schedule: &Schedule, now: DateTime<Utc>) -> Result<DueRes
     let occurrences = match schedule.catch_up.as_str() {
         // Three weeks away must not produce three identical reminders; one that
         // says how overdue it is carries strictly more information.
-        "coalesce" => all.last().copied().into_iter().collect(),
-        "skip" => Vec::new(),
+        vocabulary::COALESCE => all.last().copied().into_iter().collect(),
+        vocabulary::SKIP => Vec::new(),
         _ => all.into_iter().take(MAX_CATCHUP).collect(),
     };
 

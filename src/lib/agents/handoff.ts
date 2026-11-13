@@ -1,4 +1,5 @@
 import { stripAnsi } from '../terminal/ansi';
+import { isRedrawNoise, stripLeadingDecoration } from './terminalChrome';
 
 /**
  * How much of the previous session travels to the next step. Wide enough for
@@ -12,32 +13,6 @@ export const HANDOFF_MAX_CHARS = 2000;
  * this wants the last stretch of the conversation, not the newest sentence.
  */
 const SCANNED_CHUNKS = 400;
-
-/**
- * Interface chrome that redraws constantly and says nothing about the work.
- * Kept short on purpose — over-filtering would drop real output, and a
- * slightly noisy handoff is worth more than a confidently emptied one.
- */
-const CHROME_PATTERNS = [
-  /^esc to interrupt/i,
-  /^\? for shortcuts/i,
-  /^ctrl\+[a-z] to /i,
-  /^press [a-z-]+ to /i,
-];
-
-/**
- * A line worth carrying has at least one letter. Digits alone are not enough:
- * box drawing and a bare "███ 62%" are decoration for a human watching live,
- * and to the next session they are budget spent on nothing.
- */
-const HAS_WORDS = /\p{L}/u;
-
-/**
- * Leading decoration CLIs prefix status lines with (⏺, ✻, ⠋, ▪, >, ·). A
- * spinner rotates that glyph, so two frames of the same sentence are never
- * byte-identical — repetition has to be judged on what follows it.
- */
-const LEADING_DECORATION = /^[^\p{L}\p{N}(["']+/u;
 
 /**
  * What the previous session left on screen, cleaned up enough to paste into
@@ -68,12 +43,11 @@ export function deriveHandoffContext(chunks: string[]): string | null {
       previousBody = '';
       continue;
     }
-    if (!HAS_WORDS.test(compact)) continue;
-    if (CHROME_PATTERNS.some((pattern) => pattern.test(compact))) continue;
+    if (isRedrawNoise(compact)) continue;
 
     // A spinner repaints the same line many times a second, rotating only its
     // frame glyph — so repetition is judged on the text after the decoration.
-    const body = compact.replace(LEADING_DECORATION, '');
+    const body = stripLeadingDecoration(compact);
     if (body === previousBody) continue;
     previousBody = body;
 

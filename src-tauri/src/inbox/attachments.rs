@@ -250,8 +250,14 @@ pub fn detach_impl(
     get_impl(conn, item_id)
 }
 
+/// Where an assigned inbox item's files go, per ticket, inside `.auric`.
+const ATTACHMENTS_DIR: &str = "inbox-attachments";
+
 fn ticket_attachment_rel_path(ticket_id: &str, file_name: &str) -> String {
-    format!(".auric/inbox-attachments/{}/{}", ticket_id, file_name)
+    format!(
+        "{}/{ATTACHMENTS_DIR}/{ticket_id}/{file_name}",
+        crate::database::AURIC_DIR
+    )
 }
 
 pub(crate) fn copy_attachments_into_project(
@@ -262,9 +268,8 @@ pub(crate) fn copy_attachments_into_project(
     if attachments.is_empty() {
         return Ok(Vec::new());
     }
-    let dest_dir = project_path
-        .join(".auric")
-        .join("inbox-attachments")
+    let dest_dir = crate::database::auric_dir(project_path)
+        .join(ATTACHMENTS_DIR)
         .join(ticket_id);
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| format!("Failed to create project inbox attachments dir: {}", e))?;
@@ -311,9 +316,15 @@ pub(crate) fn write_ticket_attachments(
             |row| row.get(0),
         )
         .map_err(|e| format!("Failed to read ticket {}: {}", ticket_id, e))?;
-    let existing: Vec<crate::database::PmContextItem> =
-        serde_json::from_str(&existing_json).unwrap_or_default();
-    let prefix = format!(".auric/inbox-attachments/{}/", ticket_id);
+    // A context that does not parse is refused, not replaced by the attachments.
+    let existing: Vec<crate::database::PmContextItem> = serde_json::from_str(&existing_json)
+        .map_err(|e| {
+            format!("Ticket {ticket_id} has an unreadable context, left unchanged: {e}")
+        })?;
+    let prefix = format!(
+        "{}/{ATTACHMENTS_DIR}/{ticket_id}/",
+        crate::database::AURIC_DIR
+    );
     let mut next: Vec<crate::database::PmContextItem> = existing
         .into_iter()
         .filter(|item| !(item.r#type == "file" && item.value.starts_with(&prefix)))

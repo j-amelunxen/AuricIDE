@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { getGoalDropPosition, GOAL_STATUS_STYLES, GoalTree } from './GoalTree';
 import { GOAL_STATUSES } from '@/lib/pm/enums';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {
@@ -396,7 +396,7 @@ describe('GOAL_STATUS_STYLES', () => {
   // missing here is a status nobody can see or pick.
   it('styles every goal status, in review included', () => {
     expect(Object.keys(GOAL_STATUS_STYLES).sort()).toEqual([...GOAL_STATUSES].sort());
-    expect(GOAL_STATUS_STYLES.in_review.label).toBe('In Review');
+    expect(GOAL_STATUS_STYLES.in_review.label).toBe('In review');
   });
 
   it('marks a goal in review with its own dot, not the draft fallback', () => {
@@ -409,7 +409,7 @@ describe('GOAL_STATUS_STYLES', () => {
       />
     );
     expect(screen.getByText('Awaiting verdict')).toBeTruthy();
-    expect(screen.getByTitle('In Review')).toBeTruthy();
+    expect(screen.getByTitle('In review')).toBeTruthy();
   });
 });
 

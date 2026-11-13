@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PmTicket, PmTestCase } from '@/lib/tauri/pm';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmTicket, PmTestCase } from '@/lib/pm/types';
+import type { PmGoal } from '@/lib/goals/types';
 
 vi.mock('@/lib/tauri/llm', () => ({ llmCall: vi.fn() }));
 

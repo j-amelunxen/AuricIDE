@@ -9,7 +9,7 @@ import { managerMonogram } from '@/lib/agents/managerStatus';
 import { FOLDER_MISSING_SENTENCE } from '@/app/components/agents/managerFiles';
 import { SELECT_CLASS } from './SupervisorProjectRow';
 import type { ManagerPresentation } from '@/lib/quickAccess/managerPresentation';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { ModelOption } from '@/lib/tauri/providers';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import type { SupervisorRun } from '@/lib/tauri/supervisorRuns';

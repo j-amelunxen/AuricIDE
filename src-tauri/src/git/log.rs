@@ -1,5 +1,4 @@
 use super::types::*;
-use git2::Repository;
 use std::cmp::Ordering;
 
 /// Walks history from HEAD, newest first, stopping below `since_iso`, at
@@ -13,9 +12,8 @@ pub fn git_log_since_impl(
     limit: usize,
     max_scan: usize,
 ) -> Result<Vec<CommitInfo>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(Vec::new());
     };
     if repo.head().is_err() {
         return Ok(Vec::new()); // empty repo: no commits yet
@@ -104,9 +102,8 @@ pub fn git_log_since_impl(
 }
 
 pub fn git_list_branches_impl(repo_path: &str) -> Result<Vec<GitBranch>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(Vec::new());
     };
 
     let current = repo

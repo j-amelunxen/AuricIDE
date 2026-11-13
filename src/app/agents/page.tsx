@@ -1,14 +1,14 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { installAgentWindowClient, sendAgentWindowAction } from '@/lib/agents/agentWindowClient';
 import { AgentTerminalWorkspace } from '../components/agents/AgentTerminalWorkspace';
-import { ToastHost } from '../components/ide/ToastHost';
+import { ToastHost } from '../components/ui/ToastHost';
 import { AuricIcon } from '../components/ui/AuricIcon';
 
 /**
@@ -56,12 +56,15 @@ function DockButton() {
   );
 }
 
-/** Ending touches tickets, goals and worktrees, so the main window does it. */
-function endAgent(target: AgentInfo): Promise<void> {
-  return sendAgentWindowAction({
-    kind: isFinishedAgent(target) ? 'dismiss' : 'kill',
-    agentId: target.id,
-  });
+/**
+ * Ending touches tickets, goals and worktrees, so the main window does it and
+ * reports a stop that failed. A dismiss always lands, so its tab is left at
+ * once; a stopped agent leaves this window when the roster drops it.
+ */
+async function endAgent(target: AgentInfo, onEnded: () => void): Promise<void> {
+  const dismiss = isFinishedAgent(target);
+  await sendAgentWindowAction({ kind: dismiss ? 'dismiss' : 'kill', agentId: target.id });
+  if (dismiss) onEnded();
 }
 
 /**

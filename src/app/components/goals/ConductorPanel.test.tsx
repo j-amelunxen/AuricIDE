@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ConductorPanel, formatRunDuration } from './ConductorPanel';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import type { ConductorRunSummary } from '@/lib/store/conductorSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 

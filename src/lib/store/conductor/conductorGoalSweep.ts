@@ -1,7 +1,8 @@
-import type { PmGoal } from '@/lib/tauri/goals';
-import { getGoalCompletion, getGoalDescendants } from '../goalsSlice';
-import { getBundleMembers } from '../goals/goalDependencyAdapters';
-import { ownGoalBlockers } from '../goals/goalSatisfaction';
+import type { PmGoal } from '@/lib/goals/types';
+import { getGoalCompletion } from '../../goals/model/goalSatisfaction';
+import { getGoalDescendants } from '../../goals/model/goalTreeHelpers';
+import { getBundleMembers } from '../../goals/model/goalDependencyAdapters';
+import { ownGoalBlockers } from '../../goals/model/goalSatisfaction';
 import type { ConductorTickContext } from './conductorTick';
 
 function depthIn(goals: PmGoal[]): (goal: PmGoal) => number {
@@ -134,7 +135,7 @@ export function achieveFinishedDescendants(
     if (descendant.status !== 'active' && descendant.status !== 'in_progress') continue;
     if (!isAchievable(ctx, working, descendant.id)) continue;
     for (const id of closableWith(ctx, working, descendant.id)) {
-      full.achieveGoal?.(id);
+      full.achieveGoal(id);
       achieved.add(id);
       const name = working.find((g) => g.id === id)?.name ?? id;
       ctx.addDecision({

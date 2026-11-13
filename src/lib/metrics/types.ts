@@ -8,7 +8,6 @@ export interface StoreMetrics {
   agentsByStatus: Record<string, number>;
   entityIndexSize: number;
   entityOccurrencesTotal: number;
-  headingIndexSize: number;
   linkIndexSize: number;
   diagnosticsSize: number;
   canvasNodesCount: number;

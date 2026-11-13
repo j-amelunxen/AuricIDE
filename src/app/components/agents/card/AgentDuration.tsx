@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentState } from '@/lib/agents/state';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { useNow } from '@/lib/hooks/useNow';

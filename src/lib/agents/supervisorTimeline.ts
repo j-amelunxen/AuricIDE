@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import {
   externalCountsAsOn,
   isExternalLive,
@@ -137,8 +137,10 @@ export interface TimelineOptions {
 }
 
 export function timelineBarLabel(agent: Pick<AgentInfo, 'name' | 'currentTask'>): string {
-  const first = agent.currentTask?.split('\n')[0]?.replace(/\s+/g, ' ').trim() ?? '';
-  if (!first || first.length > BAR_LABEL_MAX) return agent.name;
+  const first = agent.currentTask?.split(/\r?\n/)[0]?.replace(/\s+/g, ' ').trim() ?? '';
+  // Characters, not UTF-16 units: the task log's twin (task_log::task_title)
+  // counts the same way (taskTitle.fixtures.json).
+  if (!first || [...first].length > BAR_LABEL_MAX) return agent.name;
   return first;
 }
 

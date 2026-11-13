@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import type { Notification } from '@/lib/notifications/types';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { CommandCenter } from './CommandCenter';

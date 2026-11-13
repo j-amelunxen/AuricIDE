@@ -706,7 +706,7 @@ pub(crate) mod tests {
         assert_eq!(strings(&fixtures["features"]), FEATURES.to_vec());
         assert_eq!(
             strings(&fixtures["supervisorProviders"]),
-            crate::agents::manager::SUPERVISOR_PROVIDERS.to_vec()
+            crate::supervisor::launch::SUPERVISOR_PROVIDERS.to_vec()
         );
         assert_eq!(
             fixtures["search"]["defaultLimit"],

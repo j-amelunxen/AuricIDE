@@ -15,6 +15,9 @@ use serde::Deserialize;
 use crate::cc_usage::pricing::TokenCounts;
 use crate::cc_usage::scan::{deduplicate, turns_in_file};
 
+/// Where Claude Code keeps its transcripts, below the home folder.
+pub const CLAUDE_PROJECTS_DIR: &str = ".claude/projects";
+
 /// What one model consumed, as the CLI counts it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelTokens {

@@ -5,7 +5,7 @@
 //! and Rust config lookups) are tested without one.
 
 use super::Language;
-use crate::machine::{expand_home, on_disk, resolve_with_extra_dirs};
+use crate::machine::{expand_home, is_executable, resolve_with_extra_dirs};
 use std::path::{Path, PathBuf};
 
 /// The questions resolution asks of the disk.
@@ -44,7 +44,7 @@ impl Machine for Disk {
     }
 
     fn is_executable(&self, path: &Path) -> bool {
-        on_disk(path)
+        is_executable(path)
     }
 
     fn read(&self, path: &Path) -> Option<String> {
@@ -60,7 +60,8 @@ impl Machine for Disk {
     }
 
     fn on_path(&self, name: &str, extra_dirs: &[PathBuf]) -> Option<PathBuf> {
-        resolve_with_extra_dirs(name, &self.path_var, extra_dirs, &on_disk).map(|found| found.path)
+        resolve_with_extra_dirs(name, &self.path_var, extra_dirs, &is_executable)
+            .map(|found| found.path)
     }
 }
 

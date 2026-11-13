@@ -1,17 +1,16 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/goals/types';
+import type { PmRequirement, PmTicket } from '@/lib/pm/types';
+import { getGoalBlockers } from '@/lib/goals/model/goalDependencyAdapters';
 import {
-  getGoalBlockers,
-  getGoalDescendants,
   getGoalCompletion,
   getGoalWorkMode,
   getGoalWorkflowStage,
   getRunsForGoal,
-} from '@/lib/store/goalsSlice';
+} from '@/lib/goals/model/goalSatisfaction';
+import { getGoalDescendants } from '@/lib/goals/model/goalTreeHelpers';
 import { GOAL_WORK_MODE_SETTINGS, type GoalWorkModeSetting } from '@/lib/goals/workMode';
 import { summarizeBlockers } from '@/lib/orchestration/blockerLabel';
 import { useStore } from '@/lib/store';
@@ -159,7 +158,6 @@ export function GoalDetailPanel({
 
   return (
     <div data-testid="goal-detail" className="flex-1 space-y-4 overflow-y-auto p-4">
-      {/* Name + status */}
       <div>
         <input
           data-testid="goal-detail-name"
@@ -231,10 +229,8 @@ export function GoalDetailPanel({
         inputCls={inputCls}
       />
 
-      {/* Workflow stepper */}
       {workflowStep && <GoalWorkflowStepper workflowStep={workflowStep} />}
 
-      {/* Satisfaction check */}
       {completion && (
         <GoalSatisfactionCard
           goal={goal}
@@ -248,7 +244,6 @@ export function GoalDetailPanel({
         <MissionOverviewSection key={missionDir} missionPath={missionDir} labelCls={labelCls} />
       )}
 
-      {/* Actions */}
       <div>
         {workMode && (
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -379,7 +374,6 @@ export function GoalDetailPanel({
         onSelectGoal={setSelectedGoalId}
       />
 
-      {/* Description */}
       <div>
         <label className={labelCls}>Description</label>
         <LinkifiedTextarea
@@ -392,7 +386,6 @@ export function GoalDetailPanel({
         />
       </div>
 
-      {/* Success criteria */}
       <div>
         <label className={labelCls}>Success criteria</label>
         <textarea
@@ -405,7 +398,6 @@ export function GoalDetailPanel({
         />
       </div>
 
-      {/* Goal prompt */}
       <div>
         <label className={labelCls}>Goal prompt</label>
         <textarea
@@ -418,7 +410,6 @@ export function GoalDetailPanel({
         />
       </div>
 
-      {/* Linked tickets */}
       <GoalTicketsSection
         goalId={goal.id}
         goalTickets={goalTickets}
@@ -429,7 +420,6 @@ export function GoalDetailPanel({
         labelCls={labelCls}
       />
 
-      {/* Linked requirements */}
       <GoalRequirementsSection
         goalId={goal.id}
         hasTickets={goalTickets.length > 0}
@@ -440,7 +430,6 @@ export function GoalDetailPanel({
         labelCls={labelCls}
       />
 
-      {/* Runs */}
       <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} usageRows={usageRows} />
 
       <GoalCost goalId={goal.id} goals={goals} tickets={tickets} rows={usageRows} />

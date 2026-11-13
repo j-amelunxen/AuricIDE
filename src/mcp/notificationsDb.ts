@@ -1,3 +1,5 @@
+import { parseUtcStamp } from '@/lib/time/utcStamp';
+import { MCP_SCHEDULE_ID_PREFIX } from '@/lib/notifications/trust';
 import Database from 'better-sqlite3';
 import { initMigrationTable, openSqliteDb, createInMemorySqliteDb } from './sqliteHelper';
 
@@ -10,7 +12,7 @@ import { initMigrationTable, openSqliteDb, createInMemorySqliteDb } from './sqli
  * lives in the app data directory and is reached through the
  * `AURIC_NOTIFICATIONS_DB` path the app passes down when it starts this server.
  *
- * Keep the schema in sync with `src-tauri/src/notifications.rs`, migration 1.
+ * Keep the schema in sync with `src-tauri/src/notifications/schema.rs`, migration 1.
  * Same duplication as `db.ts` ↔ `database.rs`, and the same rule: change both
  * or neither.
  */
@@ -305,19 +307,18 @@ export function dispatchNotification(db: Database.Database, input: DispatchInput
   const write = db.transaction((): NotificationRow => {
     const inherited = input.dedupeKey
       ? (
-          db
-            .prepare('SELECT uid FROM notifications WHERE dedupe_key = ? AND project_path IS ?')
-            .get(input.dedupeKey, input.projectPath ?? null) as { uid: string } | undefined
+          db.prepare('SELECT uid FROM notifications WHERE dedupe_key = ?').get(input.dedupeKey) as
+            { uid: string } | undefined
         )?.uid
       : undefined;
 
     const uid = input.uid ?? inherited ?? generateUid();
 
     if (input.dedupeKey) {
-      db.prepare('DELETE FROM notifications WHERE dedupe_key = ? AND project_path IS ?').run(
-        input.dedupeKey,
-        input.projectPath ?? null
-      );
+      // The key is unique across all projects (index notifications_dedupe),
+      // as in Rust's dispatch_impl; scoped to one project the insert below
+      // would hit that index whenever another project held the key.
+      db.prepare('DELETE FROM notifications WHERE dedupe_key = ?').run(input.dedupeKey);
     }
     db.prepare('DELETE FROM notifications WHERE uid = ?').run(uid);
 
@@ -449,9 +450,36 @@ let scheduleCounter = 0;
  * schedule an agent sets with an anchor in the past cannot replay history the
  * user never asked to hear about.
  */
+/**
+ * What the IDE's runner needs to fire a schedule. It skips one it cannot run
+ * with only a log line, so an agent is told here instead of being told the
+ * reminder was set. Cron syntax itself is checked by the runner alone.
+ */
+function scheduleProblem(input: CreateScheduleInput): string | null {
+  const timezone = input.timezone ?? 'UTC';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    return `unknown timezone '${timezone}'`;
+  }
+  if (input.specKind === 'cron') {
+    const fields = (input.cronExpr ?? '').trim().split(/\s+/).filter(Boolean).length;
+    if (fields < 5 || fields > 6) return 'a cron schedule needs a cron expression of 5 or 6 fields';
+    return null;
+  }
+  if (!input.everyN || input.everyN < 1) return "an 'every' schedule needs everyN of 1 or more";
+  if (!input.everyUnit) return "an 'every' schedule needs everyUnit";
+  if (!input.anchorAt || parseUtcStamp(input.anchorAt) === null) {
+    return "an 'every' schedule needs anchorAt as 'YYYY-MM-DD HH:MM:SS' (UTC)";
+  }
+  return null;
+}
+
 export function createSchedule(db: Database.Database, input: CreateScheduleInput): ScheduleRow {
+  const problem = scheduleProblem(input);
+  if (problem) throw new Error(`Schedule not created: ${problem}`);
   scheduleCounter += 1;
-  const id = `mcp-${Date.now()}-${process.pid}-${scheduleCounter}`;
+  const id = `${MCP_SCHEDULE_ID_PREFIX}${Date.now()}-${process.pid}-${scheduleCounter}`;
 
   db.prepare(
     `INSERT INTO schedules

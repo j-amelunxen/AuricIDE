@@ -2,9 +2,9 @@ import { renderHook, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useConductorController } from './useConductorController';
 import { useStore } from '@/lib/store';
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { PmTicket } from '@/lib/pm/types';
+import type { PmGoal } from '@/lib/goals/types';
+import type { AgentInfo } from '@/lib/agents/types';
 
 function makeAgent(overrides: Partial<AgentInfo> & Pick<AgentInfo, 'id'>): AgentInfo {
   return {

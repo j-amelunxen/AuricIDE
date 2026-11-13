@@ -17,7 +17,7 @@ import {
 } from '@/lib/git/merge/syntaxCheck';
 import type { ProposalState } from '@/lib/store/mergeSlice';
 import type { OriginCommit } from '@/lib/tauri/gitMerge';
-import { ariaKeyshortcuts } from '../shared/shortcutKeys';
+import { ariaKeyshortcuts } from '../../diff/shortcutKeys';
 import {
   pairedWordSpans,
   resolutionSummary,

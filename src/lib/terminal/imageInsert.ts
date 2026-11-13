@@ -1,4 +1,5 @@
 import { invoke } from '../tauri/invoke';
+import { useStore } from '../store';
 
 /**
  * Warp-style image handling for terminals: pasting an image saves it to the
@@ -77,6 +78,15 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/**
+ * The paste or drop was already taken from the target, so a failure to save
+ * the image says so rather than leaving the gesture to vanish.
+ */
+export function reportImageSaveFailure(error: unknown): void {
+  const reason = error instanceof Error ? error.message : String(error);
+  useStore.getState().showToast(`Could not save the image: ${reason}`, 'error');
+}
+
 /** Persist a pasted image into the app cache; returns the absolute file path. */
 export async function saveTempImage(file: File): Promise<string> {
   const base64Data = await fileToDataUrl(file);
@@ -98,9 +108,7 @@ export function attachSavedImagePaste(
     event.stopImmediatePropagation();
     Promise.all(images.map(saveTempImage))
       .then((paths) => onPaths(paths))
-      .catch(() => {
-        // Browser mode / IPC failure — nothing sensible to insert
-      });
+      .catch(reportImageSaveFailure);
   };
   container.addEventListener('paste', onPaste, true);
   return () => container.removeEventListener('paste', onPaste, true);

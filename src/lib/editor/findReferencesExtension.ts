@@ -1,7 +1,8 @@
+import { matchHeadingLine } from '@/lib/markdown/markdownHeadingParser';
 import { Facet } from '@codemirror/state';
 import type { KeyBinding } from '@codemirror/view';
 import { EditorView } from '@codemirror/view';
-import type { ReferenceResult } from '@/lib/refactoring/findReferences';
+import type { ReferenceResult } from '@/lib/refactoring/types';
 import { ENTITY_REGEX } from '@/lib/nlp/patterns';
 
 export type ShowReferencesCallback = (
@@ -24,7 +25,6 @@ function getWordAtCursor(view: EditorView): { word: string; from: number; to: nu
   const lineText = line.text;
   const col = pos - line.from;
 
-  // Find word boundaries around cursor
   let start = col;
   let end = col;
 
@@ -54,23 +54,19 @@ function determineQueryType(
   const line = state.doc.lineAt(pos);
   const lineText = line.text;
 
-  // Check if the line is a heading
-  const headingMatch = /^(#{1,6})\s+(.*)$/.exec(lineText);
+  const headingMatch = matchHeadingLine(lineText);
   if (headingMatch) {
-    return { query: headingMatch[2].trim(), queryType: 'heading' };
+    return { query: headingMatch.title, queryType: 'heading' };
   }
 
-  // Get word at cursor
   const wordInfo = getWordAtCursor(view);
   if (!wordInfo) return null;
 
-  // Check if the word matches ENTITY_REGEX
   ENTITY_REGEX.lastIndex = 0;
   if (ENTITY_REGEX.test(wordInfo.word)) {
     return { query: wordInfo.word, queryType: 'entity' };
   }
 
-  // Default to wikilink
   return { query: wordInfo.word, queryType: 'wikilink' };
 }
 

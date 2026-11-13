@@ -1,4 +1,4 @@
-import type { ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import type { GitRef, GitRefs } from '@/lib/tauri/gitGraph';
 
 export interface MenuCommit {

@@ -15,6 +15,14 @@ export const ACCENT_STORAGE_KEY = APP_CONFIG_KEYS.accent;
 const LEGACY_SEEMING_STORAGE_KEY = 'auric.seeming';
 const LEGACY_SEEMING_SNAPSHOT_KEY = 'auric.seeming.snapshot';
 
+/**
+ * Applies the saved theme before React or this module loads, so the first
+ * paint is already themed: the snapshot bag when there is one, else the id as
+ * `data-accent`. Built from the same keys and fallback order as the readers
+ * below, so a renamed key cannot leave the boot script reading the old one.
+ */
+export const THEME_BOOT_SCRIPT = `try{var r=document.documentElement;var g=function(k){return localStorage.getItem(k)};var s=g(${JSON.stringify(THEME_SNAPSHOT_KEY)})||g(${JSON.stringify(LEGACY_SEEMING_SNAPSHOT_KEY)});if(s){var bag=JSON.parse(s);for(var k in bag){if(k.indexOf('--')===0&&typeof bag[k]==='string')r.style.setProperty(k,bag[k]);}}else{var a=g(${JSON.stringify(THEME_STORAGE_KEY)})||g(${JSON.stringify(LEGACY_SEEMING_STORAGE_KEY)})||g(${JSON.stringify(ACCENT_STORAGE_KEY)});if(a)r.setAttribute('data-accent',a);}}catch(e){}`;
+
 export function readStoredThemeId(): string | null {
   const theme = readAppPref(THEME_STORAGE_KEY);
   if (theme) return theme;

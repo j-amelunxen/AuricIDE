@@ -1,0 +1,48 @@
+{
+  "$comment": "One task title rule for the supervisor timeline bar (timelineBarLabel) and the task log (task_log::task_title). Change it first.",
+  "maxChars": 48,
+  "cases": [
+    {
+      "why": "first line, whitespace collapsed",
+      "name": "Agent",
+      "task": "  fix   the\tlogin \nsecond line",
+      "expected": "fix the login"
+    },
+    {
+      "why": "no task",
+      "name": "Agent",
+      "task": null,
+      "expected": "Agent"
+    },
+    {
+      "why": "blank first line",
+      "name": "Agent",
+      "task": "   \nmore",
+      "expected": "Agent"
+    },
+    {
+      "why": "exactly the limit",
+      "name": "Agent",
+      "task": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "why": "one past the limit",
+      "name": "Agent",
+      "task": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy",
+      "expected": "Agent"
+    },
+    {
+      "why": "limit counts characters, not UTF-16 units",
+      "name": "Agent",
+      "task": "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀",
+      "expected": "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
+    },
+    {
+      "why": "a CRLF line ending is not part of the title",
+      "name": "Agent",
+      "task": "deploy\r\nnext",
+      "expected": "deploy"
+    }
+  ]
+}

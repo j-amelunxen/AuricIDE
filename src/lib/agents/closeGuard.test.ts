@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { runningAgentCount, quitWhileAgentsRunningRequest } from './closeGuard';
 
 const agent = (id: string, status: AgentInfo['status']): AgentInfo => ({

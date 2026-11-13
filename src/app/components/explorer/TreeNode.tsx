@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { isRecentlyCreated, isRecentlyModified } from '@/lib/explorer/recentlyCreated';
-import { type FileTreeNode } from './fileTreeTypes';
+import { type FileTreeNode } from '../../../lib/explorer/fileTree';
 import { getFileIcon, gitBadgeMap } from './fileTreeIcons';
 
 interface TreeNodeProps {

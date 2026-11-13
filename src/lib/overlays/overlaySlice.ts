@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import {
   hasLayer,
@@ -19,7 +20,7 @@ export interface OverlaySlice {
   ownsEscape: (id: string) => boolean;
 }
 
-export const createOverlaySlice: StateCreator<OverlaySlice> = (set, get) => ({
+export const createOverlaySlice: StateCreator<StoreState, [], [], OverlaySlice> = (set, get) => ({
   overlayStack: { layers: [] },
 
   pushOverlay: (entry) => {

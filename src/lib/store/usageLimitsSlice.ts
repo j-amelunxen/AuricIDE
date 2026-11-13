@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 import type { UsageLimitsView } from '../tauri/usageLimits';
@@ -37,7 +38,9 @@ function toView(value: unknown): UsageLimitsView {
   return { snapshots: [], history: [] };
 }
 
-export const createUsageLimitsSlice: StateCreator<UsageLimitsSlice> = (set) => ({
+export const createUsageLimitsSlice: StateCreator<StoreState, [], [], UsageLimitsSlice> = (
+  set
+) => ({
   usageSnapshots: [],
   usageHistory: [],
   usageStatus: 'idle',

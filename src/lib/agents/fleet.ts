@@ -1,8 +1,46 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 
 /** An agent that has stopped — either done or failed. It does no more work. */
 export function isFinishedAgent(agent: Pick<AgentInfo, 'status'>): boolean {
   return agent.status === 'idle' || agent.status === 'error';
+}
+
+/**
+ * Bucket for agents that carry no repo path. It is a label the panel groups
+ * under, never a path — anything matching on it has to test for the absence of
+ * a repoPath instead of comparing against this string.
+ */
+export const UNGROUPED_REPO_KEY = 'Unknown';
+
+export function repoGroupKey(agent: Pick<AgentInfo, 'repoPath'>): string {
+  return agent.repoPath ?? UNGROUPED_REPO_KEY;
+}
+
+export function groupAgentsByRepo(agents: AgentInfo[]): Record<string, AgentInfo[]> {
+  const groups: Record<string, AgentInfo[]> = {};
+  for (const agent of agents) {
+    const key = repoGroupKey(agent);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(agent);
+  }
+  return groups;
+}
+
+/**
+ * What "Stop all" on a repo group ends, taken in one snapshot when it is
+ * clicked: the working agents to stop (the confirmation counts exactly these,
+ * so one spawned while the question is open is not caught) and the stopped
+ * ones to clear without asking. Never a supervisor; those have their own group.
+ */
+export function repoStopSelection(
+  agents: AgentInfo[],
+  repoKey: string
+): { running: string[]; finished: string[] } {
+  const members = agents.filter((a) => !isSupervisorAgent(a) && repoGroupKey(a) === repoKey);
+  return {
+    running: members.filter((a) => !isFinishedAgent(a)).map((a) => a.id),
+    finished: members.filter(isFinishedAgent).map((a) => a.id),
+  };
 }
 
 /**

@@ -1,13 +1,20 @@
 'use client';
 
 import type React from 'react';
-import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
-import { groupAgentsByRepo, UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
+import type { InterruptedAgent } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
+import {
+  groupAgentsByRepo,
+  isFinishedAgent,
+  repoStopSelection,
+  splitFleet,
+  UNGROUPED_REPO_KEY,
+} from '@/lib/agents/fleet';
+import { stopConfirmation, stopWithFeedback } from './endAgent';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { useState } from 'react';
 import { useNowWhen } from '@/lib/hooks/useNow';
-import { splitFleet } from '@/lib/agents/fleet';
 import {
   agentAttention,
   countNeedingAttention,
@@ -16,7 +23,8 @@ import {
   withReviewFlags,
 } from '@/lib/agents/attention';
 import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import { AgentCard } from './AgentCard';
 import { CompactAgentRow } from './CompactAgentRow';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -39,10 +47,10 @@ export interface AgentsPanelProps {
   /** Agents from a previous app run, restorable via Resume (restart persistence). */
   interruptedAgents?: InterruptedAgent[];
   onSpawn: () => void;
-  onKill: (id: string) => void;
-  onKillRepo?: (repoPath: string) => void;
+  onKill: (id: string) => void | Promise<void>;
+  /** Stops exactly these agents (the selection the confirmation counted). */
+  onStopAgents?: (agentIds: string[]) => void | Promise<void>;
   onSelectAgent?: (agentId: string) => void;
-  onImageDrop?: (agentId: string, imageData: string) => void;
   onCollapse?: () => void;
   /** Opens the full-area Agent Console — the fleet-wide view across projects. */
   onOpenConsole?: () => void;
@@ -71,9 +79,8 @@ export function AgentsPanel({
   interruptedAgents = [],
   onSpawn,
   onKill,
-  onKillRepo,
+  onStopAgents,
   onSelectAgent,
-  onImageDrop,
   onCollapse,
   onOpenConsole,
   onResumeInterrupted,
@@ -120,27 +127,6 @@ export function AgentsPanel({
       : []),
   ];
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = async (e: React.DragEvent, agentId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string' && onImageDrop) {
-          onImageDrop(agentId, reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const { active, finished, parked } = splitFleet(agents, minimizedAgentIds);
   // A supervisor works in no project of its own (its folder is the app's), so
   // it gets a group of its own above the projects instead of a folder name.
@@ -167,15 +153,11 @@ export function AgentsPanel({
 
   const confirmKill = async (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
-    if (agent?.status === 'running') {
-      const go = await confirm({
-        title: 'Stop this agent?',
-        message: `Stop ${agent.name}? Its work in progress is lost.`,
-        confirmLabel: 'Stop',
-      });
-      if (!go) return;
-    }
-    await Promise.resolve(onKill(agentId));
+    if (!agent) return;
+    if (agent.status === 'running' && !(await confirm(stopConfirmation(agent)))) return;
+    // A parked row's Terminate also clears an agent that already stopped, so
+    // it always goes through onKill rather than through dismiss.
+    if (!(await stopWithFeedback(() => onKill(agentId)))) return;
     await offerMerge(agent);
   };
 
@@ -196,24 +178,21 @@ export function AgentsPanel({
   };
 
   const confirmKillRepo = async (repoPath: string) => {
-    const running = agents.filter(
-      (a) =>
-        a.role !== 'supervisor' &&
-        (a.repoPath ?? UNGROUPED_REPO_KEY) === repoPath &&
-        a.status === 'running'
-    ).length;
+    const { running, finished } = repoStopSelection(agents, repoPath);
     const repoName =
       repoPath === UNGROUPED_REPO_KEY ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
-    if (!(await confirmStopAll(running, repoName))) return;
-    onKillRepo?.(repoPath);
+    if (!(await confirmStopAll(running.length, repoName))) return;
+    finished.forEach((id) => onDismissFinished?.(id));
+    if (running.length > 0) await stopWithFeedback(() => onStopAgents?.(running));
   };
 
   // Each supervisor one by one: its folder is shared with nothing, but a
   // repo-wide kill on it would be the wrong tool should that ever change.
   const confirmKillSupervisors = async () => {
-    const running = supervisors.filter((a) => a.status === 'running').length;
-    if (!(await confirmStopAll(running, 'Supervisor'))) return;
-    for (const supervisor of supervisors) await Promise.resolve(onKill(supervisor.id));
+    const running = supervisors.filter((a) => !isFinishedAgent(a));
+    if (!(await confirmStopAll(running.length, 'Supervisor'))) return;
+    supervisors.filter(isFinishedAgent).forEach((a) => onDismissFinished?.(a.id));
+    for (const supervisor of running) await stopWithFeedback(() => onKill(supervisor.id));
   };
 
   const renderGroup = (
@@ -270,12 +249,7 @@ export function AgentsPanel({
         </div>
         {!isCollapsed &&
           groupAgents.map((agent) => (
-            <div
-              key={agent.id}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, agent.id)}
-              className="min-w-0"
-            >
+            <div key={agent.id} className="min-w-0">
               <AgentCard
                 agent={agent}
                 onKill={(id) => void confirmKill(id)}
@@ -354,7 +328,7 @@ export function AgentsPanel({
                   ? UNGROUPED_REPO_KEY
                   : (repoPath.split('/').pop() ?? repoPath),
                 grouped[repoPath],
-                onKillRepo && (() => void confirmKillRepo(repoPath))
+                onStopAgents && (() => void confirmKillRepo(repoPath))
               )
             )}
           </>

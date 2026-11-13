@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { FleetTreemap } from './FleetTreemap';
 
@@ -57,7 +57,7 @@ function renderTreemap(agents: AgentInfo[], onFocus = vi.fn()) {
         onRetry={vi.fn()}
         onMarkReviewed={vi.fn()}
         onDismiss={vi.fn()}
-        onStopAll={vi.fn()}
+        onStopAgents={vi.fn()}
       />
     </div>
   );

@@ -9,9 +9,9 @@ import {
   getGoal,
   listGoals,
   recordGoalRun,
-  registerGoalTools,
   updateGoal,
-} from '../tools/goals';
+} from '../tools/goalsDb';
+import { registerGoalTools } from '../tools/goals';
 import { listGoalStatusHistory } from '../tools/history';
 import { createTestDb } from '../db';
 

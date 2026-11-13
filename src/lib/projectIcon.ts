@@ -1,3 +1,6 @@
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
+import { baseName } from '@/lib/paths/baseName';
+
 /**
  * Deterministic, dependency-free "app icon" for a project, derived purely from
  * its identity (the project path). Same input always yields the same icon, so a
@@ -31,11 +34,6 @@ function hash(input: string): number {
   return h >>> 0;
 }
 
-function lastSegment(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  return trimmed.split('/').pop() ?? '';
-}
-
 function deriveInitials(name: string): string {
   const words = name.split(/[-_.\s]+/).filter(Boolean);
   if (words.length === 0) return '?';
@@ -50,10 +48,10 @@ function deriveInitials(name: string): string {
 export const PALETTE_HUES = [259, 285, 316, 350, 24, 152, 190, 210] as const;
 
 export function generateProjectIcon(identity: string): ProjectIcon {
-  const normalized = identity.replace(/\/+$/, '');
+  const normalized = withoutTrailingSlash(identity);
   const h = hash(normalized);
   const hue = PALETTE_HUES[h % PALETTE_HUES.length];
-  const name = lastSegment(normalized);
+  const name = baseName(normalized);
   const initials = deriveInitials(name);
   const gradientFrom = `hsl(${hue}, 46%, 44%)`;
   const gradientTo = `hsl(${(hue + 14) % 360}, 52%, 54%)`;

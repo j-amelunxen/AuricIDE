@@ -1,4 +1,4 @@
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import { InfoTooltip } from '../../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { AuricIcon } from '../../ui/AuricIcon';

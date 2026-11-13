@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EpicEditDialog } from './EpicEditDialog';
-import type { PmEpic } from '@/lib/tauri/pm';
+import type { PmEpic } from '@/lib/pm/types';
 
 const makeEpic = (overrides: Partial<PmEpic> = {}): PmEpic => ({
   id: 'epic-1',

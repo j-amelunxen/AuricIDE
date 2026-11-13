@@ -1,3 +1,5 @@
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
+
 /**
  * Which nested git repos a project hides from discovery, the dirty probe
  * (Quick Access) and the parent repo's status.
@@ -6,10 +8,6 @@
  * `ignoredRepos.fixtures.json` so the settings screen and the backend cannot
  * disagree about a path.
  */
-
-function stripSlash(path: string): string {
-  return path.endsWith('/') ? path.slice(0, -1) : path;
-}
 
 /**
  * A project-relative ignore entry, or `null` when the value is the project
@@ -77,8 +75,8 @@ export function removeIgnoredRepo(ignored: readonly string[], path: string): str
 
 /** Project-relative path for an explorer folder, or `null` when it cannot be ignored. */
 export function relativePathForIgnore(rootPath: string, absPath: string): string | null {
-  const root = stripSlash(rootPath);
-  const target = stripSlash(absPath);
+  const root = withoutTrailingSlash(rootPath);
+  const target = withoutTrailingSlash(absPath);
   if (!root || target === root) return null;
   if (!target.startsWith(`${root}/`)) return null;
   return normalizeIgnoredRepoPath(target.slice(root.length + 1));

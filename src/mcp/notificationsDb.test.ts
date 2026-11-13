@@ -147,6 +147,14 @@ describe('the MCP view of the inbox', () => {
       expect(second.id).toBeGreaterThan(first.id);
     });
 
+    // The key is unique across projects, as in the IDE's own dispatch.
+    it('replaces a row of another project under the same key instead of failing', () => {
+      dispatchNotification(db, { title: 'a', dedupeKey: 'k', projectPath: '/repo/a' });
+      dispatchNotification(db, { title: 'b', dedupeKey: 'k', projectPath: '/repo/b' });
+
+      expect(rows().map((r) => r.title)).toEqual(['b']);
+    });
+
     it('leaves rows without a key alone', () => {
       dispatchNotification(db, { title: 'a' });
       dispatchNotification(db, { title: 'b' });

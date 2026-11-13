@@ -334,25 +334,28 @@ pub fn codex_project_binding_injection(
         .map_err(|error| error.to_string())?;
     let project =
         serde_json::to_string(&binding.project_root).map_err(|error| error.to_string())?;
-    let args = format!("mcp_servers.auric-pm.args=[{runtime},\"--project-root\",{project}]");
+    let server = crate::mcp::AURIC_PM_SERVER;
+    let args = format!("mcp_servers.{server}.args=[{runtime},\"--project-root\",{project}]");
     let mut arguments = vec![
         "-c".to_string(),
-        shell_quote_argument(&format!("mcp_servers.auric-pm.command={command}")),
+        shell_quote_argument(&format!("mcp_servers.{server}.command={command}")),
         "-c".to_string(),
         shell_quote_argument(&args),
         "-c".to_string(),
-        shell_quote_argument("mcp_servers.auric-pm.required=true"),
+        shell_quote_argument(&format!("mcp_servers.{server}.required=true")),
         // `codex exec` runs with `approval: never`, so a tool call that needs
         // approval is refused rather than asked — and conductor agents report
         // back through exactly the write tools. The server is ours and bound to
         // this one project, so it is approved as a whole.
         "-c".to_string(),
-        shell_quote_argument("mcp_servers.auric-pm.default_tools_approval_mode=\"approve\""),
+        shell_quote_argument(&format!(
+            "mcp_servers.{server}.default_tools_approval_mode=\"approve\""
+        )),
     ];
     if !binding.mcp_env.is_empty() {
         arguments.push("-c".to_string());
         arguments.push(shell_quote_argument(&format!(
-            "mcp_servers.auric-pm.env={}",
+            "mcp_servers.{server}.env={}",
             toml_inline_table(&binding.mcp_env)?
         )));
     }
@@ -436,13 +439,14 @@ fn codex_extra_server_arguments(
     Ok(())
 }
 
-/// Claude exposes an inventory denylist, unlike Codex/Crush's per-server allowlist.
+/// The Claude Code CLI exposes an inventory denylist, unlike Codex/Crush's
+/// per-server allowlist; the caller says whether the spawn runs it.
 /// Undeclared tools remain outside this filter; this is not a call broker.
 pub fn connector_tool_filter_injection(
-    provider_id: &str,
+    runs_claude_code: bool,
     connectors: &[crate::connectors::ResolvedConnector],
 ) -> SpawnInjection {
-    if provider_id != "claude" {
+    if !runs_claude_code {
         return SpawnInjection::default();
     }
     let denied: Vec<String> = connectors
@@ -469,41 +473,29 @@ pub fn connector_tool_filter_injection(
 /// The provider's launch material for one isolated Auric MCP project, which
 /// may be empty when the provider declares no project binding.
 pub fn project_binding_material(
-    provider_id: &str,
     provider: &dyn AgentProvider,
     binding: &ProviderProjectBinding,
 ) -> Result<SpawnInjection, String> {
-    if provider_id == "codex" {
-        codex_project_binding_injection(binding)
-    } else {
-        Ok(provider.project_binding_injection(binding))
+    match provider.mcp_binding() {
+        McpBinding::CodexToml => codex_project_binding_injection(binding),
+        _ => Ok(provider.project_binding_injection(binding)),
     }
 }
 
 /// The launch material that binds `provider` to one isolated Auric MCP
-/// project, or the refusal when it has none. Strict: `allowUnboundMcp` is not
-/// considered here, only at spawn (`agents::manager::bind_to_project_mcp`).
-pub fn project_binding_injection_for(
+/// project, or the refusal when it has none. `allows_unbound` is the
+/// provider's `allowUnboundMcp`, considered only at spawn.
+pub fn binding_injection_for(
     provider_id: &str,
-    provider: &dyn AgentProvider,
-    binding: &ProviderProjectBinding,
+    injection: SpawnInjection,
+    allows_unbound: bool,
 ) -> Result<SpawnInjection, String> {
-    crate::agents::manager::binding_injection_for(
-        provider_id,
-        project_binding_material(provider_id, provider, binding)?,
-        false,
-    )
-}
-
-/// Whether a project-bound spawn of `provider` can succeed at all: the same
-/// decision `project_binding_injection_for` makes at spawn, taken against a
-/// binding with every path filled in. `list_agent_providers` offers only these.
-pub fn supports_isolated_mcp_binding(provider_id: &str, provider: &dyn AgentProvider) -> bool {
-    let probe = ProviderProjectBinding::new("/project", "/project/.auric/project.db")
-        .with_mcp_config_path("/agent-bindings/project.mcp.json")
-        .with_crush_config_path("/agent-bindings/project.crush.json")
-        .with_runtime_entrypoint("/runtime/server.mjs");
-    project_binding_injection_for(provider_id, provider, &probe).is_ok()
+    if injection.is_empty() && !allows_unbound {
+        return Err(format!(
+            "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
+        ));
+    }
+    Ok(injection)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -555,6 +547,11 @@ pub trait AgentProvider: Send + Sync {
         false
     }
 
+    /// How a project binding reaches this provider's CLI.
+    fn mcp_binding(&self) -> McpBinding {
+        McpBinding::Unbound
+    }
+
     /// How this provider's runs are measured, `None` when they are not.
     fn usage_config(&self) -> Option<UsageConfig> {
         None
@@ -587,12 +584,9 @@ pub enum ArgumentConfig {
         ignore_if_auto: bool,
     },
     #[serde(rename_all = "camelCase")]
-    Task {
-        /// Still required so existing configs keep parsing; the task is
-        /// always passed as one quoted argument (see `DynamicProvider`).
-        #[allow(dead_code)]
-        quote: bool,
-    },
+    /// The task, always passed as one quoted argument. Older configs carry
+    /// a `quote` flag; it is accepted and has no effect.
+    Task {},
     #[serde(rename_all = "camelCase")]
     Headless {
         flag: String,
@@ -617,10 +611,64 @@ pub struct ProviderConfigInfo {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectBindingInjectionConfig {
+    /// How the binding reaches the CLI. Absent: `template`, except for a
+    /// provider with the id `codex`, which predates this field.
+    #[serde(default)]
+    pub format: Option<ProjectBindingFormat>,
     #[serde(default)]
     pub arguments: Vec<String>,
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
+}
+
+/// The shapes of project-binding material AuricIDE can produce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectBindingFormat {
+    /// `arguments` / `environment` rendered with `{projectRoot}`,
+    /// `{databasePath}` and `{mcpConfigPath}`.
+    Template,
+    /// Codex `-c mcp_servers.…` overrides, built by AuricIDE.
+    CodexToml,
+}
+
+/// How a provider takes its isolated Auric MCP project binding, decided from
+/// its configuration when it is built. Every capability question — can it be
+/// bound, does it read the per-agent MCP config, which remote transports it
+/// carries — is answered from this, never from the provider's id and never by
+/// rendering material with placeholder paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpBinding {
+    /// No binding material at all.
+    Unbound,
+    /// Rendered templates. Only a template that passes `{mcpConfigPath}` on the
+    /// command line (or as Crush's config) reads the per-agent MCP config; an
+    /// environment-only bridge such as `AURIC_MCP_CONFIG` serves Auric PM alone.
+    Template { reads_mcp_config: bool },
+    /// Codex `-c` overrides: every server, but streamable HTTP only.
+    CodexToml,
+    /// Crush's own config file, named by `CRUSH_GLOBAL_CONFIG`.
+    CrushConfig,
+}
+
+impl McpBinding {
+    pub fn can_bind(self) -> bool {
+        self != McpBinding::Unbound
+    }
+
+    /// Whether more servers than Auric PM (connectors, the project's `.mcp.json`) reach the CLI.
+    pub fn reads_mcp_config(self) -> bool {
+        match self {
+            McpBinding::Unbound => false,
+            McpBinding::Template { reads_mcp_config } => reads_mcp_config,
+            McpBinding::CodexToml | McpBinding::CrushConfig => true,
+        }
+    }
+
+    /// Whether an SSE server can be expressed. Codex's TOML speaks streamable HTTP only.
+    pub fn carries_sse(self) -> bool {
+        self != McpBinding::CodexToml
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

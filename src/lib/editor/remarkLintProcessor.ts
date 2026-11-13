@@ -55,7 +55,6 @@ export async function runRemarkLint(
   for (const msg of file.messages) {
     const ruleId = msg.ruleId ? `remark-lint:${msg.ruleId}` : 'remark-lint:unknown';
 
-    // Filter disabled rules
     if (config.disabledRules.has(ruleId)) continue;
 
     const line = msg.line ?? 1;

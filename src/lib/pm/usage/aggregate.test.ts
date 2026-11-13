@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
 import {
   estimateDeviation,
   groupUsage,

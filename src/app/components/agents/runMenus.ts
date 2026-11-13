@@ -1,4 +1,4 @@
-import type { ContextMenuOption } from '../ide/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 
 export interface ManagerMenuActions {
   open: () => void;

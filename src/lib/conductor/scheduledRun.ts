@@ -1,6 +1,7 @@
 import type { ToastVariant } from '@/lib/store/toastSlice';
 import { notificationTrust } from '@/lib/notifications/trust';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import { parseUtcStamp } from '@/lib/time/utcStamp';
 
 /**
  * A scheduled conductor run: the one place that turns "a notification arrived"
@@ -82,8 +83,7 @@ export function scheduleOccurrenceMs(dedupeKey: string | null): number | null {
   if (dedupeKey === null) return null;
   const match = SCHEDULE_DEDUPE_KEY.exec(dedupeKey);
   if (!match) return null;
-  const ms = Date.parse(`${match[1].replace(' ', 'T')}Z`);
-  return Number.isNaN(ms) ? null : ms;
+  return parseUtcStamp(match[1]);
 }
 
 /**

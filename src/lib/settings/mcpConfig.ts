@@ -1,3 +1,4 @@
+import { AURIC_PM_SERVER } from '@/lib/config/mcpServerName';
 import { exists, readFile, writeFile } from '@/lib/tauri/fs';
 import { mcpLaunchSpec, type McpLaunchSpec } from '@/lib/tauri/mcp';
 
@@ -12,7 +13,7 @@ export function buildMcpConfig(launchSpec: McpLaunchSpec): {
 } {
   return {
     mcpServers: {
-      'auric-pm': buildMcpServerEntry(launchSpec),
+      [AURIC_PM_SERVER]: buildMcpServerEntry(launchSpec),
     },
   };
 }
@@ -72,7 +73,7 @@ export async function initMcpJson(projectPath: string): Promise<InitMcpResult> {
     typeof config.mcpServers === 'object' && config.mcpServers !== null
       ? (config.mcpServers as Record<string, unknown>)
       : {};
-  config.mcpServers = { ...servers, 'auric-pm': entry };
+  config.mcpServers = { ...servers, [AURIC_PM_SERVER]: entry };
 
   await writeFile(configPath, JSON.stringify(config, null, 2) + '\n');
   return result;

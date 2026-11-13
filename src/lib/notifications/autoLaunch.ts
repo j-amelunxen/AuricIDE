@@ -1,11 +1,12 @@
 import { isFreshOccurrence } from '@/lib/conductor/scheduledRun';
-import { describeDependencyBlock } from '@/lib/store/goals/goalDependencyAdapters';
-import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
+import { describeDependencyBlock } from '@/lib/goals/model/goalDependencyAdapters';
+import type { PmGoal, PmGoalDependency } from '@/lib/goals/types';
 import { decideLaunch } from './launchGate';
 import { isLaunchRequest } from './launchRequest';
 import type { LaunchGrant } from './launchGrants';
 import { notificationTrust } from './trust';
 import type { Notification, NotificationAction } from './types';
+import { parseUtcStamp } from '@/lib/time/utcStamp';
 
 type AutoAgentAction =
   | Extract<NotificationAction, { kind: 'spawn-agent' }>
@@ -92,13 +93,6 @@ export interface GrantLaunchContext {
   nowMs: number;
 }
 
-/** SQLite writes `YYYY-MM-DD HH:MM:SS` in UTC; anything else is unreadable. */
-function sqliteUtcMs(value: string | null): number | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/u.test(value)) return null;
-  const ms = Date.parse(`${value.slice(0, 19).replace(' ', 'T')}Z`);
-  return Number.isFinite(ms) ? ms : null;
-}
-
 /** True when `goalId` is `rootId` or below it. Cycle-safe, bounded by the tree. */
 function isUnderRoot(goalId: string, rootId: string, parents: Map<string, string | null>): boolean {
   let current: string | null | undefined = goalId;
@@ -114,7 +108,7 @@ function isUnderRoot(goalId: string, rootId: string, parents: Map<string, string
 function isLiveForeignRequest(notification: Notification, nowMs: number): boolean {
   if (!isLaunchRequest(notification)) return false;
   if (notificationTrust(notification) !== 'foreign') return false;
-  const expires = sqliteUtcMs(notification.expiresAt);
+  const expires = parseUtcStamp(notification.expiresAt);
   return !(expires !== null && expires <= nowMs);
 }
 

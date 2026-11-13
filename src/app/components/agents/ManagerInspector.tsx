@@ -9,7 +9,7 @@ import {
   MANAGER_OKF_FIX,
 } from '@/lib/agents/supervisorManagers';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { machineDependencies } from '@/lib/tauri/machine';
 import {

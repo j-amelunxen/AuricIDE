@@ -38,9 +38,20 @@ fn snapshot_at(observed_at: i64) -> UsageSnapshot {
 }
 
 #[test]
-fn the_poller_looks_every_fifteen_minutes() {
-    assert_eq!(TIMER_TICK_SECS, 15 * 60);
-    assert_eq!(REFRESH_TTL_SECS, 15 * 60);
+fn the_poller_replaces_a_codex_reading_once_it_is_fifteen_minutes_old() {
+    let reading = snapshot_at(10_000);
+    assert!(!needs_refresh(
+        Some(&reading),
+        10_000 + 15 * 60 - 1,
+        REFRESH_TTL_SECS
+    ));
+    assert!(needs_refresh(
+        Some(&reading),
+        10_000 + 15 * 60,
+        REFRESH_TTL_SECS
+    ));
+    // The poller wakes as often as a reading goes stale, never less.
+    assert!(TIMER_TICK_SECS as i64 <= REFRESH_TTL_SECS);
 }
 
 #[test]

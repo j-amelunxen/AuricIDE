@@ -1,3 +1,4 @@
+import { clipAtWord } from '@/lib/text/clipAtWord';
 import { deriveHandoffContext } from './handoff';
 
 /**
@@ -15,11 +16,7 @@ const TOOL_CALL_LINE =
 const STATUS_LINE = /^(thinking|working|running|loading|compiling|waiting)[.…]*$/i;
 
 export function clipFinishSummary(text: string): string {
-  if (text.length <= FINISH_SUMMARY_MAX_CHARS) return text;
-  const slice = text.slice(0, FINISH_SUMMARY_MAX_CHARS);
-  const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf(' '));
-  const trimmed = lastStop > FINISH_SUMMARY_MAX_CHARS * 0.4 ? slice.slice(0, lastStop) : slice;
-  return `${trimmed.replace(/[\s,;:.-]+$/, '')}…`;
+  return clipAtWord(text, FINISH_SUMMARY_MAX_CHARS);
 }
 
 /**

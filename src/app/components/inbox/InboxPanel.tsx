@@ -6,7 +6,7 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { InboxCapture } from './InboxCapture';
 import { InboxItemRow } from './InboxItemRow';
 import { InboxOverviewTicketRow } from './InboxOverviewTicketRow';
@@ -15,7 +15,7 @@ import { InboxDailyGoalsPlanner } from './InboxDailyGoalsPlanner';
 import { filterDailyGoals } from '@/lib/inbox/dailyGoals';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { groupInboxByProject, type InboxProjectGroup } from '@/lib/inbox/groupInboxByProject';
-import { inboxProjectOptions } from '@/lib/inbox/inboxProjectOptions';
+import { projectPickerOptions } from '@/lib/projects/projectOptions';
 import { needsDismissConfirm } from '@/lib/inbox/dismissGate';
 import { projectIconFor } from '@/lib/quickAccess/icon';
 import {
@@ -46,7 +46,9 @@ function projectCountsLine(group: InboxProjectGroup): string {
   if (!group.overview) return '';
   if (!group.overview.hasDb) return 'not opened yet';
   if (group.overview.error !== null) return "couldn't read";
-  return `${group.overview.open} open · ${group.overview.inProgress} in progress · ${group.overview.inReview} in review`;
+  const { open, inProgress, toTest, inReview } = group.overview;
+  const testing = toTest > 0 ? ` · ${toTest} to test` : '';
+  return `${open} open · ${inProgress} in progress${testing} · ${inReview} in review`;
 }
 
 /**
@@ -105,7 +107,8 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const dailyGoals = filterDailyGoals(orderedItems);
   const unsorted = unsortedInboxItems(orderedItems);
   const groups = groupInboxByProject(orderedItems, inboxOverview);
-  const projectOptions = inboxProjectOptions({
+  // No bound project: an inbox item has none until it is assigned.
+  const projectOptions = projectPickerOptions({
     starred: starredProjects,
     recent: recentProjects,
     openPath: rootPath,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { canEndAgent, endAgentThenOfferMerge } from './endAgent';
 
 const running: AgentInfo = {

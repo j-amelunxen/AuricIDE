@@ -1,4 +1,4 @@
-import type { Priority } from '@/lib/pm/enums';
+import { priorityUrgency } from '@/lib/pm/enums';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
 /**
@@ -31,17 +31,6 @@ export function parseInboxSort(raw: string | null | undefined): InboxSort {
     : INBOX_DEFAULT_SORT;
 }
 
-const PRIORITY_RANK: Record<Priority, number> = {
-  critical: 0,
-  high: 1,
-  normal: 2,
-  low: 3,
-};
-
-function priorityRank(priority: InboxItem['priority']): number {
-  return PRIORITY_RANK[priority] ?? PRIORITY_RANK.normal;
-}
-
 function compareCreatedNewestFirst(a: InboxItem, b: InboxItem): number {
   return b.createdAt.localeCompare(a.createdAt);
 }
@@ -60,7 +49,7 @@ export function sortInboxItems(items: InboxItem[], sort: InboxSort): InboxItem[]
   copy.sort((a, b) => {
     if (sort === 'created') return compareCreatedNewestFirst(a, b);
     if (sort === 'dueDate') return compareDueDate(a, b);
-    const byPriority = priorityRank(a.priority) - priorityRank(b.priority);
+    const byPriority = priorityUrgency(b.priority) - priorityUrgency(a.priority);
     return byPriority !== 0 ? byPriority : compareDueDate(a, b);
   });
   return copy;

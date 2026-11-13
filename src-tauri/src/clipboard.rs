@@ -6,7 +6,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-/// Writes `text` to the OS system clipboard.
 pub fn write_to_system_clipboard(text: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -75,7 +74,6 @@ pub fn write_to_system_clipboard(text: &str) -> Result<(), String> {
     }
 }
 
-/// Reads `text` from the OS system clipboard.
 pub fn read_from_system_clipboard() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
@@ -143,13 +141,14 @@ pub async fn clipboard_read_text() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
     use super::*;
 
     /// Round-trips through the real pasteboard, so it clobbers whatever the
     /// person running the suite had copied. Ignored for the same reason
     /// `inspects_this_machine` is: `cargo test clipboard -- --ignored`.
     #[test]
-    #[ignore]
+    #[ignore = "overwrites the clipboard of whoever runs the suite"]
     #[cfg(target_os = "macos")]
     fn test_write_and_read_clipboard_macos() {
         let test_val = format!(

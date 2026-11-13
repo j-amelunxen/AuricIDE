@@ -3,9 +3,9 @@
 
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
+use crate::providers::normalize_provider_id;
 use crate::quota_blocks::store::{clear_block_with_status_at, read_blocks_at, set_manual_block_at};
 use crate::quota_blocks::{parse_scope_pattern, QuotaBlock};
-use crate::supervisor::policy::normalize_provider_id;
 use chrono::Utc;
 use std::path::PathBuf;
 

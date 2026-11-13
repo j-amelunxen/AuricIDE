@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import {
   type CoverageSummary,
@@ -26,7 +27,7 @@ export interface QASlice {
   saveCoverageConfig: (rootPath: string, config: CoverageConfig) => Promise<void>;
 }
 
-export const createQASlice: StateCreator<QASlice> = (set) => ({
+export const createQASlice: StateCreator<StoreState, [], [], QASlice> = (set) => ({
   coverageSummary: null,
   fileCoverage: [],
   coverageStatus: 'idle',

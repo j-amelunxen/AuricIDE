@@ -1,6 +1,6 @@
 import { Facet, type Extension } from '@codemirror/state';
 import { EditorView, hoverTooltip, type Tooltip } from '@codemirror/view';
-import { parseWikiLinks } from './wikiLinkParser';
+import { parseWikiLinks } from '../markdown/wikiLinkParser';
 
 export type PreviewFetcher = (target: string) => { exists: boolean; preview: string } | null;
 export type NavigateCallback = (target: string) => void;
@@ -72,7 +72,6 @@ const wikiLinkHover = hoverTooltip((view, pos): Tooltip | null => {
   };
 });
 
-// Click-to-navigate handler
 const clickToNavigate = EditorView.domEventHandlers({
   click(event: MouseEvent, view: EditorView) {
     if (!(event.metaKey || event.ctrlKey)) return false;

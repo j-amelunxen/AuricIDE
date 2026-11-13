@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { agentAttention } from './attention';
 import { isAgentLive } from './liveness';
 import { activeWaiting } from './waiting';

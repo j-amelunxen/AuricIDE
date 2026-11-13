@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { CloseWindowGuard } from './useCloseWindowGuard';
 
 type CloseHandler = (event: { preventDefault: () => void }) => void | Promise<void>;

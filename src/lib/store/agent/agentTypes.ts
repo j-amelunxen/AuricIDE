@@ -4,8 +4,8 @@ import type { StreamLine } from '@/lib/agents/events/streamCapture';
 import type { GridCells } from '@/lib/agents/terminalGrid';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { PersistedAgentEvent } from '@/lib/tauri/agentLog';
-import type { AgentConfig, AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
-import type { AgentWaiting } from '@/lib/tauri/agentWaiting';
+import type { InterruptedAgent } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo, AgentWaiting } from '@/lib/agents/types';
 
 export const MAX_AGENT_LOGS = 5_000;
 export const MAX_AGENT_LOG_BYTES = 2_000_000;
@@ -14,13 +14,6 @@ export const MAX_AGENT_EVENTS = 2_000;
 export const MAX_RECALLED_PROMPTS = 25;
 export const MAX_SENT_MESSAGES = 200;
 export const MAX_LOADED_HISTORY = 2_000;
-
-/**
- * Bucket for agents that carry no repo path. It is a label the panel groups
- * under, never a path — anything matching on it has to test for the absence of
- * a repoPath instead of comparing against this string.
- */
-export const UNGROUPED_REPO_KEY = 'Unknown';
 
 /** One message a user typed to a running agent through the console's composer. */
 export interface SentMessage {
@@ -310,7 +303,8 @@ export interface AgentSlice {
    * an agent without a mark loses an old one. Writes nothing when nothing changed.
    */
   applyAgentWaiting: (marks: AgentWaiting[]) => void;
-  killAgentsForRepoPath: (repoPath: string) => Promise<void>;
+  /** Stops exactly these agents; rejects naming the ones that did not stop. */
+  stopAgents: (agentIds: readonly string[]) => Promise<void>;
   loadInterruptedAgents: () => Promise<void>;
   resumeInterruptedAgent: (agentId: string) => Promise<AgentInfo>;
   discardInterruptedAgent: (agentId: string) => Promise<void>;

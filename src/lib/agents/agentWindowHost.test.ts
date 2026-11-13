@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import fixtures from './agentWindow.fixtures.json';
 
 const { hostEvents, clientEvents } = fixtures;

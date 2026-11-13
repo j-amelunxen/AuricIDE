@@ -1,9 +1,11 @@
+import type { StoreGet, StoreSet } from '@/lib/store/types';
 import { reopenStationForRetry } from '@/lib/evidence/verdict';
 import { notifyConductor } from '@/lib/ide/conductorNotifications';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import type { NotificationInput } from '@/lib/tauri/notifications';
-import { getGoalCompletion, getGoalDescendants } from '../goalsSlice';
-import { describeSubtreeDependencyBlocks } from '../goals/goalDependencyAdapters';
+import { getGoalCompletion } from '../../goals/model/goalSatisfaction';
+import { getGoalDescendants } from '../../goals/model/goalTreeHelpers';
+import { describeSubtreeDependencyBlocks } from '../../goals/model/goalDependencyAdapters';
 import { achieveFinishedDescendants, bundleHoldBlockers, closableWith } from './conductorGoalSweep';
 import {
   buildConductorPrompt,
@@ -38,13 +40,12 @@ import {
   type ConductorDecision,
   type ConductorRunSummary,
   type ConductorSlice,
-  type FullConductorStore,
 } from './conductorTypes';
 
 export interface ConductorTickContext {
-  get: () => ConductorSlice;
-  set: (fn: ((s: ConductorSlice) => Partial<ConductorSlice>) | Partial<ConductorSlice>) => void;
-  cross: () => FullConductorStore;
+  get: StoreGet;
+  set: StoreSet;
+  cross: StoreGet;
   addDecision: (decision: Omit<ConductorDecision, 'id' | 'timestamp'>) => void;
   persist: () => Promise<void>;
   halt: () => void;
@@ -114,6 +115,16 @@ function collectGoalAgentWork(
  * Its attempt was counted at spawn; the next tick retries or gives up as for
  * any agent that ended with work open. Agents a person started are left alone.
  */
+/**
+ * Ends an agent the conductor no longer wants. Nobody awaits it, so a stop the
+ * backend refused is reported here; the agent keeps its card and stays running.
+ */
+export function stopConductorAgent(full: ReturnType<StoreGet>, agentId: string): void {
+  full.killRunningAgent(agentId).catch((error: unknown) => {
+    full.showToast(error instanceof Error ? error.message : String(error), 'error');
+  });
+}
+
 function endOverdueGoalAgents(
   ctx: ConductorTickContext,
   goals: PmGoal[],
@@ -138,7 +149,7 @@ function endOverdueGoalAgents(
       detail: `Agent for "${name}" still running after ${GOAL_AGENT_TIMEOUT_MS / 3_600_000} h · ended`,
       agentId: agent.id,
     });
-    void full.killRunningAgent?.(agent.id);
+    stopConductorAgent(full, agent.id);
   }
 }
 
@@ -176,7 +187,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       // process. Killing first would route through conductorHandleAgentKilled
       // (the review-map membership check) and double-handle the same ticket.
       applyVerdict(reviewTicketId, { pass: false, reason: 'Review timed out' }, ctx);
-      if (reviewer && reviewer !== PENDING_REVIEW) void full.killRunningAgent?.(reviewer);
+      if (reviewer && reviewer !== PENDING_REVIEW) stopConductorAgent(full, reviewer);
     }
   }
 
@@ -205,8 +216,8 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       if (ticket?.status !== 'done') continue;
       const fails = get().conductorFailedTickets[ticket.id] ?? 0;
       if (fails >= MAX_TICKET_ATTEMPTS) continue;
-      full.updateTicket?.(ticket.id, { status: 'open' });
-      full.updateStation?.(st.id, reopenStationForRetry());
+      full.updateTicket(ticket.id, { status: 'open' });
+      full.updateStation(st.id, reopenStationForRetry());
       set((s: ConductorSlice) => ({
         conductorFailedTickets: { ...s.conductorFailedTickets, [ticket.id]: fails + 1 },
       }));
@@ -361,7 +372,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         if (closeable.length === 0) {
           emitGoalBlocked([...completion.blockers, ...bundleHoldBlockers(ctx, goals, goalId)]);
         } else {
-          for (const id of closeable) full.achieveGoal?.(id);
+          for (const id of closeable) full.achieveGoal(id);
           addDecision({
             action: 'goal_achieved',
             detail: `Goal ${goalId} achieved · all checks green`,
@@ -499,7 +510,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     let agent;
     let spawnError: string | null = null;
     try {
-      agent = await full.spawnNewAgent?.({
+      agent = await full.spawnNewAgent({
         name: `conductor:${ticket.name.slice(0, 40)}`,
         model,
         provider: providerOverride,
@@ -538,7 +549,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       continue;
     }
 
-    full.updateTicket?.(ticket.id, { status: 'in_progress' });
+    full.updateTicket(ticket.id, { status: 'in_progress' });
     set((s: ConductorSlice) => ({
       conductorAssignments: { ...s.conductorAssignments, [ticket.id]: agent.id },
       conductorRunSpawned: isRetryThisRun ? s.conductorRunSpawned : s.conductorRunSpawned + 1,

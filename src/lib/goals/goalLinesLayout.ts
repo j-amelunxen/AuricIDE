@@ -1,22 +1,22 @@
-import { isClosedTicketStatus, isHiddenTicketStatus, isValidSkip } from '../pm/enums';
+import { blockingTicket } from '@/lib/pm/blocking';
+import { priorityUrgency } from '@/lib/pm/enums';
+import { parseUtcStamp } from '@/lib/time/utcStamp';
+import { isHiddenTicketStatus, isValidSkip } from '../pm/enums';
 import type {
   PmGoal,
   PmGoalRequirementLink,
   PmGoalRun,
   PmGoalStation,
   StationSourceContext,
-} from '../tauri/goals';
-import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { PmRequirement } from '../tauri/requirements';
-import type { AgentInfo } from '../tauri/agents';
+} from './types';
+import type { PmDependency, PmRequirement, PmTicket } from '../pm/types';
+import type { AgentInfo } from '../agents/types';
 import {
-  getGoalChildren,
   getGoalCompletion,
-  getGoalDescendants,
   getGoalStationProgress,
   getGoalWorkProgress,
-  getRootGoals,
-} from '../store/goalsSlice';
+} from './model/goalSatisfaction';
+import { getGoalChildren, getGoalDescendants, getRootGoals } from './model/goalTreeHelpers';
 import type { GoalWorkMode } from './workMode';
 import { orderedStations } from './stationOrder';
 import { staleStations } from '../evidence/staleness';
@@ -92,34 +92,6 @@ export interface GoalLinesInput {
   now: number;
 }
 
-const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
-
-/** App timestamps are 'YYYY-MM-DD HH:MM:SS'; parse them the one way. */
-function parseTs(ts: string): number {
-  return Date.parse(ts.replace(' ', 'T'));
-}
-
-/**
- * Mirrors the conductor's blocking rule (and the MCP fetch_next_unblocked_task
- * semantics): a ticket is blocked while any of its dependency targets is not
- * done/archived.
- */
-function isBlocked(
-  ticket: PmTicket,
-  dependencies: PmDependency[],
-  ticketsById: Map<string, PmTicket>
-): PmTicket | null {
-  for (const dep of dependencies) {
-    if (dep.sourceType !== 'ticket' || dep.sourceId !== ticket.id) continue;
-    if (dep.targetType !== 'ticket') continue;
-    const target = ticketsById.get(dep.targetId);
-    if (target && !isClosedTicketStatus(target.status)) {
-      return target;
-    }
-  }
-  return null;
-}
-
 /** Spread `count` stations across [from, to], strictly increasing. */
 function spread(count: number, from: number, to: number): number[] {
   if (count === 0) return [];
@@ -174,15 +146,14 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
   const open = scopedTickets.filter((t) => t.status === 'open');
   const blockedBy = new Map<string, PmTicket>();
   for (const t of open) {
-    const blocker = isBlocked(t, dependencies, ticketsById);
+    const blocker = blockingTicket(t, dependencies, ticketsById);
     if (blocker) blockedBy.set(t.id, blocker);
   }
   const planned = open
     .filter((t) => !blockedBy.has(t.id))
     .sort(
       (a, b) =>
-        (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2) ||
-        a.sortOrder - b.sortOrder
+        priorityUrgency(b.priority) - priorityUrgency(a.priority) || a.sortOrder - b.sortOrder
     );
   const fog = open.filter((t) => blockedBy.has(t.id));
 
@@ -335,9 +306,10 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
   let idleSince: number | undefined;
   if (lineAgentIds.size === 0) {
     const signals: number[] = [];
-    for (const t of scopedTickets) signals.push(parseTs(t.statusUpdatedAt));
+    for (const t of scopedTickets) signals.push(parseUtcStamp(t.statusUpdatedAt) ?? NaN);
     for (const r of runs) {
-      if (subtreeIds.has(r.goalId) && r.finishedAt) signals.push(parseTs(r.finishedAt));
+      if (subtreeIds.has(r.goalId) && r.finishedAt)
+        signals.push(parseUtcStamp(r.finishedAt) ?? NaN);
     }
     for (const a of agents) {
       const onLine =

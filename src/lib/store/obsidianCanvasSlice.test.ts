@@ -1,6 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createObsidianCanvasSlice, type ObsidianCanvasSlice } from './obsidianCanvasSlice';
 import type {
   ObsidianCanvasData,
   ObsidianEdge,
@@ -37,10 +36,10 @@ const edge = (id: string, fromNode: string, toNode: string): ObsidianEdge => ({
 });
 
 describe('obsidianCanvasSlice', () => {
-  let store: StoreApi<ObsidianCanvasSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
-    store = createStore<ObsidianCanvasSlice>()(createObsidianCanvasSlice);
+    store = createFullTestStore();
   });
 
   describe('initial state', () => {
@@ -48,10 +47,6 @@ describe('obsidianCanvasSlice', () => {
       const state = store.getState();
       expect(state.ocNodes).toEqual([]);
       expect(state.ocEdges).toEqual([]);
-    });
-
-    it('starts with no selected node', () => {
-      expect(store.getState().ocSelectedNodeId).toBeNull();
     });
   });
 
@@ -129,132 +124,6 @@ describe('obsidianCanvasSlice', () => {
 
       expect(store.getState().ocNodes).toHaveLength(2);
       expect(store.getState().ocNodes[1].id).toBe('n2');
-    });
-  });
-
-  describe('removeOcNode', () => {
-    it('removes the node with the given id', () => {
-      store.getState().addOcNode(textNode('n1'));
-      store.getState().addOcNode(textNode('n2'));
-
-      store.getState().removeOcNode('n1');
-
-      expect(store.getState().ocNodes).toHaveLength(1);
-      expect(store.getState().ocNodes[0].id).toBe('n2');
-    });
-
-    it('removes edges where the node is the source', () => {
-      store.getState().setObsidianCanvasData({
-        nodes: [textNode('a'), textNode('b'), textNode('c')],
-        edges: [edge('e1', 'a', 'b'), edge('e2', 'b', 'c')],
-      });
-
-      store.getState().removeOcNode('a');
-
-      expect(store.getState().ocEdges).toHaveLength(1);
-      expect(store.getState().ocEdges[0].id).toBe('e2');
-    });
-
-    it('removes edges where the node is the target', () => {
-      store.getState().setObsidianCanvasData({
-        nodes: [textNode('a'), textNode('b'), textNode('c')],
-        edges: [edge('e1', 'a', 'b'), edge('e2', 'b', 'c')],
-      });
-
-      store.getState().removeOcNode('b');
-
-      expect(store.getState().ocEdges).toHaveLength(0);
-    });
-  });
-
-  describe('addOcEdge', () => {
-    it('appends an edge to the list', () => {
-      store.getState().addOcEdge(edge('e1', 'n1', 'n2'));
-
-      expect(store.getState().ocEdges).toHaveLength(1);
-      expect(store.getState().ocEdges[0].id).toBe('e1');
-    });
-
-    it('appends multiple edges in order', () => {
-      store.getState().addOcEdge(edge('e1', 'n1', 'n2'));
-      store.getState().addOcEdge(edge('e2', 'n2', 'n3'));
-
-      expect(store.getState().ocEdges).toHaveLength(2);
-      expect(store.getState().ocEdges[1].id).toBe('e2');
-    });
-  });
-
-  describe('removeOcEdge', () => {
-    it('removes the edge with the given id', () => {
-      store.getState().addOcEdge(edge('e1', 'n1', 'n2'));
-      store.getState().addOcEdge(edge('e2', 'n2', 'n3'));
-
-      store.getState().removeOcEdge('e1');
-
-      expect(store.getState().ocEdges).toHaveLength(1);
-      expect(store.getState().ocEdges[0].id).toBe('e2');
-    });
-
-    it('does nothing for a non-existent edge id', () => {
-      store.getState().addOcEdge(edge('e1', 'n1', 'n2'));
-
-      store.getState().removeOcEdge('does-not-exist');
-
-      expect(store.getState().ocEdges).toHaveLength(1);
-    });
-  });
-
-  describe('selectOcNode', () => {
-    it('sets the selected node id', () => {
-      store.getState().selectOcNode('n1');
-
-      expect(store.getState().ocSelectedNodeId).toBe('n1');
-    });
-
-    it('clears the selection when called with null', () => {
-      store.getState().selectOcNode('n1');
-      store.getState().selectOcNode(null);
-
-      expect(store.getState().ocSelectedNodeId).toBeNull();
-    });
-
-    it('updates selection when switching between nodes', () => {
-      store.getState().selectOcNode('n1');
-      store.getState().selectOcNode('n2');
-
-      expect(store.getState().ocSelectedNodeId).toBe('n2');
-    });
-  });
-
-  describe('updateOcNodePosition', () => {
-    it('updates x and y for the target node', () => {
-      store.getState().addOcNode(textNode('n1'));
-
-      store.getState().updateOcNodePosition('n1', 400, 300);
-
-      const node = store.getState().ocNodes[0];
-      expect(node.x).toBe(400);
-      expect(node.y).toBe(300);
-    });
-
-    it('does not affect other properties', () => {
-      store.getState().addOcNode(textNode('n1'));
-
-      store.getState().updateOcNodePosition('n1', 400, 300);
-
-      const node = store.getState().ocNodes[0];
-      expect(node.width).toBe(200);
-      expect(node.height).toBe(100);
-    });
-
-    it('leaves other nodes at their original positions', () => {
-      store.getState().addOcNode(textNode('n1', { x: 10, y: 20 }));
-      store.getState().addOcNode(textNode('n2', { x: 50, y: 60 }));
-
-      store.getState().updateOcNodePosition('n1', 400, 300);
-
-      expect(store.getState().ocNodes[1].x).toBe(50);
-      expect(store.getState().ocNodes[1].y).toBe(60);
     });
   });
 

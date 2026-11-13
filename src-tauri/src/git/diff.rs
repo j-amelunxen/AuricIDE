@@ -78,7 +78,7 @@ pub fn git_diff_impl(
     file_path: &str,
     side: Option<&str>,
 ) -> Result<String, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
 
     let mut opts = StatusOptions::new();
     opts.pathspec(file_path)
@@ -178,9 +178,8 @@ pub fn git_diff_commit_parent_impl(
     file_path: &str,
     parent_index: usize,
 ) -> Result<String, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(String::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(String::new());
     };
 
     let parsed = git2::Oid::from_str(oid).map_err(|e| format!("Unknown ref: {e}"))?;
@@ -251,9 +250,8 @@ pub fn git_diff_ref_files_impl(
     repo_path: &str,
     ref_name: &str,
 ) -> Result<Vec<GitNameStatus>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(Vec::new());
     };
     let diff = diff_ref_to_workdir(&repo, ref_name, None)?;
     Ok(diff.deltas().filter_map(name_status_from_delta).collect())
@@ -264,9 +262,8 @@ pub fn git_diff_file_ref_impl(
     ref_name: &str,
     file_path: &str,
 ) -> Result<String, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(String::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(String::new());
     };
     let diff = diff_ref_to_workdir(&repo, ref_name, Some(file_path))?;
     print_diff(&diff)

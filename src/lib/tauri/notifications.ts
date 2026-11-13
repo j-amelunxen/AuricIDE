@@ -15,6 +15,16 @@ export type { Notification };
  * What a dispatcher supplies. The store owns everything else — id, uid,
  * timestamps, read state — so none of it appears here.
  */
+/** What became of an agent launch request (Rust: `LAUNCH_RUN_STATUSES`). */
+export const LAUNCH_RUN_STATUSES = [
+  'running',
+  'interrupted',
+  'completed',
+  'failed',
+  'killed',
+] as const;
+export type LaunchRunStatus = (typeof LAUNCH_RUN_STATUSES)[number];
+
 export interface NotificationInput {
   /** Only set to claim a specific identity; otherwise the backend mints one. */
   uid?: string;
@@ -79,7 +89,7 @@ export interface AgentLaunchRunInput {
   agentName?: string | null;
   provider?: string | null;
   model?: string | null;
-  status: 'running' | 'interrupted' | 'completed' | 'failed' | 'killed';
+  status: LaunchRunStatus;
   summary?: string | null;
   error?: string | null;
   /** The frontend's writes: they add the summary, never a status. */
@@ -190,9 +200,11 @@ export async function notificationsDelete(uids: string[]): Promise<void> {
  * only honest thing the event can say is "go look". Clients then drain from
  * their own cursor.
  */
+export const NOTIFICATIONS_CHANGED_EVENT = 'notifications-changed';
+
 export function onNotificationsChanged(callback: () => void): () => void {
   return subscribeToTauriEvent<unknown>(
-    'notifications-changed',
+    NOTIFICATIONS_CHANGED_EVENT,
     () => callback(),
     '[Browser mode] Notification listener not available'
   );

@@ -10,7 +10,7 @@
 
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
-use crate::supervisor_link::jobs::now_ms;
+use crate::json_store::now_ms;
 use crate::supervisor_link::policy::{
     job_kinds_dir_in, read_stored, resolve, JobLimits, LinkPolicy, ProjectConfig, ProjectOrigins,
     StoredPolicy,

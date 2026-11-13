@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecentProject } from '@/lib/store/recentProjectsSlice';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { projectPickerOptions } from './projectOptions';
 
 const starred = (

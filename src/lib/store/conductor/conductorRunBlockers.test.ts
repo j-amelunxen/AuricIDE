@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
-import { ownGoalBlockers } from '../goals/goalSatisfaction';
-import { describeSubtreeDependencyBlocks } from '../goals/goalDependencyAdapters';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/goals/types';
+import { ownGoalBlockers } from '../../goals/model/goalSatisfaction';
+import { describeSubtreeDependencyBlocks } from '../../goals/model/goalDependencyAdapters';
 import { summarizeRunBlockers } from './conductorRunBlockers';
 
 let order = 0;

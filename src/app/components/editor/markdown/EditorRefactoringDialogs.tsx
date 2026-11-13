@@ -1,7 +1,13 @@
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import type { EditorView } from '@codemirror/view';
 import { useStore } from '@/lib/store';
 import { computeHeadingRenameChanges } from '@/lib/refactoring/renameHeading';
-import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
+import {
+  applyChangesToContent,
+  describeWorkspaceFailures,
+  readWorkspaceFiles,
+  writeWorkspaceChanges,
+} from '@/lib/refactoring/applyRenameChanges';
 import { computeSectionExtraction } from '@/lib/refactoring/extractSection';
 import { applyExtractSection } from '@/lib/refactoring/applyExtractSection';
 import { RenameHeadingDialog } from '@/app/components/refactoring/RenameHeadingDialog';
@@ -51,51 +57,34 @@ export function EditorRefactoringDialogs({
           onConfirm={async (newTitle) => {
             const currentFile = filePath ?? '';
             const currentFileName = currentFile.split('/').pop() ?? '';
-            try {
-              const { readFile, writeFile } = await import('@/lib/tauri/fs');
-              const allPaths = useStore.getState().allFilePaths;
-              const workspace = new Map<string, string>();
-              for (const p of allPaths) {
-                if (p.endsWith('.md')) {
-                  try {
-                    const c = await readFile(p);
-                    workspace.set(p, c);
-                  } catch {}
-                }
-              }
-              const changes = computeHeadingRenameChanges(
-                currentFile,
-                currentFileName,
-                renameDialog.title,
-                newTitle,
-                workspace
-              );
-              const byFile = new Map<string, typeof changes>();
-              for (const change of changes) {
-                const list = byFile.get(change.filePath) ?? [];
-                list.push(change);
-                byFile.set(change.filePath, list);
-              }
-              for (const [fp, fileChanges] of byFile) {
-                const original = workspace.get(fp) ?? '';
-                const updated = applyChangesToContent(original, fileChanges);
-                await writeFile(fp, updated);
-                if (fp === currentFile && onChange) onChange(updated);
-              }
-            } catch {
-              if (viewRef.current) {
-                const doc = viewRef.current.state.doc.toString();
-                const changes = computeHeadingRenameChanges(
-                  currentFile,
-                  currentFileName,
-                  renameDialog.title,
-                  newTitle,
-                  new Map([[currentFile, doc]])
-                );
-                const updated = applyChangesToContent(doc, changes);
-                if (onChange) onChange(updated);
-              }
-            }
+            const { readFile, writeFile } = await import('@/lib/tauri/fs');
+            const store = useStore.getState();
+            const others = store.allFilePaths.filter((p) => isMarkdownPath(p) && p !== currentFile);
+            const { contents, failed: unread } = await readWorkspaceFiles(others, readFile);
+            // The open file is what the editor shows, unsaved edits included.
+            const shown = viewRef.current?.state.doc.toString() ?? content;
+            contents.set(currentFile, shown);
+            const changes = computeHeadingRenameChanges(
+              currentFile,
+              currentFileName,
+              renameDialog.title,
+              newTitle,
+              contents
+            );
+            const own = changes.filter((change) => change.filePath === currentFile);
+            const { written, failed } = await writeWorkspaceChanges(
+              changes.filter((change) => change.filePath !== currentFile),
+              contents,
+              writeFile
+            );
+            for (const [path, updated] of written) store.updateFileInIndex(path, updated);
+            // The open file changes like any edit, and is saved like one.
+            if (own.length > 0) onChange?.(applyChangesToContent(shown, own));
+            const problem = describeWorkspaceFailures(`Renamed "${renameDialog.title}"`, [
+              ...unread,
+              ...failed,
+            ]);
+            if (problem) store.showToast(problem, 'error');
             onCloseRenameDialog();
           }}
         />
@@ -117,17 +106,15 @@ export function EditorRefactoringDialogs({
             try {
               const { readFile, writeFile } = await import('@/lib/tauri/fs');
               await applyExtractSection(currentFile, extraction, fileName, readFile, writeFile);
-              const updatedSource =
+              onChange?.(
                 content.slice(0, extraction.sectionFrom) +
-                extraction.replacementText +
-                content.slice(extraction.sectionTo);
-              if (onChange) onChange(updatedSource);
-            } catch {
-              const updatedSource =
-                content.slice(0, extraction.sectionFrom) +
-                extraction.replacementText +
-                content.slice(extraction.sectionTo);
-              if (onChange) onChange(updatedSource);
+                  extraction.replacementText +
+                  content.slice(extraction.sectionTo)
+              );
+            } catch (error) {
+              // Without the new file the section must stay where it is.
+              const reason = error instanceof Error ? error.message : String(error);
+              useStore.getState().showToast(`Could not extract the section: ${reason}`, 'error');
             }
             onCloseExtractDialog();
           }}

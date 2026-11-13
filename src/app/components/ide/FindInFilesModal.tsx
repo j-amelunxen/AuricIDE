@@ -78,7 +78,6 @@ export function FindInFilesModal({ isOpen, onClose, rootPath, onNavigate }: Find
 
   return (
     <SearchPaletteModal
-      isOpen={isOpen}
       onClose={onClose}
       ariaLabel="Find in Files"
       overlayId="find-in-files"

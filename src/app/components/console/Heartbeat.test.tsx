@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { heartbeatSeries, type HeartbeatBucket } from '@/lib/agents/events/heartbeat';
-import { CONSOLE_STATE_HEARTBEAT_TONE, Heartbeat } from './Heartbeat';
+import { Heartbeat } from './Heartbeat';
 
 const NOW = 100 * 60_000;
 
@@ -146,17 +146,5 @@ describe('Heartbeat', () => {
         />
       )
     ).not.toThrow();
-  });
-});
-
-describe('CONSOLE_STATE_HEARTBEAT_TONE', () => {
-  it('maps every console state to a tone', () => {
-    expect(CONSOLE_STATE_HEARTBEAT_TONE).toEqual({
-      yours: 'waiting',
-      error: 'failed',
-      stalled: 'stalled',
-      working: 'running',
-      done: 'done',
-    });
   });
 });

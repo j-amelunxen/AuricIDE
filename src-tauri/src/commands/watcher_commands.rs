@@ -9,6 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
+/// Batches of file changes under a watched directory.
+pub const FILE_EVENTS_EVENT: &str = "file-events";
+
 /// How long a burst of filesystem events is collected before it crosses to
 /// the webview as one message. The frontend debounces its tree refresh at
 /// 300 ms anyway; this only stops a build or an agent from sending one IPC
@@ -28,34 +31,48 @@ impl Default for WatcherState {
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct FileEvent {
     pub path: String,
-    pub kind: String,
+    /// The event changed a file's bytes or metadata, never which paths exist.
+    /// Anything unrecognised is not content-only: guessing wrong that way
+    /// costs a slower refresh, the other way a file list missing a new file.
+    pub content_only: bool,
     /// Whether the path existed when the batch was sent. Lets the frontend
     /// tell a rename over an existing file (a save) from a path appearing or
     /// vanishing, without a stat of its own.
     pub exists: bool,
 }
 
-/// One raw watcher event: path and notify's `EventKind` in Debug form.
-pub type RawFileEvent = (String, String);
+/// One raw watcher event: path and whether it only touched content.
+pub type RawFileEvent = (String, bool);
+
+/// Whether a notify event changes a file's bytes or metadata only.
+pub fn is_content_only(kind: &notify::EventKind) -> bool {
+    use notify::event::ModifyKind;
+    matches!(
+        kind,
+        notify::EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Metadata(_))
+            | notify::EventKind::Access(_)
+    )
+}
 
 /// Turns a collected burst into what the webview receives: exact repeats
 /// dropped (first occurrence keeps its place), and each path's existence
-/// asked once. Different kinds for the same path all stay — whether a kind
-/// changes the set of paths is the frontend's rule, not duplicated here.
+/// asked once. A content-only and a structural event for the same path both
+/// stay: the frontend decides what a structural one means.
 pub fn finish_batch(raw: Vec<RawFileEvent>, exists: impl Fn(&str) -> bool) -> Vec<FileEvent> {
     let mut seen = HashSet::new();
     let mut known: HashMap<String, bool> = HashMap::new();
     let mut out = Vec::new();
-    for (path, kind) in raw {
-        if !seen.insert((path.clone(), kind.clone())) {
+    for (path, content_only) in raw {
+        if !seen.insert((path.clone(), content_only)) {
             continue;
         }
         let present = *known.entry(path.clone()).or_insert_with(|| exists(&path));
         out.push(FileEvent {
             path,
-            kind,
+            content_only,
             exists: present,
         });
     }
@@ -84,7 +101,7 @@ fn run_batcher(rx: Receiver<RawFileEvent>, app: tauri::AppHandle, recent: Arc<Re
                 recent.note_file(&event.path, created);
             }
         }
-        let _ = app.emit("file-events", batch);
+        let _ = app.emit(FILE_EVENTS_EVENT, batch);
     }
 }
 
@@ -114,7 +131,7 @@ pub async fn watch_directory(
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
-                let kind = format!("{:?}", event.kind);
+                let content_only = is_content_only(&event.kind);
                 for p in event.paths {
                     let path_str = p.to_string_lossy().to_string();
                     if should_filter_watcher_path(&path_str) {
@@ -122,7 +139,7 @@ pub async fn watch_directory(
                     }
                     // The batcher only stops once this sender is dropped
                     // with the watcher, so a failed send means shutdown.
-                    let _ = tx.send((path_str, kind.clone()));
+                    let _ = tx.send((path_str, content_only));
                 }
             }
         },

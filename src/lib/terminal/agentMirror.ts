@@ -1,6 +1,7 @@
 import { Terminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { useStore } from '../store';
+import { TERMINAL_SCROLLBACK } from './theme';
 
 /**
  * Per-agent headless mirror terminals.
@@ -103,7 +104,6 @@ export interface AgentMirrorSeed {
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-const SCROLLBACK = 1000;
 
 /**
  * Queued output that forces a parse even though nobody asked for the screen.
@@ -135,7 +135,7 @@ function openTerminal(mirror: AgentMirror): LiveMirror {
   const term = new Terminal({
     cols: mirror.cols,
     rows: mirror.rows,
-    scrollback: SCROLLBACK,
+    scrollback: TERMINAL_SCROLLBACK,
     allowProposedApi: true,
   });
   const serialize = new SerializeAddon();
@@ -451,11 +451,6 @@ export function onAgentPtyResize(agentId: string, listener: PtySizeListener): ()
 /** True when the agent's raw log history spans more than one PTY geometry. */
 export function agentMirrorResized(agentId: string): boolean {
   return mirrors.get(agentId)?.resized ?? false;
-}
-
-/** True while the agent's mirror holds a live terminal rather than a frozen screen. */
-export function agentMirrorIsLive(agentId: string): boolean {
-  return (mirrors.get(agentId)?.term ?? null) !== null;
 }
 
 export function disposeAgentMirror(agentId: string): void {

@@ -2,13 +2,10 @@ import { describe, expect, it } from 'vitest';
 import fixtures from './supervisorPolicy.fixtures.json';
 import controlFixtures from '../agents/agentControl.fixtures.json';
 import type { ProviderPolicy } from './providerPolicy';
-import type { ModelOption } from '../tauri/providers';
 import {
   checkSupervisorSpawn,
   defaultSupervisorProjectPolicy,
   REASON_REQUIRED_FROM_RANK,
-  resolveSupervisorModel,
-  SUPERVISOR_MODEL_CHOICE_REASON_TEXT,
   emptySupervisorPolicy,
   isUnrestrictedTool,
   toolKeyProblem,
@@ -21,7 +18,7 @@ import {
   parseSupervisorPolicy,
   supervisorModelFor,
   supervisorModelsOf,
-  SUPERVISOR_DENIED_REASON_TEXT,
+  withSupervisorModel,
   SUPERVISOR_PARSE_REASONS,
   visibleProjects,
   type OfferedModels,
@@ -91,24 +88,11 @@ describe('modelChoice', () => {
     expect(REASON_REQUIRED_FROM_RANK).toBe(fixtures.reasonRequiredFromRank);
   });
 
-  for (const testCase of fixtures.modelChoice) {
-    it(testCase.name, () => {
-      expect(
-        resolveSupervisorModel(
-          testCase.offered as ModelOption[],
-          testCase.allowed,
-          testCase.request.model,
-          testCase.request.modelReason
-        )
-      ).toEqual(testCase.expected);
-    });
-  }
-
   it('exercises every model choice reason', () => {
     const used = new Set(
       fixtures.modelChoice.map((c) => ('reason' in c.expected ? c.expected.reason : 'ok'))
     );
-    for (const reason of Object.keys(SUPERVISOR_MODEL_CHOICE_REASON_TEXT)) {
+    for (const reason of Object.keys(fixtures.reasons.modelChoice)) {
       expect(used, reason).toContain(reason);
     }
   });
@@ -128,9 +112,7 @@ describe('supervisor policy — fixture coverage', () => {
     Object.keys(group).filter((key) => key !== '_comment');
 
   it('has a reason text for every key in checkOrder, and nothing more', () => {
-    expect(reasonKeys(SUPERVISOR_DENIED_REASON_TEXT).sort()).toEqual(
-      [...fixtures.checkOrder].sort()
-    );
+    expect(reasonKeys(fixtures.reasons.checkSpawn).sort()).toEqual([...fixtures.checkOrder].sort());
   });
 
   it('exercises every checkSpawn reason and every parse reason at least once', () => {
@@ -295,5 +277,22 @@ describe('supervisorModelsOf', () => {
     expect(supervisorModelFor({ ...base, models: { ' Codex ': 'gpt-6-sol' } }, 'codex')).toBe(
       'gpt-6-sol'
     );
+  });
+});
+
+describe('withSupervisorModel', () => {
+  const base = emptySupervisorPolicy().supervisor;
+
+  it('clearing the Claude model clears the legacy field too, so it stays cleared', () => {
+    const set = withSupervisorModel(base, 'claude', 'claude-opus');
+    const cleared = withSupervisorModel(set, 'claude', '');
+    expect(supervisorModelFor(cleared, 'claude')).toBeNull();
+    expect(cleared.model).toBeNull();
+  });
+
+  it('keeps the other providers when one changes', () => {
+    const both = withSupervisorModel(withSupervisorModel(base, 'claude', 'a'), 'codex', 'b');
+    expect(supervisorModelFor(both, 'claude')).toBe('a');
+    expect(supervisorModelFor(both, 'codex')).toBe('b');
   });
 });

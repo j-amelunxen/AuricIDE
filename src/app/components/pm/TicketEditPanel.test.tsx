@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { TicketEditPanel } from './TicketEditPanel';
-import type { PmTicket, PmEpic, PmTestCase, PmDependency } from '@/lib/tauri/pm';
+import type { PmTicket, PmEpic, PmTestCase, PmDependency } from '@/lib/pm/types';
 
 const setInitialAgentTask = vi.fn();
 const setSpawnDialogOpen = vi.fn();
@@ -140,13 +140,13 @@ describe('TicketEditPanel', () => {
 
   it('shows status pills with correct one highlighted', () => {
     render(<TicketEditPanel {...defaultProps} ticket={makeTicket({ status: 'in_progress' })} />);
-    const inProgressBtn = screen.getByText('In Progress');
+    const inProgressBtn = screen.getByText('In progress');
     expect(inProgressBtn.closest('button')?.className).toContain('bg-yellow-500/10');
   });
 
   it('offers To Test and Discarded as ticket statuses', () => {
     render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
-    expect(screen.getByText('To Test')).toBeDefined();
+    expect(screen.getByText('To test')).toBeDefined();
     expect(screen.getByText('Discarded')).toBeDefined();
   });
 

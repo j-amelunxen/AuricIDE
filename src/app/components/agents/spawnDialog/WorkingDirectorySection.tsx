@@ -1,7 +1,7 @@
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { SelectChevron } from './SelectChevron';
 
 interface WorkingDirectorySectionProps {

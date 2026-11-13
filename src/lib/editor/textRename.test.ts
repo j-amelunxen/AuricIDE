@@ -1,24 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countWordMatches, renameWord, wordAt, wordMatchRanges } from './textRename';
-
-describe('renameWord', () => {
-  it('replaces whole words only', () => {
-    const src = 'const user = getUser(user);\nuserName = user;';
-    expect(renameWord(src, 'user', 'account')).toBe(
-      'const account = getUser(account);\nuserName = account;'
-    );
-  });
-
-  it('treats $ and _ as part of an identifier and escapes regex characters', () => {
-    expect(renameWord('$a $ab a_b a', 'a', 'z')).toBe('$a $ab a_b z');
-    expect(renameWord('x.y x_y', 'x.y', 'q')).toBe('q x_y');
-  });
-
-  it('refuses a target that is not an identifier', () => {
-    expect(() => renameWord('a', 'a', 'not valid')).toThrow();
-    expect(() => renameWord('a', 'a', '')).toThrow();
-  });
-});
+import { countWordMatches, wordAt, wordMatchRanges } from './textRename';
 
 describe('countWordMatches', () => {
   it('counts whole-word hits', () => {

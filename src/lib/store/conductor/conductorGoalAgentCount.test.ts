@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
+import type { PmGoal } from '@/lib/goals/types';
 import {
   countConductorGoalAgents,
   isConductorGoalAgent,

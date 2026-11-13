@@ -31,12 +31,6 @@ export function wordMatchRanges(
   }));
 }
 
-export function renameWord(content: string, from: string, to: string): string {
-  if (!isIdentifier(to)) throw new Error(`"${to}" is not a valid identifier`);
-  if (!from) return content;
-  return content.replace(wordPattern(from), to);
-}
-
 /** The identifier touching `pos` (before or after the caret), or null. */
 export function wordAt(content: string, pos: number): string | null {
   let start = pos;

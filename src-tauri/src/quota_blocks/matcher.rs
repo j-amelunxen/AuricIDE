@@ -8,7 +8,7 @@
 use super::reset_time::parse_reset_time;
 pub use super::reset_time::resolve_manual_until;
 use super::{scope_for_model, QuotaBlock, QuotaBlockReason, QuotaBlockScope};
-use crate::supervisor::policy::normalize_provider_id;
+use crate::providers::normalize_provider_id;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use regex::Regex;
 use std::sync::OnceLock;

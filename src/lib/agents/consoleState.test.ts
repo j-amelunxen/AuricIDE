@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { consoleAgentState, consoleStateLabel, CONSOLE_STATE_RANK } from './consoleState';
 
 const NOW = 1_000_000;
@@ -40,10 +40,6 @@ describe('consoleAgentState', () => {
   it('is "working" for an ordinary running agent', () => {
     expect(consoleAgentState(agent({ lastActivityAt: NOW - 1000 }), false, NOW)).toBe('working');
   });
-
-  it('is "working" for a queued agent — not yet worth a distinct bucket', () => {
-    expect(consoleAgentState(agent({ status: 'queued' }), false, NOW)).toBe('working');
-  });
 });
 
 describe('consoleStateLabel', () => {
@@ -67,5 +63,19 @@ describe('CONSOLE_STATE_RANK', () => {
     expect(CONSOLE_STATE_RANK.error).toBeLessThan(CONSOLE_STATE_RANK.stalled);
     expect(CONSOLE_STATE_RANK.stalled).toBeLessThan(CONSOLE_STATE_RANK.working);
     expect(CONSOLE_STATE_RANK.working).toBeLessThan(CONSOLE_STATE_RANK.done);
+  });
+});
+
+// The card says "Queued"; the console used to file it under "Running".
+describe('consoleAgentState for a queued agent', () => {
+  it('reads as queued, after working agents', () => {
+    const state = consoleAgentState(
+      { status: 'queued', lastActivityAt: undefined, awaitingInput: false, headless: false },
+      false,
+      0
+    );
+    expect(state).toBe('queued');
+    expect(consoleStateLabel(state, false)).toBe('Queued');
+    expect(CONSOLE_STATE_RANK.queued).toBeGreaterThan(CONSOLE_STATE_RANK.working);
   });
 });

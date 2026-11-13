@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 import type { GitRepoRef } from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { useStore } from '@/lib/store';
 
 // Suppress InfoTooltip from rendering buttons inside <label> elements, which

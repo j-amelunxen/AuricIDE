@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { usageRow } from '@/lib/pm/usage/testRow';
-import type { PmGoalRun } from '@/lib/tauri/goals';
+import type { PmGoalRun } from '@/lib/goals/types';
 import { GoalRunsSection } from './GoalRunsSection';
 
 const run = (agentId: string): PmGoalRun => ({

@@ -78,8 +78,8 @@ pub fn requirements_load_impl(conn: &Connection) -> Result<RequirementsState, St
             })
         })
         .map_err(|e| format!("Failed to query requirements: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read requirements: {}", e))?;
 
     let mut link_stmt = conn
         .prepare(
@@ -97,20 +97,11 @@ pub fn requirements_load_impl(conn: &Connection) -> Result<RequirementsState, St
             })
         })
         .map_err(|e| format!("Failed to query test links: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read test links: {}", e))?;
 
     Ok(RequirementsState {
         requirements,
         test_links,
     })
-}
-
-pub fn requirements_clear_impl(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "DELETE FROM pm_requirement_test_links;
-         DELETE FROM pm_requirements;",
-    )
-    .map_err(|e| format!("Failed to clear requirements: {}", e))?;
-    Ok(())
 }

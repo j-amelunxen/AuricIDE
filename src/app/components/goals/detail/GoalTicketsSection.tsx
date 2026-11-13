@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 
 export interface GoalTicketsSectionProps {
   goalId: string;

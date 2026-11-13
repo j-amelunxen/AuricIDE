@@ -1,4 +1,4 @@
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { subscribeToTauriEvent } from '@/lib/tauri/subscribe';
 import fixtures from './agentControl.fixtures.json';
 import { adoptSupervisorChildren } from './supervisorFamily';

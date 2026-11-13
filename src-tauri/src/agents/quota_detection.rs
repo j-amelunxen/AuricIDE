@@ -8,11 +8,11 @@
 use super::output_buffer::OutputBuffers;
 use super::run_results::CONSOLE_TAIL_ANSWER_BYTES;
 use super::types::AgentInfo;
+use crate::providers::normalize_provider_id;
 use crate::providers::ProviderRegistryState;
 use crate::quota_blocks::matcher::{detect_in_text, CatalogModelRef, DetectionContext};
 use crate::quota_blocks::store::{read_blocks_at, record_detected_block_at};
 use crate::quota_blocks::QuotaBlock;
-use crate::supervisor::policy::normalize_provider_id;
 use chrono::{DateTime, Utc};
 use std::path::Path;
 use tauri::{AppHandle, Manager};

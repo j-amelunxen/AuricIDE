@@ -1,30 +1,18 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import {
-  createRequirementsSlice,
-  type RequirementsSlice,
-  getStaleRequirements,
-  getUnverifiedRequirements,
-  getTestLinksForRequirement,
-  parseAppliesTo,
-} from './requirementsSlice';
-import type {
-  PmRequirement,
-  PmRequirementTestLink,
-  RequirementsState,
-} from '../tauri/requirements';
+import { parseAppliesTo } from './requirementsSlice';
+import type { RequirementsState } from '../tauri/requirements';
+import type { PmRequirement, PmRequirementTestLink } from '../pm/types';
 
 const mockRequirementsLoad = vi.fn<(...args: unknown[]) => Promise<RequirementsState>>(() =>
   Promise.resolve({ requirements: [], testLinks: [] })
 );
 const mockRequirementsSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
-const mockRequirementsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 
 vi.mock('../tauri/requirements', () => ({
   requirementsLoad: (...args: unknown[]) => mockRequirementsLoad(...args),
   requirementsSave: (...args: unknown[]) => mockRequirementsSave(...args),
-  requirementsClear: (...args: unknown[]) => mockRequirementsClear(...args),
 }));
 
 vi.mock('../tauri/db', () => ({
@@ -32,7 +20,7 @@ vi.mock('../tauri/db', () => ({
 }));
 
 function createTestStore() {
-  return create<RequirementsSlice>()((...a) => ({ ...createRequirementsSlice(...a) }));
+  return createFullTestStore();
 }
 
 function makeRequirement(overrides: Partial<PmRequirement> = {}): PmRequirement {
@@ -248,6 +236,25 @@ describe('requirementsSlice', () => {
     expect(store.getState().currentRequirementsProject).toBe('/project');
   });
 
+  it('loadRequirements keeps an edit and takes what an agent changed meanwhile', async () => {
+    const base = makeRequirement({ id: 'r1', title: 'Old title', status: 'active' });
+    const byAgent = { ...base, status: 'verified' as const };
+    mockRequirementsLoad.mockResolvedValueOnce({ requirements: [byAgent], testLinks: [] });
+
+    const store = createTestStore();
+    store.setState({
+      requirements: [base],
+      requirementsDraft: [{ ...base, title: 'New title' }],
+      requirementsDirty: true,
+      currentRequirementsProject: '/project',
+    });
+
+    await store.getState().loadRequirements('/project');
+
+    expect(store.getState().requirementsDraft).toEqual([{ ...byAgent, title: 'New title' }]);
+    expect(store.getState().requirementsDirty).toBe(true);
+  });
+
   it('loadRequirements resets dirty draft when switching to a different project', async () => {
     const newReq = makeRequirement({ id: 'new-project-req', title: 'New' });
     const draftOnlyReq = makeRequirement({ id: 'draft-only', title: 'Unsaved' });
@@ -266,6 +273,16 @@ describe('requirementsSlice', () => {
     expect(store.getState().requirementsDraft).toEqual([newReq]);
     expect(store.getState().requirementsDirty).toBe(false);
     expect(store.getState().currentRequirementsProject).toBe('/new-project');
+  });
+
+  it('saveRequirements refuses to replace requirements whose last load failed', async () => {
+    mockRequirementsLoad.mockRejectedValueOnce(new Error('requirement row unreadable'));
+    const store = createTestStore();
+    await store.getState().loadRequirements('/project');
+    store.getState().addRequirement(makeRequirement());
+
+    await expect(store.getState().saveRequirements('/project')).rejects.toThrow(/did not load/);
+    expect(mockRequirementsSave).not.toHaveBeenCalled();
   });
 
   it('saveRequirements calls IPC and syncs state', async () => {
@@ -287,19 +304,6 @@ describe('requirementsSlice', () => {
     });
     expect(store.getState().requirementsDirty).toBe(false);
     expect(store.getState().requirements).toEqual(store.getState().requirementsDraft);
-  });
-
-  it('clearRequirements calls IPC and resets state', async () => {
-    const store = createTestStore();
-    store.getState().addRequirement(makeRequirement());
-
-    await store.getState().clearRequirements('/project');
-
-    expect(mockInitProjectDb).toHaveBeenCalledWith('/project');
-    expect(mockRequirementsClear).toHaveBeenCalledWith('/project');
-    expect(store.getState().requirements).toHaveLength(0);
-    expect(store.getState().requirementsDraft).toHaveLength(0);
-    expect(store.getState().requirementsDirty).toBe(false);
   });
 
   it('discardRequirementChanges restores persisted state', () => {
@@ -394,58 +398,6 @@ describe('requirementsSlice', () => {
   });
 
   // --- selector helpers ---
-
-  describe('getStaleRequirements', () => {
-    it('returns requirements verified longer ago than staleDays', () => {
-      const oldDate = new Date(Date.now() - 31 * 86400000)
-        .toISOString()
-        .replace('T', ' ')
-        .slice(0, 19);
-      const recentDate = new Date(Date.now() - 5 * 86400000)
-        .toISOString()
-        .replace('T', ' ')
-        .slice(0, 19);
-      const reqs = [
-        makeRequirement({ id: 'r1', status: 'verified', lastVerifiedAt: oldDate }),
-        makeRequirement({ id: 'r2', status: 'verified', lastVerifiedAt: recentDate }),
-        makeRequirement({ id: 'r3', status: 'active', lastVerifiedAt: oldDate }),
-      ];
-      const stale = getStaleRequirements(reqs, 30);
-      expect(stale).toHaveLength(1);
-      expect(stale[0].id).toBe('r1');
-    });
-
-    it('does not return verified requirements with null lastVerifiedAt as stale', () => {
-      const reqs = [makeRequirement({ id: 'r1', status: 'verified', lastVerifiedAt: null })];
-      expect(getStaleRequirements(reqs, 30)).toHaveLength(0);
-    });
-  });
-
-  describe('getUnverifiedRequirements', () => {
-    it('returns active and implemented requirements', () => {
-      const reqs = [
-        makeRequirement({ id: 'r1', status: 'active' }),
-        makeRequirement({ id: 'r2', status: 'implemented' }),
-        makeRequirement({ id: 'r3', status: 'verified' }),
-        makeRequirement({ id: 'r4', status: 'draft' }),
-      ];
-      const unverified = getUnverifiedRequirements(reqs);
-      expect(unverified.map((r) => r.id)).toEqual(['r1', 'r2']);
-    });
-  });
-
-  describe('getTestLinksForRequirement', () => {
-    it('returns only links matching the requirement id', () => {
-      const links = [
-        makeTestLink('r1', 'tc1'),
-        makeTestLink('r2', 'tc2'),
-        makeTestLink('r1', 'tc3'),
-      ];
-      const result = getTestLinksForRequirement(links, 'r1');
-      expect(result).toHaveLength(2);
-      expect(result.map((l) => l.testCaseId)).toEqual(['tc1', 'tc3']);
-    });
-  });
 });
 
 describe('loadRequirements reload without changes', () => {

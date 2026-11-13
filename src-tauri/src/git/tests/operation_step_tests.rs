@@ -32,7 +32,7 @@ fn p(dir: &TempDir) -> &str {
 
 /// The git the IDE would run: resolved through the login shell's PATH.
 async fn git_bin() -> PathBuf {
-    crate::video_import::preflight::resolve_executable("git")
+    crate::machine::resolve_executable("git")
         .await
         .expect("git must be installed to run these tests")
 }

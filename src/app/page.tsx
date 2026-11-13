@@ -6,7 +6,7 @@ import { Header } from './components/ide/Header';
 import { IDEShell } from './components/ide/IDEShell';
 import { TabBar } from './components/editor/TabBar';
 import { IDEOverlays } from './components/ide/IDEOverlays';
-import { ToastHost } from './components/ide/ToastHost';
+import { ToastHost } from './components/ui/ToastHost';
 import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
 import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { isScratchPath } from '@/lib/scratch/naming';
@@ -18,7 +18,7 @@ import { NewProjectModal, type NewProjectOptions } from './components/ide/NewPro
 import { selectBranchNameForPath } from '@/lib/store/gitSlice';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useLiveIDEState } from '@/lib/hooks/ide/liveIDEState';
-import { type SettingsCategory } from './components/ide/SettingsModal';
+import type { SettingsCategory } from '../lib/settings/types';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useSupervisorMenuBar } from '@/lib/hooks/useSupervisorMenuBar';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
@@ -215,7 +215,6 @@ export default function Home() {
             onSpawn={openSpawnDialog}
             onKill={handlers.handleKillAgent}
             onSelectAgent={handlers.handleSelectAgent}
-            onImageDrop={handlers.handleImageDrop}
             onCollapse={hideAgents}
             onResumeInterrupted={handlers.handleResumeInterrupted}
           />
@@ -238,10 +237,7 @@ export default function Home() {
                 <ProblemsPanel
                   diagnostics={handlers.activeDiagnostics}
                   filePath={state.activeTabId ?? ''}
-                  onClose={() => {
-                    state.setBottomTab('terminal');
-                    state.setProblemsPanelOpen(false);
-                  }}
+                  onClose={() => state.setBottomTab('terminal')}
                   onNavigate={(line) => {
                     state.setScrollToLine(line);
                     state.setBottomTab('terminal');

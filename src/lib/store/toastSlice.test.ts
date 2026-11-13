@@ -1,9 +1,8 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it } from 'vitest';
-import { createStore } from 'zustand';
-import { createToastSlice, type ToastSlice } from './toastSlice';
 
 function makeStore() {
-  return createStore<ToastSlice>((set, get, api) => createToastSlice(set, get, api));
+  return createFullTestStore();
 }
 
 describe('toastSlice', () => {

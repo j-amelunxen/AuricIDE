@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent, RefObject } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import {
   isSplit,
   paneLayout,

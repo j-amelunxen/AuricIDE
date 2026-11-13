@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
-import { sendToAgent } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { HeartbeatBucket } from '@/lib/agents/events/heartbeat';
 import { fleetHeartbeatMax, heartbeatSeries } from '@/lib/agents/events/heartbeat';
@@ -15,7 +14,7 @@ import { describeRightNow } from '@/lib/agents/consoleActivity';
 import { projectLabel } from '@/lib/agents/lanes';
 import { useNow } from '@/lib/hooks/useNow';
 import { useStore } from '@/lib/store';
-import { XtermTerminal } from '@/app/components/terminal/XtermTerminal';
+import { AgentXterm } from '@/app/components/agents/AgentXterm';
 import { Heartbeat, CONSOLE_STATE_HEARTBEAT_TONE } from './Heartbeat';
 import { PhaseChip } from './PhaseChip';
 import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
@@ -106,11 +105,7 @@ export function FocusView({
         </div>
 
         <div className="min-h-0 overflow-hidden rounded-lg border border-white/10 bg-black/60">
-          <XtermTerminal
-            id={`agent-${agent.id}`}
-            agentId={agent.id}
-            onInput={(data) => void sendToAgent(agent.id, data)}
-          />
+          <AgentXterm agentId={agent.id} autoFocus={false} />
         </div>
 
         <div className="flex gap-2">

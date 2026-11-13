@@ -1,5 +1,5 @@
-import type { AgentInfo } from '../tauri/agents';
-import { UNGROUPED_REPO_KEY } from '../store/agentSlice';
+import type { AgentInfo } from './types';
+import { UNGROUPED_REPO_KEY } from './fleet';
 import { supervisorFamilyRoots } from './supervisorFamily';
 
 /**

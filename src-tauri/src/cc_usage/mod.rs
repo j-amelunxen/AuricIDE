@@ -17,6 +17,9 @@
 //! is not free, and a panel that rescans on every re-render would make opening
 //! it feel broken.
 
+/// The compiled-in usage plugin for Claude Code transcripts (`default-manifest.json`).
+pub const CLAUDE_CODE_PLUGIN_ID: &str = "claude-code";
+
 pub mod manifest;
 pub mod pricing;
 pub mod report;
@@ -206,7 +209,7 @@ mod tests {
         let service = service_with_home(dir.path().to_path_buf());
         let summaries = service.summaries();
         assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].id, "claude-code");
+        assert_eq!(summaries[0].id, CLAUDE_CODE_PLUGIN_ID);
         assert_eq!(summaries[0].currency, "USD");
     }
 
@@ -295,7 +298,7 @@ mod tests {
     /// cargo test cc_usage -- --ignored --nocapture
     /// ```
     #[tokio::test]
-    #[ignore]
+    #[ignore = "reads the real CLI transcripts on this machine"]
     async fn reads_this_machine() {
         let Some(home) = dirs::home_dir() else {
             eprintln!("no home directory");

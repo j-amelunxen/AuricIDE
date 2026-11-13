@@ -1,17 +1,14 @@
 import type { GitRepoRef } from '@/lib/tauri/git';
-
-function stripSlash(path: string): string {
-  return path.endsWith('/') ? path.slice(0, -1) : path;
-}
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
 /** Deepest repo whose path is the file's ancestor (or the file itself). null when none. */
 export function repoForPath(absPath: string, repos: readonly GitRepoRef[]): GitRepoRef | null {
-  const target = stripSlash(absPath);
+  const target = withoutTrailingSlash(absPath);
   let deepest: GitRepoRef | null = null;
   for (const repo of repos) {
-    const repoPath = stripSlash(repo.path);
+    const repoPath = withoutTrailingSlash(repo.path);
     const isMatch = target === repoPath || target.startsWith(`${repoPath}/`);
-    if (isMatch && (!deepest || repoPath.length > stripSlash(deepest.path).length)) {
+    if (isMatch && (!deepest || repoPath.length > withoutTrailingSlash(deepest.path).length)) {
       deepest = repo;
     }
   }
@@ -20,8 +17,8 @@ export function repoForPath(absPath: string, repos: readonly GitRepoRef[]): GitR
 
 /** Repo-relative path, "" for the repo root. Assumes `absPath` is inside `repoPath`. */
 export function relativeToRepo(absPath: string, repoPath: string): string {
-  const target = stripSlash(absPath);
-  const repo = stripSlash(repoPath);
+  const target = withoutTrailingSlash(absPath);
+  const repo = withoutTrailingSlash(repoPath);
   if (target === repo) return '';
   return target.startsWith(`${repo}/`) ? target.slice(repo.length + 1) : target;
 }

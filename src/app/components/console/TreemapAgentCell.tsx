@@ -1,7 +1,9 @@
 'use client';
 
+import { answerToneClass } from './answerTone';
 import { memo, useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
+import { endAgentThenOfferMerge, stopConfirmation } from '@/app/components/agents/endAgent';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import {
   consoleAgentState,
@@ -27,15 +29,9 @@ const CELL_FACE: Record<ConsoleAgentState, string> = {
   error: 'bg-red-500/15 border-red-400/50',
   stalled: 'bg-orange-500/15 border-orange-400/45',
   working: 'bg-emerald-500/10 border-emerald-400/30',
+  queued: 'bg-white/5 border-white/15',
   done: 'bg-primary/10 border-primary/35',
 };
-
-function answerToneClass(label: string): string {
-  if (/^yes\b/i.test(label))
-    return 'border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10';
-  if (/^no\b/i.test(label)) return 'border-red-400/35 text-red-400 hover:bg-red-400/10';
-  return 'border-white/10 text-foreground-muted hover:bg-white/5';
-}
 
 export interface TreemapAgentCellProps {
   agent: AgentInfo;
@@ -46,7 +42,7 @@ export interface TreemapAgentCellProps {
   height: number;
   onFocus?: (agentId: string) => void;
   onOpenTerminal: (agentId: string) => void;
-  onStop?: (agentId: string) => void;
+  onStop?: (agentId: string) => void | Promise<void>;
   onRetry?: (agentId: string) => void;
   onMarkReviewed?: (agentId: string) => void;
   onDismiss?: (agentId: string) => void;
@@ -101,14 +97,8 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
   const tailLines = readsTail ? promptTailLines(logTail) : [];
 
   const handleStop = async () => {
-    const go = await confirm({
-      title: 'Stop this agent?',
-      message: `Stop ${agent.name}? Its work in progress is lost.`,
-      confirmLabel: 'Stop',
-    });
-    if (!go) return;
-    await Promise.resolve(onStop?.(agent.id));
-    await offerMerge(agent);
+    if (!(await confirm(stopConfirmation(agent)))) return;
+    await endAgentThenOfferMerge(agent, { onKill: onStop, offerMerge });
   };
 
   const send = (text: string) => {

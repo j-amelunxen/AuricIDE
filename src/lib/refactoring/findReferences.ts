@@ -1,14 +1,6 @@
-import type { EntityOccurrence } from '@/lib/store/entityIndexSlice';
-import type { LinkIndexEntry } from '@/lib/store/wikiLinkSlice';
-
-export interface ReferenceResult {
-  type: 'heading' | 'entity' | 'wikilink';
-  filePath: string;
-  lineNumber: number;
-  lineText: string;
-  charFrom: number;
-  charTo: number;
-}
+import type { ReferenceResult } from './types';
+import type { EntityOccurrence } from '@/lib/nlp/nlpTypes';
+import type { LinkIndexEntry } from '@/lib/markdown/types';
 
 function sortResults(results: ReferenceResult[]): ReferenceResult[] {
   return results.sort((a, b) => {

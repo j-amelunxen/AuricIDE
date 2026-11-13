@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { AGENT_STATE_LABEL, agentState, agentStateLabel } from './state';
 import { HEADLESS_STALL_MS } from './attention';
 

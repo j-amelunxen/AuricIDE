@@ -12,7 +12,7 @@ import type { ReviewFile } from '@/lib/git/review/reviewSession';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useStore } from '@/lib/store';
 import { discardChanges, getGitDiff } from '@/lib/tauri/git';
-import type { HunkToolbarAction } from '@/app/components/editor/diff/HunkToolbar';
+import type { HunkToolbarAction } from '@/app/components/diff/HunkToolbar';
 
 interface SidePatches {
   unstaged: string;

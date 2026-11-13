@@ -6,6 +6,7 @@ import {
   dailyCron,
   formatNextDue,
   formatScheduleRhythm,
+  readSimpleCron,
   WEEKDAY_OPTIONS,
   weeklyCron,
 } from './scheduleFormat';
@@ -179,5 +180,37 @@ describe('cron builders', () => {
   it('round-trips through the formatter', () => {
     const schedule = makeSchedule({ specKind: 'cron', cronExpr: weeklyCron(['WED'], '17:00') });
     expect(formatScheduleRhythm(schedule)).toBe('Wednesday · 17:00');
+  });
+});
+
+// The editor, the rhythm text and the drag-to-move all read schedules through
+// this; a shape one of them accepts and another rejects shows a rhythm the
+// editor then rewrites.
+describe('readSimpleCron', () => {
+  it('reads the daily and weekly shapes the editor writes', () => {
+    expect(readSimpleCron(dailyCron('09:05'))).toEqual({
+      second: '0',
+      minute: 5,
+      hour: 9,
+      weekdays: null,
+    });
+    expect(readSimpleCron(weeklyCron(['MON', 'FRI'], '18:30'))?.weekdays).toEqual(['MON', 'FRI']);
+  });
+
+  it('reads five fields as second 0 and weekday names in any case', () => {
+    expect(readSimpleCron('30 7 * * tue')).toEqual({
+      second: '0',
+      minute: 30,
+      hour: 7,
+      weekdays: ['TUE'],
+    });
+  });
+
+  it('leaves anything hand-written to the cron field', () => {
+    expect(readSimpleCron('0 */15 * * * *')).toBeNull();
+    expect(readSimpleCron('0 0 9 1 * *')).toBeNull();
+    expect(readSimpleCron('0 0 9 * * 1-5')).toBeNull();
+    expect(readSimpleCron('')).toBeNull();
+    expect(readSimpleCron(null)).toBeNull();
   });
 });

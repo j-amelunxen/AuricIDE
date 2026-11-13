@@ -99,6 +99,18 @@ describe('supervisorProviders', () => {
       expect(readSupervisorInstructions('codex')).toBe('Instructions for Codex');
     });
 
+    it('keeps Claude instructions that look like JSON as instructions', () => {
+      const text = '{"tone": "brief"} is how every answer starts.';
+      writeSupervisorInstructions(text, 'claude');
+      expect(readSupervisorInstructions('claude')).toBe(text);
+    });
+
+    it('reads Claude instructions written as an object as text, not as a provider map', () => {
+      writeSupervisorInstructions('{ "codex": "only codex" }', 'claude');
+      expect(readSupervisorInstructions('claude')).toBe('{ "codex": "only codex" }');
+      expect(readSupervisorInstructions('codex')).toBe('');
+    });
+
     it('removes stored preference when all provider instructions are blank', () => {
       writeSupervisorInstructions({ claude: '   ', codex: '' });
       expect(readAllSupervisorInstructions()).toEqual({});

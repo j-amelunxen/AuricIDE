@@ -1,9 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createAgentSlice } from './agentSlice';
-import { createPmSlice } from './pmSlice';
-import { createUISlice } from './uiSlice';
-import type { StoreState } from './index';
 
 vi.mock('../tauri/agents', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,16 +23,12 @@ vi.mock('../tauri/pm', () => ({
 }));
 
 describe('Agent and PM Interaction', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-expect-error - Partial store for testing (only agent+pm+ui slices)
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createPmSlice(...a),
-      ...createUISlice(...a),
-    }));
+
+    store = createFullTestStore();
   });
 
   it('updates ticket status to done when its agent is killed', async () => {

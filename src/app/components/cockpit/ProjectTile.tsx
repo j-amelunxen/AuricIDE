@@ -2,17 +2,12 @@
 
 import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import {
-  quickAccessCombos,
-  quickAccessWheelSlots,
-  type QuickAccessCombo,
-  type QuickAccessSkill,
-  type StarredProject,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessCombos } from '@/lib/quickAccess/projectEntries';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
 import { launchEntriesForProject } from '@/lib/quickAccess/launchSkills';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { badgeChipStyle, normalizeProjectBadge } from '@/lib/quickAccess/badge';
-import { ProjectTileFace } from './ProjectTileFace';
+import { ProjectTileFace } from '../ui/ProjectTileFace';
 import { useLaunchWheel } from './useLaunchWheel';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -91,7 +86,7 @@ export function ProjectTile({
   } = useLaunchWheel({
     wheelId: project.path,
     entries: launchEntriesForProject(project, loadAuricSkills()),
-    storedSlots: quickAccessWheelSlots(project),
+    storedSlots: project.wheelSlots ?? [],
     writeSlots: (slots) => setStarredProjectWheelSlots(project.path, slots),
     onLaunch: (entry) => {
       if (entry.kind === 'combo') onLaunchCombo(entry.combo);

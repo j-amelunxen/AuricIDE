@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   accumulateHeartbeatKinds,
   drainHeartbeatKinds,
-  dropAgentExtractor,
   extractorForAgent,
   pruneAgentRuntime,
   resetAgentExtractors,
@@ -59,25 +58,6 @@ describe('extractorForAgent', () => {
     const first = extractorForAgent('agent-1', 'claude');
     const second = extractorForAgent('agent-1', 'claude');
     expect(second).toBe(first);
-  });
-});
-
-describe('dropAgentExtractor', () => {
-  it('makes the next call for that id build a fresh extractor', () => {
-    const first = extractorForAgent('agent-1', 'claude');
-    dropAgentExtractor('agent-1');
-    const second = extractorForAgent('agent-1', 'claude');
-    expect(second).not.toBe(first);
-  });
-
-  it('is a no-op for an id that was never created', () => {
-    expect(() => dropAgentExtractor('never-seen')).not.toThrow();
-  });
-
-  it('also clears any pending, not-yet-drained heartbeat counts', () => {
-    accumulateHeartbeatKinds('agent-1', ['edit']);
-    dropAgentExtractor('agent-1');
-    expect(drainHeartbeatKinds('agent-1')).toEqual([]);
   });
 });
 

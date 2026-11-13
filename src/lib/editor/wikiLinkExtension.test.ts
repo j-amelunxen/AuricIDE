@@ -6,14 +6,6 @@ import { wikiLinkPlugin, wikiLinkExtension } from './wikiLinkExtension';
 
 describe('wikiLinkExtension', () => {
   describe('exports', () => {
-    it('exports wikiLinkPlugin as defined', () => {
-      expect(wikiLinkPlugin).toBeDefined();
-    });
-
-    it('exports wikiLinkExtension as defined', () => {
-      expect(wikiLinkExtension).toBeDefined();
-    });
-
     it('wikiLinkExtension is an array of extensions', () => {
       expect(Array.isArray(wikiLinkExtension)).toBe(true);
       expect(wikiLinkExtension.length).toBeGreaterThan(0);

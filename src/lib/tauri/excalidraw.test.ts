@@ -6,7 +6,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import {
-  excalidrawTestConnection,
   excalidrawListCollections,
   excalidrawListScenes,
   excalidrawGetSceneContent,
@@ -16,13 +15,6 @@ import {
 describe('excalidraw IPC wrappers', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
-  });
-
-  it('tests the connection for a project', async () => {
-    mockInvoke.mockResolvedValue('Connected to Excalidraw+ — 3 collection(s) visible');
-    const result = await excalidrawTestConnection('/p');
-    expect(mockInvoke).toHaveBeenCalledWith('excalidraw_test_connection', { projectPath: '/p' });
-    expect(result).toContain('Connected');
   });
 
   it('lists collections', async () => {

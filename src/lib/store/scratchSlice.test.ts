@@ -1,6 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createScratchSlice, type ScratchSlice } from './scratchSlice';
 
 vi.mock('@/lib/tauri/scratch', () => ({
   getScratchDir: vi.fn(async () => '/data/scratches'),
@@ -19,7 +18,7 @@ import { getScratchDir } from '@/lib/tauri/scratch';
 import { readDirectory } from '@/lib/tauri/fs';
 
 function makeStore() {
-  return create<ScratchSlice>()((...a) => ({ ...createScratchSlice(...a) }));
+  return createFullTestStore();
 }
 
 describe('scratchSlice', () => {

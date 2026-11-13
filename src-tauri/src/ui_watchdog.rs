@@ -24,6 +24,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 
 pub const PING_INTERVAL_MS: u64 = 1_000;
+/// The heartbeat the frontend answers with `ui_pong`.
+pub(crate) const PING_EVENT: &str = "ui-ping";
 /// Delay beyond the normal ping cadence that counts as a stall.
 const STALL_THRESHOLD_MS: u64 = 1_000;
 /// A stall this long is written while it is still ongoing, so a hang that
@@ -230,7 +232,7 @@ pub fn start(app: &tauri::AppHandle) {
         loop {
             std::thread::sleep(Duration::from_millis(PING_INTERVAL_MS));
             seq += 1;
-            let _ = handle.emit("ui-ping", seq);
+            let _ = handle.emit(PING_EVENT, seq);
             let state = handle.state::<UiWatchdogState>();
             let event = state
                 .tracker

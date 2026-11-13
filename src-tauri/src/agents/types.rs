@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Deserialize, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfig {
     pub name: String,
@@ -77,17 +78,7 @@ pub struct AgentConfig {
     /// Set by `admit_supervisor` for a fresh Project Manager launch: booked in
     /// the registry once the process runs, not before.
     #[serde(skip)]
-    pub launch_to_book: Option<LaunchToBook>,
-}
-
-/// What a Project Manager's launch records: the manager and the instructions
-/// text its prompt starts with (`None`: no file).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchToBook {
-    pub key: String,
-    pub instructions: Option<String>,
-    /// A supervisor restored after an app restart: a new session, no launch.
-    pub restored: bool,
+    pub launch_to_book: Option<crate::supervisor::launch::LaunchToBook>,
 }
 
 impl AgentConfig {
@@ -146,6 +137,12 @@ pub struct AgentInfo {
     pub extra_mcp_servers: Vec<String>,
 }
 
+/// Every agent's console output, broadcast to every window. Pinned by
+/// `agentWindow.fixtures.json` (`rustEvents.agentOutput`).
+pub const AGENT_OUTPUT_EVENT: &str = "agent-output";
+/// An agent ended (exit, kill, quit). Pinned by `backendNames.fixtures.json`.
+pub const AGENT_STATUS_EVENT: &str = "agent-status";
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentOutputEvent {
@@ -182,15 +179,19 @@ pub struct AgentStatusEvent {
     pub repo_path: Option<String>,
 }
 
-pub struct AgentProcess {
+pub struct AgentSession {
     pub info: AgentInfo,
     pub child: Box<dyn PtyChild + Send + Sync>,
+    /// Registration of this process's shared PTY writer/master.
+    pub pty: super::pty::AgentPty,
     /// The launch request this agent serves; a kill reports to it.
     pub launch_request_uid: Option<String>,
     /// Books the run's usage when it ends; `None` outside an initialised project.
     pub usage: Option<crate::agent_usage::capture::UsageCapture>,
     /// A launch file only this agent uses (a supervisor's MCP config); it is
-    /// deleted when the process entry goes, however the agent ended.
+    /// deleted when the process entry goes, however the agent ended. Never
+    /// read: being owned is the whole job.
+    #[allow(dead_code)]
     pub launch_file: Option<OwnedFile>,
 }
 
@@ -205,7 +206,9 @@ impl Drop for OwnedFile {
 }
 
 pub struct AgentManager {
-    pub agents: HashMap<String, AgentProcess>,
+    /// Only the `agents` module touches sessions; everyone else asks through
+    /// the methods below.
+    pub(in crate::agents) agents: HashMap<String, AgentSession>,
     /// Hands out `agent-<yyMMdd>-<seq>` ids (`agents/ids.rs`). In memory until
     /// the app data folder is known.
     pub ids: super::ids::IdAllocator,
@@ -229,6 +232,32 @@ impl AgentManager {
     /// saved and no id was handed out.
     pub fn next_id(&mut self) -> Result<String, String> {
         self.ids.allocate()
+    }
+
+    /// The live agent `id`, if it runs.
+    pub fn info(&self, id: &str) -> Option<&AgentInfo> {
+        self.agents.get(id).map(|session| &session.info)
+    }
+
+    /// Every live agent's info, for bookkeeping that rewrites it in place
+    /// (adoption, a supervisor key).
+    pub fn infos_mut(&mut self) -> impl Iterator<Item = &mut AgentInfo> {
+        self.agents.values_mut().map(|session| &mut session.info)
+    }
+
+    /// Each live agent's process id with its info; agents whose process id
+    /// is unknown are left out.
+    pub fn processes(&self) -> impl Iterator<Item = (u32, &AgentInfo)> {
+        self.agents
+            .values()
+            .filter_map(|session| Some((session.child.process_id()?, &session.info)))
+    }
+
+    /// The usage capture of agent `id`, where its provider has one.
+    pub fn usage(&self, id: &str) -> Option<&crate::agent_usage::capture::UsageCapture> {
+        self.agents
+            .get(id)
+            .and_then(|session| session.usage.as_ref())
     }
 }
 

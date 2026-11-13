@@ -1,3 +1,4 @@
+import { clipAtWord } from '@/lib/text/clipAtWord';
 import { llmCall } from '../tauri/llm';
 import type { LaneSummary } from '../store/laneSummariesSlice';
 import { detectAwaitingInput, PROMPT_PATTERNS } from './awaitingInput';
@@ -20,11 +21,7 @@ const ASK_SYSTEM =
   'In one sentence, what is the agent asking the user to decide? No preamble, no quotes, no markdown.';
 
 function clipAskSummary(text: string): string {
-  if (text.length <= MAX_ASK_SUMMARY_CHARS) return text;
-  const slice = text.slice(0, MAX_ASK_SUMMARY_CHARS);
-  const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf(' '));
-  const trimmed = lastStop > MAX_ASK_SUMMARY_CHARS * 0.4 ? slice.slice(0, lastStop) : slice;
-  return `${trimmed.replace(/[\s,;:.-]+$/, '')}…`;
+  return clipAtWord(text, MAX_ASK_SUMMARY_CHARS);
 }
 
 function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {

@@ -1,3 +1,4 @@
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import { type ViewUpdate, EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -26,11 +27,8 @@ import { mermaidWidgetExtension } from '@/lib/editor/mermaidWidgetExtension';
 import { wikiLinkExtension } from '@/lib/editor/wikiLinkExtension';
 import { brokenLinksSetFacet, wikiLinkBrokenExtension } from '@/lib/editor/wikiLinkBrokenExtension';
 import { markdownFoldExtension } from '@/lib/editor/markdownFoldExtension';
-import {
-  wikiLinkCompletion,
-  fileListFacet,
-  headingProviderFacet,
-} from '@/lib/editor/wikiLinkCompletionExtension';
+import { wikiLinkCompletion, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
+import { currentFilePathFacet, projectFilesFacet } from '@/lib/editor/editorFacets';
 import {
   slashCommandSource,
   slashCommandsFacet,
@@ -43,7 +41,6 @@ import {
   headingLevelSource,
   linkTargetSource,
   imageTargetSource,
-  filePathsFacet,
 } from '@/lib/editor/markdownCompletionSource';
 import {
   wikiLinkHoverExtension,
@@ -58,13 +55,11 @@ import { findReferencesKeymap, showReferencesFacet } from '@/lib/editor/findRefe
 import {
   markdownLintExtension,
   lintConfigFacet,
-  fileListForLintFacet,
   headingIndexForLintFacet,
-  currentFilePathFacet,
 } from '@/lib/editor/markdownLintExtension';
-import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
-import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
-import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
+import { jsonLintExtension } from '@/lib/editor/jsonLintExtension';
+import { xmlLintExtension } from '@/lib/editor/xmlLintExtension';
+import { yamlLintExtension } from '@/lib/editor/yamlLintExtension';
 import { createGitGutter } from '@/lib/editor/gitGutterExtension';
 import { useStore } from '@/lib/store';
 
@@ -147,55 +142,55 @@ export function getLintableFileType(filePath?: string): LintableFileType {
   }
 }
 
-function buildLintExtension(
-  fileType: LintableFileType,
-  filePath: string | undefined,
-  store: ReturnType<typeof useStore.getState>
-) {
-  switch (fileType) {
+/**
+ * The lint wiring for a file: the linter for its type plus the facets it
+ * reads. The one definition for both the editor's first state and every
+ * reconfiguration on a file switch or a lint setting change.
+ */
+export function lintExtensionFor(filePath: string | undefined) {
+  const forFile = currentFilePathFacet.of(filePath ?? '');
+  switch (getLintableFileType(filePath)) {
     case 'markdown':
       return [
         markdownLintExtension,
-        lintConfigFacet.of(store.lintConfig),
-        fileListForLintFacet.of(store.allFilePaths),
-        headingIndexForLintFacet.of(new Map()),
-        currentFilePathFacet.of(filePath ?? ''),
+        lintConfigFacet.of(useStore.getState().lintConfig),
+        headingIndexForLintFacet.of(buildHeadingTitleIndex()),
+        forFile,
       ];
     case 'json':
-      return [jsonLintExtension, currentFilePathFacetJson.of(filePath ?? '')];
+      return [jsonLintExtension, forFile];
     case 'xml':
-      return [xmlLintExtension, currentFilePathFacetXml.of(filePath ?? '')];
+      return [xmlLintExtension, forFile];
     case 'yaml':
-      return [yamlLintExtension, currentFilePathFacetYaml.of(filePath ?? '')];
+      return [yamlLintExtension, forFile];
     default:
       return [];
   }
 }
 
 let headingTitleCache: {
-  source: ReturnType<typeof useStore.getState>['headingIndex'];
+  source: ReturnType<typeof useStore.getState>['linkIndex'];
   titles: Map<string, string[]>;
 } | null = null;
 
 /** Heading titles per file for the lint facet, rebuilt only when the index is replaced. */
 export function buildHeadingTitleIndex(): Map<string, string[]> {
-  const { headingIndex } = useStore.getState();
-  if (headingTitleCache?.source === headingIndex) return headingTitleCache.titles;
+  const { linkIndex } = useStore.getState();
+  if (headingTitleCache && headingTitleCache.source === linkIndex) return headingTitleCache.titles;
   const titles = new Map<string, string[]>();
-  for (const [fp, headings] of headingIndex) {
+  for (const [fp, entry] of linkIndex) {
     titles.set(
       fp,
-      headings.map((h) => h.title)
+      entry.headings.map((h) => h.title)
     );
   }
-  headingTitleCache = { source: headingIndex, titles };
+  headingTitleCache = { source: linkIndex, titles };
   return titles;
 }
 
 export interface CreateEditorStateOptions {
   content: string;
   filePath?: string;
-  projectFiles: string[];
   compartments: EditorCompartments;
   onUpdate?: (update: ViewUpdate) => void;
 }
@@ -203,11 +198,10 @@ export interface CreateEditorStateOptions {
 export function createEditorState({
   content,
   filePath,
-  projectFiles,
   compartments,
   onUpdate,
 }: CreateEditorStateOptions) {
-  const isMarkdown = !filePath || filePath.endsWith('.md') || filePath.endsWith('.markdown');
+  const isMarkdown = !filePath || isMarkdownPath(filePath);
   const store = useStore.getState();
 
   const extensions = [
@@ -224,8 +218,7 @@ export function createEditorState({
       isMarkdown ? [...wikiLinkBrokenExtension, brokenLinksSetFacet.of(new Set())] : []
     ),
     compartments.fold.of(isMarkdown ? markdownFoldExtension : []),
-    compartments.filePaths.of(filePathsFacet.of(projectFiles)),
-    compartments.wikiLinkCompletion.of(isMarkdown ? fileListFacet.of([]) : []),
+    compartments.filePaths.of(projectFilesFacet.of(store.allFilePaths)),
     compartments.headingProvider.of(isMarkdown ? headingProviderFacet.of(() => []) : []),
     compartments.hover.of(
       isMarkdown
@@ -261,7 +254,7 @@ export function createEditorState({
       isMarkdown ? [renameHeadingExtension, renameHeadingCallbackFacet.of(() => {})] : []
     ),
     compartments.findReferences.of(isMarkdown ? showReferencesFacet.of(() => {}) : []),
-    compartments.lint.of(buildLintExtension(getLintableFileType(filePath), filePath, store)),
+    compartments.lint.of(lintExtensionFor(filePath)),
     compartments.gitGutter.of(createGitGutter([])),
     ...(compartments.blameGutter ? [compartments.blameGutter.of([])] : []),
     search({ top: true }),

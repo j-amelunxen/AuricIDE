@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { agentAttention, sortByUrgency, withReviewFlags, type AttentionReason } from './attention';
 import type { AgentEvent } from './events/types';
 

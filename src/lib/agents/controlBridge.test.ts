@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import fixtures from './agentControl.fixtures.json';
 import linkFixtures from './supervisorLink.fixtures.json';
 
@@ -150,6 +150,24 @@ describe('control-request kill', () => {
 
     expect(h.killRunningAgent).not.toHaveBeenCalled();
     expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'unknown_agent' } });
+  });
+
+  it('answers the failure, not killed, when the agent could not be stopped', async () => {
+    const h = host({
+      killRunningAgent: vi.fn(async () => {
+        throw new Error('Could not stop agent agent-3: refused');
+      }),
+    });
+    await handleControlRequest(
+      { reqId: 'r3', method: 'kill', params: { agentId: 'agent-3' }, expiresAt: fresh() },
+      h
+    );
+
+    expect(answered()[0].args).toMatchObject({
+      ok: false,
+      error: { code: 'internal', message: 'Could not stop agent agent-3: refused' },
+    });
+    expect(h.showToast).not.toHaveBeenCalled();
   });
 });
 

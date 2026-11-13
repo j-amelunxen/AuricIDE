@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import type { GitOperationName, GitRef, GitRefs } from '@/lib/tauri/gitGraph';
 import {
   buildCombinedMenu,

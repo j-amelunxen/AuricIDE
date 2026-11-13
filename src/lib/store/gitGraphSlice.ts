@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { layoutGraph, type GraphRow, type LayoutCarry } from '../git/graphLayout';
 import {
@@ -99,14 +100,8 @@ export interface GitGraphSlice {
   graphRevert: (repoPath: string, oid: string) => Promise<GraphOperationResult>;
 }
 
-/** What the slice reads from the rest of the store, duck-typed like mergeSlice does. */
-interface GraphHost {
-  refreshRepoStatus?: (repoPath: string) => Promise<void>;
-  loadBranches?: (repoPath: string) => Promise<void>;
-}
-
-export const EMPTY_GRAPH_ROWS: GraphRow[] = [];
-export const EMPTY_GRAPH_COMMITS: GraphCommit[] = [];
+const EMPTY_GRAPH_ROWS: GraphRow[] = [];
+const EMPTY_GRAPH_COMMITS: GraphCommit[] = [];
 
 const LOAD_FAILED_MESSAGE = 'Could not read the commit history.';
 const BUSY_MESSAGE = 'Another operation is still running.';
@@ -135,18 +130,6 @@ function emptyGraph(generation: number): GraphRepoState {
   };
 }
 
-export const selectGraph = (state: GitGraphSlice, repoPath: string) => state.graphs[repoPath];
-
-export const selectGraphRows = (state: GitGraphSlice, repoPath: string): GraphRow[] =>
-  state.graphs[repoPath]?.rows ?? EMPTY_GRAPH_ROWS;
-
-export const selectGraphDetail = (
-  state: GitGraphSlice,
-  repoPath: string,
-  oid: string,
-  parentIndex = 0
-): CommitDetail | undefined => state.graphs[repoPath]?.details[graphDetailKey(oid, parentIndex)];
-
 /** The commit a branch filter dims everything else against, or null when nothing is filtered. */
 export function resolveBranchFilterTip(
   filter: GraphBranchFilter,
@@ -157,8 +140,8 @@ export function resolveBranchFilterTip(
   return refs.refs.find((r) => r.name === filter)?.target ?? null;
 }
 
-export const createGitGraphSlice: StateCreator<GitGraphSlice> = (set, get) => {
-  const host = () => get() as GitGraphSlice & GraphHost;
+export const createGitGraphSlice: StateCreator<StoreState, [], [], GitGraphSlice> = (set, get) => {
+  const host = () => get();
 
   const patch = (repoPath: string, changes: Partial<GraphRepoState>) =>
     set((s) => {
@@ -250,7 +233,7 @@ export const createGitGraphSlice: StateCreator<GitGraphSlice> = (set, get) => {
   const reload = (repoPath: string) =>
     Promise.all([
       get().loadFirstPage(repoPath),
-      settle(host().refreshRepoStatus?.(repoPath)),
+      settle(host().refreshRepoStatus(repoPath)),
       settle(host().loadBranches?.(repoPath)),
     ]);
 

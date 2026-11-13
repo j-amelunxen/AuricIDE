@@ -1045,3 +1045,31 @@ fn a_schedule_json_without_exceptions_still_deserialises() {
     let parsed: Schedule = serde_json::from_value(value).unwrap();
     assert!(parsed.exceptions.is_empty());
 }
+
+#[test]
+fn a_payload_that_is_not_a_json_object_is_refused_on_save() {
+    let conn = test_db();
+    for bad in ["not json", "[1]", ""] {
+        let mut schedule = every_14_days();
+        schedule.payload = bad.into();
+        assert!(upsert_impl(&conn, &schedule).is_err(), "{bad:?}");
+    }
+    assert!(list_impl(&conn).unwrap().is_empty());
+}
+
+/// Another writer (the MCP server writes SQLite directly) can still store one;
+/// it must not fire as a reminder stripped of its title and actions.
+#[test]
+fn a_stored_payload_that_does_not_parse_is_skipped_not_fired_empty() {
+    let mut conn = test_db();
+    seed(&conn, &every_14_days());
+    conn.execute("UPDATE schedules SET payload = 'not json'", [])
+        .unwrap();
+
+    let fired = run_due_impl(&mut conn, at("2026-09-24 07:00:00")).expect("run");
+
+    assert_eq!(fired, 0);
+    assert!(crate::notifications::list_impl(&conn, None, None, None)
+        .unwrap()
+        .is_empty());
+}

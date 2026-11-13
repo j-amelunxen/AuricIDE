@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel, type AgentState } from '@/lib/agents/state';

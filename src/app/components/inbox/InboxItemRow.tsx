@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { formatNotificationAge } from '@/lib/notifications/format';
 import { projectIconFor } from '@/lib/quickAccess/icon';
 import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
@@ -22,8 +23,9 @@ import type {
   InboxItemPatch,
   ProjectPmOverview,
 } from '@/lib/tauri/inbox';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
-import { copyToClipboard } from '@/lib/tauri/clipboard';
+import type { StarredProject } from '@/lib/quickAccess/types';
+import { PRIORITY_NAME } from '@/lib/pm/labels';
+import { useCopyFeedback } from '@/lib/hooks/useCopyFeedback';
 
 export interface InboxItemRowProps {
   item: InboxItem;
@@ -55,13 +57,6 @@ type AssignMenuState =
 /** Classes shared by every small icon-only action button in this row. */
 const ICON_BUTTON_CLASS =
   'rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary';
-
-const PRIORITY_LABEL: Record<Priority, string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  critical: 'Critical',
-};
 
 const PRIORITY_CHIP_CLASS: Record<Priority, string> = {
   low: 'text-blue-300 hover:bg-blue-500/10',
@@ -99,7 +94,7 @@ export function InboxItemRow({
   const [assignMenu, setAssignMenu] = useState<AssignMenuState>(null);
   const [priorityMenu, setPriorityMenu] = useState<{ x: number; y: number } | null>(null);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback();
   const [textSheetOpen, setTextSheetOpen] = useState(false);
   const [openAttachment, setOpenAttachment] = useState<InboxAttachment | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -124,12 +119,7 @@ export function InboxItemRow({
 
   const copyContent = () => {
     const text = item.notes.trim() === '' ? item.title : `${item.title}\n\n${item.notes}`;
-    void copyToClipboard(text).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
+    void copy(text);
   };
 
   const pickProject = (option: ProjectPickerOption) => {
@@ -224,12 +214,12 @@ export function InboxItemRow({
           )}
           <button
             type="button"
-            aria-label={`Priority: ${PRIORITY_LABEL[item.priority]}`}
+            aria-label={`Priority: ${PRIORITY_NAME[item.priority]}`}
             title="Set priority"
             onClick={(e) => setPriorityMenu({ x: e.clientX, y: e.clientY })}
             className={`rounded px-1 py-0.5 normal-case tracking-normal ${PRIORITY_CHIP_CLASS[item.priority]}`}
           >
-            {PRIORITY_LABEL[item.priority]}
+            {PRIORITY_NAME[item.priority]}
           </button>
           {item.dueDate !== null && (
             <span
@@ -411,7 +401,7 @@ export function InboxItemRow({
           x={priorityMenu.x}
           y={priorityMenu.y}
           options={PRIORITIES.map((priority) => ({
-            label: PRIORITY_LABEL[priority],
+            label: PRIORITY_NAME[priority],
             action: () => onUpdate(item.id, { priority }),
           }))}
           onClose={() => setPriorityMenu(null)}

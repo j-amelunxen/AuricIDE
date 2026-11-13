@@ -2,16 +2,14 @@
 
 use super::matcher::resolve_manual_until;
 use super::{parse_scope_pattern, QuotaBlock, QuotaBlockReason};
-use crate::supervisor::policy::normalize_provider_id;
-use crate::supervisor::write_json_atomic;
+use crate::json_store::{self, write_json, Unreadable};
+use crate::providers::normalize_provider_id;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tauri::{Emitter, Manager};
 
 pub const QUOTA_BLOCKS_FILE_NAME: &str = "quota-blocks.json";
 pub const DEFAULT_QUOTA_BLOCK_TTL_MINUTES: u32 = 60;
-pub const QUOTA_BLOCKS_UPDATED_EVENT: &str = "quota-blocks-updated";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,28 +33,30 @@ pub fn blocks_path_in(app_data: &Path) -> PathBuf {
     app_data.join(QUOTA_BLOCKS_FILE_NAME)
 }
 
-/// Reads `<app_data>/quota-blocks.json` and prunes any blocks whose `expires_at`
-/// is at or before `now`.
+/// Reads `<app_data>/quota-blocks.json` without the blocks whose `expires_at`
+/// is at or before `now`. Reading never writes: expired entries leave the file
+/// with the next change, which holds the lock. A file this build cannot read is
+/// no blocks, and is moved aside so the next write does not replace it; one
+/// that cannot even be moved is left alone and still reads as no blocks.
 pub fn read_blocks_at(app_data: &Path, now: DateTime<Utc>) -> QuotaBlocksFile {
     let path = blocks_path_in(app_data);
-    let Ok(raw) = std::fs::read_to_string(&path) else {
+    let Ok(Some(mut parsed)) =
+        json_store::load::<QuotaBlocksFile>(&path, Some(1), Unreadable::MoveAside)
+    else {
         return QuotaBlocksFile::default();
     };
-    let Ok(mut parsed) = serde_json::from_str::<QuotaBlocksFile>(&raw) else {
-        return QuotaBlocksFile::default();
-    };
-    if parsed.version != 1 {
-        return QuotaBlocksFile::default();
-    }
     if parsed.default_ttl_minutes == 0 {
         parsed.default_ttl_minutes = DEFAULT_QUOTA_BLOCK_TTL_MINUTES;
     }
-    let before = parsed.blocks.len();
     parsed.blocks.retain(|block| block.is_active_at(now));
-    if parsed.blocks.len() != before {
-        let _ = write_json_atomic(&path, &parsed);
-    }
     parsed
+}
+
+/// Held across a read-change-write: agent exits and the control socket change
+/// this file from different threads, and both builds of the app share it.
+fn lock_blocks(app_data: &Path) -> Result<json_store::FileLock, String> {
+    json_store::FileLock::acquire(app_data, "quota-blocks.lock")
+        .map_err(|error| format!("Could not lock the quota blocks: {error}"))
 }
 
 /// Active quota blocks as of right now.
@@ -71,13 +71,23 @@ pub fn upsert_block_at(
     block: QuotaBlock,
     now: DateTime<Utc>,
 ) -> Result<QuotaBlocksFile, String> {
+    let _lock = lock_blocks(app_data)?;
+    upsert_locked(app_data, block, now)
+}
+
+/// [`upsert_block_at`] for a caller that already holds the lock.
+fn upsert_locked(
+    app_data: &Path,
+    block: QuotaBlock,
+    now: DateTime<Utc>,
+) -> Result<QuotaBlocksFile, String> {
     let mut file = read_blocks_at(app_data, now);
     file.blocks.retain(|existing| existing.id != block.id);
     if block.is_active_at(now) {
         file.blocks.push(block);
         file.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
-    write_json_atomic(&blocks_path_in(app_data), &file)?;
+    write_json(&blocks_path_in(app_data), &file)?;
     Ok(file)
 }
 
@@ -89,6 +99,7 @@ pub fn record_detected_block_at(
     block: QuotaBlock,
     now: DateTime<Utc>,
 ) -> Result<bool, String> {
+    let _lock = lock_blocks(app_data)?;
     let expiry = |candidate: &QuotaBlock| DateTime::parse_from_rfc3339(&candidate.expires_at).ok();
     let already_covered = read_blocks_at(app_data, now)
         .blocks
@@ -97,7 +108,7 @@ pub fn record_detected_block_at(
     if already_covered {
         return Ok(false);
     }
-    upsert_block_at(app_data, block, now)?;
+    upsert_locked(app_data, block, now)?;
     Ok(true)
 }
 
@@ -158,6 +169,7 @@ pub fn clear_block_with_status_at(
             QuotaBlock::make_id(prov, &parse_scope_pattern(Some(rest)))
         }
     });
+    let _lock = lock_blocks(app_data)?;
     let mut file = read_blocks_at(app_data, now);
     let before = file.blocks.len();
     file.blocks.retain(|block| {
@@ -167,7 +179,7 @@ pub fn clear_block_with_status_at(
             && normalize_provider_id(&block.provider) != norm
     });
     let removed = file.blocks.len() != before;
-    write_json_atomic(&blocks_path_in(app_data), &file)?;
+    write_json(&blocks_path_in(app_data), &file)?;
     Ok((file, removed))
 }
 
@@ -181,99 +193,45 @@ pub fn clear_block_at(
     clear_block_with_status_at(app_data, id_or_provider, now).map(|(file, _)| file)
 }
 
-/// Clears all active blocks and writes the updated file.
-pub fn clear_all_blocks_at(app_data: &Path, now: DateTime<Utc>) -> Result<QuotaBlocksFile, String> {
-    let mut file = read_blocks_at(app_data, now);
-    file.blocks.clear();
-    write_json_atomic(&blocks_path_in(app_data), &file)?;
-    Ok(file)
-}
-
-/// Updates the default TTL in minutes (`1..=10080`).
-pub fn set_default_ttl_at(
-    app_data: &Path,
-    minutes: u32,
-    now: DateTime<Utc>,
-) -> Result<QuotaBlocksFile, String> {
-    if minutes == 0 || minutes > 7 * 24 * 60 {
-        return Err("defaultTtlMinutes must be between 1 and 10080".to_string());
-    }
-    let mut file = read_blocks_at(app_data, now);
-    file.default_ttl_minutes = minutes;
-    write_json_atomic(&blocks_path_in(app_data), &file)?;
-    Ok(file)
-}
-
-fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|error| format!("No app data directory: {error}"))
-}
-
-pub fn emit_updated(app: &tauri::AppHandle, state: &QuotaBlocksFile) {
-    let _ = app.emit(QUOTA_BLOCKS_UPDATED_EVENT, state);
-}
-
-// The commands below are not in `generate_handler!`: no frontend reads or sets
-// blocks yet. The control socket methods in `control_socket/quota_blocks.rs` are
-// the only way in from outside the backend today.
-
-#[tauri::command]
-pub fn quota_blocks_get(app: tauri::AppHandle) -> Result<QuotaBlocksFile, String> {
-    Ok(read_blocks_at(&app_data_dir(&app)?, Utc::now()))
-}
-
-#[tauri::command]
-pub fn quota_block_set(
-    app: tauri::AppHandle,
-    provider: String,
-    scope: Option<String>,
-    until: Option<String>,
-    duration_minutes: Option<u32>,
-    reason: Option<String>,
-) -> Result<QuotaBlocksFile, String> {
-    let updated = set_manual_block_at(
-        &app_data_dir(&app)?,
-        &provider,
-        scope.as_deref(),
-        until.as_deref(),
-        duration_minutes,
-        reason.as_deref(),
-        Utc::now(),
-    )?;
-    emit_updated(&app, &updated);
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn quota_block_clear(app: tauri::AppHandle, id: String) -> Result<QuotaBlocksFile, String> {
-    let updated = clear_block_at(&app_data_dir(&app)?, &id, Utc::now())?;
-    emit_updated(&app, &updated);
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn quota_blocks_clear_all(app: tauri::AppHandle) -> Result<QuotaBlocksFile, String> {
-    let updated = clear_all_blocks_at(&app_data_dir(&app)?, Utc::now())?;
-    emit_updated(&app, &updated);
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn quota_blocks_set_default_ttl(
-    app: tauri::AppHandle,
-    minutes: u32,
-) -> Result<QuotaBlocksFile, String> {
-    let updated = set_default_ttl_at(&app_data_dir(&app)?, minutes, Utc::now())?;
-    emit_updated(&app, &updated);
-    Ok(updated)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::quota_blocks::QuotaBlockScope;
     use chrono::TimeZone;
+
+    fn files_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A file this build cannot read is kept aside, never written over: the
+    /// next block starts a fresh file and the broken one keeps its content.
+    #[test]
+    fn an_unreadable_file_is_moved_aside_and_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 10, 23, 18, 0, 0).unwrap();
+        let broken = r#"{"version":2,"blocks":"from a newer build"}"#;
+        std::fs::write(blocks_path_in(dir.path()), broken).unwrap();
+
+        set_manual_block_at(dir.path(), "grok", None, None, None, None, now).unwrap();
+
+        let names = files_in(dir.path());
+        let aside: Vec<&String> = names
+            .iter()
+            .filter(|name| name.starts_with("quota-blocks.json.unreadable-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "{names:?}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(aside[0])).unwrap(),
+            broken
+        );
+        assert_eq!(read_blocks_at(dir.path(), now).blocks.len(), 1);
+    }
 
     #[test]
     fn persists_across_restarts_prunes_expired_and_clears_by_id() {

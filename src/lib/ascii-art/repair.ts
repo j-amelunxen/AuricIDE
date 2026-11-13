@@ -192,7 +192,6 @@ function traceBoxFromBottom(lines: string[], bottomRow: number, initialLeft: num
   contentRows.reverse();
   const topRow = contentRows[0];
 
-  // Determine leftCol
   const leftVotes = new Map<number, number>();
   counterIncrement(leftVotes, initialLeft);
   for (const r of contentRows) {
@@ -461,7 +460,7 @@ function cleanConnectorLines(lines: string[], boxRows: Map<number, Box[]>): void
 // Main algorithm
 // ---------------------------------------------------------------------------
 
-function fixAsciiArt(text: string): string {
+export function repairAsciiArt(text: string): string {
   const lines = text.split('\n');
   const boxes = findBoxes(lines);
   if (boxes.length === 0) return text;
@@ -484,12 +483,4 @@ function fixAsciiArt(text: string): string {
   }
 
   return lines.join('\n');
-}
-
-// ---------------------------------------------------------------------------
-// Public API (unchanged export contract)
-// ---------------------------------------------------------------------------
-
-export function repairAsciiArt(text: string): string {
-  return fixAsciiArt(text);
 }

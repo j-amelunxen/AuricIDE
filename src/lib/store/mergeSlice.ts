@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import {
   autoResolution,
@@ -140,18 +141,7 @@ export interface MergeSlice {
   resetMergeInMemory: () => void;
 }
 
-/** What the slice reads from the rest of the store, duck-typed like agentSlice does. */
-interface MergeHost {
-  rootPath?: string | null;
-  refreshRepoStatus?: (repoPath: string) => Promise<void>;
-}
-
 const NO_CONFLICTS: GitConflictEntry[] = [];
-
-export const selectMergeState =
-  (repoPath: string) =>
-  (s: MergeSlice): GitMergeState | null =>
-    s.mergeStates[repoPath] ?? null;
 
 /** The repo's conflicts; one shared empty array when there are none known. */
 export const selectRepoConflicts =
@@ -248,8 +238,8 @@ function composedContent(state: MergeDocState): string {
   return text;
 }
 
-export const createMergeSlice: StateCreator<MergeSlice> = (set, get) => {
-  const host = () => get() as MergeSlice & MergeHost;
+export const createMergeSlice: StateCreator<StoreState, [], [], MergeSlice> = (set, get) => {
+  const host = () => get();
 
   const updateDoc = (tabId: string, update: (doc: MergeDocState) => MergeDocState) =>
     set((s) => {
@@ -286,7 +276,7 @@ export const createMergeSlice: StateCreator<MergeSlice> = (set, get) => {
 
   const refreshAll = async (repoPath: string) => {
     await get().refreshMergeState(repoPath);
-    await host().refreshRepoStatus?.(repoPath);
+    await host().refreshRepoStatus(repoPath);
   };
 
   return {

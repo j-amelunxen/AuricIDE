@@ -1,5 +1,44 @@
-use super::types::KvEntry;
+use super::types::{DatabaseState, KvEntry};
 use rusqlite::{params, Connection};
+use std::collections::BTreeMap;
+
+impl DatabaseState {
+    /// Runs `f` on the open database of a project; an error when the project
+    /// has none open (`init_project_db` was not called, or it was closed).
+    pub fn with_project<T>(
+        &self,
+        project_path: &str,
+        f: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let connections = self.connections.lock().unwrap();
+        let conn = connections
+            .get(project_path)
+            .ok_or("Database not initialized for this project")?;
+        f(conn)
+    }
+
+    /// What a project's database holds for `keys` of a namespace: the
+    /// project's overrides of an application setting. A project whose
+    /// database is not open holds none, so it overrides nothing.
+    pub fn kv_values(
+        &self,
+        project_path: &str,
+        namespace: &str,
+        keys: &[&str],
+    ) -> Result<BTreeMap<String, String>, String> {
+        let connections = self.connections.lock().unwrap();
+        let Some(conn) = connections.get(project_path) else {
+            return Ok(BTreeMap::new());
+        };
+        let mut found = BTreeMap::new();
+        for key in keys {
+            if let Some(value) = kv_get(conn, namespace, key)? {
+                found.insert((*key).to_string(), value);
+            }
+        }
+        Ok(found)
+    }
+}
 
 pub fn kv_get(conn: &Connection, namespace: &str, key: &str) -> Result<Option<String>, String> {
     let result = conn.query_row(
@@ -56,8 +95,8 @@ pub fn kv_list(conn: &Connection, namespace: &str) -> Result<Vec<KvEntry>, Strin
             })
         })
         .map_err(|e| format!("Failed to list keys: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read keys: {}", e))?;
 
     Ok(entries)
 }

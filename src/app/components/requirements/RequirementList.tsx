@@ -1,7 +1,8 @@
 'use client';
 
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { verificationFreshness } from '@/lib/pm/requirementFreshness';
 
 interface RequirementListProps {
   requirements: PmRequirement[];
@@ -31,21 +32,19 @@ const STATUS_DOT: Record<string, string> = {
   deprecated: 'bg-red-400/60',
 };
 
-const STALE_THRESHOLD_MS = 30 * 86400000;
-
 function getVerificationIndicator(req: PmRequirement): {
   className: string;
   label: string;
   type: 'dot' | 'dash';
 } {
-  if (req.lastVerifiedAt === null) {
-    return { className: 'text-foreground-muted', label: 'never', type: 'dash' };
+  switch (verificationFreshness(req)) {
+    case 'never':
+      return { className: 'text-foreground-muted', label: 'never', type: 'dash' };
+    case 'fresh':
+      return { className: 'bg-green-400', label: 'fresh', type: 'dot' };
+    case 'stale':
+      return { className: 'bg-amber-400', label: 'stale', type: 'dot' };
   }
-  const age = Date.now() - Date.parse(req.lastVerifiedAt);
-  if (age <= STALE_THRESHOLD_MS) {
-    return { className: 'bg-green-400', label: 'fresh', type: 'dot' };
-  }
-  return { className: 'bg-amber-400', label: 'stale', type: 'dot' };
 }
 
 export function RequirementList({

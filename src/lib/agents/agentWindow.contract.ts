@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import { AGENT_STATUSES, type AgentInfo } from '@/lib/agents/types';
 import type { GridCells } from './terminalGrid';
 import fixtures from './agentWindow.fixtures.json';
 
@@ -58,9 +58,6 @@ export const AGENT_WINDOW_CLIENT_EVENTS: Readonly<{
   action: fixtures.clientEvents.action,
 };
 
-/** The geometry every agent PTY opens at, before any view has fitted it. */
-export const DEFAULT_PTY_SIZE: Readonly<{ rows: number; cols: number }> = fixtures.defaultPtySize;
-
 /** How often the main window re-sends the roster at most. */
 export const ROSTER_THROTTLE_MS: number = fixtures.rosterThrottleMs;
 
@@ -81,7 +78,7 @@ const dimension = z.number().int().positive();
 const agentInfo = z.looseObject({
   id: agentId,
   name: z.string(),
-  status: z.enum(['running', 'idle', 'queued', 'error']),
+  status: z.enum(AGENT_STATUSES),
   model: z.string(),
   provider: z.string(),
   startedAt: z.number(),

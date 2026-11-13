@@ -1,13 +1,8 @@
 import { comboMenuLabel } from './combo';
 import { menuSkillEntries } from './menuSkills';
 import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
-import {
-  quickAccessCombos,
-  quickAccessSkills,
-  type QuickAccessCombo,
-  type QuickAccessSkill,
-  type StarredProject,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessCombos, quickAccessSkills } from './projectEntries';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
 
 export const COMBO_SLOT_PREFIX = 'combo:';
 
@@ -63,10 +58,6 @@ export function launchEntries(
 
 export function wheelSlotId(entry: WheelLaunchEntry): string {
   return entry.kind === 'combo' ? `${COMBO_SLOT_PREFIX}${entry.combo.id}` : entry.skill.id;
-}
-
-export function wheelKnownIds(project: StarredProject): string[] {
-  return launchEntriesForProject(project).map(wheelSlotId);
 }
 
 export function wheelEntryLabel(entry: WheelLaunchEntry): string {

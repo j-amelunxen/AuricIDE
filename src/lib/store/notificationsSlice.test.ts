@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand';
 import type { Notification } from '@/lib/notifications/types';
 
 const mockDispatch = vi.fn();
@@ -34,11 +34,7 @@ vi.mock('@/lib/tauri/notifications', () => ({
   notificationsDelete: (...args: unknown[]) => mockDelete(...args),
 }));
 
-import {
-  createNotificationsSlice,
-  mergeNotifications,
-  type NotificationsSlice,
-} from './notificationsSlice';
+import { mergeNotifications } from './notificationsSlice';
 
 let rowId = 0;
 
@@ -69,7 +65,7 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
 }
 
 describe('notificationsSlice', () => {
-  let store: StoreApi<NotificationsSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -82,7 +78,7 @@ describe('notificationsSlice', () => {
     mockMarkAllRead.mockResolvedValue(undefined);
     mockAnswer.mockResolvedValue(undefined);
     mockClear.mockResolvedValue(undefined);
-    store = createStore<NotificationsSlice>()((...a) => ({ ...createNotificationsSlice(...a) }));
+    store = createFullTestStore();
   });
 
   describe('dispatchNotification', () => {
@@ -302,6 +298,22 @@ describe('notificationsSlice', () => {
       expect(store.getState().notifications[0].answer).toBe('yes');
       expect(mockAnswer).not.toHaveBeenCalled();
     });
+
+    it('keeps the question open and says so when the answer did not reach the database', async () => {
+      const row = makeNotification({ kind: 'ask', id: 7 });
+      store.setState({ notifications: [row], notificationsUnreadCount: 1 });
+      mockAnswer.mockRejectedValueOnce(new Error('database is locked'));
+
+      await store.getState().answerNotification(row.uid, 'yes');
+
+      const after = store.getState().notifications[0];
+      expect(after.answeredAt).toBeNull();
+      expect(after.answer).toBe(row.answer);
+      expect(store.getState().notificationsUnreadCount).toBe(1);
+      expect(store.getState().toasts.map((t) => t.message)).toEqual([
+        'Could not send the answer: database is locked',
+      ]);
+    });
   });
 
   describe('clearNotifications', () => {
@@ -432,7 +444,7 @@ describe('mergeNotifications', () => {
 // The Command Center marks read and clears one project at a time, so the scope
 // argument decides what a button touches — and what it must leave alone.
 describe('scoped mark-all-read and clear', () => {
-  let store: StoreApi<NotificationsSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -440,7 +452,7 @@ describe('scoped mark-all-read and clear', () => {
     mockMarkRead.mockResolvedValue(undefined);
     mockMarkAllRead.mockResolvedValue(undefined);
     mockClear.mockResolvedValue(undefined);
-    store = createStore<NotificationsSlice>()((...a) => ({ ...createNotificationsSlice(...a) }));
+    store = createFullTestStore();
     store.setState({
       notifications: [
         makeNotification({ uid: 'app-1', projectPath: null }),

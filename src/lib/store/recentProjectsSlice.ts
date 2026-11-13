@@ -1,7 +1,8 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
+import { APP_CONFIG_KEYS, readAppJson, writeAppJson } from '@/lib/config/appConfig';
 import * as nativeRecentProjects from '../tauri/recentProjects';
 
-const STORAGE_KEY = 'auric-recent-projects';
 /** How many projects the recency list keeps — and the picker offers all of them. */
 export const MAX_RECENT = 50;
 let syncRevision = 0;
@@ -17,22 +18,12 @@ export interface RecentProjectsSlice {
 }
 
 function persist(projects: RecentProject[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-  } catch {
-    // storage full or unavailable — silently ignore
-  }
+  writeAppJson(APP_CONFIG_KEYS.recentProjects, projects);
 }
 
 function loadLegacyProjects(): RecentProject[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  const parsed = readAppJson(APP_CONFIG_KEYS.recentProjects);
+  return Array.isArray(parsed) ? (parsed as RecentProject[]) : [];
 }
 
 function applyNativeResult(
@@ -43,7 +34,10 @@ function applyNativeResult(
   persist(projects);
 }
 
-export const createRecentProjectsSlice: StateCreator<RecentProjectsSlice> = (set, get) => ({
+export const createRecentProjectsSlice: StateCreator<StoreState, [], [], RecentProjectsSlice> = (
+  set,
+  get
+) => ({
   recentProjects: [],
 
   addRecentProject: (path) => {

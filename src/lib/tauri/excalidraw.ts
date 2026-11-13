@@ -1,10 +1,6 @@
 import { invoke } from './invoke';
 import type { ExcalidrawCollection, ExcalidrawSceneSummary } from '../excalidraw/types';
 
-export async function excalidrawTestConnection(projectPath: string): Promise<string> {
-  return await invoke<string>('excalidraw_test_connection', { projectPath });
-}
-
 export async function excalidrawListCollections(
   projectPath: string
 ): Promise<ExcalidrawCollection[]> {

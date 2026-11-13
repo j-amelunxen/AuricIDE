@@ -1,7 +1,7 @@
 import { type EditorState, type Extension } from '@codemirror/state';
 import { foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { keymap } from '@codemirror/view';
-import { extractHeadings } from './markdownHeadingParser';
+import { extractHeadings, matchHeadingLine } from '../markdown/markdownHeadingParser';
 
 /**
  * Compute the fold range for a heading line.
@@ -17,14 +17,12 @@ export function getMarkdownFoldRange(
   const line = state.doc.lineAt(lineFrom);
   const lineText = line.text;
 
-  // Check if this line is a heading
-  const match = /^(#{1,6})\s+/.exec(lineText);
+  const match = matchHeadingLine(lineText);
   if (!match) return null;
 
-  const level = match[1].length;
+  const level = match.level;
   const headings = extractHeadings(doc);
 
-  // Find this heading in the list
   const idx = headings.findIndex((h) => h.from === lineFrom);
   if (idx === -1) return null;
 
@@ -39,7 +37,6 @@ export function getMarkdownFoldRange(
 
   const foldFrom = lineTo;
 
-  // Nothing to fold
   if (foldFrom >= foldEnd) return null;
 
   return { from: foldFrom, to: foldEnd };

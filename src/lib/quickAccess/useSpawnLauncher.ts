@@ -2,7 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import { openSkillSpawnDialog } from './launchSkill';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
 
 /**
  * Opens the spawn dialog for a repo, optionally seeded from a skill.

@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import { agentColorHex, type AgentColor } from './colors';
 import { supervisorFamilyRoots } from './supervisorFamily';
 

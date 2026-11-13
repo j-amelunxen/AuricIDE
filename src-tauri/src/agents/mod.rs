@@ -1,6 +1,7 @@
 pub mod awaiting_input;
 pub mod claude_mcp_guard;
 pub mod exit_log;
+mod finish;
 pub mod human_draft;
 pub mod ids;
 pub mod launch_dir;
@@ -10,20 +11,17 @@ pub mod output_buffer;
 pub mod persistence;
 pub mod progress_output;
 pub mod project_binding;
+pub mod pty;
 pub mod questions;
 mod quota_detection;
 pub mod run_results;
-pub mod shell_env;
 pub mod terminal_input;
 pub mod types;
 pub mod write_sandbox;
 
 pub use manager::*;
 pub use persistence::*;
-pub use shell_env::*;
 pub use types::*;
 
-#[cfg(test)]
-mod manager_deny_tui_tests;
 #[cfg(test)]
 mod tests;

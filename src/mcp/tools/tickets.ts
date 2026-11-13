@@ -7,10 +7,6 @@ import { isValidDueDate } from '@/lib/inbox/dueDate';
 import { assertOneOf, PRIORITIES, TICKET_STATUSES } from '@/lib/pm/enums';
 import { normalizeTicketSkills } from '@/lib/pm/ticketSkills';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface Ticket {
   id: string;
   epic_id: string;
@@ -71,10 +67,6 @@ function parseDueDate(value: string | null | undefined): string | null {
   }
   return value;
 }
-
-// ---------------------------------------------------------------------------
-// Pure functions
-// ---------------------------------------------------------------------------
 
 export function listTickets(db: Database.Database, params?: ListTicketsParams): Ticket[] {
   const conditions: string[] = [];
@@ -274,10 +266,6 @@ export function getUnfinishedOverview(db: Database.Database): UnfinishedOverview
 
   return result;
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerTicketTools(server: FastMCP, db: Database.Database): void {
   server.addTool({

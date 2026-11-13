@@ -5,7 +5,7 @@ import {
   useAgentAndCommandHandlers,
   type UseAgentAndCommandHandlersProps,
 } from './useAgentAndCommandHandlers';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 
 const showAgentInWindow = vi.fn(async (_agentId: string): Promise<boolean> => true);

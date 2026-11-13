@@ -1,5 +1,5 @@
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '../config/appConfig';
-import type { PermissionMode } from '../tauri/agents';
+import type { PermissionMode } from './types';
 
 /** One app-level envelope containing launch choices scoped by working directory. */
 export const SPAWN_DEFAULTS_KEY = APP_CONFIG_KEYS.spawnDefaults;

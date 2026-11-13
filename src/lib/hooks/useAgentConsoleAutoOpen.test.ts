@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useAgentConsoleAutoOpen } from './useAgentConsoleAutoOpen';
 import { useStore } from '@/lib/store';
 import { setAppConfigValue } from '@/lib/config/appConfig';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 
 const runningAgent: AgentInfo = {
   id: 'a1',

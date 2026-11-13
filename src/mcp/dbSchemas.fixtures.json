@@ -1,0 +1,313 @@
+{
+  "$comment": "Every table and index a fresh database holds, whitespace-collapsed. The IDE (Rust) and the MCP server (src/mcp) both create and migrate these databases; both test suites compare a fresh one with this fixture, so a migration on one side alone fails both. rustOnly names objects only the IDE creates (project migration 14).",
+  "project": {
+    "rustOnly": ["agent_prompt_history", "idx_agent_prompt_history_created"],
+    "objects": [
+      {
+        "type": "index",
+        "name": "idx_agent_prompt_history_created",
+        "sql": "CREATE INDEX idx_agent_prompt_history_created ON agent_prompt_history(created_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_blueprints_category",
+        "sql": "CREATE INDEX idx_blueprints_category ON blueprints(category)"
+      },
+      {
+        "type": "index",
+        "name": "idx_deps_source",
+        "sql": "CREATE INDEX idx_deps_source ON pm_dependencies(source_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_deps_target",
+        "sql": "CREATE INDEX idx_deps_target ON pm_dependencies(target_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goal_req_links_goal",
+        "sql": "CREATE INDEX idx_goal_req_links_goal ON pm_goal_requirement_links(goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goal_reviews_goal",
+        "sql": "CREATE INDEX idx_goal_reviews_goal ON pm_goal_reviews(goal_id, created_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goal_runs_goal",
+        "sql": "CREATE INDEX idx_goal_runs_goal ON pm_goal_runs(goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goal_stations_goal",
+        "sql": "CREATE INDEX idx_goal_stations_goal ON pm_goal_stations(goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goal_status_history_goal",
+        "sql": "CREATE INDEX idx_goal_status_history_goal ON pm_goal_status_history(goal_id, changed_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_goals_parent",
+        "sql": "CREATE INDEX idx_goals_parent ON pm_goals(parent_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_agent_usage_goal",
+        "sql": "CREATE INDEX idx_pm_agent_usage_goal ON pm_agent_usage(goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_agent_usage_started",
+        "sql": "CREATE INDEX idx_pm_agent_usage_started ON pm_agent_usage(started_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_agent_usage_ticket",
+        "sql": "CREATE INDEX idx_pm_agent_usage_ticket ON pm_agent_usage(ticket_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_goal_deps_goal",
+        "sql": "CREATE INDEX idx_pm_goal_deps_goal ON pm_goal_dependencies(goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_goal_deps_target",
+        "sql": "CREATE INDEX idx_pm_goal_deps_target ON pm_goal_dependencies(depends_on_goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_pm_requirements_req_id",
+        "sql": "CREATE UNIQUE INDEX idx_pm_requirements_req_id ON pm_requirements(req_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_req_test_links_req",
+        "sql": "CREATE INDEX idx_req_test_links_req ON pm_requirement_test_links(requirement_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_req_test_links_tc",
+        "sql": "CREATE INDEX idx_req_test_links_tc ON pm_requirement_test_links(test_case_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_status_history_ticket",
+        "sql": "CREATE INDEX idx_status_history_ticket ON pm_status_history(ticket_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_test_cases_ticket",
+        "sql": "CREATE INDEX idx_test_cases_ticket ON pm_test_cases(ticket_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_ticket_reviews_ticket",
+        "sql": "CREATE INDEX idx_ticket_reviews_ticket ON pm_ticket_reviews(ticket_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_tickets_epic",
+        "sql": "CREATE INDEX idx_tickets_epic ON pm_tickets(epic_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_tickets_goal",
+        "sql": "CREATE INDEX idx_tickets_goal ON pm_tickets(goal_id)"
+      },
+      {
+        "type": "table",
+        "name": "_migrations",
+        "sql": "CREATE TABLE _migrations ( id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "agent_prompt_history",
+        "sql": "CREATE TABLE agent_prompt_history ( id TEXT PRIMARY KEY, prompt TEXT NOT NULL, agent_name TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '', cwd TEXT, source TEXT NOT NULL DEFAULT 'ui', created_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "blueprints",
+        "sql": "CREATE TABLE blueprints ( id TEXT PRIMARY KEY, name TEXT NOT NULL, tech_stack TEXT NOT NULL DEFAULT '', goal TEXT NOT NULL DEFAULT '', complexity TEXT NOT NULL DEFAULT 'MEDIUM', category TEXT NOT NULL DEFAULT 'architectures', description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , spec TEXT NOT NULL DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "kv_store",
+        "sql": "CREATE TABLE kv_store ( namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (namespace, key) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_agent_usage",
+        "sql": "CREATE TABLE pm_agent_usage ( id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, ticket_id TEXT, goal_id TEXT, run_kind TEXT NOT NULL, run_source TEXT NOT NULL, provider TEXT NOT NULL, model TEXT, headless INTEGER NOT NULL DEFAULT 0, session_id TEXT, ticket_status_at_start TEXT, started_at TEXT NOT NULL, finished_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, outcome TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, cost_usd REAL, cost_source TEXT NOT NULL, match_kind TEXT NOT NULL DEFAULT 'exact', estimate_cost_usd REAL, estimate_input_tokens INTEGER, estimate_output_tokens INTEGER, estimate_cache_read_tokens INTEGER, estimate_cache_write_tokens INTEGER, unpriced_models TEXT, model_usage_json TEXT, num_turns INTEGER , active_ms INTEGER, on_ms INTEGER, agent_runs INTEGER, runtime_partial INTEGER, external_id TEXT, external_run_id TEXT, closed_by TEXT)"
+      },
+      {
+        "type": "table",
+        "name": "pm_dependencies",
+        "sql": "CREATE TABLE pm_dependencies ( id TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_id TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL, UNIQUE(source_id, target_id) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_epics",
+        "sql": "CREATE TABLE pm_epics ( id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_dependencies",
+        "sql": "CREATE TABLE pm_goal_dependencies ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, depends_on_goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(goal_id, depends_on_goal_id) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_requirement_links",
+        "sql": "CREATE TABLE pm_goal_requirement_links ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, requirement_id TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(goal_id, requirement_id) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_reviews",
+        "sql": "CREATE TABLE pm_goal_reviews ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, verdict TEXT NOT NULL CHECK (verdict IN ('approve', 'rework', 'escalate')), decision TEXT NOT NULL CHECK (decision IN ('approve', 'rework', 'escalate')), criteria_met INTEGER NOT NULL CHECK (typeof(criteria_met) = 'integer' AND criteria_met BETWEEN 1 AND 5), solves_problem INTEGER NOT NULL CHECK (typeof(solves_problem) = 'integer' AND solves_problem BETWEEN 1 AND 5), solution_quality INTEGER NOT NULL CHECK (typeof(solution_quality) = 'integer' AND solution_quality BETWEEN 1 AND 5), scope_respected INTEGER NOT NULL CHECK (typeof(scope_respected) = 'integer' AND scope_respected BETWEEN 1 AND 5), reason TEXT NOT NULL CHECK (length(trim(reason)) > 0), criteria TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(criteria) AND json_type(criteria) = 'array'), findings TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(findings) AND json_type(findings) = 'array'), rework_steps TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(rework_steps) AND json_type(rework_steps) = 'array'), reviewer TEXT NOT NULL DEFAULT '', attempt INTEGER NOT NULL CHECK (typeof(attempt) = 'integer' AND attempt >= 1), created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (goal_id, attempt) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_runs",
+        "sql": "CREATE TABLE pm_goal_runs ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, agent_id TEXT NOT NULL DEFAULT '', ticket_id TEXT, prompt TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'ui', outcome TEXT NOT NULL DEFAULT 'running', summary TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_stations",
+        "sql": "CREATE TABLE pm_goal_stations ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'planned', evidence_kind TEXT NOT NULL DEFAULT 'claim', predicate TEXT NOT NULL DEFAULT '{\"type\":\"undefined\"}', evidence_note TEXT NOT NULL DEFAULT '', ticket_id TEXT REFERENCES pm_tickets(id) ON DELETE SET NULL, lane INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, last_checked_at TEXT, done_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , source_context TEXT NOT NULL DEFAULT 'null')"
+      },
+      {
+        "type": "table",
+        "name": "pm_goal_status_history",
+        "sql": "CREATE TABLE pm_goal_status_history ( id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE, from_status TEXT, to_status TEXT NOT NULL, changed_at TEXT NOT NULL DEFAULT (datetime('now')), source TEXT NOT NULL DEFAULT 'ui' )"
+      },
+      {
+        "type": "table",
+        "name": "pm_goals",
+        "sql": "CREATE TABLE pm_goals ( id TEXT PRIMARY KEY, parent_id TEXT REFERENCES pm_goals(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', success_criteria TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', priority TEXT NOT NULL DEFAULT 'normal', goal_prompt TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL DEFAULT 'ui', achieved_at TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , work_mode TEXT NOT NULL DEFAULT 'auto', mission_path TEXT, bundle TEXT)"
+      },
+      {
+        "type": "table",
+        "name": "pm_requirement_test_links",
+        "sql": "CREATE TABLE pm_requirement_test_links ( id TEXT PRIMARY KEY, requirement_id TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE, test_case_id TEXT NOT NULL REFERENCES pm_test_cases(id) ON DELETE CASCADE, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(requirement_id, test_case_id) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_requirements",
+        "sql": "CREATE TABLE pm_requirements ( id TEXT PRIMARY KEY, req_id TEXT NOT NULL UNIQUE, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'functional', category TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'draft', rationale TEXT NOT NULL DEFAULT '', acceptance_criteria TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , applies_to TEXT NOT NULL DEFAULT '[]', last_verified_at TEXT)"
+      },
+      {
+        "type": "table",
+        "name": "pm_status_history",
+        "sql": "CREATE TABLE pm_status_history ( id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL, from_status TEXT, to_status TEXT NOT NULL, changed_at TEXT NOT NULL DEFAULT (datetime('now')), source TEXT NOT NULL DEFAULT 'ui' )"
+      },
+      {
+        "type": "table",
+        "name": "pm_test_cases",
+        "sql": "CREATE TABLE pm_test_cases ( id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_ticket_reviews",
+        "sql": "CREATE TABLE pm_ticket_reviews ( id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE, verdict INTEGER NOT NULL, reason TEXT NOT NULL, reviewer TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "pm_tickets",
+        "sql": "CREATE TABLE pm_tickets ( id TEXT PRIMARY KEY, epic_id TEXT NOT NULL REFERENCES pm_epics(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , context TEXT NOT NULL DEFAULT '[]', status_updated_at TEXT NOT NULL DEFAULT '2026-01-01 00:00:00', working_directory TEXT, priority TEXT NOT NULL DEFAULT 'normal', model_power TEXT, needs_human_supervision INTEGER NOT NULL DEFAULT 0, goal_id TEXT, due_date TEXT, skills TEXT NOT NULL DEFAULT '[]')"
+      }
+    ]
+  },
+  "notifications": {
+    "rustOnly": [],
+    "objects": [
+      {
+        "type": "index",
+        "name": "agent_launch_claims_root",
+        "sql": "CREATE INDEX agent_launch_claims_root ON agent_launch_claims(root_goal_id)"
+      },
+      {
+        "type": "index",
+        "name": "agent_launch_grants_in_force",
+        "sql": "CREATE UNIQUE INDEX agent_launch_grants_in_force ON agent_launch_grants(project_path, root_goal_id) WHERE revoked_at IS NULL"
+      },
+      {
+        "type": "index",
+        "name": "notification_delivery_ready",
+        "sql": "CREATE INDEX notification_delivery_ready ON notification_delivery_outbox(status, available_at, lease_until)"
+      },
+      {
+        "type": "index",
+        "name": "notifications_dedupe",
+        "sql": "CREATE UNIQUE INDEX notifications_dedupe ON notifications(dedupe_key) WHERE dedupe_key IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "notifications_unread",
+        "sql": "CREATE INDEX notifications_unread ON notifications(read_at, id DESC)"
+      },
+      {
+        "type": "index",
+        "name": "schedules_enabled",
+        "sql": "CREATE INDEX schedules_enabled ON schedules(enabled, next_due_at)"
+      },
+      {
+        "type": "index",
+        "name": "schedules_mission",
+        "sql": "CREATE INDEX schedules_mission ON schedules(project_path, mission_slug)"
+      },
+      {
+        "type": "table",
+        "name": "_migrations",
+        "sql": "CREATE TABLE _migrations ( id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "agent_launch_claims",
+        "sql": "CREATE TABLE agent_launch_claims ( request_uid TEXT PRIMARY KEY, grant_id TEXT NOT NULL, root_goal_id TEXT NOT NULL, goal_id TEXT, owner_pid INTEGER NOT NULL DEFAULT 0, claimed_at TEXT NOT NULL DEFAULT (datetime('now')) )"
+      },
+      {
+        "type": "table",
+        "name": "agent_launch_grant_usage",
+        "sql": "CREATE TABLE agent_launch_grant_usage ( grant_id TEXT PRIMARY KEY, launches_used INTEGER NOT NULL DEFAULT 0 )"
+      },
+      {
+        "type": "table",
+        "name": "agent_launch_grants",
+        "sql": "CREATE TABLE agent_launch_grants ( id TEXT PRIMARY KEY, project_path TEXT NOT NULL, root_goal_id TEXT NOT NULL, root_goal_name TEXT NOT NULL DEFAULT '', max_concurrent INTEGER NOT NULL CHECK (max_concurrent BETWEEN 1 AND 5), launch_budget INTEGER NOT NULL CHECK (launch_budget BETWEEN 1 AND 50), granted_at TEXT NOT NULL DEFAULT (datetime('now')), revoked_at TEXT )"
+      },
+      {
+        "type": "table",
+        "name": "agent_launch_runs",
+        "sql": "CREATE TABLE agent_launch_runs ( request_uid TEXT PRIMARY KEY, agent_id TEXT NOT NULL, agent_name TEXT, provider TEXT, model TEXT, status TEXT NOT NULL, summary TEXT, error TEXT, started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')) , owner_pid INTEGER NOT NULL DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "notification_delivery_outbox",
+        "sql": "CREATE TABLE notification_delivery_outbox ( id INTEGER PRIMARY KEY AUTOINCREMENT, notification_row_id INTEGER NOT NULL, notification_uid TEXT NOT NULL, channel TEXT NOT NULL, payload_fingerprint TEXT NOT NULL, title TEXT NOT NULL, body TEXT, severity TEXT NOT NULL, project_name TEXT, origin TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, available_at TEXT NOT NULL DEFAULT (datetime('now')), lease_owner TEXT, lease_until TEXT, delivered_at TEXT, last_error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(notification_uid, channel, payload_fingerprint) )"
+      },
+      {
+        "type": "table",
+        "name": "notifications",
+        "sql": "CREATE TABLE notifications ( id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT (datetime('now')), project_path TEXT, project_name TEXT, source TEXT NOT NULL, origin TEXT, kind TEXT NOT NULL DEFAULT 'info', severity TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL, body TEXT, actions TEXT NOT NULL DEFAULT '[]', dedupe_key TEXT, ref_kind TEXT, ref_id TEXT, read_at TEXT, answered_at TEXT, answer TEXT, expires_at TEXT )"
+      },
+      {
+        "type": "table",
+        "name": "schedules",
+        "sql": "CREATE TABLE schedules ( id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, project_path TEXT, project_name TEXT, spec_kind TEXT NOT NULL, cron_expr TEXT, every_n INTEGER, every_unit TEXT, anchor_at TEXT, time_of_day TEXT, timezone TEXT NOT NULL DEFAULT 'UTC', catch_up TEXT NOT NULL DEFAULT 'coalesce', payload TEXT NOT NULL DEFAULT '{}', last_fired_at TEXT, last_checked_at TEXT, next_due_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')) , mission_slug TEXT, exceptions TEXT NOT NULL DEFAULT '[]')"
+      },
+      {
+        "type": "trigger",
+        "name": "notifications_drop_launch_run",
+        "sql": "CREATE TRIGGER notifications_drop_launch_run AFTER DELETE ON notifications BEGIN DELETE FROM agent_launch_runs WHERE request_uid = OLD.uid; END"
+      },
+      {
+        "type": "trigger",
+        "name": "notifications_enqueue_pushover",
+        "sql": "CREATE TRIGGER notifications_enqueue_pushover AFTER INSERT ON notifications BEGIN INSERT OR IGNORE INTO notification_delivery_outbox (notification_row_id, notification_uid, channel, payload_fingerprint, title, body, severity, project_name, origin) VALUES (NEW.id, NEW.uid, 'pushover', printf('%d:%s%d:%s%d:%s%d:%s%d:%s', length(NEW.title), NEW.title, length(COALESCE(NEW.body, '')), COALESCE(NEW.body, ''), length(NEW.severity), NEW.severity, length(COALESCE(NEW.project_name, '')), COALESCE(NEW.project_name, ''), length(COALESCE(NEW.origin, '')), COALESCE(NEW.origin, '')), NEW.title, NEW.body, NEW.severity, NEW.project_name, NEW.origin); END"
+      }
+    ]
+  }
+}

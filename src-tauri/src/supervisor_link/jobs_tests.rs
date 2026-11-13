@@ -284,8 +284,16 @@ fn an_unreadable_register_is_moved_aside_not_overwritten() {
     std::fs::write(&path, "{ not json").unwrap();
     let jobs = Jobs::load(path.clone(), 500);
     assert!(jobs.list(None, None, 10).is_empty());
-    let aside = path.with_extension("json.unreadable-500");
-    assert_eq!(std::fs::read_to_string(aside).unwrap(), "{ not json");
+    let aside: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".unreadable-"))
+        .collect();
+    assert_eq!(aside.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(aside[0].path()).unwrap(),
+        "{ not json"
+    );
     // The fresh register is a valid, empty file.
     assert!(Jobs::load(path, 501).list(None, None, 10).is_empty());
 }

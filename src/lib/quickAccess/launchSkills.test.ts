@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  QuickAccessCombo,
-  QuickAccessSkill,
-  StarredProject,
-} from '@/lib/store/starredProjectsSlice';
-import { launchEntriesForProject, wheelKnownIds, wheelSlotId } from './launchSkills';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
+import { launchEntriesForProject, wheelSlotId } from './launchSkills';
 
 const skill = (id: string, label: string, invocation?: string): QuickAccessSkill => ({
   id,
@@ -75,14 +71,14 @@ describe('wheelSlotId', () => {
   });
 });
 
-describe('wheelKnownIds', () => {
+describe('wheel slot ids of launch entries', () => {
   it('accepts both skill ids and namespaced combo ids', () => {
-    const ids = wheelKnownIds(
+    const ids = launchEntriesForProject(
       project({
         skills: [skill('s1', 'Changelog')],
         combos: [combo('c1', 'Write', [])],
       })
-    );
+    ).map(wheelSlotId);
     expect(ids).toContain('combo:c1');
     expect(ids).toContain('s1');
   });

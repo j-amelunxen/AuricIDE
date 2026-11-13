@@ -1,15 +1,13 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { buildLinkIndexEntry, createWikiLinkSlice, type WikiLinkSlice } from './wikiLinkSlice';
+import { buildLinkIndexEntry, type WikiLinkSlice } from './wikiLinkSlice';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
 function createTestStore() {
-  return create<WikiLinkSlice>()((...a) => ({
-    ...createWikiLinkSlice(...a),
-  }));
+  return createFullTestStore();
 }
 
 describe('wikiLinkSlice', () => {
@@ -53,6 +51,21 @@ describe('wikiLinkSlice', () => {
 
       store.getState().updateFileInIndex('/project/notes.md', '[[Beta]] and [[Gamma]]');
       expect(store.getState().linkIndex.get('/project/notes.md')!.outgoingLinks).toHaveLength(2);
+    });
+
+    // The linter checks `file.md#heading` anchors and `[[page#` completes
+    // against these; an index without them reported every anchor broken.
+    it('keeps the file headings, and takes a renamed heading even when the links stay', () => {
+      store.getState().updateFileInIndex('/project/notes.md', '# Intro\n\n[[Alpha]]\n## Setup');
+      const titles = () =>
+        store
+          .getState()
+          .linkIndex.get('/project/notes.md')!
+          .headings.map((h) => h.title);
+      expect(titles()).toEqual(['Intro', 'Setup']);
+
+      store.getState().updateFileInIndex('/project/notes.md', '# Intro\n\n[[Alpha]]\n## Install');
+      expect(titles()).toEqual(['Intro', 'Install']);
     });
 
     it('detects broken links based on allFileNames', () => {

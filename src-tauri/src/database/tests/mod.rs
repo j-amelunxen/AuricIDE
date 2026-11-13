@@ -157,4 +157,5 @@ mod kv_tests;
 mod pm_tests;
 mod requirements_tests;
 mod reviews_tests;
+mod schema_snapshot_tests;
 mod schema_tests;

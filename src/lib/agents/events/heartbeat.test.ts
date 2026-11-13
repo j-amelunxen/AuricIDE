@@ -3,7 +3,6 @@ import {
   fleetHeartbeatMax,
   heartbeatBandFor,
   heartbeatLatest,
-  heartbeatPeak,
   heartbeatSeries,
   HEARTBEAT_WINDOW_MINUTES,
   pushHeartbeat,
@@ -122,29 +121,9 @@ describe('fleetHeartbeatMax', () => {
     expect(fleetHeartbeatMax([])).toBe(1);
     expect(fleetHeartbeatMax([heartbeatSeries([], 100 * MINUTE)])).toBe(1);
   });
-
-  it('is what makes two cards comparable at all', () => {
-    // The old chart normalised each card to its own peak, so one event and a
-    // hundred drew the same height. A shared scale is the whole fix.
-    const quiet = heartbeatSeries([{ minute: 100, counts: { edit: 1 } }], 100 * MINUTE);
-    const busy = heartbeatSeries([{ minute: 100, counts: { edit: 100 } }], 100 * MINUTE);
-    const max = fleetHeartbeatMax([quiet, busy]);
-    expect(heartbeatPeak(quiet) / max).toBeLessThan(heartbeatPeak(busy) / max);
-  });
 });
 
-describe('heartbeatPeak and heartbeatLatest', () => {
-  it('reports the busiest minute in the window', () => {
-    const series = heartbeatSeries(
-      [
-        { minute: 99, counts: { edit: 7 } },
-        { minute: 100, counts: { edit: 2 } },
-      ],
-      100 * MINUTE
-    );
-    expect(heartbeatPeak(series)).toBe(7);
-  });
-
+describe('heartbeatLatest', () => {
   it('reports the most recent minute for the label beside the chart', () => {
     const series = heartbeatSeries(
       [
@@ -157,7 +136,6 @@ describe('heartbeatPeak and heartbeatLatest', () => {
   });
 
   it('reads zero for an agent that has done nothing', () => {
-    expect(heartbeatPeak([])).toBe(0);
     expect(heartbeatLatest([])).toBe(0);
   });
 });

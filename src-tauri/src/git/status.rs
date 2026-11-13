@@ -5,9 +5,8 @@ use std::path::Path;
 
 // code-gate: complexity-cyclomatic - one flag-to-label mapping per libgit2 status bit, read top to bottom
 pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()), // Return empty if not a git repo
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(Vec::new());
     };
     let ignored = crate::ignored_repos::ignored_repos_for_project(Path::new(repo_path));
     let mut opts = StatusOptions::new();
@@ -103,9 +102,9 @@ fn mode_changed(entry: &git2::StatusEntry) -> bool {
 }
 
 pub fn git_branch_info_impl(repo_path: &str) -> Result<BranchInfo, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => {
+    let repo = match super::open_repo_if_any(repo_path)? {
+        Some(r) => r,
+        None => {
             return Ok(BranchInfo {
                 name: "-".to_string(),
                 ahead: 0,

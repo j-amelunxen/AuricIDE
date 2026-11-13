@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoalStation } from '../tauri/goals';
-import {
-  insertHumanStation,
-  moveStation,
-  normalizeSortOrders,
-  orderedStations,
-} from './stationOrder';
+import type { PmGoalStation } from './types';
+import { insertHumanStation, moveStation, orderedStations } from './stationOrder';
 
 const TS = '2026-01-10 10:00:00';
 let seq = 0;
@@ -110,16 +105,5 @@ describe('insertHumanStation', () => {
     const next = insertHumanStation([], 'g1', 'Send the email', 'h1', TS);
     expect(next).toHaveLength(1);
     expect(next[0].name).toBe('Send the email');
-  });
-});
-
-describe('normalizeSortOrders', () => {
-  it('renumbers the goal stations 0..n in current order', () => {
-    const stations = [
-      makeStation({ sortOrder: 10, name: 'a' }),
-      makeStation({ sortOrder: 20, name: 'b' }),
-    ];
-    const normalized = normalizeSortOrders(stations, 'g1');
-    expect(orderedStations(normalized, 'g1').map((s) => s.sortOrder)).toEqual([0, 1]);
   });
 });

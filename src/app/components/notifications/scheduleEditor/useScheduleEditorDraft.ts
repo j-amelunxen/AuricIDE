@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
 import type { NotificationLaunch } from '@/lib/notifications/types';
-import { quickAccessCombos, quickAccessSkills } from '@/lib/store/starredProjectsSlice';
-import { goalsLoad, type PmGoal } from '@/lib/tauri/goals';
-import type { Schedule, ScheduleCatchUp } from '@/lib/tauri/schedules';
+import { quickAccessCombos, quickAccessSkills } from '@/lib/quickAccess/projectEntries';
+import { goalsLoad } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
+import type { Schedule } from '@/lib/tauri/schedules';
+import type { ScheduleCatchUp } from '@/lib/notifications/scheduleVocabulary';
 import {
   actionDraftOf,
   buildScheduleDraft,
@@ -35,6 +37,7 @@ import {
   type ScheduleEditorProps,
   type TaskLaunchDraft,
 } from './types';
+import { readSimpleCron } from '@/lib/notifications/scheduleFormat';
 
 const WEEKDAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
@@ -85,9 +88,7 @@ export function useScheduleEditorDraft({
   const [rhythm, setRhythm] = useState<RhythmChoice>(() => rhythmOf(schedule));
   const [time, setTime] = useState(schedule?.timeOfDay ?? slotTime(defaultSlot));
   const [weekdays, setWeekdays] = useState<string[]>(() => {
-    const fields = schedule?.cronExpr?.trim().split(/\s+/) ?? [];
-    if (fields.length === 6 && /^[A-Z,]+$/.test(fields[5])) return fields[5].split(',');
-    return [slotWeekday(defaultSlot)];
+    return readSimpleCron(schedule?.cronExpr)?.weekdays ?? [slotWeekday(defaultSlot)];
   });
   const [everyN, setEveryN] = useState(schedule?.everyN ?? 14);
   const [everyUnit, setEveryUnit] = useState(schedule?.everyUnit ?? 'day');

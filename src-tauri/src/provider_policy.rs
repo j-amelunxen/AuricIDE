@@ -9,7 +9,8 @@
 //!
 //! Any change to the rules starts by adding a case to that fixture file.
 
-use rusqlite::{Connection, OpenFlags};
+#[cfg(test)]
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -103,23 +104,14 @@ pub fn is_provider_allowed(provider_id: &str, policy: &ProviderPolicy) -> bool {
 /// tables) must simply come back open rather than gain a database as a side
 /// effect of launching an agent.
 pub fn policy_for_project(cwd: &Path) -> ProviderPolicy {
-    let db_path = cwd.join(".auric").join("project.db");
-    if !db_path.is_file() {
-        return ProviderPolicy::default();
-    }
-
-    let Ok(conn) = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
-        return ProviderPolicy::default();
-    };
-
-    let raw: Option<String> = conn
-        .query_row(
-            "SELECT value FROM kv_store WHERE namespace = ?1 AND key = ?2",
-            rusqlite::params![POLICY_NAMESPACE, POLICY_KEY],
-            |row| row.get(0),
-        )
-        .ok();
-
+    let raw = crate::database::read_project_kv(cwd, POLICY_NAMESPACE, POLICY_KEY).unwrap_or_else(
+        |error| {
+            // Unchanged rule: an unreadable project reads as no policy. Said
+            // aloud, so an allow list that stopped applying leaves a trace.
+            eprintln!("Provider policy unreadable, applying none: {error}");
+            None
+        },
+    );
     parse_provider_policy(raw.as_deref())
 }
 

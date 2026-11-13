@@ -1,12 +1,12 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { formatNotificationAge, formatNotificationProject } from '@/lib/notifications/format';
 import { formatNextDue, formatScheduleRhythm } from '@/lib/notifications/scheduleFormat';
 import type { Notification } from '@/lib/notifications/types';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 
 export interface ScheduleRowProps {

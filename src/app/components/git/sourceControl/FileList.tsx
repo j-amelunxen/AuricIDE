@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ContextMenu } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isUnstagedTracked } from '@/lib/git/statusSplit';
 import type { GitFileStatus } from '@/lib/tauri/git';

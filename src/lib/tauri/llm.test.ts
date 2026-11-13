@@ -10,10 +10,6 @@ describe('llmCall IPC', () => {
     vi.mocked(invoke).mockClear();
   });
 
-  it('is a function', () => {
-    expect(typeof llmCall).toBe('function');
-  });
-
   it('forwards role:judge so the backend targets the judge model', async () => {
     await llmCall({
       messages: [{ role: 'user', content: 'x' }],

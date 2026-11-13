@@ -1,5 +1,5 @@
 import { isClosedTicketStatus } from './enums';
-import type { PmTicket, PmTestCase, PmDependency } from '../tauri/pm';
+import type { PmTicket, PmTestCase, PmDependency } from './types';
 import { prependTicketSkills } from './ticketSkills';
 
 export interface AvailableItem {

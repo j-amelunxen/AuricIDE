@@ -69,7 +69,6 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
         onSubmit={handleSubmit}
         className="glass-card relative w-[480px] max-w-[95vw] overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl animate-in fade-in zoom-in duration-200"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <div className="flex items-center gap-2">
             <AuricIcon name="create_new_folder" className="text-primary-light text-[18px]" />
@@ -87,9 +86,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 flex flex-col gap-4">
-          {/* Name */}
           <div>
             <label
               htmlFor="new-project-name"
@@ -108,7 +105,6 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
             />
           </div>
 
-          {/* Location */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Location <span className="text-red-400/70">*</span>
@@ -133,7 +129,6 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
             </div>
           </div>
 
-          {/* Template */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Template
@@ -161,7 +156,6 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
             </p>
           </div>
 
-          {/* Path preview */}
           {previewPath && (
             <div
               data-testid="new-project-preview"
@@ -172,7 +166,6 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-white/5">
           <button
             type="button"

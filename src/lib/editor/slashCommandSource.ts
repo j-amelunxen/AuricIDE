@@ -181,7 +181,6 @@ export function slashCommandSource(ctx: CompletionContext): CompletionResult | n
 
   const doc = ctx.state.doc.toString();
 
-  // Don't trigger inside code fences
   if (isInsideCodeFence(doc, match.from)) return null;
 
   const typed = match.text.slice(1).toLowerCase(); // remove the leading /

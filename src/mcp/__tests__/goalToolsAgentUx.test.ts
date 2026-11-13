@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
-import { createGoal, recordGoalRun, registerGoalTools } from '../tools/goals';
+import { createGoal, recordGoalRun } from '../tools/goalsDb';
+import { registerGoalTools } from '../tools/goals';
 import { createTestDb } from '../db';
 
 /**

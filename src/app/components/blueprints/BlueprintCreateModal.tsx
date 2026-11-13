@@ -58,7 +58,6 @@ function BlueprintCreateForm({
         onSubmit={handleSubmit}
         className="relative w-[520px] max-h-[92vh] overflow-y-auto bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl custom-scrollbar"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <h3 id="blueprint-create-title" className="text-sm font-semibold text-foreground">
             {initialValues?.name ? 'Edit Blueprint' : 'New Blueprint'}
@@ -73,9 +72,7 @@ function BlueprintCreateForm({
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 flex flex-col gap-4">
-          {/* Name */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Name <span className="text-red-400/70">*</span>
@@ -90,7 +87,6 @@ function BlueprintCreateForm({
             />
           </div>
 
-          {/* Tech Stack */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Tech Stack
@@ -104,7 +100,6 @@ function BlueprintCreateForm({
             />
           </div>
 
-          {/* Goal */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">Goal</label>
             <input
@@ -116,7 +111,6 @@ function BlueprintCreateForm({
             />
           </div>
 
-          {/* Complexity + Category row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
@@ -157,7 +151,6 @@ function BlueprintCreateForm({
             </div>
           </div>
 
-          {/* Description */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Description
@@ -171,7 +164,6 @@ function BlueprintCreateForm({
             />
           </div>
 
-          {/* Spec */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
               Full Spec
@@ -186,7 +178,6 @@ function BlueprintCreateForm({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-white/10">
           <button
             type="button"

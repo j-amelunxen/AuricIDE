@@ -71,7 +71,7 @@ pub fn git_graph_log_impl(repo_path: &str, skip: usize, limit: usize) -> Result<
         commits: Vec::new(),
         has_more: false,
     };
-    let Ok(repo) = Repository::open(repo_path) else {
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
         return Ok(empty);
     };
     let limit = limit.clamp(MIN_PAGE, MAX_PAGE);
@@ -154,7 +154,7 @@ fn sort_rank(entry: &GitRef) -> u8 {
 }
 
 pub fn git_refs_impl(repo_path: &str) -> Result<GitRefs, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {e}"))?;
+    let repo = super::open_repo(repo_path)?;
     let head = repo.head().ok();
     let head_oid = head.as_ref().and_then(|h| h.target());
     let head_detached = head_oid.is_some() && repo.head_detached().unwrap_or(false);
@@ -199,7 +199,7 @@ pub fn git_commit_detail_impl(
     oid: &str,
     parent_index: usize,
 ) -> Result<CommitDetail, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {e}"))?;
+    let repo = super::open_repo(repo_path)?;
     let commit = find_commit(&repo, oid)?;
     let tree = commit
         .tree()

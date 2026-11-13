@@ -1,19 +1,18 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
 import {
-  createGoalsSlice,
-  type GoalsSlice,
-  getRootGoals,
-  getGoalChildren,
-  getGoalDescendants,
   getGoalProgress,
   getGoalSatisfaction,
   getRunsForGoal,
   getGoalWorkflowStage,
   getGoalWorkProgress,
+} from '../goals/model/goalSatisfaction';
+import {
+  getRootGoals,
+  getGoalChildren,
+  getGoalDescendants,
   planGoalMove,
-} from './goalsSlice';
-import { createPmSlice, type PmSlice } from './pmSlice';
+} from '../goals/model/goalTreeHelpers';
 import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
 import type {
   GoalsState,
@@ -21,9 +20,8 @@ import type {
   PmGoalDependency,
   PmGoalRun,
   PmGoalStation,
-} from '../tauri/goals';
-import type { PmTicket } from '../tauri/pm';
-import type { PmRequirement } from '../tauri/requirements';
+} from '../goals/types';
+import type { PmRequirement, PmTicket } from '../pm/types';
 
 const mockGoalsLoad = vi.fn<(...args: unknown[]) => Promise<GoalsState>>(() =>
   Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [], stations: [], dependencies: [] })
@@ -31,13 +29,11 @@ const mockGoalsLoad = vi.fn<(...args: unknown[]) => Promise<GoalsState>>(() =>
 const mockGoalsSave = vi.fn<(...args: unknown[]) => Promise<{ conflicts: never[] }>>(() =>
   Promise.resolve({ conflicts: [] })
 );
-const mockGoalsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 
 vi.mock('../tauri/goals', () => ({
   goalsLoad: (...args: unknown[]) => mockGoalsLoad(...args),
   goalsSave: (...args: unknown[]) => mockGoalsSave(...args),
-  goalsClear: (...args: unknown[]) => mockGoalsClear(...args),
 }));
 
 vi.mock('../tauri/db', () => ({
@@ -45,15 +41,12 @@ vi.mock('../tauri/db', () => ({
 }));
 
 function createTestStore() {
-  return create<GoalsSlice>()((...a) => ({ ...createGoalsSlice(...a) }));
+  return createFullTestStore();
 }
 
 /** Goals plus PM — tickets carry their goal link on their own side. */
 function createGoalsPmStore() {
-  return create<GoalsSlice & PmSlice>()((...a) => ({
-    ...createGoalsSlice(...a),
-    ...createPmSlice(...a),
-  }));
+  return createFullTestStore();
 }
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
@@ -807,15 +800,6 @@ describe('goalsSlice persistence', () => {
     expect(store.getState().goalsDraft.map((g) => g.id)).toEqual(['local', 'mcp-subgoal']);
     expect(store.getState().goals.map((g) => g.id)).toEqual(['local', 'mcp-subgoal']);
     expect(store.getState().goalsDirty).toBe(false);
-  });
-
-  it('clearGoals wipes everything', async () => {
-    const store = createTestStore();
-    store.getState().addGoal(makeGoal());
-    await store.getState().clearGoals('/project');
-    expect(mockGoalsClear).toHaveBeenCalledTimes(1);
-    expect(store.getState().goalsDraft).toEqual([]);
-    expect(store.getState().goals).toEqual([]);
   });
 });
 

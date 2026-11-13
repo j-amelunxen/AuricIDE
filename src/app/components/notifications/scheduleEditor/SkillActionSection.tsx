@@ -2,8 +2,8 @@
 
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
 import type { NotificationLaunch } from '@/lib/notifications/types';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
-import type { PermissionMode } from '@/lib/tauri/agents';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
+import type { PermissionMode } from '@/lib/agents/types';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { SCOPE_ORDER } from './helpers';

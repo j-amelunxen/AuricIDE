@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface TabItem {

@@ -205,6 +205,17 @@ If the CLI has no per-launch way to receive an MCP config at all, set
 the CLI discovers on its own, and the reserved `AURIC_*` variables above are
 still exported. Declared `projectBinding` material always wins over this flag.
 
+`projectBinding.format` says how the binding reaches the CLI: `"template"` (the
+default) renders `arguments` and `environment` as above; `"codex-toml"` ignores
+them and passes the Auric server, the approved connectors and the project's
+`.mcp.json` servers as Codex `-c mcp_servers.…` overrides (streamable HTTP only,
+so SSE servers are skipped). A config with the id `codex` and no `format` gets
+`"codex-toml"`, as before the field existed; any other id needs to say so.
+Only a template that passes `{mcpConfigPath}` in `arguments` (or as
+`CRUSH_GLOBAL_CONFIG`) reads the per-agent MCP config and so receives
+connectors and the project's extra servers; an environment-only bridge serves
+Auric PM alone.
+
 A CLI that reads MCP servers only from one global config (the Antigravity CLI
 has no `--mcp-config` flag) binds through the environment instead:
 
@@ -288,19 +299,19 @@ in, in the same schema as `usage-plugins/*.json`.
 `arguments` is an ordered list; each entry is tagged by `type` and becomes part of
 the command line in that order.
 
-| `type`       | Field             | Required | Meaning                                                                                                |
-| ------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `literal`    | `value`           | yes      | A fixed token — a sub-command or a flag that never varies (e.g. `run`)                                 |
-| `model`      | `flag`            | yes      | Flag carrying the model selected in the UI                                                             |
-|              | `ignoreIfAuto`    | yes      | `true` = omit the flag entirely when the model is `auto`                                               |
-| `task`       | `quote`           | yes      | The task is always passed as one quoted argument; `false` is still accepted but no longer changes that |
-| `headless`   | `flag`            | yes      | Flag used when the agent runs unattended                                                               |
-|              | `interactiveFlag` | optional | Flag used instead when a terminal is attached                                                          |
-| `permission` | `map`             | yes      | Permission mode → CLI flag                                                                             |
-|              | `fallback`        | optional | Flag for modes missing from `map`. Without it, unmapped modes add nothing                              |
+| `type`       | Field             | Required | Meaning                                                                                         |
+| ------------ | ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `literal`    | `value`           | yes      | A fixed token — a sub-command or a flag that never varies (e.g. `run`)                          |
+| `model`      | `flag`            | yes      | Flag carrying the model selected in the UI                                                      |
+|              | `ignoreIfAuto`    | yes      | `true` = omit the flag entirely when the model is `auto`                                        |
+| `task`       | `quote`           | no       | The task is always passed as one quoted argument; `quote` is still accepted but changes nothing |
+| `headless`   | `flag`            | yes      | Flag used when the agent runs unattended                                                        |
+|              | `interactiveFlag` | optional | Flag used instead when a terminal is attached                                                   |
+| `permission` | `map`             | yes      | Permission mode → CLI flag                                                                      |
+|              | `fallback`        | optional | Flag for modes missing from `map`. Without it, unmapped modes add nothing                       |
 
-**`ignoreIfAuto` and `quote` are required, not opt-in.** Writing
-`{ "type": "task" }` fails the file with `missing field 'quote'`.
+**`ignoreIfAuto` is required, not opt-in.** Writing `{ "type": "model" }`
+fails the file with `missing field 'ignoreIfAuto'`.
 
 ### Permission modes
 

@@ -1,4 +1,4 @@
-import { extractHeadings } from '@/lib/editor/markdownHeadingParser';
+import { extractHeadings } from '@/lib/markdown/markdownHeadingParser';
 
 export interface ExtractSectionResult {
   sectionContent: string;
@@ -39,7 +39,6 @@ export function computeSectionExtraction(
 
   if (headings.length === 0) return null;
 
-  // Find the heading at or before cursorLine
   let targetIndex = -1;
   for (let i = 0; i < headings.length; i++) {
     if (headings[i].lineNumber <= cursorLine) {

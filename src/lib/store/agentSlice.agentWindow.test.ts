@@ -1,10 +1,10 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from '../agents/types';
 import { agentLogAppend } from '../tauri/agentLog';
 import { resetAgentLogWriter } from '../agents/events/persistence';
 import { resetAgentExtractors } from '../agents/events/registry';
-import { createAgentSlice, MAX_AGENT_LOGS, type AgentSlice } from './agentSlice';
+import { MAX_AGENT_LOGS } from './agentSlice';
 
 vi.mock('../tauri/agentLog', () => ({
   agentLogAppend: vi.fn(async () => undefined),
@@ -25,13 +25,13 @@ function agent(id: string, extra: Partial<AgentInfo> = {}): AgentInfo {
   };
 }
 
-let store: StoreApi<AgentSlice>;
+let store: ReturnType<typeof createFullTestStore>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetAgentLogWriter();
   resetAgentExtractors();
-  store = createStore<AgentSlice>()(createAgentSlice);
+  store = createFullTestStore();
 });
 
 describe('appendAgentTerminalChunks — the agent window’s write path', () => {

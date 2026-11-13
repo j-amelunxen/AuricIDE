@@ -1,3 +1,4 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 /**
  * Conflict scenarios between the two writers of a project's goals: the UI
  * store (draft → `saveGoals` → Rust `goals_sync_impl`) and the MCP server
@@ -12,7 +13,6 @@
  * missions/goal-native/shared/artifacts/01-risiken-geklaert/konflikt-tests.md.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { create } from 'zustand';
 import type Database from 'better-sqlite3';
 import { createTestDb } from '../../mcp/db';
 import {
@@ -28,7 +28,6 @@ import {
   markStationDone,
   updateStation as mcpUpdateStation,
 } from '../../mcp/tools/stations';
-import { createGoalsSlice, type GoalsSlice } from './goalsSlice';
 import { goalsLoadPort, goalsSyncPort, type GoalsSyncWire } from './goalsSyncPort.testing';
 
 const PROJECT = '/projects/conflict';
@@ -63,7 +62,7 @@ function getStation(database: Database.Database, id: string) {
 }
 
 function createStore() {
-  return create<GoalsSlice>()((...a) => ({ ...createGoalsSlice(...a) }));
+  return createFullTestStore();
 }
 
 type Store = ReturnType<typeof createStore>;

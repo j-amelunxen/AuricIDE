@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useAttentionTitle } from './useAttentionTitle';
 
 vi.mock('@/lib/hooks/useNow', () => ({ useNow: () => Date.now() }));

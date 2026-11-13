@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TestCaseEditor } from './TestCaseEditor';
-import type { PmTestCase } from '@/lib/tauri/pm';
+import type { PmTestCase } from '@/lib/pm/types';
 
 const makeTestCase = (overrides: Partial<PmTestCase> = {}): PmTestCase => ({
   id: 'tc-1',

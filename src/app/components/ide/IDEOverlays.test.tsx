@@ -8,7 +8,7 @@ import { useStore } from '@/lib/store';
 // renders null and only the wiring is exercised. Every factory inlines its own
 // stub: vi.mock is hoisted above any top-level const it would reference.
 vi.mock('@/app/components/ide/CommandPalette', () => ({ CommandPalette: () => null }));
-vi.mock('@/app/components/ide/ContextMenu', () => ({ ContextMenu: () => null }));
+vi.mock('@/app/components/ui/ContextMenu', () => ({ ContextMenu: () => null }));
 vi.mock('@/app/components/explorer/NewItemModal', () => ({ NewItemModal: () => null }));
 vi.mock('@/app/components/explorer/RenameItemModal', () => ({ RenameItemModal: () => null }));
 vi.mock('@/app/components/ide/FileSearch', () => ({ FileSearch: () => null }));

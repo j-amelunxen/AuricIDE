@@ -1,6 +1,7 @@
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { IDE_AGENT_MARKER } from '../lib/agents/agentControl.contract';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
 
 export interface McpCliBinding {
   projectRoot: string;
@@ -41,7 +42,7 @@ export function resolveMcpCliMode(
     if (args.length !== 1) throw new Error(USAGE);
     // The marker is set on every IDE agent; AURIC_AGENT_CWD only on those with
     // a project binding. The socket checks the caller's ancestry as well.
-    const marker = [IDE_AGENT_MARKER, 'AURIC_AGENT_CWD'].find((name) => env[name]);
+    const marker = [IDE_AGENT_MARKER, AURIC_ENV.agentCwd].find((name) => env[name]);
     if (marker) {
       throw new Error(
         '--control is for clients outside AuricIDE; refusing to start inside an IDE agent ' +

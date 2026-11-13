@@ -1,3 +1,4 @@
+pub mod commands;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
@@ -7,6 +8,10 @@ use std::process::{Child, Command};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
+
+/// The name every agent sees its project's Auric MCP server under; the
+/// frontend and the MCP bridge spell it too (`backendNames.fixtures.json`).
+pub const AURIC_PM_SERVER: &str = "auric-pm";
 
 pub fn runtime_entrypoint(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let resource_dir = app
@@ -34,9 +39,6 @@ pub struct AgentMcpConfigs {
 
 static AGENT_CONFIG_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// `PM_CHILD_ENV` in `src/mcp/supervisorPm.ts`.
-const PM_CHILD_ENV: &str = "AURIC_PM_CHILD_ENV";
-
 fn write_new_private_file(path: &Path, content: &[u8]) -> Result<(), String> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -62,9 +64,9 @@ pub(crate) fn agent_providers_env(registry: &crate::providers::ProviderRegistry)
         .map(|info| info.id)
         .filter(|id| !id.is_empty() && !id.contains(','))
         .filter(|id| {
-            registry.get(id).is_some_and(|provider| {
-                crate::providers::supports_isolated_mcp_binding(id, provider.as_ref())
-            })
+            registry
+                .get(id)
+                .is_some_and(|provider| provider.mcp_binding().can_bind())
         })
         .collect();
     ids.sort_unstable();
@@ -93,7 +95,7 @@ pub(crate) fn agent_mcp_server_env(
     let mut env = BTreeMap::new();
     if let Some(path) = notifications_db {
         env.insert(
-            "AURIC_NOTIFICATIONS_DB".to_string(),
+            crate::auric_env::NOTIFICATIONS_DB.to_string(),
             path.to_string_lossy().into_owned(),
         );
     }
@@ -101,7 +103,7 @@ pub(crate) fn agent_mcp_server_env(
     // actually start; the spawn path re-checks it either way.
     if let Some(registry) = registry {
         env.insert(
-            "AURIC_AGENT_PROVIDERS".to_string(),
+            crate::auric_env::AGENT_PROVIDERS.to_string(),
             agent_providers_env(registry),
         );
     }
@@ -109,7 +111,7 @@ pub(crate) fn agent_mcp_server_env(
     // of). A path that is not valid UTF-8 is left out rather than mangled;
     // the tool then refuses, which is the safe side.
     if let Some(cwd) = agent_cwd.and_then(Path::to_str) {
-        env.insert("AURIC_AGENT_CWD".to_string(), cwd.to_string());
+        env.insert(crate::auric_env::AGENT_CWD.to_string(), cwd.to_string());
     }
     env
 }
@@ -120,10 +122,13 @@ pub(crate) fn agent_mcp_server_env(
 pub(crate) fn offer_ask_supervisor(env: &mut BTreeMap<String, String>, app_data: &Path) {
     let socket = crate::control_socket::socket_path_in(app_data);
     env.insert(
-        "AURIC_CONTROL_SOCKET".to_string(),
+        crate::auric_env::CONTROL_SOCKET.to_string(),
         socket.to_string_lossy().into_owned(),
     );
-    env.insert("AURIC_ASK_SUPERVISOR".to_string(), "1".to_string());
+    env.insert(
+        crate::auric_env::ASK_SUPERVISOR.to_string(),
+        "1".to_string(),
+    );
 }
 
 /// Writes immutable provider configs used by one logical project.
@@ -203,7 +208,7 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
         "env": env,
     });
     let mut servers = serde_json::Map::new();
-    servers.insert("auric-pm".into(), server);
+    servers.insert(AURIC_PM_SERVER.into(), server);
     for connector in connectors {
         servers.insert(
             connector.server_name(),
@@ -257,12 +262,12 @@ pub(crate) fn supervisor_server_env(
     pm_child_env: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, String> {
     let mut env = BTreeMap::from([(
-        "AURIC_CONTROL_SOCKET".to_string(),
+        crate::auric_env::CONTROL_SOCKET.to_string(),
         socket.to_string_lossy().into_owned(),
     )]);
     if !pm_child_env.is_empty() {
         env.insert(
-            PM_CHILD_ENV.to_string(),
+            crate::auric_env::PM_CHILD_ENV.to_string(),
             serde_json::to_string(pm_child_env).map_err(|error| error.to_string())?,
         );
     }
@@ -318,7 +323,7 @@ pub(crate) fn write_supervisor_mcp_config(
     let path = directory.join(format!("supervisor-{:016x}.mcp.json", hasher.finish()));
     let mut servers = serde_json::Map::new();
     servers.insert(
-        crate::agents::SUPERVISOR_MCP_SERVER.to_string(),
+        crate::supervisor::launch::SUPERVISOR_MCP_SERVER.to_string(),
         serde_json::json!({
             "command": node,
             "args": [runtime, "--supervisor"],
@@ -516,49 +521,46 @@ fn start_mcp_server(
     // Resolve `npx` against the login-shell PATH we were handed: the parent
     // process PATH is minimal when the packaged app is launched from Finder
     // and typically lacks nvm/homebrew node installs.
-    let npx = env
-        .iter()
-        .find(|(k, _)| k == "PATH")
-        .and_then(|(_, path)| find_in_path("npx", path))
+    let npx = crate::machine::env_path(env)
+        .and_then(|path| {
+            crate::machine::resolve_in_path("npx", path, &crate::machine::is_executable)
+        })
         .unwrap_or_else(|| PathBuf::from("npx"));
 
     let mut command = Command::new(npx);
     command
         .args(["tsx", script_path, db_path])
-        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    spawn_and_await_startup(command, "MCP server")
+}
+
+/// Spawns the server in a process group of its own (stop kills the whole
+/// tree, wrapper included) with its pipes drained, and refuses one that is
+/// already gone 200 ms later. A stdio MCP server says nothing until a client
+/// speaks, so dying at once is the only failure there is to see here.
+fn spawn_and_await_startup(mut command: Command, what: &str) -> Result<Child, String> {
+    command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-
     let mut child = command
         .spawn()
-        .map_err(|e| format!("Failed to start MCP server: {}", e))?;
-
+        .map_err(|error| format!("Failed to start {what}: {error}"))?;
     drain_pipes(&mut child);
-
     std::thread::sleep(std::time::Duration::from_millis(200));
     match child.try_wait() {
-        Ok(Some(status)) => {
-            return Err(format!(
-                "MCP server exited during startup with status {status}"
-            ));
-        }
-        Ok(None) => {}
+        Ok(Some(status)) => Err(format!("{what} exited during startup with status {status}")),
+        Ok(None) => Ok(child),
         Err(error) => {
             let _ = stop_mcp_server(&mut child);
-            return Err(format!(
-                "Failed to inspect MCP server during startup: {error}"
-            ));
+            Err(format!("Failed to inspect {what} during startup: {error}"))
         }
     }
-
-    Ok(child)
 }
 
 pub fn start_packaged_mcp_server(
@@ -566,16 +568,13 @@ pub fn start_packaged_mcp_server(
     project_root: &Path,
     env: &[(String, String)],
 ) -> Result<Child, String> {
-    let path_var = env
-        .iter()
-        .find(|(key, _)| key == "PATH")
-        .map(|(_, path)| path.as_str())
+    let path_var = crate::machine::env_path(env)
         .ok_or_else(|| "Could not find Node.js in the login-shell PATH".to_string())?;
     // A bundle from before the manifest recorded its ABI keeps the old
     // behaviour (first node on PATH); any other problem is an error here, so
     // it reaches the MCP status instead of a server that dies on load.
     let node = if crate::node_runtime::read_bundle_abi(runtime).is_none() {
-        find_in_path("node", path_var)
+        crate::machine::resolve_in_path("node", path_var, &crate::machine::is_executable)
     } else {
         let choice = crate::node_runtime::node_choice(runtime, path_var);
         if let Some(problem) = choice.problem {
@@ -592,58 +591,8 @@ pub fn start_packaged_mcp_server(
         .envs(
             env.iter()
                 .map(|(key, value)| (key.as_str(), value.as_str())),
-        )
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Failed to start packaged MCP server: {error}"))?;
-    drain_pipes(&mut child);
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    match child.try_wait() {
-        Ok(Some(status)) => Err(format!(
-            "Packaged MCP server exited during startup with status {status}"
-        )),
-        Ok(None) => Ok(child),
-        Err(error) => {
-            let _ = stop_mcp_server(&mut child);
-            Err(format!(
-                "Failed to inspect packaged MCP server during startup: {error}"
-            ))
-        }
-    }
-}
-
-/// Resolves a bare command name against a PATH we were handed rather than the
-/// one this process inherited — packaged GUI apps typically inherit a minimal
-/// PATH that does not include nvm/homebrew installations.
-pub(crate) fn find_in_path(cmd: &str, path_var: &str) -> Option<PathBuf> {
-    path_var
-        .split(':')
-        .filter(|dir| !dir.is_empty())
-        .map(|dir| Path::new(dir).join(cmd))
-        .find(|candidate| is_executable_file(candidate))
-}
-
-#[cfg(unix)]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    path.metadata()
-        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
+        );
+    spawn_and_await_startup(command, "packaged MCP server")
 }
 
 /// Continuously drain a child's stdout/stderr into the void. Nothing consumes
@@ -771,10 +720,6 @@ fn runtime_status(runtime: &McpRuntime) -> McpStatusInfo {
             error: runtime.last_error.clone(),
         },
     }
-}
-
-pub fn get_mcp_status(state: &McpServerState) -> McpStatusInfo {
-    state.status()
 }
 
 #[cfg(test)]
@@ -1017,13 +962,6 @@ mod tests {
         assert_eq!(status.status, McpServerStatus::Stopped);
         assert_eq!(status.phase, McpServerPhase::Stopped);
         assert!(status.project_path.is_none());
-    }
-
-    #[test]
-    fn test_get_mcp_status_when_stopped() {
-        let state = McpServerState::new();
-        let status = get_mcp_status(&state);
-        assert_eq!(status.status, McpServerStatus::Stopped);
         assert!(status.pid.is_none());
     }
 
@@ -1034,31 +972,6 @@ mod tests {
         std::fs::write(&path, contents).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_find_in_path_locates_executable() {
-        let dir = tempfile::tempdir().unwrap();
-        let bin = write_executable(dir.path(), "npx", "#!/bin/sh\nexit 0\n");
-        let path_var = format!("/nonexistent:{}", dir.path().display());
-        assert_eq!(find_in_path("npx", &path_var), Some(bin));
-    }
-
-    #[test]
-    fn test_find_in_path_returns_none_when_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path_var = dir.path().display().to_string();
-        assert_eq!(find_in_path("npx", &path_var), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_find_in_path_skips_non_executable_files() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("npx"), "not executable").unwrap();
-        let path_var = dir.path().display().to_string();
-        assert_eq!(find_in_path("npx", &path_var), None);
     }
 
     /// The MCP server must resolve `npx` against the PATH of the *login-shell*
@@ -1202,7 +1115,7 @@ mod tests {
             })
             .unwrap();
 
-        let status = get_mcp_status(&state);
+        let status = state.status();
         assert_eq!(status.status, McpServerStatus::Running);
         assert!(status.pid.is_some());
         assert_eq!(status.project_path.as_deref(), Some("/repo/alpha"));
@@ -1223,7 +1136,7 @@ mod tests {
         // Wait for the process to actually exit (with retry)
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(50));
-            let s = get_mcp_status(&state);
+            let s = state.status();
             if s.status == McpServerStatus::Stopped {
                 assert!(s.pid.is_none());
                 return;

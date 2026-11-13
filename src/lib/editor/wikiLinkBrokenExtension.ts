@@ -6,7 +6,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
-import { parseWikiLinks } from './wikiLinkParser';
+import { parseWikiLinks } from '../markdown/wikiLinkParser';
 
 // Facet to receive the set of broken target names from React
 export const brokenLinksSetFacet = Facet.define<Set<string>, Set<string>>({

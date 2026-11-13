@@ -7,13 +7,13 @@ import {
   headingLevelSource,
   linkTargetSource,
   imageTargetSource,
-  filePathsFacet,
 } from './markdownCompletionSource';
+import { projectFilesFacet } from './editorFacets';
 
 function createCtx(doc: string, pos?: number, filePaths: string[] = []) {
   const state = EditorState.create({
     doc,
-    extensions: [markdown({ base: markdownLanguage }), filePathsFacet.of(filePaths)],
+    extensions: [markdown({ base: markdownLanguage }), projectFilesFacet.of(filePaths)],
     selection: { anchor: pos ?? doc.length },
   });
   return new CompletionContext(state, pos ?? doc.length, false);

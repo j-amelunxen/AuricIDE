@@ -1,4 +1,4 @@
-import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket } from '@/lib/pm/types';
 import { AuricIcon } from '../../ui/AuricIcon';
 import { statusOptions } from './types';
 

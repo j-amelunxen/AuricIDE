@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateDependencyProposalPrompt } from './dependencyProposal';
-import type { PmTicket, PmEpic } from '../tauri/pm';
+import type { PmTicket, PmEpic } from './types';
 
 describe('generateDependencyProposalPrompt', () => {
   it('generates a prompt with ticket and epic information', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateTestCaseDerivationPrompt, parseTestCaseResponse } from './testCaseDerivation';
-import type { PmTicket } from '../tauri/pm';
+import type { PmTicket } from './types';
 
 describe('testCaseDerivation', () => {
   const mockTicket: PmTicket = {

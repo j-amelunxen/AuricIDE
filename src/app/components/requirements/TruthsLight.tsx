@@ -1,9 +1,7 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
-
-const STALE_DAYS = 30;
+import { requirementProof } from '@/lib/pm/requirementFreshness';
 
 /** Status-bar light: green = all verified, amber = stale/unverified. Hidden if none. */
 export function TruthsLight() {
@@ -12,15 +10,8 @@ export function TruthsLight() {
   const openWorkPlace = useStore((s) => s.openWorkPlace);
   const loadRequirements = useStore((s) => s.loadRequirements);
 
-  const relevant = requirements.filter(
-    (r) => r.status === 'active' || r.status === 'implemented' || r.status === 'verified'
-  );
-  if (relevant.length === 0) return null;
-
-  const staleCount = getStaleRequirements(relevant, STALE_DAYS).length;
-  const unverifiedCount = getUnverifiedRequirements(relevant).length;
-  const needProof = staleCount + unverifiedCount;
-  const held = relevant.length - needProof;
+  const { relevant, needProof, held } = requirementProof(requirements);
+  if (relevant === 0) return null;
 
   const handleClick = () => {
     openWorkPlace('requirements');
@@ -45,7 +36,7 @@ export function TruthsLight() {
         }`}
       />
       <span className={needProof > 0 ? 'text-amber-300' : undefined}>
-        {needProof > 0 ? `${needProof} stale` : `${held}/${relevant.length} verified`}
+        {needProof > 0 ? `${needProof} stale` : `${held}/${relevant} verified`}
       </span>
     </button>
   );

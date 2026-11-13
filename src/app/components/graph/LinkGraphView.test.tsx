@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { LinkGraphView } from './LinkGraphView';
 
 // Mock zustand store
+const activeTab = vi.hoisted(() => ({ id: null as string | null }));
 vi.mock('@/lib/store', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   useStore: vi.fn((selector: (s: any) => any) => {
@@ -10,7 +11,7 @@ vi.mock('@/lib/store', () => ({
       linkIndex: new Map(),
       brokenLinks: new Map(),
       allFilePaths: [],
-      activeTabId: null,
+      activeTabId: activeTab.id,
     };
     return selector(state);
   }),
@@ -39,6 +40,21 @@ vi.mock('@/lib/graph/linkGraphLayout', () => ({
 describe('LinkGraphView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activeTab.id = null;
+  });
+
+  it.each([
+    ['a file tab', '/repo/notes.md', '/repo/notes.md'],
+    ['a diff tab', 'diff:unstaged:/repo:/repo/notes.md', null],
+    ['the git graph', 'git-graph:/repo', null],
+    ['a mindmap tab', 'mindmap::/repo/notes.md', null],
+  ])('highlights only a real file: %s', async (_, id, expected) => {
+    const { layoutLinkGraph } = await import('@/lib/graph/linkGraphLayout');
+    activeTab.id = id;
+    render(<LinkGraphView />);
+    expect(vi.mocked(layoutLinkGraph)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ activeFilePath: expected })
+    );
   });
 
   it('renders the graph view container', () => {

@@ -19,7 +19,6 @@ export function ProblemsPanel({ diagnostics, filePath, onClose, onNavigate }: Pr
 
   return (
     <div className="flex h-full flex-col bg-panel-bg border-t border-white/5">
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-white/5 px-3 py-2">
         <div className="flex items-center gap-2">
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
@@ -71,7 +70,6 @@ export function ProblemsPanel({ diagnostics, filePath, onClose, onNavigate }: Pr
         </button>
       </div>
 
-      {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {diagnostics.length === 0 ? (
           <div className="flex items-center justify-center p-8">

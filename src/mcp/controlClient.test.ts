@@ -146,6 +146,14 @@ describe('callControl', () => {
     expect(controlTimeoutMs('list_agents', {})).toBe(5_000);
   });
 
+  // Rust waits up to frontendTimeoutMs for the window on these; a shorter
+  // client wait reported a timeout for a dismiss that still went through.
+  it.each(['spawn', 'kill', 'dismiss'] as const)('waits for the frontend on %s', (method) => {
+    expect(controlTimeoutMs(method, {} as never)).toBe(
+      fixtures.limits.frontendTimeoutMs + fixtures.limits.awaitClientGraceSeconds * 1000
+    );
+  });
+
   it('reports app_not_running with the socket path when there is no socket', async () => {
     await expect(callControl('list_agents', {}, { socketPath })).rejects.toMatchObject({
       code: 'app_not_running',

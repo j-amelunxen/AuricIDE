@@ -3,7 +3,7 @@
 mod commands;
 mod legacy;
 mod store;
-mod types;
+pub(crate) mod types;
 
 #[cfg(test)]
 mod tests;
@@ -11,5 +11,3 @@ mod tests;
 pub use commands::*;
 pub(crate) use legacy::decode_webkit_value;
 pub use store::*;
-#[allow(unused_imports)]
-pub use types::*;

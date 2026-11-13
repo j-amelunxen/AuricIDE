@@ -12,6 +12,8 @@ pub(crate) struct FakeBackend {
     pub(crate) fail_input: Mutex<HashSet<String>>,
     pub(crate) input_events: Mutex<Vec<AgentInputSentEvent>>,
     pub(crate) requests: Mutex<Vec<ControlRequestEvent>>,
+    /// Frontend transport failures, scoped by method so spawn may still work.
+    pub(crate) fail_control: Mutex<HashSet<String>>,
     /// When set, every control request is answered with this, as the
     /// frontend would through `control_respond`.
     pub(crate) reply: Mutex<Option<FrontendReply>>,
@@ -128,6 +130,9 @@ impl ControlBackend for FakeBackend {
 
     fn emit_control_request(&self, event: &ControlRequestEvent) -> Result<(), String> {
         self.requests.lock().unwrap().push(event.clone());
+        if self.fail_control.lock().unwrap().contains(&event.method) {
+            return Err("injected frontend transport failure".into());
+        }
         if let Some(reply) = self.reply.lock().unwrap().clone() {
             if event.method == "kill" && reply.ok && !*self.kill_leaves_agent.lock().unwrap() {
                 let id = event.params["agentId"].as_str().unwrap().to_string();
@@ -927,7 +932,7 @@ fn scope_policy(path: &str) -> SupervisorPolicy {
 // code-gate: complexity-function-length - one fixture world; every caller-scope case reads all of it
 fn supervised_scope() -> Scope {
     let project = auric_project();
-    let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
+    let path = crate::project_path::canonical_project_path(&project.path().to_string_lossy());
     let supervisor = AgentInfo {
         id: "agent-sup".into(),
         role: AgentRole::Supervisor,
@@ -1343,7 +1348,7 @@ fn a_supervisor_lists_the_allowed_projects_with_what_it_may_use_there() {
     let s = supervised_scope();
     let unlisted = auric_project();
     let unlisted_path =
-        crate::supervisor::canonical_project_path(&unlisted.path().to_string_lossy());
+        crate::project_path::canonical_project_path(&unlisted.path().to_string_lossy());
     let mut policy = scope_policy(&s.path);
     let mut rules = policy.projects[&s.path].clone();
     rules.providers = Some(vec!["claude".into()]);
@@ -1497,7 +1502,7 @@ fn a_supervisor_reads_the_humans_routing_note_beside_the_provider_it_is_for() {
 fn a_supervisor_lists_one_project_with_balancing_first_and_only_its_models_described() {
     let s = supervised_scope();
     let other = auric_project();
-    let other_path = crate::supervisor::canonical_project_path(&other.path().to_string_lossy());
+    let other_path = crate::project_path::canonical_project_path(&other.path().to_string_lossy());
     let mut policy = scope_policy(&s.path);
     let mut rules = policy.projects[&s.path].clone();
     rules.providers = Some(vec!["codex".into()]);
@@ -1572,7 +1577,7 @@ fn a_full_supervisor_project_list_stays_small() {
     rules.models = BTreeMap::new();
     rules.permission_mode = BTreeMap::new();
     for home in &homes {
-        let path = crate::supervisor::canonical_project_path(&home.path().to_string_lossy());
+        let path = crate::project_path::canonical_project_path(&home.path().to_string_lossy());
         policy.projects.insert(path, rules.clone());
     }
     *s.h.backend.policy.lock().unwrap() = policy;
@@ -1891,7 +1896,7 @@ fn await_until_input_ignores_a_headless_child_and_still_returns_its_result() {
 /// spellings a model might try to get out of its policy.
 mod pm_target {
     use super::*;
-    use crate::supervisor::canonical_project_path;
+    use crate::project_path::canonical_project_path;
 
     struct Projects {
         s: Scope,
@@ -2140,7 +2145,7 @@ mod link_policy {
 
         // Only the IDE's decision applies it.
         ProposalStore::new(app.path())
-            .decide(&id, true, crate::supervisor_link::jobs::now_ms())
+            .decide(&id, true, crate::json_store::now_ms())
             .unwrap();
         assert_eq!(read_stored(app.path()).projects.len(), 1);
     }

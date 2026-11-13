@@ -1,13 +1,11 @@
 use super::types::BlameHunk;
-use git2::Repository;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 pub fn git_blame_impl(repo_path: &str, file_path: &str) -> Result<Vec<BlameHunk>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
+    let Some(repo) = super::open_repo_if_any(repo_path)? else {
+        return Ok(Vec::new());
     };
 
     let full_path = Path::new(repo_path).join(file_path);

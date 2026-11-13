@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { extractHeadings, type HeadingRange } from '@/lib/editor/markdownHeadingParser';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { extractHeadings, type HeadingRange } from '@/lib/markdown/markdownHeadingParser';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 
 export interface HeadingNode {
   heading: HeadingRange;

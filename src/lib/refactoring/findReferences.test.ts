@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { findAllReferences } from './findReferences';
-import type { EntityOccurrence } from '@/lib/store/entityIndexSlice';
-import type { LinkIndexEntry } from '@/lib/store/wikiLinkSlice';
+import type { EntityOccurrence } from '@/lib/nlp/nlpTypes';
+import type { LinkIndexEntry } from '@/lib/markdown/types';
 
 describe('findAllReferences', () => {
   describe('heading references', () => {
@@ -120,6 +120,7 @@ describe('findAllReferences', () => {
             outgoingLinks: [{ target: 'guide.md', display: 'Guide', from: 4, to: 13 }],
             targets: ['guide.md'],
             fragmentLinks: [],
+            headings: [],
           },
         ],
         [
@@ -128,6 +129,7 @@ describe('findAllReferences', () => {
             outgoingLinks: [{ target: 'other.md', display: 'Other', from: 0, to: 9 }],
             targets: ['other.md'],
             fragmentLinks: [],
+            headings: [],
           },
         ],
       ]);
@@ -165,6 +167,7 @@ describe('findAllReferences', () => {
             outgoingLinks: [{ target: 'guide.md', display: 'Guide', from: 4, to: 13 }],
             targets: ['guide.md'],
             fragmentLinks: [],
+            headings: [],
           },
         ],
         [
@@ -173,6 +176,7 @@ describe('findAllReferences', () => {
             outgoingLinks: [{ target: 'guide.md', display: 'Guide', from: 0, to: 9 }],
             targets: ['guide.md'],
             fragmentLinks: [],
+            headings: [],
           },
         ],
       ]);

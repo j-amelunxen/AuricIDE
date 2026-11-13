@@ -119,7 +119,7 @@ pub async fn agent_send_message(
     text: String,
     enter: bool,
     automatic: Option<bool>,
-    terminals: tauri::State<'_, crate::commands::TerminalState>,
+    terminals: tauri::State<'_, super::pty::TerminalState>,
     buffers: tauri::State<'_, super::output_buffer::OutputBuffersState>,
     drafts: tauri::State<'_, super::human_draft::HumanDraftsState>,
 ) -> Result<(), String> {
@@ -132,7 +132,7 @@ pub async fn agent_send_message(
         automatic.unwrap_or(false),
         std::time::Instant::now(),
     )?;
-    crate::commands::write_to_session(&terminals, &format!("agent-{agent_id}"), &data).await
+    super::pty::write_to_session(&terminals, &super::pty::agent_session_id(&agent_id), &data).await
 }
 
 #[cfg(test)]

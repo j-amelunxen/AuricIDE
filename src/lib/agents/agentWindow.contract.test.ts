@@ -6,7 +6,6 @@ import {
   AGENT_WINDOW_LABELS,
   AGENT_WINDOW_RUST_EVENTS,
   AgentWindowContractError,
-  DEFAULT_PTY_SIZE,
   parseWindowMessage,
   type AgentWindowMessageKind,
 } from './agentWindow.contract';
@@ -23,7 +22,6 @@ describe('agent window contract', () => {
     expect(AGENT_WINDOW_RUST_EVENTS).toEqual(withoutComment(fixtures.rustEvents));
     expect(AGENT_WINDOW_HOST_EVENTS).toEqual(withoutComment(fixtures.hostEvents));
     expect(AGENT_WINDOW_CLIENT_EVENTS).toEqual(withoutComment(fixtures.clientEvents));
-    expect(DEFAULT_PTY_SIZE).toEqual(fixtures.defaultPtySize);
   });
 
   it('keeps every event name distinct', () => {

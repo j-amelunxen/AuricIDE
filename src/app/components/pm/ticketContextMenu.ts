@@ -1,12 +1,6 @@
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { ContextMenuOption } from '../ide/ContextMenu';
-
-export const priorityLabel: Record<PmTicket['priority'], string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  critical: 'Critical',
-};
+import type { PmTicket } from '@/lib/pm/types';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
+import { PRIORITY_NAME } from '@/lib/pm/labels';
 
 export const priorityIcon: Record<PmTicket['priority'], string> = {
   low: 'keyboard_double_arrow_down',
@@ -25,7 +19,6 @@ export function buildTicketStatusPriorityPowerOptions(
 ): ContextMenuOption[] {
   const options: ContextMenuOption[] = [];
 
-  // Status Section
   options.push({ type: 'header', label: 'Status' });
 
   if (ticket.status === 'open') {
@@ -81,11 +74,10 @@ export function buildTicketStatusPriorityPowerOptions(
 
   options.push({ type: 'separator' });
 
-  // Priority Section
   options.push({ type: 'header', label: 'Priority' });
   (['low', 'normal', 'high', 'critical'] as const).forEach((p) => {
     options.push({
-      label: priorityLabel[p],
+      label: PRIORITY_NAME[p],
       icon: priorityIcon[p],
       action: () => onUpdateTicket(ticket.id, { priority: p }),
       ...(ticket.priority === p ? { icon: 'check' } : {}),
@@ -94,7 +86,6 @@ export function buildTicketStatusPriorityPowerOptions(
 
   options.push({ type: 'separator' });
 
-  // Agent strength Section
   options.push({ type: 'header', label: 'Agent strength' });
   options.push({
     label: 'None',

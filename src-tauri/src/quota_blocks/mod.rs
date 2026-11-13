@@ -15,7 +15,7 @@ pub mod matcher;
 pub mod reset_time;
 pub mod store;
 
-use crate::supervisor::policy::normalize_provider_id;
+use crate::providers::normalize_provider_id;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

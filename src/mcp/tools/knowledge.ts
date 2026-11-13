@@ -3,6 +3,10 @@ import { join, resolve, sep } from 'node:path';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 
+/**
+ * Wider than the file list's pruned folders (`PRUNED_DIRS`): this looks for
+ * knowledge notes, so build output is noise here even where a file search wants it.
+ */
 const SKIP_DIRS = new Set([
   'node_modules',
   '.git',

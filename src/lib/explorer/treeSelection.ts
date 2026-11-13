@@ -103,10 +103,3 @@ export function dragItems(
   const current = effectiveSelection(paths, primary);
   return current.includes(grabbed) ? topLevelPaths(current) : [grabbed];
 }
-
-/** Re-points selected paths after `from` moved to `to` (a folder carries its subtree). */
-export function remapPath(path: string, from: string, to: string): string {
-  if (path === from) return to;
-  if (path.startsWith(from + '/')) return to + path.slice(from.length);
-  return path;
-}

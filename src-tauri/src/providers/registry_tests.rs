@@ -1,3 +1,5 @@
+use super::crush::CrushProvider;
+use super::dynamic::DynamicProvider;
 use super::dynamic_tests::get_claude_config;
 use super::*;
 use std::collections::HashMap;

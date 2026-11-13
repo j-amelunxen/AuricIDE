@@ -1,4 +1,4 @@
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 
 /**
  * Which supervisor's family each agent belongs to: walk `spawnedByAgentId` up

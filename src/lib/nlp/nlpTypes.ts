@@ -5,3 +5,11 @@ export interface NerEntity {
   start: number;
   end: number;
 }
+
+export interface EntityOccurrence {
+  filePath: string;
+  lineNumber: number;
+  lineText: string;
+  charFrom: number;
+  charTo: number;
+}

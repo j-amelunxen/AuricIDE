@@ -1,8 +1,9 @@
 'use client';
 
+import { formatTokens } from '@/lib/usage/breakdown';
 import { useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { formatDuration } from '@/lib/pm/metrics';
+import { formatDuration } from '@/lib/pm/metrics/time';
 import {
   estimateDeviation,
   groupUsage,
@@ -12,10 +13,11 @@ import {
   type UsageGroupBy,
   type UsageWindow,
 } from '@/lib/pm/usage/aggregate';
-import { DASH, MetricCard, MetricPanel, statusLabel } from '../metricsView/metricsUi';
+import { DASH, MetricCard, MetricPanel } from '../metricsView/metricsUi';
 import { useProjectUsageRows } from '../cost/useProjectUsageRows';
-import { formatTokens, formatTotalCost, unpricedNote } from '../cost/usageFormat';
+import { formatTotalCost, unpricedNote } from '../cost/usageFormat';
 import { ToggleGroup } from './ToggleGroup';
+import { statusName } from '@/lib/pm/labels';
 
 const WINDOWS: { value: UsageWindow; label: string }[] = [
   { value: '7d', label: '7d' },
@@ -35,7 +37,7 @@ const UNATTRIBUTED_KEY = '—';
 
 function groupLabel(group: UsageGroup, groupBy: UsageGroupBy): string {
   if (group.key === UNATTRIBUTED_KEY) return 'Unattributed';
-  return groupBy === 'status' ? statusLabel(group.label) : group.label;
+  return groupBy === 'status' ? statusName(group.label) : group.label;
 }
 
 function percent(value: number): string {

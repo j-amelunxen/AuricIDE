@@ -1,5 +1,5 @@
-import type { AgentConfig } from '@/lib/tauri/agents';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { AgentConfig } from '@/lib/agents/types';
+import type { PmGoal } from '@/lib/goals/types';
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 
 export const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';

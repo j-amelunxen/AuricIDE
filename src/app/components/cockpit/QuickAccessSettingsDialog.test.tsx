@@ -6,7 +6,7 @@ import { getGlyph } from '@/lib/icons/registry';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProjectIconCandidate } from '@/lib/tauri/projectIcons';
 import { clearImageIconCache } from '@/lib/quickAccess/imageIconCache';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { saveAuricSkills } from '@/lib/settings/auricSkills';
 
 const mockListProjectSkills = vi.fn<() => Promise<ProjectSkill[]>>();

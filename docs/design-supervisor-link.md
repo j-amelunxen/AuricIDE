@@ -940,10 +940,20 @@ worktree and branch stay for the human. A register that does not parse is
 renamed to `supervisor-link-jobs.json.unreadable-<ms>` and an empty one
 started — the counter then starts at zero, the old file is kept to look at.
 
-`jobs.cancel` stops a running job's agent (the same kill as the IDE's button);
-the next tick ends it as `failed` with `cancelled`, the branch reported as it
-stands. While the agent still runs, every tick sends the kill again, so a
-cancel that reached an agent still starting is not lost.
+`jobs.cancel` records cancellation intent and requests the same stop as the
+IDE's button. Once the agent is observed stopped, a tick ends it as `failed`
+with `cancelled`, the branch reported as it stands. A dispatcher failure is
+returned to the caller; the intent remains recorded and every tick retries
+while the agent is listed running or queued. A changed stop failure also
+raises an inbox warning naming the job and agent. Repeated identical failures
+share that warning until a stop succeeds or the job ends. The existing app
+restart rule above still applies to pending cancellations.
+
+If a launched agent received no worktree, `jobs.create` answers `internal`
+with the job and agent IDs and the stop outcome. The job still counts and
+remains `running` with `cancelRequested: true` until its ending is observed;
+then it fails with `internal` for the missing worktree. The stored null
+worktree is launch evidence, independent of a directory disappearing later.
 
 **Withdrawn while running.** When the human removes a running job's project
 from the link policy, or removes its kind from the project, the next tick

@@ -1,5 +1,6 @@
 'use client';
 
+import { baseName } from '@/lib/paths/baseName';
 import {
   memo,
   useCallback,
@@ -11,18 +12,15 @@ import {
 } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { statusBadge } from '@/app/components/git/sourceControl/types';
-import {
-  HunkHeaderContext,
-  type HunkHeaderApi,
-} from '@/app/components/editor/diff/HunkHeaderContext';
-import { HunkToolbar } from '@/app/components/editor/diff/HunkToolbar';
-import { LineCommentContext } from '@/app/components/editor/diff/LineCommentContext';
-import { LineEditContext } from '@/app/components/editor/diff/LineEditContext';
-import { RiskChips } from '@/app/components/editor/diff/RiskChips';
-import { SideBySideView } from '@/app/components/editor/diff/SideBySideView';
-import { UnifiedView } from '@/app/components/editor/diff/UnifiedView';
-import { hunkCommentTarget, type LineEditApi } from '@/app/components/editor/diff/types';
-import { useLineCommentApi } from '@/app/components/editor/diff/useLineCommentApi';
+import { HunkHeaderContext, type HunkHeaderApi } from '@/app/components/diff/HunkHeaderContext';
+import { HunkToolbar } from '@/app/components/diff/HunkToolbar';
+import { LineCommentContext } from '@/app/components/diff/LineCommentContext';
+import { LineEditContext } from '@/app/components/diff/LineEditContext';
+import { RiskChips } from '@/app/components/diff/RiskChips';
+import { SideBySideView } from '@/app/components/diff/SideBySideView';
+import { UnifiedView } from '@/app/components/diff/UnifiedView';
+import { hunkCommentTarget, type LineEditApi } from '@/app/components/diff/types';
+import { useLineCommentApi } from '@/app/components/diff/useLineCommentApi';
 import { parseDiff } from '@/lib/git/parseDiff';
 import { fileLevelFlags, flagsForHunk } from '@/lib/git/review/riskChips';
 import type { ReviewFile, ViewedState } from '@/lib/git/review/reviewSession';
@@ -106,10 +104,6 @@ function hunkRowOf(section: HTMLElement, target: HTMLElement): Element | null {
   return before;
 }
 
-function basename(path: string): string {
-  return path.slice(path.lastIndexOf('/') + 1);
-}
-
 // code-gate: complexity-parameter-count - one destructured props object, named at the call site
 function ReviewPatch({
   repoPath,
@@ -149,7 +143,7 @@ function ReviewPatch({
     () => ({
       focusedHunk,
       describeHunk: (hunkIndex) =>
-        `Hunk ${hunkIndex + 1} of ${hunkCount} in ${basename(file.path)}`,
+        `Hunk ${hunkIndex + 1} of ${hunkCount} in ${baseName(file.path)}`,
       renderHunkHeader: (hunkIndex) => {
         const { actions, note } = actionable
           ? hunkActions(hunkIndex)

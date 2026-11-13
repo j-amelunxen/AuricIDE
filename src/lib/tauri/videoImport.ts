@@ -1,3 +1,4 @@
+import { subscribeToTauriEvent } from './subscribe';
 import { invoke } from './invoke';
 import type { TranscriptSegment, VideoFrame } from '@/lib/videoImport/processExtraction';
 
@@ -39,7 +40,16 @@ export interface Preflight {
 }
 
 /** Emitted per line while Setup runs, so a long download stays visible. */
-export const SETUP_PROGRESS_EVENT = 'video-import-setup-progress';
+export const VIDEO_IMPORT_SETUP_PROGRESS_EVENT = 'video-import-setup-progress';
+
+/** Progress lines of the local runtime install, as it prints them. */
+export function onVideoImportSetupProgress(onLine: (line: string) => void): () => void {
+  return subscribeToTauriEvent<unknown>(
+    VIDEO_IMPORT_SETUP_PROGRESS_EVENT,
+    (line) => onLine(String(line)),
+    'Video import progress unavailable (browser mode)'
+  );
+}
 
 export async function analyzeVideoMedia(
   projectPath: string,
@@ -66,8 +76,4 @@ export async function saveVideoProcessAnalysis(
     importId,
     processJson: JSON.stringify(process, null, 2),
   });
-}
-
-export async function clearVideoImportCache(importId: string): Promise<void> {
-  return invoke<void>('video_import_clear', { importId });
 }

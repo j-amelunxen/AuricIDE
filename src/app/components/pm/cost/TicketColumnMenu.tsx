@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import {
   TICKET_USAGE_COLUMNS,
   TICKET_USAGE_COLUMN_LABEL,
@@ -16,20 +17,25 @@ interface TicketColumnMenuProps {
 export function TicketColumnMenu({ columns, onToggle }: TicketColumnMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  // A layer of its own, so Escape closes this menu and not the dialog around it.
+  const close = useCallback(() => setOpen(false), []);
+  useOverlayLayer({
+    id: `ticket-column-menu-${menuId}`,
+    kind: 'tool',
+    active: open,
+    onEscape: close,
+  });
 
   useEffect(() => {
     if (!open) return;
-    const close = (event: Event) => {
-      if (event.type === 'keydown' && (event as KeyboardEvent).key !== 'Escape') return;
-      if (event.type === 'pointerdown' && rootRef.current?.contains(event.target as Node)) return;
+    const closeOutside = (event: Event) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
       setOpen(false);
     };
-    document.addEventListener('pointerdown', close);
-    document.addEventListener('keydown', close);
-    return () => {
-      document.removeEventListener('pointerdown', close);
-      document.removeEventListener('keydown', close);
-    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
   }, [open]);
 
   return (

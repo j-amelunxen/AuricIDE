@@ -61,7 +61,6 @@ export function ConductorSettingsBar({
       data-testid="conductor-settings"
       className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/5 pt-2.5"
     >
-      {/* Concurrency */}
       <label className={`${settingCls} text-foreground-muted`}>
         parallel
         <input
@@ -135,7 +134,6 @@ export function ConductorSettingsBar({
         </>
       )}
 
-      {/* Judge review */}
       {!running && (
         <label
           className={`${settingCls} ${

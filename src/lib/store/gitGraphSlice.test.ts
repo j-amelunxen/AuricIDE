@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand';
 import { layoutGraph } from '../git/graphLayout';
 import type { CommitDetail, GitRefs, GraphCommit, GraphPage, PickResult } from '../tauri/gitGraph';
 
@@ -22,29 +22,17 @@ vi.mock('../tauri/gitGraph', async (importActual) => ({
   ...m,
 }));
 
-import {
-  EMPTY_GRAPH_COMMITS,
-  EMPTY_GRAPH_ROWS,
-  GRAPH_PAGE_SIZE,
-  createGitGraphSlice,
-  resolveBranchFilterTip,
-  selectGraph,
-  selectGraphDetail,
-  selectGraphRows,
-  type GitGraphSlice,
-} from './gitGraphSlice';
+import { GRAPH_PAGE_SIZE, graphDetailKey, resolveBranchFilterTip } from './gitGraphSlice';
 
 const REPO = '/work/repo';
 const refreshRepoStatus = vi.fn();
 const loadBranches = vi.fn();
 
 function createTestStore() {
-  return createStore<
-    GitGraphSlice & {
-      refreshRepoStatus: typeof refreshRepoStatus;
-      loadBranches: typeof loadBranches;
-    }
-  >()((...a) => ({ ...createGitGraphSlice(...a), refreshRepoStatus, loadBranches }));
+  return createFullTestStore({
+    refreshRepoStatus,
+    loadBranches,
+  });
 }
 type TestStore = ReturnType<typeof createTestStore>;
 
@@ -298,8 +286,9 @@ describe('selection, filters and details', () => {
     expect(m.gitCommitDetail).toHaveBeenCalledWith(REPO, 'a', 0);
     await store.getState().loadGraphDetail(REPO, 'a', 1);
     expect(m.gitCommitDetail).toHaveBeenCalledTimes(2);
-    expect(selectGraphDetail(store.getState(), REPO, 'a', 0)).toBe(detail);
-    expect(selectGraphDetail(store.getState(), REPO, 'a', 2)).toBeUndefined();
+    const details = store.getState().graphs[REPO]?.details ?? {};
+    expect(details[graphDetailKey('a', 0)]).toBe(detail);
+    expect(details[graphDetailKey('a', 2)]).toBeUndefined();
   });
 
   it('answers null when the detail cannot be read', async () => {
@@ -458,14 +447,6 @@ describe('operations', () => {
 });
 
 describe('selectors and helpers', () => {
-  it('return the same empty reference for a graph that is not open', () => {
-    const state = createTestStore().getState();
-    expect(selectGraph(state, REPO)).toBeUndefined();
-    expect(selectGraphRows(state, REPO)).toBe(EMPTY_GRAPH_ROWS);
-    expect(selectGraphRows(state, REPO)).toBe(selectGraphRows(state, REPO));
-    expect(EMPTY_GRAPH_COMMITS).toEqual([]);
-  });
-
   it('resolveBranchFilterTip: none, current branch, detached HEAD, a named ref', () => {
     const refs = refsAt('h', {
       refs: [

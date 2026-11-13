@@ -1,33 +1,12 @@
+import { parseUtcDate } from '@/lib/time/utcStamp';
 import type { NotificationSeverity } from './types';
-
-/**
- * Turns a stored timestamp into a Date.
- *
- * Two formats reach us and they must not be confused. SQLite's `datetime('now')`
- * writes `YYYY-MM-DD HH:MM:SS` in **UTC**, while a row that never reached the
- * database carries a full ISO string. Handed the space-separated form, JS parses
- * it as *local* time — so a UTC timestamp would be read as local and every age
- * would be off by the offset, showing entries as minted in the future during
- * summer in Berlin. Normalising here is the only place that has to know.
- *
- * Returns null for anything unparseable, so a corrupt row loses its age rather
- * than rendering "NaN" or an epoch date.
- */
-export function parseNotificationTimestamp(raw: string): Date | null {
-  const normalised = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
-    ? `${raw.replace(' ', 'T')}Z`
-    : raw;
-
-  const parsed = new Date(normalised);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
 
 /**
  * How long ago, in as few characters as possible — these sit in a narrow
  * side panel next to text that matters more.
  */
 export function formatNotificationAge(createdAt: string, now: number): string {
-  const at = parseNotificationTimestamp(createdAt);
+  const at = parseUtcDate(createdAt);
   if (at === null) return '';
 
   // Clock skew between the database and the UI would otherwise read as a

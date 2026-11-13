@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand';
 import { usageRow } from '@/lib/pm/usage/testRow';
 
 const mockLoad = vi.fn();
@@ -8,14 +8,10 @@ vi.mock('../tauri/agentUsage', () => ({
   agentUsageLoad: (projectPath: string) => mockLoad(projectPath),
 }));
 
-import {
-  createAgentUsageSlice,
-  selectAgentUsageRows,
-  type AgentUsageSlice,
-} from './agentUsageSlice';
+import { selectAgentUsageRows } from './agentUsageSlice';
 
 function createTestStore() {
-  return createStore<AgentUsageSlice>()((...a) => ({ ...createAgentUsageSlice(...a) }));
+  return createFullTestStore();
 }
 
 describe('agentUsageSlice', () => {

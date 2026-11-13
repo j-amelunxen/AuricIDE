@@ -15,3 +15,8 @@ export function formatAgentDuration(ms: number): string {
 
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
+
+/** {@link formatAgentDuration} without a zero remainder ("9h", not "9h 0m"), for a figure inside a sentence. */
+export function formatAgentDurationShort(ms: number): string {
+  return formatAgentDuration(ms).replace(/ 0[mh]$/, '');
+}

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::app_config::{global_namespace, AppCredentialsState};
 
 use super::outbox::{claim_next, complete_attempt, purge_terminal};
-use super::policy::{transition, AttemptResult};
+use super::policy::{transition, AttemptResult, DeliveryStatus};
 use super::pushover::PushoverClient;
 use super::types::{OutboxItem, PushoverConfig, Severity, PUSHOVER_NAMESPACE};
 
@@ -49,10 +49,13 @@ impl DeliveryRouterState {
         let conn = Connection::open(&self.db_path)
             .map_err(|error| format!("Failed to open delivery database: {error}"))?;
         conn.execute(
-            "UPDATE notification_delivery_outbox
-             SET status = 'skipped', lease_owner = NULL, lease_until = NULL,
-                 last_error = 'Pushover was disabled when this notification was queued'
-             WHERE channel = 'pushover' AND status IN ('pending', 'retry', 'processing')",
+            &format!(
+                "UPDATE notification_delivery_outbox
+                 SET status = 'skipped', lease_owner = NULL, lease_until = NULL,
+                     last_error = 'Pushover was disabled when this notification was queued'
+                 WHERE channel = 'pushover' AND status IN ({})",
+                DeliveryStatus::sql_list(false)
+            ),
             [],
         )
         .map_err(|error| format!("Failed to skip disabled Pushover deliveries: {error}"))

@@ -1,10 +1,10 @@
-import type { AgentConfig } from '@/lib/tauri/agents';
+import type { AgentConfig } from '@/lib/agents/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { deriveAgentName } from '@/lib/agents/naming';
 import { resolveSkillLaunch } from '@/lib/agents/skillLaunch';
 import { runKindFor } from '@/lib/agents/spawnTargets';
 import { loadSpawnDefaults, type SpawnPreset } from '@/lib/agents/spawnDefaults';
-import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo } from '@/lib/quickAccess/types';
 import type { OpenManagerOutcome } from '@/lib/agents/openSupervisor';
 import type { NotificationTrust } from './trust';
 import {

@@ -1,5 +1,6 @@
 'use client';
 
+import { isValidExtraMcpName } from '@/lib/config/extraMcpName';
 import { useEffect, useState } from 'react';
 import type { SupervisorProjectPolicy } from '@/lib/config/supervisorPolicy';
 import { setExtraMcpServer } from '@/lib/config/supervisorPolicyEdit';
@@ -14,8 +15,6 @@ interface Props {
   entry: SupervisorProjectPolicy;
   onChange: (entry: SupervisorProjectPolicy) => void;
 }
-
-const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Additional MCP servers for this project's agents: the picker lists what the project's own
@@ -41,7 +40,7 @@ export function SupervisorExtraMcp({ projectPath, entry, onChange }: Props) {
 
   const known = new Set((found?.servers ?? []).map((s) => s.name));
   const manual = picked.filter((name) => !known.has(name));
-  const draftValid = NAME_PATTERN.test(draft.trim());
+  const draftValid = isValidExtraMcpName(draft.trim());
   const id = `supervisor-extra-mcp-${projectPath}`;
 
   return (

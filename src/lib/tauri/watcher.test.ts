@@ -59,8 +59,8 @@ describe('watcher IPC', () => {
     it('hands every event of a batch to the callback, in order', async () => {
       const callback = vi.fn();
       const batch: FsChangeEvent[] = [
-        { path: '/project/a.md', kind: 'Modify(Data(Content))', exists: true },
-        { path: '/project/b.md', kind: 'Remove(File)', exists: false },
+        { path: '/project/a.md', contentOnly: true, exists: true },
+        { path: '/project/b.md', contentOnly: false, exists: false },
       ];
 
       mockListen.mockImplementation(

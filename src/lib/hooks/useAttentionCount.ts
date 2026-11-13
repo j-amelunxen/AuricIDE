@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
 import { useNow } from './useNow';
 

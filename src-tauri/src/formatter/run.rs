@@ -43,7 +43,7 @@ pub async fn run_tool(
         .kill_on_drop(true);
     // `node_modules/.bin/*` start with `#!/usr/bin/env node`, which needs the
     // login shell's PATH, not launchd's.
-    for (key, value) in crate::agents::cached_login_shell_env().await {
+    for (key, value) in crate::machine::cached_login_shell_env().await {
         command.env(key, value);
     }
     let mut child = match command.spawn() {
@@ -234,7 +234,7 @@ mod tests {
     async fn a_tool_that_outlives_the_timeout_is_stopped_and_failed() {
         // The first call reads the login shell's environment; keep that out
         // of the clock.
-        crate::agents::cached_login_shell_env().await;
+        crate::machine::cached_login_shell_env().await;
         let started = std::time::Instant::now();
         let result = sh("sleep 5", "x", Duration::from_millis(200)).await;
         assert!(started.elapsed() < Duration::from_secs(3));

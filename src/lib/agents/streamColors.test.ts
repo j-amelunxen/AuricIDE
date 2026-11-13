@@ -6,7 +6,7 @@ import {
   supervisorFamilyColors,
 } from './streamColors';
 import { AGENT_COLORS } from './colors';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 
 describe('streamColorFor', () => {
   it('gives the same agent the same colour every time', () => {

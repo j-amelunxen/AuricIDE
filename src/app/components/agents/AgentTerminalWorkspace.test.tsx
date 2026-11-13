@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState, type ComponentProps } from 'react';
 import { AgentTerminalWorkspace } from './AgentTerminalWorkspace';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { setAppConfigValue } from '@/lib/config/appConfig';
 import { useStore } from '@/lib/store';
 
@@ -35,7 +35,7 @@ type WorkspaceProps = ComponentProps<typeof AgentTerminalWorkspace>;
 
 function renderWorkspace(props: Partial<WorkspaceProps> = {}) {
   const confirm = vi.fn(async () => true);
-  const onEndAgent = vi.fn(async () => {});
+  const onEndAgent = vi.fn(async (_target: AgentInfo, onEnded: () => void) => onEnded());
   const onClose = vi.fn();
   const onSwitchAgent = vi.fn();
   render(
@@ -119,14 +119,15 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
     expect(screen.getByTestId('xterm-a')).toBeInTheDocument();
   });
 
-  it('asks before ending a running agent, leaves its tab, then ends it once', async () => {
+  it('asks before ending a running agent, ends it once, then leaves its tab', async () => {
     const user = userEvent.setup();
     const order: string[] = [];
     let answer: (go: boolean) => void = () => {};
     const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
     const onSwitchAgent = vi.fn(() => order.push('switched'));
-    const onEndAgent = vi.fn(async () => {
+    const onEndAgent = vi.fn(async (_target: AgentInfo, onEnded: () => void) => {
       order.push('ended');
+      onEnded();
     });
     renderWorkspace({ confirm, onEndAgent, onSwitchAgent });
 
@@ -137,9 +138,21 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
 
     answer(true);
     await waitFor(() => expect(onEndAgent).toHaveBeenCalledTimes(1));
-    expect(onEndAgent).toHaveBeenCalledWith(running);
+    expect(onEndAgent).toHaveBeenCalledWith(running, expect.any(Function));
     expect(onSwitchAgent).toHaveBeenCalledWith(finished);
-    expect(order).toEqual(['switched', 'ended']);
+    expect(order).toEqual(['ended', 'switched']);
+  });
+
+  it('stays on a running agent whose stop did not land', async () => {
+    const user = userEvent.setup();
+    const onEndAgent = vi.fn(async () => {});
+    const { onSwitchAgent, onClose } = renderWorkspace({ agents: [running], onEndAgent });
+
+    await user.click(screen.getByTestId('agent-tab-close-a'));
+
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledTimes(1));
+    expect(onSwitchAgent).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('ends nothing when the question is answered with no', async () => {
@@ -161,7 +174,7 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
     await user.click(screen.getByTestId('agent-tab-close-b'));
 
     await waitFor(() => expect(onEndAgent).toHaveBeenCalledTimes(1));
-    expect(onEndAgent).toHaveBeenCalledWith(finished);
+    expect(onEndAgent).toHaveBeenCalledWith(finished, expect.any(Function));
     expect(confirm).not.toHaveBeenCalled();
   });
 
@@ -176,12 +189,12 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
 
     act(() => useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] }));
     await user.click(screen.getByTestId('terminal-pane-end-b'));
-    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(finished));
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(finished, expect.any(Function)));
     expect(confirm).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId('terminal-pane-end-a'));
     expect(confirm).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(running));
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(running, expect.any(Function)));
   });
 
   it('offers no end control on a pane where the shell allows none', () => {
@@ -360,7 +373,7 @@ describe('AgentTerminalWorkspace – supervisor families', () => {
 
     await user.click(screen.getByTestId(`agent-tab-close-${closing}`));
 
-    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(active));
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(active, expect.any(Function)));
     expect(onSwitchAgent).toHaveBeenCalledWith(expect.objectContaining({ id: expected }));
   });
 

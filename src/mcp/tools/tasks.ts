@@ -112,7 +112,8 @@ export function completeTask(
     }
 
     db.prepare(UPDATE_STATUS_SQL).run('done', id);
-    insertStatusHistory(db, id, existing.status, 'done', 'mcp');
+    // Completing a ticket that is already done is not a transition.
+    if (existing.status !== 'done') insertStatusHistory(db, id, existing.status, 'done', 'mcp');
 
     return db.prepare(SELECT_TICKET_SQL).get(id) as Ticket;
   });
@@ -120,9 +121,6 @@ export function completeTask(
   return transact();
 }
 
-/**
- * Registers task-related tools with a FastMCP server.
- */
 export function registerTaskTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'fetch_next_unblocked_task',

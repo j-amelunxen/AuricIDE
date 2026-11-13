@@ -28,7 +28,6 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps): React.JSX.El
               Boolean(match);
             const codeString = String(children).replace(/\n$/, '');
 
-            // Render mermaid diagrams
             if (isBlock && language === 'mermaid') {
               return <MermaidPreview code={codeString} />;
             }

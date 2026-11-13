@@ -6,7 +6,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
-import { parseWikiLinks } from './wikiLinkParser';
+import { parseWikiLinks } from '../markdown/wikiLinkParser';
 
 const wikiLinkMark = Decoration.mark({ class: 'syntax-wikilink' });
 

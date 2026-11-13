@@ -2,9 +2,10 @@
 
 import { useCallback, useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import { loadProjectData } from '@/lib/store/projectSession';
 import { openFolderDialog, createDirectory, writeFile } from '@/lib/tauri/fs';
 import { openExternalUrl } from '@/lib/tauri/opener';
-import { type AgentConfig, type AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import { persistQuietly } from '@/lib/store/persistFeedback';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { defaultCommands } from '@/lib/commands/registry';
@@ -25,6 +26,7 @@ import { showGraph } from '@/lib/git/graphEntry';
 import { useShowGraphShortcut } from '../useShowGraphShortcut';
 import { repoForGlobalGitAction } from './useGitActionHandlers';
 import type { IDEState } from './liveIDEState';
+import { resetProjectView } from './projectView';
 
 export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
   'agent.kill-all': 'Kill All lives in the Agents panel, per repository. It asks before it acts.',
@@ -175,59 +177,25 @@ export function useAgentAndCommandHandlers({
     [state]
   );
 
-  const loadProjectData = useCallback(
-    (projectPath: string) => {
-      void state.loadPmData(projectPath);
-      void state.loadRequirements(projectPath);
-      void state.loadGoals(projectPath);
-      void state.loadExcalidrawSpecLinks(projectPath);
+  // The rootPath effect in useIDEActions initialises and closes the project
+  // database; opening only resets, switches and reads.
+  const openProject = useCallback(
+    async (path: string) => {
+      resetProjectView(state);
+      state.setRootPath(path);
+      state.addRecentProject(path);
+      loadProjectData(state, path, 'open');
+      await handleRefresh(path, true);
     },
-    [state]
+    [state, handleRefresh]
   );
-
-  const clearProjectState = useCallback(() => {
-    state.closeAllTabs();
-    state.setFileTree([]);
-    state.clearLinkIndex();
-    state.clearHeadingIndex();
-    state.clearEntityIndex();
-    state.resetPmInMemory();
-    state.resetBlueprintsInMemory();
-    state.resetRequirementsInMemory();
-    state.resetExcalidrawInMemory();
-    state.setProjectFiles([]);
-    state.setEditorContent('');
-    state.setImageData(null);
-    state.setVideoSrc(null);
-    state.setPdfData(null);
-    state.setMindmapData(null);
-    state.resetGitInMemory();
-    state.resetReviewInMemory();
-    state.resetMergeInMemory();
-  }, [state]);
 
   const handleOpenFolder = useCallback(async () => {
     const selected = await openFolderDialog();
-    if (!selected) return;
-    clearProjectState();
-    state.setRootPath(selected);
-    state.addRecentProject(selected);
-    state.initProjectDb(selected);
-    loadProjectData(selected);
-    await handleRefresh(selected, true);
-  }, [state, clearProjectState, handleRefresh, loadProjectData]);
+    if (selected) await openProject(selected);
+  }, [openProject]);
 
-  const handleOpenRecent = useCallback(
-    async (path: string) => {
-      clearProjectState();
-      state.setRootPath(path);
-      state.addRecentProject(path);
-      state.initProjectDb(path);
-      loadProjectData(path);
-      await handleRefresh(path, true);
-    },
-    [state, clearProjectState, handleRefresh, loadProjectData]
-  );
+  const handleOpenRecent = useCallback((path: string) => openProject(path), [openProject]);
 
   const handleNewProject = useCallback(
     async ({ name, parentDir, template }: NewProjectOptions) => {
@@ -239,14 +207,9 @@ export function useAgentAndCommandHandlers({
         if (parent && parent !== projectDir) await createDirectory(parent);
         await writeFile(file.path, file.content);
       }
-      clearProjectState();
-      state.setRootPath(projectDir);
-      state.addRecentProject(projectDir);
-      state.initProjectDb(projectDir);
-      loadProjectData(projectDir);
-      await handleRefresh(projectDir, true);
+      await openProject(projectDir);
     },
-    [state, clearProjectState, handleRefresh, loadProjectData]
+    [openProject]
   );
 
   const handleActivitySelect = useCallback(
@@ -312,7 +275,6 @@ export function useAgentAndCommandHandlers({
   const handleProblemsClick = useCallback(() => {
     state.setBottomCollapsed(false);
     state.setBottomTab('problems');
-    state.setProblemsPanelOpen(true);
   }, [state]);
 
   const commandActions = useMemo<Record<string, () => void>>(

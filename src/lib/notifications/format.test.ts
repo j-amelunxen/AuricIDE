@@ -1,33 +1,29 @@
+import { parseUtcDate } from '@/lib/time/utcStamp';
 import { describe, expect, it } from 'vitest';
-import {
-  formatNotificationAge,
-  formatNotificationProject,
-  parseNotificationTimestamp,
-  severityTone,
-} from './format';
+import { formatNotificationAge, formatNotificationProject, severityTone } from './format';
 
 describe('parseNotificationTimestamp', () => {
   // The bug this guards: JS reads a space-separated timestamp as local time,
   // but SQLite wrote it in UTC. In Berlin summer that is two hours of drift,
   // enough to render a fresh row as minted in the future.
   it('reads the SQLite form as UTC', () => {
-    const parsed = parseNotificationTimestamp('2026-08-12 10:00:00');
+    const parsed = parseUtcDate('2026-08-12 10:00:00');
     expect(parsed?.toISOString()).toBe('2026-08-12T10:00:00.000Z');
   });
 
   it('leaves a full ISO string alone', () => {
-    const parsed = parseNotificationTimestamp('2026-08-12T10:00:00.000Z');
+    const parsed = parseUtcDate('2026-08-12T10:00:00.000Z');
     expect(parsed?.toISOString()).toBe('2026-08-12T10:00:00.000Z');
   });
 
   it('agrees on both forms of the same instant', () => {
-    const sqlite = parseNotificationTimestamp('2026-08-12 10:00:00');
-    const iso = parseNotificationTimestamp('2026-08-12T10:00:00.000Z');
+    const sqlite = parseUtcDate('2026-08-12 10:00:00');
+    const iso = parseUtcDate('2026-08-12T10:00:00.000Z');
     expect(sqlite?.getTime()).toBe(iso?.getTime());
   });
 
   it.each(['', 'not a date', '2026-13-45 99:99:99'])('returns null for %o', (raw) => {
-    expect(parseNotificationTimestamp(raw)).toBeNull();
+    expect(parseUtcDate(raw)).toBeNull();
   });
 });
 

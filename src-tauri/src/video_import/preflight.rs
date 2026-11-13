@@ -11,13 +11,11 @@
 //! by way of a traceback.
 
 use crate::machine::{
-    dependency, format_version, meets_minimum, parse_version, run_probe, Check,
+    dependency, format_version, meets_minimum, parse_version, resolve_executable, run_probe, Check,
     DEFAULT_PROBE_TIMEOUT,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-
-pub(crate) use crate::machine::resolve_executable;
 
 /// The oldest `uv` whose behaviour this integration is written against:
 /// `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` honoured on `tool install`, and
@@ -27,7 +25,13 @@ pub const MIN_UV_VERSION: (u64, u64, u64) = (0, 5, 0);
 
 /// `parakeet-mlx` and every wheel underneath it (mlx, numba, librosa) declare
 /// `Requires-Python: >=3.10`.
-pub const MIN_PYTHON: &str = ">=3.10";
+macro_rules! min_python_version {
+    () => {
+        "3.10"
+    };
+}
+pub(crate) use min_python_version;
+pub const MIN_PYTHON: &str = concat!(">=", min_python_version!());
 
 /// The check whose failure is not a problem — it is what the Install button is
 /// for.
@@ -178,7 +182,11 @@ async fn check_python(uv: Option<&PathBuf>) -> Check {
                     "Python",
                     &requirement,
                     None,
-                    "No Python 3.10 or newer was found. uv can install one for you.",
+                    concat!(
+                        "No Python ",
+                        min_python_version!(),
+                        " or newer was found. uv can install one for you."
+                    ),
                     Some("uv python install 3.12"),
                 )
             }
@@ -188,7 +196,11 @@ async fn check_python(uv: Option<&PathBuf>) -> Check {
             "Python",
             &requirement,
             None,
-            "No Python 3.10 or newer was found. uv can install one for you.",
+            concat!(
+                "No Python ",
+                min_python_version!(),
+                " or newer was found. uv can install one for you."
+            ),
             Some("uv python install 3.12"),
         ),
     }

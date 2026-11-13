@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { normalizeBundle } from '@/lib/goals/goalDependencies';
 import type { GoalDependencyResult } from '@/lib/store/goalsSlice';
 

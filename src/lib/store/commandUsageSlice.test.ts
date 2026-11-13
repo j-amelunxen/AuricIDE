@@ -1,16 +1,12 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { create } from 'zustand';
-import {
-  createCommandUsageSlice,
-  MAX_RECENT_COMMANDS,
-  type CommandUsageSlice,
-} from './commandUsageSlice';
+import { MAX_RECENT_COMMANDS } from './commandUsageSlice';
 
 const STORAGE_KEY = 'auric-recent-commands';
 
 function makeStore() {
-  return create<CommandUsageSlice>()((...a) => ({ ...createCommandUsageSlice(...a) }));
+  return createFullTestStore();
 }
 
 describe('commandUsageSlice', () => {

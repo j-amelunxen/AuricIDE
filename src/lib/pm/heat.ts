@@ -1,4 +1,4 @@
-import type { PmDependency } from '../tauri/pm';
+import type { PmDependency } from './types';
 
 /**
  * Calculates the 'heat' of a ticket based on how many other items (epics or tickets)

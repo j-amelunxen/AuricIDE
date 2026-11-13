@@ -1,8 +1,8 @@
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { isModelAvailable, type ProviderInfo } from '@/lib/tauri/providers';
-import type { PermissionMode } from '@/lib/tauri/agents';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PermissionMode } from '@/lib/agents/types';
+import type { PmGoal } from '@/lib/goals/types';
 import { SelectChevron } from './SelectChevron';
 
 interface ProviderModelSectionProps {

@@ -1,5 +1,9 @@
 import type { PlannerGraph } from '@/lib/goals/planner/plannerSchema';
 import type { LlmMessage } from '@/lib/tauri/llm';
+import { sliceModelJson } from '@/lib/text/modelJson';
+
+/** How many of a video's frames reach the model as images; the rest go by timestamp only. */
+export const MAX_VISION_FRAMES = 12;
 
 export type ProcessActor = 'human' | 'agent' | 'system' | 'unknown';
 export type ProcessStationKind = 'normal' | 'gate' | 'human';
@@ -186,12 +190,10 @@ function frameTimestamps(source: Record<string, unknown>, index: number): number
 }
 
 function extractJson(raw: string): unknown {
-  const cleaned = raw.replace(/```(?:json)?/gi, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('No JSON object found in process analysis');
+  const slice = sliceModelJson(raw);
+  if (!slice.ok) throw new Error('No JSON object found in process analysis');
   try {
-    return JSON.parse(cleaned.slice(start, end + 1));
+    return JSON.parse(slice.text);
   } catch (error) {
     throw new Error(`Process analysis is not valid JSON: ${(error as Error).message}`);
   }

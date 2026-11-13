@@ -1,4 +1,5 @@
 import { stripAnsi } from '../terminal/ansi';
+import { isRedrawNoise, stripLeadingDecoration } from './terminalChrome';
 
 /** Longest activity line shown before it is elided. */
 export const ACTIVITY_MAX_CHARS = 72;
@@ -9,23 +10,6 @@ export const ACTIVITY_MAX_CHARS = 72;
  * derivation runs for every agent on every activity tick.
  */
 const SCANNED_CHUNKS = 12;
-
-/**
- * Terminal chrome that redraws constantly and says nothing about the work.
- * Deliberately short — over-filtering would hide real output, and a wrong
- * activity line is worse than a slightly noisy one.
- */
-const CHROME_PATTERNS = [/^esc to interrupt/i, /^\? for shortcuts/i, /^ctrl\+[a-z] to /i];
-
-/** Leading decoration CLIs prefix their status lines with (⏺, ✻, ▪, >, ·). */
-const LEADING_DECORATION = /^[^\p{L}\p{N}(["']+/u;
-
-/**
- * A line worth showing has at least one letter in it. Digits alone are not
- * enough: a bare "62%" or "███ 45%" tick flickers up several times a second
- * and says nothing about what the number measures.
- */
-const HAS_WORDS = /\p{L}/u;
 
 /**
  * The newest line of an agent's output that actually says something, cleaned
@@ -44,10 +28,9 @@ export function deriveAgentActivity(chunks: string[]): string | null {
   const lines = tail.replace(/\r\n?/g, '\n').split('\n');
 
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = stripAnsi(lines[i]).replace(LEADING_DECORATION, '').replace(/\s+/g, ' ').trim();
-
-    if (!line || !HAS_WORDS.test(line)) continue;
-    if (CHROME_PATTERNS.some((pattern) => pattern.test(line))) continue;
+    const shown = stripAnsi(lines[i]).replace(/\s+/g, ' ').trim();
+    if (!shown || isRedrawNoise(shown)) continue;
+    const line = stripLeadingDecoration(shown).trim();
 
     return line.length > ACTIVITY_MAX_CHARS ? `${line.slice(0, ACTIVITY_MAX_CHARS)}…` : line;
   }

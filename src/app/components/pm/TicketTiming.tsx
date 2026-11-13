@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import { useStore } from '@/lib/store';
-import { computeTicketMetrics, formatDuration } from '@/lib/pm/metrics';
-import { statusLabel, TimingCard, type TimingRow } from './TimingCard';
+import { computeTicketMetrics } from '@/lib/pm/metrics/ticketMetrics';
+import { TimingCard, timingRows } from './TimingCard';
 
 interface TicketTimingProps {
   ticketId: string;
@@ -29,22 +29,5 @@ export function TicketTiming({ ticketId, status }: TicketTimingProps) {
     return computeTicketMetrics(entries, [{ id: ticketId, epicId: '', status }])[0];
   }, [history, ticketId, status]);
 
-  const rows: TimingRow[] = [];
-  if (metrics.timeInCurrentStatus !== null) {
-    rows.push({
-      label: statusLabel(metrics.currentStatus),
-      value: formatDuration(metrics.timeInCurrentStatus),
-    });
-  }
-  for (const [spellStatus, ms] of Object.entries(metrics.timeInStatus)) {
-    rows.push({ label: statusLabel(spellStatus), value: formatDuration(ms) });
-  }
-  if (metrics.cycleTime !== null) {
-    rows.push({ label: 'Cycle', value: formatDuration(metrics.cycleTime) });
-  }
-  if (metrics.leadTime !== null) {
-    rows.push({ label: 'Lead', value: formatDuration(metrics.leadTime) });
-  }
-
-  return <TimingCard rows={rows} />;
+  return <TimingCard rows={timingRows(metrics)} />;
 }

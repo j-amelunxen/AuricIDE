@@ -26,22 +26,18 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
 
   const filtered = useMemo(() => {
     return files.filter((f) => {
-      // Filter by extension
       if (extension && f.extension.toLowerCase() !== extension.toLowerCase().replace(/^\./, '')) {
         return false;
       }
 
-      // Filter by min lines
       if (minLines !== '' && f.line_count < minLines) {
         return false;
       }
 
-      // Filter by max lines
       if (maxLines !== '' && f.line_count > maxLines) {
         return false;
       }
 
-      // Filter by name/path query
       if (query && !f.path.toLowerCase().includes(query.toLowerCase())) {
         return false;
       }

@@ -63,15 +63,11 @@ export function IDEShell({
 
   return (
     <div data-testid="ide-shell" className="flex h-screen w-screen flex-col bg-background-dark">
-      {/* Header */}
       {header}
 
-      {/* Main area: activity bar + panels */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Activity Bar */}
         {activityBar}
 
-        {/* Left Panel */}
         {leftPanel && (
           <ResizablePanel
             direction="horizontal"
@@ -93,10 +89,8 @@ export function IDEShell({
         {/* Center + Bottom. min-w-0 so a wide cockpit yields to the agents
             bar instead of overflowing the row and getting clipped. */}
         <div data-testid="center-pane" className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Center Content */}
           <div className="min-w-0 flex-1 overflow-hidden bg-editor-bg">{centerContent}</div>
 
-          {/* Bottom Panel */}
           {bottomPanel && (
             <ResizablePanel
               direction="vertical"
@@ -117,7 +111,6 @@ export function IDEShell({
           )}
         </div>
 
-        {/* Right Panel */}
         {rightPanel && (
           <ResizablePanel
             direction="horizontal"
@@ -160,7 +153,6 @@ export function IDEShell({
         aria-label="Toggle right panel"
       />
 
-      {/* Status Bar */}
       {statusBar}
     </div>
   );

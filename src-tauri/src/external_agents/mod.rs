@@ -20,7 +20,7 @@ pub use model::{
 };
 
 use crate::agent_usage::capture::{UsageRecordedEvent, USAGE_RECORDED_EVENT};
-use crate::supervisor_link::jobs::now_ms;
+use crate::json_store::now_ms;
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 

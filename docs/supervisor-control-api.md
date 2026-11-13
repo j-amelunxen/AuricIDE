@@ -583,10 +583,18 @@ or remove its kind from the project.
 running when AuricIDE quit is `failed` with `interrupted`; its worktree and
 branch stay for you to look at.
 
-**`jobs.cancel`** stops the job's agent. The job ends as `cancelled` on the
-next tick (every 2 s). A job that already ended answers
+**`jobs.cancel`** records cancellation intent and requests an agent stop. A
+tick (every 2 s) ends the job as `cancelled` after observing the agent stopped.
+A failed dispatcher stop returns its error and leaves the cancellation pending;
+ticks retry while the agent remains running or queued. An inbox warning names
+the job and agent when the stop failure changes. A job that already ended answers
 `{ "cancelled": false, "status": "<its status>" }`; an unknown id is
 `unknown_job`.
+
+If a launched agent received no worktree, `jobs.create` returns `internal`
+with its job/agent IDs and stop outcome. That job remains tracked as running
+with cancellation requested until its ending is observed, then fails with
+`internal` for the missing worktree. It still counts against the job limit.
 
 ## Several supervisors
 

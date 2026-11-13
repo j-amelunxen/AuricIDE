@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import { ProjectDescriptionDialog } from './ProjectDescriptionDialog';
 
 const setStarredProjectDescription = vi.fn();

@@ -2,7 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import { inboxMediaKind } from '@/lib/inbox/inboxMedia';
-import type { PmContextItem } from '@/lib/tauri/pm';
+import type { PmContextItem } from '@/lib/pm/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InboxAttachmentPreview } from '@/app/components/inbox/InboxAttachmentPreview';
 

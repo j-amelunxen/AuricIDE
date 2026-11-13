@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "id": "system.supervisor-link",
   "title": "Supervisor link",
-  "description": "Inside src-tauri/src/supervisor_link: the WebSocket server for the Supervisor Control API, its documents, jobs, subscriptions, policy and policy proposals, and the IDE parts it reaches.",
+  "description": "Inside src-tauri/src/supervisor_link: documents, jobs, subscriptions and policy. Job stop intent is recorded before dispatch; failures are reported and retried until the agent ending is observed. App restart marks active jobs interrupted.",
   "nodes": [
     {
       "id": "server",
@@ -15,7 +15,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "791"
+          "value": "930"
         }
       ],
       "position": [0, 0, 0]
@@ -30,7 +30,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "605"
+          "value": "801"
         }
       ],
       "position": [-8.1, -5.8, 0]
@@ -45,7 +45,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "161"
+          "value": "212"
         }
       ],
       "position": [-4, -5.8, 0]
@@ -60,7 +60,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "1068"
+          "value": "1058"
         }
       ],
       "position": [-15.5, -5.8, 0]
@@ -106,7 +106,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "733"
+          "value": "754"
         }
       ],
       "position": [7.7, -5.8, 0]
@@ -121,7 +121,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "498"
+          "value": "705"
         }
       ],
       "position": [3.2, -5.8, 0]
@@ -151,7 +151,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "873"
+          "value": "838"
         }
       ],
       "position": [15.3, -5.8, 0]
@@ -166,7 +166,7 @@
       "metrics": [
         {
           "label": "lines",
-          "value": "698"
+          "value": "700"
         }
       ],
       "position": [19.7, -5.8, 0]
@@ -339,7 +339,7 @@
       "from": "jobRunner",
       "to": "controlSocket",
       "kind": "calls",
-      "label": "spawn, kill"
+      "label": "spawn, stop and retry"
     },
     {
       "from": "assets",
@@ -363,7 +363,6 @@
       "label": "git2"
     }
   ],
-  "tour": ["server", "protocol", "documents", "jobs", "jobRunner", "policy", "proposals"],
   "annotations": [
     {
       "id": "facts",
@@ -372,11 +371,11 @@
       "rows": [
         {
           "label": "Source files (no tests)",
-          "value": "11"
+          "value": "12"
         },
         {
           "label": "Lines (no tests)",
-          "value": "5753"
+          "value": "6715"
         },
         {
           "label": "Socket",
@@ -385,6 +384,14 @@
         {
           "label": "JSON stores",
           "value": "policy, jobs, proposals"
+        },
+        {
+          "label": "Stop failures",
+          "value": "retry + inbox warning"
+        },
+        {
+          "label": "Terminal booking",
+          "value": "after observed ending"
         }
       ]
     }

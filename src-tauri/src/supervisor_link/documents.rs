@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use super::glob;
 use super::policy::{is_relative_file, DocumentType, LinkPolicy, Origin, ProjectConfig};
-use crate::supervisor::canonical_project_path;
+use crate::project_path::{canonical_project_path, real_path};
 
 /// Fixture `maxDocumentBytes`.
 pub const MAX_DOCUMENT_BYTES: usize = 262_144;
@@ -335,10 +335,6 @@ pub(super) fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn canonical_dir(path: &Path) -> Option<PathBuf> {
-    path.canonicalize().ok()
-}
-
 /// The repository whose work tree *is* `project`. A folder nested in some
 /// other repository is not one: a branch there would be built on the outer
 /// repository's `HEAD`.
@@ -350,11 +346,8 @@ pub(super) fn open_root_repo(project: &Path) -> Result<Repository, DocumentError
         )
     };
     let repo = Repository::open(project).map_err(|_| not_a_repo())?;
-    let workdir = repo
-        .workdir()
-        .and_then(canonical_dir)
-        .ok_or_else(not_a_repo)?;
-    if canonical_dir(project).as_deref() != Some(workdir.as_path()) {
+    let workdir = repo.workdir().and_then(real_path).ok_or_else(not_a_repo)?;
+    if real_path(project).as_deref() != Some(workdir.as_path()) {
         return Err(not_a_repo());
     }
     Ok(repo)
@@ -590,10 +583,7 @@ pub(super) fn read_at_rev(
         )
     };
     let repo = Repository::discover(root).map_err(|_| not_a_repo())?;
-    let workdir = repo
-        .workdir()
-        .and_then(canonical_dir)
-        .ok_or_else(not_a_repo)?;
+    let workdir = repo.workdir().and_then(real_path).ok_or_else(not_a_repo)?;
     let inside = root.strip_prefix(&workdir).map_err(|_| not_a_repo())?;
     let commit = repo
         .revparse_single(rev)

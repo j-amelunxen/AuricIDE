@@ -238,12 +238,12 @@ pub fn git_merge_preview(repo_path: String, branch: String) -> Result<GitMergePr
 /// The real git, resolved through the login shell's PATH: an app launched
 /// from `/Applications` has no Homebrew git on its own PATH.
 async fn real_git() -> Result<(PathBuf, Vec<(String, String)>), String> {
-    let git = crate::video_import::preflight::resolve_executable("git")
+    let git = crate::machine::resolve_executable("git")
         .await
         .ok_or_else(|| {
             "git_failed: git was not found on this machine; install it to continue".to_string()
         })?;
-    let env = crate::agents::cached_login_shell_env().await;
+    let env = crate::machine::cached_login_shell_env().await;
     Ok((git, without_repo_location_vars(env)))
 }
 

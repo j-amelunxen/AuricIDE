@@ -7,7 +7,12 @@
 //! check (no cache, so a change in Settings applies to the next spawn), writes
 //! it atomically at mode 0600, and canonicalises project paths.
 
+pub mod admission;
 pub mod attachments;
+pub mod launch;
+#[cfg(test)]
+use admission::{check_child_config, ChildCheckInputs};
+pub use launch::{admit, AdmissionInputs};
 pub mod managers;
 pub mod memory;
 pub mod pm_target;
@@ -17,16 +22,19 @@ mod probe_driver;
 pub mod runs;
 pub mod several;
 
-use crate::agents::{AgentConfig, AgentInfo, AgentRole, AgentStatus};
+#[cfg(test)]
+use crate::agents::{AgentConfig, AgentRole};
+use crate::agents::{AgentInfo, AgentStatus};
+use crate::project_path::{canonical_project_path, normalize_project_path};
+#[cfg(test)]
 use crate::provider_policy::ProviderPolicy;
 use crate::providers::{ModelOption, ProviderRegistry};
 use policy::{
-    insert_stricter, normalize_project_path, parse, ParseReason, ParsedPolicy, ProviderModes,
-    RunningChildren, SpawnRequest, SupervisorPolicy, POLICY_VERSION,
+    insert_stricter, parse, ParseReason, ParsedPolicy, ProviderModes, RunningChildren,
+    SupervisorPolicy, POLICY_VERSION,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
@@ -58,17 +66,6 @@ pub fn read_policy_file(path: &Path) -> ParsedPolicy {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => parse(None),
         Err(_) => parse(Some("")),
     }
-}
-
-/// The real path when the folder exists, the normalised text otherwise. A
-/// symlinked or `..`-laden path must find the same policy entry as the real
-/// one, and a project that does not exist finds none.
-pub fn canonical_project_path(path: &str) -> String {
-    Path::new(path)
-        .canonicalize()
-        .ok()
-        .and_then(|real| real.to_str().map(str::to_string))
-        .unwrap_or_else(|| normalize_project_path(path))
 }
 
 /// The policy with every project key canonicalised, ready for lookup. Two
@@ -272,97 +269,11 @@ pub fn live_runs_by_provider(agents: &[AgentInfo], project_path: &str) -> BTreeM
             .is_some_and(|path| canonical_project_path(path) == project_path);
         if counts && here {
             *live
-                .entry(policy::normalize_provider_id(&agent.provider))
+                .entry(crate::providers::normalize_provider_id(&agent.provider))
                 .or_default() += 1;
         }
     }
     live
-}
-
-/// Everything the child check needs besides the spawn config.
-pub struct ChildCheckInputs<'a> {
-    /// Keys canonicalised (`with_canonical_keys`).
-    pub policy: &'a SupervisorPolicy,
-    pub offered: &'a BTreeMap<String, Vec<String>>,
-    pub modes: &'a BTreeMap<String, ProviderModes>,
-    pub project_policy: &'a ProviderPolicy,
-    pub running: &'a RunningChildren,
-}
-
-/// The second check, in `spawn_agent_impl`, of a spawn that names the
-/// supervisor that asked for it. The dispatcher already ran `check_spawn`;
-/// this one holds even if a spawn reached the frontend some other way.
-#[cfg(test)]
-pub fn check_child_config(
-    config: &AgentConfig,
-    canonical_project: Option<&str>,
-    inputs: &ChildCheckInputs<'_>,
-) -> Result<(), String> {
-    check_child_config_with_blocks(config, canonical_project, inputs, &[])
-}
-
-// code-gate: complexity-cyclomatic - each early return is one condition a supervisor's child must meet; listed flat so none is missed
-pub fn check_child_config_with_blocks(
-    config: &AgentConfig,
-    canonical_project: Option<&str>,
-    inputs: &ChildCheckInputs<'_>,
-    quota_blocks: &[crate::quota_blocks::QuotaBlock],
-) -> Result<(), String> {
-    if config.role() == AgentRole::Supervisor {
-        return Err("A supervisor cannot start another supervisor.".to_string());
-    }
-    let Some(project) = canonical_project else {
-        return Err("An agent started by a supervisor needs a project.".to_string());
-    };
-    let provider = config
-        .provider
-        .as_deref()
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| "An agent started by a supervisor needs a named provider.".to_string())?;
-    let permission_mode = policy::check_spawn_with_blocks(
-        inputs.policy,
-        inputs.project_policy,
-        inputs.offered,
-        inputs.modes,
-        inputs.running,
-        quota_blocks,
-        &SpawnRequest {
-            project_path: project,
-            provider,
-            model: &config.model,
-            headless: config.headless.unwrap_or(false),
-        },
-    )
-    .map_err(|denied| {
-        format!(
-            "The supervisor policy refuses this spawn ({}): {}",
-            denied.reason.key(),
-            denied.message
-        )
-    })?;
-    if config.dangerously_ignore_permissions.unwrap_or(false)
-        || config.auto_accept_edits.unwrap_or(false)
-    {
-        return Err(
-            "An agent started by a supervisor runs in the permission mode its policy names, \
-             never with permissions skipped or edits auto-accepted."
-                .to_string(),
-        );
-    }
-    if config.permission_mode != permission_mode {
-        return Err(format!(
-            "An agent started by a supervisor runs in permission mode {}, not {}.",
-            permission_mode
-                .as_deref()
-                .unwrap_or("(the provider's default)"),
-            config
-                .permission_mode
-                .as_deref()
-                .unwrap_or("(the provider's default)")
-        ));
-    }
-    Ok(())
 }
 
 /// Validates a policy the frontend wants saved and returns it the way it will
@@ -398,48 +309,6 @@ pub fn validate_for_write(mut value: Value) -> Result<SupervisorPolicy, String> 
         });
     }
     Ok(with_canonical_keys(parsed.policy))
-}
-
-/// Temp file at 0600, then a rename, as `app_config::write_credentials_atomic`:
-/// a read mid-write sees the old file or the new one, never half of either.
-///
-/// Each write has its own temp file and writes are serialised: two saves
-/// sharing one temp file would truncate each other, and the rename would
-/// publish half of one.
-pub fn write_policy_atomic(path: &Path, policy: &SupervisorPolicy) -> Result<(), String> {
-    write_json_atomic(path, policy)
-}
-
-/// The write behind `write_policy_atomic`, for any Rust-owned JSON file next to
-/// the policy (the Project Manager registry).
-pub fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), String> {
-    static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static WRITE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let _writing = WRITE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let parent = path
-        .parent()
-        .ok_or_else(|| "The file has no parent directory".to_string())?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let payload = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
-    let sequence = WRITE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let temporary = path.with_extension(format!("json.{}-{sequence}.tmp", std::process::id()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    drop(file);
-    std::fs::rename(&temporary, path).map_err(|error| error.to_string())
 }
 
 fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -512,20 +381,23 @@ pub fn pre_trust_claude_workspace(home: &Path, paths: &[&Path]) -> Result<(), St
     let _held = CLAUDE_CONFIG
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config_path = home.join(".claude.json");
+    // Claude Code's own file: written through a symlink to wherever it lives,
+    // and never replaced by our idea of it. One we cannot read as an object
+    // (for example half-written by Claude Code itself) is left alone; the
+    // cost is a trust question in the new folder, not the user's settings.
+    let link = crate::agents::claude_mcp_guard::claude_global_config_in(home);
+    let config_path = std::fs::canonicalize(&link).unwrap_or(link);
     let mut root: Value = if config_path.is_file() {
         let text = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("Could not read claude config: {e}"))?;
-        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::from_str(&text)
+            .map_err(|e| format!("Claude config is not valid JSON, left unchanged: {e}"))?
     } else {
         serde_json::json!({})
     };
-
-    if !root.is_object() {
-        root = serde_json::json!({});
-    }
-
-    let map = root.as_object_mut().unwrap();
+    let map = root
+        .as_object_mut()
+        .ok_or("Claude config is not a JSON object, left unchanged")?;
     if !map.contains_key("projects") || !map["projects"].is_object() {
         map.insert("projects".to_string(), serde_json::json!({}));
     }
@@ -552,11 +424,17 @@ pub fn pre_trust_claude_workspace(home: &Path, paths: &[&Path]) -> Result<(), St
         }
     }
 
-    let payload = serde_json::to_string_pretty(&root)
+    let payload = serde_json::to_vec_pretty(&root)
         .map_err(|e| format!("Could not serialize claude config: {e}"))?;
-    std::fs::write(&config_path, payload)
-        .map_err(|e| format!("Could not write claude config: {e}"))?;
-    Ok(())
+    crate::json_store::write_atomic(&config_path, &payload, crate::json_store::Mode::Private)
+        .map_err(|e| format!("Could not write claude config: {e}"))
+}
+
+/// Pre-trusts a run folder; a failure only means Claude Code asks once.
+fn trust_run_folder(home: &Path, root: &Path, dir: &Path) {
+    if let Err(error) = pre_trust_claude_workspace(home, &[root, dir]) {
+        eprintln!("Supervisor run folder not pre-trusted: {error}");
+    }
 }
 
 /// A new, empty working folder for one supervisor run, named by its start
@@ -574,7 +452,7 @@ pub fn new_supervisor_run_dir(home: &Path, started: &str) -> Result<PathBuf, Str
         let dir = root.join(name);
         match std::fs::create_dir(&dir) {
             Ok(()) => {
-                let _ = pre_trust_claude_workspace(home, &[&root, &dir]);
+                trust_run_folder(home, &root, &dir);
                 return Ok(dir);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -590,7 +468,7 @@ pub fn new_supervisor_run_dir(home: &Path, started: &str) -> Result<PathBuf, Str
 pub fn reuse_supervisor_run_dir(home: &Path, requested: &str) -> Result<PathBuf, String> {
     let root = supervisor_runs_root(home);
     let dir = runs::resolve_run_dir(&root, requested)?;
-    let _ = pre_trust_claude_workspace(home, &[&root, &dir]);
+    trust_run_folder(home, &root, &dir);
     Ok(dir)
 }
 
@@ -737,7 +615,7 @@ pub fn supervisor_policy_get(app: tauri::AppHandle) -> Result<ParsedPolicy, Stri
 /// reads this. `None`: not found.
 #[tauri::command]
 pub async fn supervisor_resolve_tool(name: String) -> Option<String> {
-    crate::video_import::preflight::resolve_executable(&name)
+    crate::machine::resolve_executable(&name)
         .await
         .map(|path| path.to_string_lossy().into_owned())
 }
@@ -754,7 +632,7 @@ pub fn supervisor_policy_set(app: tauri::AppHandle, policy: Value) -> Result<Par
     if let Some(registry) = app.try_state::<crate::providers::ProviderRegistryState>() {
         reject_unattended_modes(&policy, &provider_modes(registry.inner(), &policy))?;
     }
-    write_policy_atomic(&path, &policy)?;
+    crate::json_store::write_json(&path, &policy)?;
     Ok(read_policy_file(&path))
 }
 
@@ -907,7 +785,7 @@ mod tests {
             "projects": { format!("{}/", project.display()): { "allowed": true } }
         }))
         .unwrap();
-        write_policy_atomic(&path, &policy).unwrap();
+        crate::json_store::write_json(&path, &policy).unwrap();
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
@@ -949,7 +827,7 @@ mod tests {
     /// `--yolo` still count as unattended.
     #[test]
     fn a_reviewer_mode_is_attended_and_a_skip_flag_is_not() {
-        let provider = crate::providers::DynamicProvider::new(
+        let provider = crate::providers::dynamic::DynamicProvider::new(
             serde_json::from_value(json!({
                 "id": "codex", "name": "Codex", "executable": "codex",
                 "arguments": [{ "type": "permission", "map": {
@@ -977,7 +855,7 @@ mod tests {
     /// `--dangerously-skip-permissions` (`bypassPermissions` / `yolo`).
     #[test]
     fn antigravity_mode_auto_is_a_reviewer_not_a_skip() {
-        let provider = crate::providers::DynamicProvider::new(
+        let provider = crate::providers::dynamic::DynamicProvider::new(
             serde_json::from_value(json!({
                 "id": "antigravity", "name": "Antigravity CLI", "executable": "agy",
                 "arguments": [{ "type": "permission", "map": {
@@ -1137,6 +1015,33 @@ mod tests {
             std::fs::symlink_metadata(dir.join("skills").join("review")).is_err(),
             "no approved skill leaves no link of an earlier build behind"
         );
+    }
+
+    #[test]
+    fn an_unreadable_claude_config_is_left_as_it_was() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("run");
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = home.path().join(".claude.json");
+        for broken in ["{\"projects\": {", "[1, 2]"] {
+            std::fs::write(&config, broken).unwrap();
+            assert!(pre_trust_claude_workspace(home.path(), &[dir.as_path()]).is_err());
+            assert_eq!(std::fs::read_to_string(&config).unwrap(), broken);
+        }
+    }
+
+    #[test]
+    fn trust_keeps_every_other_setting() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("run");
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = home.path().join(".claude.json");
+        std::fs::write(&config, r#"{"theme":"dark","projects":{"/x":{"a":1}}}"#).unwrap();
+        pre_trust_claude_workspace(home.path(), &[dir.as_path()]).unwrap();
+        let content: Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(content["theme"], "dark");
+        assert_eq!(content["projects"]["/x"]["a"], 1);
     }
 
     #[test]

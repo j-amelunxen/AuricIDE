@@ -10,10 +10,10 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from 'react';
-import { useNarrow } from '@/app/components/editor/diff/useNarrow';
-import { useShortcutSheet, type ShortcutSheetContent } from '../shared/ShortcutSheet';
-import { isShortcutSheetKey } from '../shared/shortcutKeys';
-import { isOpenComment, sendReviewComments } from '@/app/components/editor/diff/sendReviewComments';
+import { useNarrow } from '@/app/components/diff/useNarrow';
+import { useShortcutSheet, type ShortcutSheetContent } from '../../diff/ShortcutSheet';
+import { isShortcutSheetKey } from '../../diff/shortcutKeys';
+import { isOpenComment, sendReviewComments } from '@/app/components/diff/sendReviewComments';
 import { useShallow } from 'zustand/react/shallow';
 import { reviewIntentFor, type ReviewIntent } from '@/lib/git/review/reviewIntent';
 import { withMergeBase } from '@/lib/git/review/withMergeBase';

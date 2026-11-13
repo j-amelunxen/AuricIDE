@@ -216,6 +216,17 @@ describe('notification MCP tools', () => {
       await expect(bare.get('notify')!.execute({ title: 'x' })).resolves.toContain('uid');
     });
 
+    it.each([
+      [{ specKind: 'cron', cronExpr: '0 9 * * MON', timezone: 'Mars/Olympus' }, /unknown timezone/],
+      [{ specKind: 'cron', cronExpr: 'every monday' }, /5 or 6 fields/],
+      [{ specKind: 'every', everyN: 2, everyUnit: 'day' }, /anchorAt/],
+    ])('refuses a schedule the runner could never fire: %j', async (spec, reason) => {
+      await expect(
+        tools.get('schedule_create')!.execute({ name: 'Scan', task: 'scan', ...spec })
+      ).rejects.toThrow(reason);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM schedules').get()).toEqual({ n: 0 });
+    });
+
     it('stamps the agent folder on a schedule Start button', async () => {
       const { id } = JSON.parse(
         await tools.get('schedule_create')!.execute({

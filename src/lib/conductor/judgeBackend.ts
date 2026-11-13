@@ -1,7 +1,7 @@
 import { llmCall } from '@/lib/tauri/llm';
 import { parseVerdictJson } from '@/lib/evidence/verdict';
-import type { PmGoal } from '@/lib/tauri/goals';
-import type { PmTestCase, PmTicket } from '@/lib/tauri/pm';
+import type { PmGoal } from '@/lib/goals/types';
+import type { PmTestCase, PmTicket } from '@/lib/pm/types';
 
 export interface JudgeVerdict {
   pass: boolean;

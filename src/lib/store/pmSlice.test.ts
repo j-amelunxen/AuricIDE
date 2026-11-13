@@ -1,8 +1,36 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createPmSlice, type PmSlice } from './pmSlice';
-import { createToastSlice, type ToastSlice } from './toastSlice';
-import type { PmEpic, PmTicket, PmTestCase, PmDependency, PmStatusHistoryEntry } from '../tauri/pm';
+import type { PmEpic, PmTicket, PmTestCase, PmDependency, PmStatusHistoryEntry } from '../pm/types';
+
+import type { InboxItem, ProjectPmOverview } from '../tauri/inbox';
+
+const capturedInbox: InboxItem = {
+  id: 'i1',
+  title: 'Captured',
+  notes: '',
+  createdAt: '2026-01-01 00:00:00',
+  updatedAt: '2026-01-01 00:00:00',
+  projectPath: null,
+  projectName: null,
+  ticketId: null,
+  assignedAt: null,
+  dismissedAt: null,
+  priority: 'normal',
+  dueDate: null,
+};
+const capturedOverview: ProjectPmOverview = {
+  projectPath: '/project',
+  projectName: 'project',
+  hasDb: true,
+  open: 0,
+  inProgress: 0,
+  toTest: 0,
+  inReview: 0,
+  done: 0,
+  epics: [],
+  tickets: [],
+  error: null,
+};
 
 const mockPmLoad = vi.fn<
   (...args: unknown[]) => Promise<{
@@ -31,15 +59,12 @@ vi.mock('../tauri/db', () => ({
 }));
 
 function createTestStore() {
-  return create<PmSlice>()((...a) => ({ ...createPmSlice(...a) }));
+  return createFullTestStore();
 }
 
 /** Persistence feedback needs the toast channel the real app store provides. */
 function createStoreWithToasts() {
-  return create<PmSlice & ToastSlice>()((...a) => ({
-    ...createPmSlice(...a),
-    ...createToastSlice(...a),
-  }));
+  return createFullTestStore();
 }
 
 function makeEpic(overrides: Partial<PmEpic> = {}): PmEpic {
@@ -444,6 +469,17 @@ describe('pmSlice', () => {
     expect(store.getState().pmDirty).toBe(true);
   });
 
+  it('savePmData refuses to replace project data whose last load failed', async () => {
+    mockPmLoad.mockRejectedValueOnce(new Error('ticket row unreadable'));
+    const store = createStoreWithToasts();
+    await store.getState().loadPmData('/project');
+    store.getState().addEpic(makeEpic());
+
+    await expect(store.getState().savePmData('/project')).rejects.toThrow(/did not load/);
+    expect(mockPmSave).not.toHaveBeenCalled();
+    expect(store.getState().pmDirty).toBe(true);
+  });
+
   it('savePmData calls IPC and syncs state', async () => {
     const store = createTestStore();
     store.getState().addEpic(makeEpic());
@@ -466,10 +502,10 @@ describe('pmSlice', () => {
     const store = createTestStore();
     const refreshInboxOverview = vi.fn().mockResolvedValue(undefined);
     store.setState({
-      inboxItems: [{ id: 'i1' }],
-      inboxOverview: { '/project': { projectPath: '/project' } },
+      inboxItems: [capturedInbox],
+      inboxOverview: { '/project': capturedOverview },
       refreshInboxOverview,
-    } as unknown as Partial<PmSlice>);
+    });
 
     await store.getState().savePmData('/project');
 
@@ -482,7 +518,7 @@ describe('pmSlice', () => {
     store.setState({
       inboxItems: [],
       refreshInboxOverview,
-    } as unknown as Partial<PmSlice>);
+    });
 
     await store.getState().savePmData('/project');
 
@@ -565,10 +601,10 @@ describe('pmSlice', () => {
     const store = createTestStore();
     const refreshInboxOverview = vi.fn().mockResolvedValue(undefined);
     store.setState({
-      inboxItems: [{ id: 'i1' }],
-      inboxOverview: { '/project': { projectPath: '/project' } },
+      inboxItems: [capturedInbox],
+      inboxOverview: { '/project': capturedOverview },
       refreshInboxOverview,
-    } as unknown as Partial<PmSlice>);
+    });
 
     await store.getState().refreshPmData('/project');
 
@@ -708,6 +744,54 @@ describe('pmSlice', () => {
       expect(store.getState().pmDraftTickets[0].name).toBe('User Edit');
       // Persisted updated to fresh
       expect(store.getState().pmTickets[0].name).toBe('Agent Edit');
+    });
+
+    it('keeps the field the user edited and takes the other fields an agent changed', async () => {
+      const original = makeTicket({ id: 't1', name: 'Original', updatedAt: '2024-01-01' });
+      const store = createTestStore();
+      store.setState({
+        pmTickets: [original],
+        pmDraftTickets: [{ ...original, name: 'User Edit' }],
+        pmDirty: true,
+      });
+      mockPmLoad.mockResolvedValueOnce({
+        epics: [],
+        tickets: [{ ...original, status: 'in_progress', updatedAt: '2024-01-02' }],
+        testCases: [],
+        dependencies: [],
+      });
+      mockPmLoadHistory.mockResolvedValueOnce([]);
+
+      await store.getState().refreshPmData('/project');
+
+      expect(store.getState().pmDraftTickets[0]).toMatchObject({
+        name: 'User Edit',
+        status: 'in_progress',
+      });
+      expect(store.getState().pmDirty).toBe(true);
+    });
+
+    it('does not bring back an item the user deleted but has not saved', async () => {
+      const kept = makeTicket({ id: 't1', updatedAt: '2024-01-01' });
+      const deleted = makeTicket({ id: 't2', updatedAt: '2024-01-01' });
+      const store = createTestStore();
+      store.setState({
+        pmTickets: [kept, deleted],
+        pmDraftTickets: [kept],
+        pmDirty: true,
+      });
+      mockPmLoad.mockResolvedValueOnce({
+        epics: [],
+        tickets: [kept, deleted],
+        testCases: [],
+        dependencies: [],
+      });
+      mockPmLoadHistory.mockResolvedValueOnce([]);
+
+      await store.getState().refreshPmData('/project');
+
+      expect(store.getState().pmDraftTickets.map((t) => t.id)).toEqual(['t1']);
+      expect(store.getState().pmDirty).toBe(true);
     });
 
     it('takes fresh when DB changed and user has not edited', async () => {

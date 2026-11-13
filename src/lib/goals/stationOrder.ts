@@ -1,4 +1,4 @@
-import type { PmGoalStation } from '../tauri/goals';
+import type { PmGoalStation } from './types';
 
 /**
  * The two reorder invariants live here and nowhere else, imported by both
@@ -17,15 +17,6 @@ export function orderedStations(stations: PmGoalStation[], goalId: string): PmGo
   return stations
     .filter((s) => s.goalId === goalId)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
-}
-
-/** Renumbers the goal's stations 0..n in their current order. */
-export function normalizeSortOrders(stations: PmGoalStation[], goalId: string): PmGoalStation[] {
-  const ordered = orderedStations(stations, goalId);
-  const orderOf = new Map(ordered.map((s, i) => [s.id, i]));
-  return stations.map((s) =>
-    s.goalId === goalId ? { ...s, sortOrder: orderOf.get(s.id) ?? s.sortOrder } : s
-  );
 }
 
 /**

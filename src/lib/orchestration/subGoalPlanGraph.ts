@@ -1,6 +1,7 @@
-import type { PmGoal, PmGoalDependency } from '../tauri/goals';
+import type { PmGoal, PmGoalDependency } from '../goals/types';
 import { normalizeBundle } from '../goals/goalDependencies';
-import { getGoalBlockers, getGoalChildren, getSiblingWaves } from '../store/goalsSlice';
+import { getGoalBlockers, getSiblingWaves } from '../goals/model/goalDependencyAdapters';
+import { getGoalChildren } from '../goals/model/goalTreeHelpers';
 import { summarizeBlockers } from './blockerLabel';
 
 /** One child goal inside a plan node — a bundle node holds more than one. */

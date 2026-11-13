@@ -87,7 +87,6 @@ export function QAPanel() {
   return (
     <>
       <div className="flex h-full flex-col bg-panel-bg">
-        {/* Panel header */}
         <div className="flex items-center justify-between border-b border-white/5 bg-white/2 p-3">
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
             Coverage Overview
@@ -102,7 +101,6 @@ export function QAPanel() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-          {/* Summary Cards */}
           <div className="mb-5 grid grid-cols-2 gap-3">
             <CoverageCard label="Lines" value={coverageSummary.lines} />
             <CoverageCard label="Statements" value={coverageSummary.statements} />
@@ -110,7 +108,6 @@ export function QAPanel() {
             <CoverageCard label="Branches" value={coverageSummary.branches} />
           </div>
 
-          {/* File count + open modal */}
           <div className="flex flex-col items-center gap-3 rounded-xl border border-white/5 bg-white/2 p-4 text-center">
             <div className="flex items-center gap-2 text-foreground-muted">
               <AuricIcon name="description" className="text-[16px]" />

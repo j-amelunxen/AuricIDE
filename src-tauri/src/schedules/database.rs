@@ -104,29 +104,6 @@ pub fn list_impl(conn: &Connection) -> Result<Vec<Schedule>, String> {
     Ok(schedules)
 }
 
-fn valid_mission_slug(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= 64
-        && !slug.starts_with('-')
-        && !slug.ends_with('-')
-        && slug
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-fn is_unsafe_directory(path: &std::path::Path) -> bool {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) => !metadata.is_dir() || metadata.file_type().is_symlink(),
-        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
-    }
-}
-
-fn is_real_file(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path)
-        .map(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-        .unwrap_or(false)
-}
-
 pub fn upsert_impl(conn: &Connection, schedule: &Schedule) -> Result<Schedule, String> {
     upsert_at(conn, schedule, Utc::now())
 }
@@ -170,11 +147,17 @@ pub fn upsert_at(
 // code-gate: complexity-cyclomatic - one upsert statement; the count is the 16 bound columns, not branches
 fn write_schedule(conn: &Connection, schedule: &Schedule) -> Result<Schedule, String> {
     if let Some(slug) = schedule.mission_slug.as_deref() {
-        if !valid_mission_slug(slug) {
+        if !crate::missions::is_valid_slug(slug) {
             return Err("Mission slug must be one canonical path component".to_string());
         }
     }
     validate_exceptions(&schedule.exceptions)?;
+    if !matches!(
+        serde_json::from_str::<serde_json::Value>(&schedule.payload),
+        Ok(serde_json::Value::Object(_))
+    ) {
+        return Err("Schedule payload must be a JSON object".to_string());
+    }
     let exceptions = serde_json::to_string(&schedule.exceptions)
         .map_err(|e| format!("Failed to encode schedule exceptions: {}", e))?;
     conn.execute(
@@ -264,7 +247,7 @@ pub fn set_enabled_impl(conn: &Connection, id: &str, enabled: bool) -> Result<()
 
 /// Id prefix of schedules an agent created through MCP (`createSchedule` in
 /// `src/mcp/notificationsDb.ts`).
-const MCP_SCHEDULE_ID_PREFIX: &str = "mcp-";
+pub(crate) const MCP_SCHEDULE_ID_PREFIX: &str = "mcp-";
 
 /// Who wrote the reminder's payload. A schedule an agent created through MCP
 /// carries an agent-written payload, so its reminder is `agent`: its Start
@@ -297,37 +280,22 @@ pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, 
         };
 
         let tz = timezone_of(&schedule);
-        let template: serde_json::Value =
-            serde_json::from_str(&schedule.payload).unwrap_or_else(|_| serde_json::json!({}));
+        let template: serde_json::Value = match serde_json::from_str(&schedule.payload) {
+            Ok(template) => template,
+            Err(error) => {
+                eprintln!(
+                    "Schedule \"{}\" has an unreadable payload: {}",
+                    schedule.name, error
+                );
+                continue;
+            }
+        };
         let mission_error = schedule
             .mission_slug
             .as_ref()
             .and_then(|slug| {
-                if !valid_mission_slug(slug) {
-                    return Some(format!("Mission `{slug}` has an invalid path identifier."));
-                }
                 let root = schedule.project_path.as_ref()?;
-                let auric = std::path::Path::new(root).join(".auric");
-                let missions = auric.join("missions");
-                let directory = missions.join(slug);
-                if is_unsafe_directory(&auric)
-                    || is_unsafe_directory(&missions)
-                    || is_unsafe_directory(&directory)
-                {
-                    return Some(format!(
-                        "Mission `{slug}` cannot run because its path is missing or unsafe."
-                    ));
-                }
-                let missing: Vec<&str> = ["MISSION.md", "STATE.md"]
-                    .into_iter()
-                    .filter(|name| !is_real_file(&directory.join(name)))
-                    .collect();
-                (!missing.is_empty()).then(|| {
-                    format!(
-                        "Mission `{slug}` cannot run because {} is missing.",
-                        missing.join(" and ")
-                    )
-                })
+                crate::missions::why_not_runnable(std::path::Path::new(root), slug)
             })
             .or_else(|| {
                 schedule

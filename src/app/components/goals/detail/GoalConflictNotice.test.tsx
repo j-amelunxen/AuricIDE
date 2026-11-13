@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useStore } from '@/lib/store';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
 import { GoalConflictNotice } from './GoalConflictNotice';
 
 const goal = (over: Partial<PmGoal> = {}): PmGoal =>

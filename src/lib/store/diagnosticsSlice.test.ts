@@ -1,11 +1,9 @@
+// @vitest-environment jsdom
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createDiagnosticsSlice, type DiagnosticsSlice } from './diagnosticsSlice';
 
 function createTestStore() {
-  return create<DiagnosticsSlice>()((...a) => ({
-    ...createDiagnosticsSlice(...a),
-  }));
+  return createFullTestStore();
 }
 
 describe('diagnosticsSlice', () => {
@@ -26,10 +24,6 @@ describe('diagnosticsSlice', () => {
 
     it('has no disabled rules by default', () => {
       expect(store.getState().lintConfig.disabledRules.size).toBe(0);
-    });
-
-    it('has problems panel closed by default', () => {
-      expect(store.getState().problemsPanelOpen).toBe(false);
     });
   });
 
@@ -122,31 +116,6 @@ describe('diagnosticsSlice', () => {
     });
   });
 
-  describe('toggleRule', () => {
-    it('disables a rule', () => {
-      store.getState().toggleRule('final-newline', false);
-      expect(store.getState().lintConfig.disabledRules.has('final-newline')).toBe(true);
-    });
-
-    it('re-enables a rule', () => {
-      store.getState().toggleRule('final-newline', false);
-      store.getState().toggleRule('final-newline', true);
-      expect(store.getState().lintConfig.disabledRules.has('final-newline')).toBe(false);
-    });
-  });
-
-  describe('setProblemsPanelOpen', () => {
-    it('opens the problems panel', () => {
-      store.getState().setProblemsPanelOpen(true);
-      expect(store.getState().problemsPanelOpen).toBe(true);
-    });
-
-    it('closes the problems panel', () => {
-      store.getState().setProblemsPanelOpen(true);
-      store.getState().setProblemsPanelOpen(false);
-      expect(store.getState().problemsPanelOpen).toBe(false);
-    });
-  });
   // The linter re-runs 500 ms after every keystroke and hands over a fresh
   // array each time. Identical findings must not wake every store subscriber.
   describe('write avoidance', () => {
@@ -188,6 +157,16 @@ describe('diagnosticsSlice', () => {
       store.getState().setDiagnostics('/a.md', [diag]);
       store.getState().setDiagnostics('/a.md', [{ ...diag, endLine: 3 }]);
       expect(store.getState().diagnostics.get('/a.md')?.[0].endLine).toBe(3);
+    });
+  });
+
+  describe('the lint switch', () => {
+    beforeEach(() => localStorage.clear());
+
+    it('is remembered for the next start', () => {
+      store.getState().setLintEnabled(false);
+      expect(store.getState().lintConfig.enabled).toBe(false);
+      expect(createTestStore().getState().lintConfig.enabled).toBe(false);
     });
   });
 });

@@ -1,5 +1,6 @@
-import { parseWikiLinks } from '@/lib/editor/wikiLinkParser';
-import { resolveWikiTarget } from '@/lib/editor/wikiLinkParser';
+import { extractHeadings } from '@/lib/markdown/markdownHeadingParser';
+import { parseWikiLinks } from '@/lib/markdown/wikiLinkParser';
+import { resolveWikiTarget } from '@/lib/markdown/wikiLinkParser';
 
 export interface HeadingRenameChange {
   filePath: string;
@@ -26,22 +27,17 @@ export function computeHeadingRenameChanges(
   for (const [filePath, content] of workspaceFiles) {
     // 1. Rename the heading line itself in the source file
     if (filePath === currentFilePath) {
-      const lines = content.split('\n');
-      let offset = 0;
-      for (const line of lines) {
-        const match = /^(#{1,6})\s+(.*)$/.exec(line);
-        if (match && match[2].trim() === oldTitle) {
-          const oldText = line;
-          const newText = `${match[1]} ${newTitle}`;
-          changes.push({
-            filePath,
-            from: offset,
-            to: offset + line.length,
-            oldText,
-            newText,
-          });
-        }
-        offset += line.length + 1;
+      for (const heading of extractHeadings(content)) {
+        if (heading.title !== oldTitle) continue;
+        const lineEnd = content.indexOf('\n', heading.from);
+        const to = lineEnd === -1 ? content.length : lineEnd;
+        changes.push({
+          filePath,
+          from: heading.from,
+          to,
+          oldText: content.slice(heading.from, to),
+          newText: `${'#'.repeat(heading.level)} ${newTitle}`,
+        });
       }
     }
 

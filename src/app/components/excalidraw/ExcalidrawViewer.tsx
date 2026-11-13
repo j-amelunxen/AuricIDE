@@ -7,6 +7,7 @@ import { writeFile } from '@/lib/tauri/fs';
 import { buildExcalidrawFileJson } from '@/lib/excalidraw/serialize';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { parseExcalidrawFileJson } from '@/lib/excalidraw/serialize';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -16,26 +17,6 @@ export interface ExcalidrawViewerProps {
   filePath: string;
   /** Re-reads the file from disk after a re-sync overwrote it. */
   onReload?: () => void;
-}
-
-interface ParsedScene {
-  elements: unknown[];
-  appState: Record<string, unknown>;
-  files: Record<string, unknown>;
-}
-
-function parseScene(content: string): ParsedScene | null {
-  try {
-    const value = JSON.parse(content) as Record<string, unknown>;
-    if (!Array.isArray(value.elements)) return null;
-    return {
-      elements: value.elements,
-      appState: (value.appState as Record<string, unknown>) ?? {},
-      files: (value.files as Record<string, unknown>) ?? {},
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -64,7 +45,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
   const editable = !link;
   const fileName = filePath.split('/').pop() ?? filePath;
 
-  const parsed = useMemo(() => parseScene(content), [content]);
+  const parsed = useMemo(() => parseExcalidrawFileJson(content), [content]);
 
   // Auto-save for editable files: the first onChange (fired on mount) only
   // establishes the baseline; real edits are written debounced, and the
@@ -152,7 +133,6 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
 
   return (
     <div data-testid="excalidraw-viewer" className="flex h-full flex-col">
-      {/* Slim toolbar */}
       <div className="flex h-9 flex-shrink-0 items-center gap-3 border-b border-white/5 bg-white/2 px-4">
         <AuricIcon aria-hidden="true" name="draw" className="text-sm text-primary-light" />
         <span className="text-xs font-medium text-foreground">{fileName}</span>
@@ -220,7 +200,6 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
         )}
       </div>
 
-      {/* Canvas or error panel */}
       {parsed ? (
         <div className="flex-1 overflow-hidden">
           <ExcalidrawCanvas

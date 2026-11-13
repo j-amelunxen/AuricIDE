@@ -15,12 +15,10 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
-use super::claude::{find_session_files, session_tokens_between};
+use super::claude::{find_session_files, session_tokens_between, CLAUDE_PROJECTS_DIR};
 use super::record::{price_models, PriceLists};
 use crate::cc_usage::pricing::TokenCounts;
 use crate::providers::TranscriptFormat;
-
-const CLAUDE_PROJECTS_DIR: &str = ".claude/projects";
 
 /// Turn timestamps are whole seconds and the CLI stamps a turn before it
 /// exits, so a turn of the run is never more than this past `finished_at`.

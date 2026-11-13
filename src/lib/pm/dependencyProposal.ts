@@ -1,4 +1,4 @@
-import type { PmTicket, PmEpic } from '../tauri/pm';
+import type { PmTicket, PmEpic } from './types';
 
 export function generateDependencyProposalPrompt(
   ticket: PmTicket,

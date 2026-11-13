@@ -8,7 +8,7 @@ use super::policy::{JobKind, LinkPolicy};
 use super::protocol::{CreateJobParams, JobStatus, LinkError};
 use super::{notification, short, to_value, Link};
 use crate::agents::AgentStatus;
-use crate::control_socket::protocol::{AgentIdParams, Request};
+use crate::control_socket::protocol::{AgentIdParams, ErrorCode, Request};
 use crate::control_socket::LinkSpawn;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -169,7 +169,7 @@ impl Link {
             .create_gate
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let now = jobs::now_ms();
+        let now = crate::json_store::now_ms();
         self.check_room(policy, &project, now)?;
 
         let job_id = new_job_id();
@@ -184,7 +184,6 @@ impl Link {
                 &link_agents,
             )
             .map_err(LinkError::from)?;
-        let agent_id = spawned.agent_id.clone();
         let mut job = started_record(
             job_id.clone(),
             project,
@@ -194,27 +193,25 @@ impl Link {
             now,
         );
         job.requested_by = requested_by;
-        if job.worktree.is_none() {
-            // Without its own worktree the agent would write into the
-            // human's checkout. It is stopped, and the job counts: it started.
-            let _ = self
-                .dispatcher
-                .dispatch_external(Request::Kill(AgentIdParams { agent_id }));
-            job.status = JobStatus::Failed;
-            job.finished_at = Some(now);
-            job.error = Some(JobError {
-                code: JobErrorCode::Internal,
-                message: "the agent did not get a worktree of its own and was stopped".into(),
-            });
-        }
+        let unsafe_launch = job.worktree.is_none();
+        // Count the launched agent and persist its stop intent before asking
+        // the frontend. A failed stop must remain visible to later ticks.
+        job.cancel_requested = unsafe_launch;
         self.jobs.start(job.clone(), now);
-        if job.status == JobStatus::Failed {
-            self.jobs.update(&job.job_id, now, |stored| {
-                Some(("job.failed", json!({ "job": stored })))
-            });
+        if unsafe_launch {
+            let stop = match self.stop_job_agent(&job) {
+                Ok(()) => "stop requested; the next tick will observe its ending".to_string(),
+                Err(error) => format!(
+                    "stop failed ({}: {}); stopping will be retried",
+                    error.code, error.message
+                ),
+            };
             return Err(LinkError::new(
                 "internal",
-                "the job's agent did not get a worktree",
+                format!(
+                    "job {} agent {} did not get a worktree of its own; {stop}",
+                    job.job_id, job.agent_id
+                ),
             ));
         }
         to_value(json!({
@@ -236,31 +233,108 @@ impl Link {
         if job.status != JobStatus::Running {
             return Ok(json!({ "jobId": job_id, "cancelled": false, "status": job.status }));
         }
-        self.request_cancel(&job, None);
+        self.request_cancel(&job, None).map_err(|mut error| {
+            error.message = format!(
+                "cancellation requested for job {} agent {}; stop failed: {}; \
+                 stopping will be retried",
+                job.job_id, job.agent_id, error.message
+            );
+            error
+        })?;
         Ok(json!({ "jobId": job_id, "cancelled": true, "status": "running" }))
     }
 
     /// Marks the job cancelled and stops its agent. The kill is repeated by
     /// every tick while the agent still runs, so a cancel that lands while
     /// the agent is still starting is not lost.
-    fn request_cancel(&self, job: &JobRecord, reason: Option<String>) {
-        self.jobs.update(&job.job_id, jobs::now_ms(), |stored| {
-            stored.cancel_requested = true;
-            if stored.cancel_reason.is_none() {
-                stored.cancel_reason = reason;
-            }
-            None
-        });
-        self.kill_agent(&job.agent_id);
+    fn request_cancel(&self, job: &JobRecord, reason: Option<String>) -> Result<(), LinkError> {
+        let mut running = false;
+        self.jobs
+            .update(&job.job_id, crate::json_store::now_ms(), |stored| {
+                if stored.status != JobStatus::Running {
+                    return None;
+                }
+                running = true;
+                stored.cancel_requested = true;
+                if stored.cancel_reason.is_none() {
+                    stored.cancel_reason = reason;
+                }
+                None
+            });
+        if !running {
+            return Ok(());
+        }
+        self.stop_job_agent(job)
     }
 
-    fn kill_agent(&self, agent_id: &str) {
-        // An agent that already stopped is fine: the tick ends the job either way.
-        let _ = self
+    fn kill_agent(&self, agent_id: &str) -> Result<(), LinkError> {
+        let outcome = self
             .dispatcher
             .dispatch_external(Request::Kill(AgentIdParams {
                 agent_id: agent_id.to_string(),
             }));
+        let live = self.dispatcher.summaries().iter().any(|agent| {
+            agent.info.id == agent_id
+                && matches!(
+                    agent.info.status,
+                    AgentStatus::Running | AgentStatus::Queued
+                )
+        });
+        match outcome {
+            Ok(_) if live => Err(LinkError::new(
+                "internal",
+                format!("the IDE reported {agent_id} killed, but it is still running or queued"),
+            )),
+            Ok(_) => Ok(()),
+            // Only the typed already-gone cases are benign, and never while
+            // the backend still lists a live agent under the same id.
+            Err(error)
+                if !live
+                    && matches!(
+                        error.code,
+                        ErrorCode::UnknownAgent | ErrorCode::AgentNotRunning
+                    ) =>
+            {
+                Ok(())
+            }
+            Err(error) => Err(LinkError::from(error)),
+        }
+    }
+
+    fn stop_job_agent(&self, job: &JobRecord) -> Result<(), LinkError> {
+        let outcome = self.kill_agent(&job.agent_id);
+        let mut failures = self.stop_failures.lock().unwrap_or_else(|p| p.into_inner());
+        if !self
+            .jobs
+            .get(&job.job_id)
+            .is_some_and(|stored| stored.status == JobStatus::Running)
+        {
+            failures.remove(&job.job_id);
+            return outcome;
+        }
+        let Err(error) = &outcome else {
+            failures.remove(&job.job_id);
+            return outcome;
+        };
+        let changed = failures.get(&job.job_id) != Some(error);
+        failures.insert(job.job_id.clone(), error.clone());
+        drop(failures);
+        eprintln!(
+            "Supervisor link: could not stop job {} agent {}: {}: {}; will retry",
+            job.job_id, job.agent_id, error.code, error.message
+        );
+        if changed {
+            self.host.notify(notification(
+                &job.project,
+                format!("Could not stop job {}", job.job_id),
+                format!(
+                    "Agent {} may still be running. {}: {}. AuricIDE will retry the stop; \
+                     the job remains running until its ending is observed.",
+                    job.agent_id, error.code, error.message
+                ),
+            ));
+        }
+        outcome
     }
 
     /// Why a running job may not go on: its project is no longer shared or
@@ -298,9 +372,15 @@ impl Link {
                 .map(|agent| agent.info.status.clone());
             if let Some(AgentStatus::Running | AgentStatus::Queued) = listed {
                 if let Some(reason) = Self::withdrawn(&policy, &job) {
-                    self.request_cancel(&job, Some(reason));
-                } else if job.cancel_requested {
-                    self.kill_agent(&job.agent_id);
+                    if self.request_cancel(&job, Some(reason)).is_err() {
+                        // stop_job_agent reported it; the persisted intent
+                        // remains for the next tick.
+                        continue;
+                    }
+                } else if job.cancel_requested || job.worktree.is_none() {
+                    if self.request_cancel(&job, None).is_err() {
+                        continue;
+                    }
                 } else {
                     self.job_progress(&job, now);
                 }
@@ -420,33 +500,45 @@ impl Link {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&job.agent_id);
         let collected = self.collect_job(job);
-        let error = match (&collected, job.cancel_requested, ending) {
-            (_, true, _) => Some((
-                JobErrorCode::Cancelled,
-                job.cancel_reason
-                    .clone()
-                    .unwrap_or_else(|| "cancelled over the supervisor link".to_string()),
-            )),
-            (Err(message), _, _) => Some((JobErrorCode::Internal, message.clone())),
-            (Ok(found), _, _) if !found.invalid.is_empty() => {
-                Some((JobErrorCode::DocumentInvalid, found.invalid.join("; ")))
-            }
-            (Ok(_), _, Ending::Failed) => Some((
-                JobErrorCode::AgentFailed,
-                "the agent ended with an error".to_string(),
-            )),
-            (Ok(_), _, Ending::Killed) => Some((
-                JobErrorCode::AgentFailed,
-                "the agent was stopped before it finished".to_string(),
-            )),
-            (Ok(found), _, Ending::Exited) if found.changed.is_empty() => Some((
-                JobErrorCode::NoChanges,
-                "the agent ended without changing a file it may write".to_string(),
-            )),
-            _ => None,
-        };
         let mut ended = None;
         self.jobs.update(&job.job_id, now, |stored| {
+            // A simultaneous tick can hold the same old running snapshot.
+            // Only the first terminal update publishes an ending and notice.
+            if stored.status != JobStatus::Running {
+                return None;
+            }
+            let error = match (&collected, stored.cancel_requested, ending) {
+                // This Option records whether the launch obtained its own
+                // worktree, not whether that directory still exists now.
+                (_, _, _) if stored.worktree.is_none() => Some((
+                    JobErrorCode::Internal,
+                    "the agent did not get a worktree of its own".to_string(),
+                )),
+                (_, true, _) => Some((
+                    JobErrorCode::Cancelled,
+                    stored
+                        .cancel_reason
+                        .clone()
+                        .unwrap_or_else(|| "cancelled over the supervisor link".to_string()),
+                )),
+                (Err(message), _, _) => Some((JobErrorCode::Internal, message.clone())),
+                (Ok(found), _, _) if !found.invalid.is_empty() => {
+                    Some((JobErrorCode::DocumentInvalid, found.invalid.join("; ")))
+                }
+                (Ok(_), _, Ending::Failed) => Some((
+                    JobErrorCode::AgentFailed,
+                    "the agent ended with an error".to_string(),
+                )),
+                (Ok(_), _, Ending::Killed) => Some((
+                    JobErrorCode::AgentFailed,
+                    "the agent was stopped before it finished".to_string(),
+                )),
+                (Ok(found), _, Ending::Exited) if found.changed.is_empty() => Some((
+                    JobErrorCode::NoChanges,
+                    "the agent ended without changing a file it may write".to_string(),
+                )),
+                _ => None,
+            };
             if let Ok(found) = collected {
                 stored.commit = Some(found.commit);
                 stored.changed = found.changed;
@@ -469,6 +561,10 @@ impl Link {
             ended = Some(stored.clone());
             Some((name, json!({ "job": stored })))
         });
+        self.stop_failures
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&job.job_id);
         if let Some(job) = ended {
             self.host.notify(job_notification(&job));
             self.ping_requester(&job);
@@ -538,5 +634,72 @@ fn job_notification(job: &JobRecord) -> super::NotificationInput {
             format!("Job {} failed: {}", job.kind, job.job_id),
             format!("{} Branch: {branch}.{outside}", error.message),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::{output_buffer::OutputBuffers, run_results::RunResults};
+    use crate::control_socket::{tests::FakeBackend, Dispatcher, PendingRequests};
+    use crate::supervisor_link::{jobs::Jobs, LinkHost, NotificationInput};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct Host(Mutex<Vec<NotificationInput>>);
+
+    impl LinkHost for Host {
+        fn policy(&self) -> LinkPolicy {
+            LinkPolicy::default()
+        }
+        fn notify(&self, input: NotificationInput) {
+            self.0.lock().unwrap().push(input);
+        }
+    }
+
+    #[test]
+    fn a_stale_finish_snapshot_cannot_publish_a_second_terminal_event_or_notice() {
+        let dispatcher = Arc::new(Dispatcher::new(
+            Arc::new(FakeBackend::default()),
+            Arc::new(OutputBuffers::default()),
+            Arc::new(PendingRequests::default()),
+            Arc::new(RunResults::default()),
+            Duration::from_millis(1),
+        ));
+        let host = Arc::new(Host::default());
+        let link = Link::with_jobs(dispatcher, host.clone(), Arc::new(Jobs::default()));
+        let mut job = started_record(
+            "job-stale".into(),
+            "/project".into(),
+            "diagram.draw".into(),
+            Value::Null,
+            LinkSpawn {
+                agent_id: "agent-7".into(),
+                provider: "claude".into(),
+                model: "small".into(),
+                repo_path: None,
+            },
+            1,
+        );
+        job.worktree = Some("/missing-worktree".into());
+        job.base = Some("missing-base".into());
+        link.jobs.start(job.clone(), 1);
+        link.request_cancel(&job, None).unwrap();
+        let mut cursor = link.jobs.cursor();
+        link.finish_job(&job, Ending::Exited, 2);
+        link.finish_job(&job, Ending::Exited, 3);
+        assert_eq!(link.jobs.events_after(&mut cursor).len(), 1);
+        assert_eq!(host.0.lock().unwrap().len(), 1);
+        assert_eq!(link.jobs.get(&job.job_id).unwrap().finished_at, Some(2));
+        let ended = link.jobs.get(&job.job_id).unwrap();
+        link.request_cancel(&job, Some("late withdrawal".into()))
+            .unwrap();
+        assert_eq!(link.jobs.get(&job.job_id).unwrap(), ended);
+        assert_eq!(
+            link.jobs.get(&job.job_id).unwrap().error.unwrap().code,
+            JobErrorCode::Cancelled,
+            "cancellation after the snapshot wins over the collector error"
+        );
     }
 }

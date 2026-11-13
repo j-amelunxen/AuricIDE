@@ -127,6 +127,9 @@ pub struct Link {
     /// Agent id → when the tick first found a running job's agent gone from
     /// the list with no end booked yet (`job_runner`, `VANISHED_GRACE_MS`).
     vanished: Mutex<std::collections::HashMap<String, u64>>,
+    /// Last stop failure per running job, to avoid repeating the same inbox
+    /// warning on every retry. Cleared when a stop succeeds or the job ends.
+    stop_failures: Mutex<std::collections::HashMap<String, LinkError>>,
 }
 
 /// An agent as the link shows it: the control socket's summary plus the
@@ -184,6 +187,7 @@ impl Link {
             jobs,
             create_gate: Mutex::new(()),
             vanished: Mutex::new(std::collections::HashMap::new()),
+            stop_failures: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -383,7 +387,7 @@ impl Link {
                 let project = params
                     .project
                     .as_deref()
-                    .map(crate::supervisor::canonical_project_path);
+                    .map(crate::project_path::canonical_project_path);
                 to_value(
                     json!({ "jobs": self.jobs.list(project.as_deref(), params.status, limit) }),
                 )
@@ -621,6 +625,8 @@ pub fn serve_with(listener: UnixListener, link: Arc<Link>, limits: Limits) {
     let open = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         let Ok(stream) = stream else {
+            // Out of file descriptors, typically. Retrying at once would spin
+            // a core on the same error.
             std::thread::sleep(Duration::from_millis(100));
             continue;
         };
@@ -876,19 +882,7 @@ impl LinkHost for TauriHost {
     }
 
     fn notify(&self, input: NotificationInput) {
-        use tauri::Manager;
-        let Some(state) = self
-            .app
-            .try_state::<crate::notifications::NotificationsState>()
-        else {
-            return;
-        };
-        let Ok(mut conn) = state.conn.lock() else {
-            return;
-        };
-        if let Err(error) = crate::notifications::dispatch_impl(&mut conn, &input) {
-            eprintln!("Supervisor link: could not record a notification: {error}");
-        }
+        crate::notifications::dispatch_logged(&self.app, &input, "Supervisor link");
     }
 }
 
@@ -908,7 +902,10 @@ pub fn start(app: &tauri::AppHandle, dispatcher: Arc<Dispatcher>) {
             return;
         }
     };
-    let jobs = Arc::new(Jobs::load(jobs::jobs_path_in(&dir), jobs::now_ms()));
+    let jobs = Arc::new(Jobs::load(
+        jobs::jobs_path_in(&dir),
+        crate::json_store::now_ms(),
+    ));
     let host = Arc::new(TauriHost {
         app: app.clone(),
         app_data: dir,
@@ -917,7 +914,7 @@ pub fn start(app: &tauri::AppHandle, dispatcher: Arc<Dispatcher>) {
     let ticker = link.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(JOB_TICK);
-        ticker.tick_jobs(jobs::now_ms());
+        ticker.tick_jobs(crate::json_store::now_ms());
     });
     std::thread::spawn(move || serve(listener, link));
 }

@@ -10,12 +10,7 @@ export function EditorContent() {
   const enableDeepNlp = useStore((s) => s.enableDeepNlp);
   const setEnableDeepNlp = useStore((s) => s.setEnableDeepNlp);
   const lintEnabled = useStore((s) => s.lintConfig.enabled);
-
-  const setLintEnabled = (enabled: boolean) => {
-    useStore.setState((state) => ({
-      lintConfig: { ...state.lintConfig, enabled },
-    }));
-  };
+  const setLintEnabled = useStore((s) => s.setLintEnabled);
 
   return (
     <div className="space-y-4">

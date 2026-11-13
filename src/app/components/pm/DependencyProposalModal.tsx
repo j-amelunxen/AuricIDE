@@ -47,7 +47,6 @@ function DependencyProposalDialog({
         aria-labelledby="dependency-proposal-title"
         className="relative w-[500px] max-h-[80vh] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2">
             <AuricIcon name="lightbulb" className="text-primary text-[20px]" />
@@ -65,7 +64,6 @@ function DependencyProposalDialog({
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 overflow-y-auto">
           {isLoading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-4 text-foreground-muted">
@@ -121,7 +119,6 @@ function DependencyProposalDialog({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-white/10 shrink-0">
           <button
             type="button"

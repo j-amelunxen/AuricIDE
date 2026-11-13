@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import {
   openManager,
+  restartManager,
   type OpenManagerOptions,
   type OpenManagerOutcome,
 } from '@/lib/agents/openSupervisor';
@@ -54,5 +55,15 @@ export function useOpenManager({ onOpenSettings, onSelectAgent }: OpenManagerHoo
     [spawnSupervisor, sendAgentInput, showToast, onOpenSettings, onSelectAgent, selectAgent]
   );
 
-  return { open, opening };
+  /** Stops the running instance and opens the manager again; a failed stop opens nothing. */
+  const restart = useCallback(
+    (manager: { key: string; name: string }, runningAgentId: string) =>
+      restartManager(useStore.getState, manager, runningAgentId, {
+        onNothingVisible: () => onOpenSettings?.('supervisor'),
+        onShow: onSelectAgent ?? selectAgent,
+      }),
+    [onOpenSettings, onSelectAgent, selectAgent]
+  );
+
+  return { open, restart, opening };
 }

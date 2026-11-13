@@ -3,10 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
-import { groupAgentsByRepo } from '@/lib/store/agentSlice';
+import { groupAgentsByRepo } from '@/lib/agents/fleet';
 import { consoleAgentState } from '@/lib/agents/consoleState';
 import { consoleSummaryLine, consoleAttentionBadge } from '@/lib/agents/consoleSummary';
-import { agentAttention, countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
+import {
+  agentAttention,
+  countNeedingAttention,
+  needsAttention as agentNeedsAttention,
+  withReviewFlags,
+} from '@/lib/agents/attention';
 import { useNowWhen } from '@/lib/hooks/useNow';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { fleetHeartbeatMax, heartbeatSeries } from '@/lib/agents/events/heartbeat';
@@ -169,7 +174,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const agentColors = useStore((s) => s.agentColors);
   const starredProjects = useStore((s) => s.starredProjects);
   const killRunningAgent = useStore((s) => s.killRunningAgent);
-  const killAgentsForRepoPath = useStore((s) => s.killAgentsForRepoPath);
+  const stopAgents = useStore((s) => s.stopAgents);
   const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
   const retryFailedAgent = useStore((s) => s.retryFailedAgent);
   const markAgentReviewed = useStore((s) => s.markAgentReviewed);
@@ -258,11 +263,9 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const activeRepoPaths = Object.keys(grouped);
 
   const needsAttention = (repoPath: string) =>
-    grouped[repoPath].some((agent) => {
-      const reviewed = reviewedAgentIds.includes(agent.id);
-      const state = consoleAgentState(agent, reviewed, now);
-      return state === 'yours' || state === 'stalled' || (state === 'error' && !reviewed);
-    });
+    grouped[repoPath].some((agent) =>
+      agentNeedsAttention({ ...agent, reviewed: reviewedAgentIds.includes(agent.id) }, now)
+    );
 
   const sortedActive = [...activeRepoPaths].sort(
     (a, b) => Number(needsAttention(b)) - Number(needsAttention(a))
@@ -297,7 +300,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
     onRetry,
     onMarkReviewed: markAgentReviewed,
     onDismiss: dismissFinishedAgent,
-    onStopAll: (repoPath) => void killAgentsForRepoPath(repoPath),
+    onStopAgents: stopAgents,
   };
 
   return (

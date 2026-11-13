@@ -1,18 +1,11 @@
 import type { NotificationAction, NotificationSeverity } from '@/lib/notifications/types';
 import { invoke } from './invoke';
 
-/** How a schedule repeats. */
-export type ScheduleSpecKind = 'cron' | 'every';
-export type ScheduleEveryUnit = 'hour' | 'day' | 'week';
-
-/**
- * What happens to occurrences that came due while AuricIDE was closed.
- *
- * `coalesce` is the default because three weeks away should not produce three
- * identical reminders — one that says how overdue it is carries more and costs
- * less attention.
- */
-export type ScheduleCatchUp = 'coalesce' | 'skip' | 'all';
+import type {
+  ScheduleCatchUp,
+  ScheduleEveryUnit,
+  ScheduleSpecKind,
+} from '@/lib/notifications/scheduleVocabulary';
 
 /** The notification a schedule raises when it fires. */
 export interface SchedulePayload {

@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency } from '@/lib/goals/types';
 import { normalizeBundle } from '@/lib/goals/goalDependencies';
-import { getGoalBlockers, type GoalDependencyResult } from '@/lib/store/goalsSlice';
+import { type GoalDependencyResult } from '@/lib/store/goalsSlice';
+import { getGoalBlockers } from '@/lib/goals/model/goalDependencyAdapters';
 import { GoalBundleField } from './GoalBundleField';
 
 export interface GoalDependenciesSectionProps {

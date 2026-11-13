@@ -1,8 +1,10 @@
 'use client';
 
+import { baseName } from '@/lib/paths/baseName';
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import { useCallback } from 'react';
 import { useStore } from '@/lib/store';
-import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
+import type { FileTreeNode } from '@/lib/explorer/fileTree';
 import {
   createDirectory,
   deleteFile,
@@ -20,9 +22,12 @@ import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
 import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
-import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
 import {
-  baseName,
+  describeWorkspaceFailures,
+  readWorkspaceFiles,
+  writeWorkspaceChanges,
+} from '@/lib/refactoring/applyRenameChanges';
+import {
   joinPath,
   numberedName,
   planTransfers,
@@ -244,41 +249,24 @@ export function useFileMutations(
         return;
       }
 
-      if (
-        !dialog.isDirectory &&
-        (dialog.oldName.endsWith('.md') || dialog.oldName.endsWith('.markdown'))
-      ) {
+      if (!dialog.isDirectory && isMarkdownPath(dialog.oldName)) {
         const store = useStore.getState();
         const referencingPaths = store
           .getBacklinksFor(dialog.oldName)
           .filter((p) => p !== dialog.path);
         if (referencingPaths.length > 0) {
-          try {
-            const referencingFiles = new Map<string, string>();
-            for (const p of referencingPaths) {
-              try {
-                referencingFiles.set(p, await readFile(p));
-              } catch {
-                // Best-effort
-              }
-            }
-            const changes = computeFileRenameChanges(dialog.oldName, newName, referencingFiles);
-            const byFile = new Map<string, typeof changes>();
-            for (const change of changes) {
-              const list = byFile.get(change.filePath) ?? [];
-              list.push(change);
-              byFile.set(change.filePath, list);
-            }
-            for (const [fp, fileChanges] of byFile) {
-              const original = referencingFiles.get(fp) ?? '';
-              const updated = applyChangesToContent(original, fileChanges);
-              await writeFile(fp, updated);
-              store.updateFileInIndex(fp, updated);
-              if (state.activeTabId === fp) state.setEditorContent(updated);
-            }
-          } catch {
-            // Best-effort
+          const { contents, failed: unread } = await readWorkspaceFiles(referencingPaths, readFile);
+          const changes = computeFileRenameChanges(dialog.oldName, newName, contents);
+          const { written, failed } = await writeWorkspaceChanges(changes, contents, writeFile);
+          for (const [fp, updated] of written) {
+            store.updateFileInIndex(fp, updated);
+            if (state.activeTabId === fp) state.setEditorContent(updated);
           }
+          const problem = describeWorkspaceFailures(`Links to "${newName}" not updated`, [
+            ...unread,
+            ...failed,
+          ]);
+          if (problem) state.showToast(problem, 'error');
         }
       }
 

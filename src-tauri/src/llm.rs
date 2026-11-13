@@ -1,4 +1,5 @@
-use crate::database::{kv_get, DatabaseState};
+pub mod commands;
+use crate::database::DatabaseState;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -41,8 +42,8 @@ pub struct LlmRequest {
 /// Pure and total: an unknown role falls back to the default namespace.
 fn settings_namespace(role: Option<&str>) -> &'static str {
     match role {
-        Some("judge") => "judge_llm_settings",
-        _ => "llm_settings",
+        Some("judge") => crate::app_config::namespaces::JUDGE,
+        _ => crate::app_config::namespaces::LLM,
     }
 }
 
@@ -200,24 +201,9 @@ pub async fn llm_call_impl(
             .remove(namespace)
             .unwrap_or_default();
 
-        // A project without an open database simply overrides nothing. The
-        // key lives in the application store now, so an uninitialised project
-        // is no longer a reason to refuse the call.
-        let project = {
-            let connections = db_state.connections.lock().unwrap();
-            match connections.get(&request.project_path) {
-                Some(conn) => {
-                    let mut found = std::collections::BTreeMap::new();
-                    for key in LLM_SETTING_KEYS {
-                        if let Some(value) = kv_get(conn, namespace, key)? {
-                            found.insert(key.to_string(), value);
-                        }
-                    }
-                    found
-                }
-                None => std::collections::BTreeMap::new(),
-            }
-        };
+        // A project without an open database overrides nothing: the key lives
+        // in the application store, so that is no reason to refuse the call.
+        let project = db_state.kv_values(&request.project_path, namespace, &LLM_SETTING_KEYS)?;
 
         resolve_llm_settings(&global, &project, namespace)?
     };

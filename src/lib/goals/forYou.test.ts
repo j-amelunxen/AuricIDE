@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalStation } from '../tauri/goals';
-import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { AgentInfo } from '../tauri/agents';
+import type { PmGoal, PmGoalStation } from './types';
+import type { PmDependency, PmTicket } from '../pm/types';
+import type { AgentInfo } from '../agents/types';
 import { buildForYouQueue, type ForYouInput } from './forYou';
 
 let seq = 0;

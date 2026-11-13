@@ -1,9 +1,5 @@
-import { Facet } from '@codemirror/state';
+import { projectFilesFacet } from './editorFacets';
 import type { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
-
-export const filePathsFacet = Facet.define<string[], string[]>({
-  combine: (values: readonly string[][]): string[] => values.flat(),
-});
 
 const LANGUAGES = [
   'javascript',
@@ -105,7 +101,7 @@ export function linkTargetSource(ctx: CompletionContext): CompletionResult | nul
   const from = match.from + 1; // after [
   const typed = match.text.slice(1).toLowerCase();
 
-  const filePaths = ctx.state.facet(filePathsFacet);
+  const filePaths = ctx.state.facet(projectFilesFacet);
   const options = filePaths
     .filter((p) => p.toLowerCase().includes(typed))
     .map((p) => ({ label: p }));
@@ -126,7 +122,7 @@ export function imageTargetSource(ctx: CompletionContext): CompletionResult | nu
   const from = match.from + parenIdx + 1;
   const typed = match.text.slice(parenIdx + 1).toLowerCase();
 
-  const filePaths = ctx.state.facet(filePathsFacet);
+  const filePaths = ctx.state.facet(projectFilesFacet);
   const options = filePaths
     .filter((p) => IMAGE_EXTENSIONS.test(p))
     .filter((p) => p.toLowerCase().includes(typed))

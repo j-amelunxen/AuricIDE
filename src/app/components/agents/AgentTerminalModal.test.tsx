@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { AgentTerminalModal } from './AgentTerminalModal';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 
 // Module-level spies so individual tests can control/inspect behavior
@@ -976,9 +976,39 @@ describe('AgentTerminalModal', () => {
       await answerStop(user, 'Stop');
       expect(onSwitchAgent).toHaveBeenCalledWith(waiting);
       expect(onKill).toHaveBeenCalledWith('agent-1');
-      expect(onSwitchAgent.mock.invocationCallOrder[0]).toBeLessThan(
-        onKill.mock.invocationCallOrder[0]
+      expect(onKill.mock.invocationCallOrder[0]).toBeLessThan(
+        onSwitchAgent.mock.invocationCallOrder[0]
       );
+    });
+
+    it('stays on the agent and offers no merge when its stop fails', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn(async () => {
+        throw new Error('Could not stop agent agent-1: refused');
+      });
+      const onSwitchAgent = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={onClose}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      await answerStop(user, 'Stop');
+      await waitFor(() => expect(onKill).toHaveBeenCalledWith('agent-1'));
+      await waitFor(() =>
+        expect(useStore.getState().toasts.map((t) => t.message)).toContain(
+          'Could not stop agent agent-1: refused'
+        )
+      );
+      expect(onSwitchAgent).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
     });
 
     /**

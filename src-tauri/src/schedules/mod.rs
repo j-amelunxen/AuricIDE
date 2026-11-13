@@ -1,6 +1,7 @@
 //! Recurring reminders that survive the app being closed.
 
-mod database;
+pub mod commands;
+pub(crate) mod database;
 mod engine;
 mod types;
 

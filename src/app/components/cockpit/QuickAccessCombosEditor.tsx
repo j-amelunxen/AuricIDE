@@ -5,7 +5,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
-import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/quickAccess/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
 import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';

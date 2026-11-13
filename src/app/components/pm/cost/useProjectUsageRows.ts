@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { selectAgentUsageRows } from '@/lib/store/agentUsageSlice';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
 
 /**
  * The open project's recorded agent runs, newest first.

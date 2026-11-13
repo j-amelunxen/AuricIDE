@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ACCENT_STORAGE_KEY,
   readStoredThemeId,
   resolveStoredThemeId,
+  THEME_BOOT_SCRIPT,
   THEME_STORAGE_KEY,
   writeSnapshot,
   readSnapshot,
@@ -49,5 +51,27 @@ describe('theme storage', () => {
       '--primary': '#ff4d6d',
       '--primary-rgb': '255, 77, 109',
     });
+  });
+});
+
+describe('the boot script', () => {
+  const boot = () => new Function(THEME_BOOT_SCRIPT)();
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-accent');
+    document.documentElement.removeAttribute('style');
+  });
+
+  it('paints the snapshot the theme module wrote', () => {
+    writeSnapshot({ '--accent': '#123456' });
+    boot();
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#123456');
+  });
+
+  it('falls back to the stored id the theme module reads', () => {
+    writeStoredThemeId('ocean');
+    boot();
+    expect(document.documentElement.getAttribute('data-accent')).toBe(readStoredThemeId());
   });
 });

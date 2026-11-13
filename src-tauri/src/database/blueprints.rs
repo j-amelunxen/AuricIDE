@@ -54,14 +54,8 @@ pub fn blueprints_load_impl(conn: &Connection) -> Result<BlueprintState, String>
             })
         })
         .map_err(|e| format!("Failed to query blueprints: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read blueprints: {}", e))?;
 
     Ok(BlueprintState { blueprints })
-}
-
-pub fn blueprints_clear_impl(conn: &Connection) -> Result<(), String> {
-    conn.execute("DELETE FROM blueprints", [])
-        .map_err(|e| format!("Failed to clear blueprints: {}", e))?;
-    Ok(())
 }

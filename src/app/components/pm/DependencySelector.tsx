@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import fuzzysort from 'fuzzysort';
-import type { PmDependency } from '@/lib/tauri/pm';
+import type { PmDependency } from '@/lib/pm/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface DependencySelectorProps {

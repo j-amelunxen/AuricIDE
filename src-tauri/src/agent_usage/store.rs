@@ -2,7 +2,7 @@
 //! back, and read the status a ticket had when a run started.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use rusqlite::{params, Connection, OpenFlags, Row};
@@ -13,9 +13,7 @@ use super::record::{CostSource, MatchKind, Outcome, RunKind, RunSource, UsageRec
 /// is not held up for long by a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub fn project_db_path(project_path: &Path) -> PathBuf {
-    project_path.join(".auric").join("project.db")
-}
+use crate::database::project_db_path;
 
 /// The project's database, only if it already exists: an agent outside an
 /// initialised project is not recorded, and recording must never create one.
@@ -60,7 +58,14 @@ pub fn runs_by_provider_since(project_path: &Path, since: &str) -> BTreeMap<Stri
     if !project_db_path(project_path).is_file() {
         return BTreeMap::new();
     }
-    read().unwrap_or_default()
+    // Balancing is a hint: an unreadable database counts as no runs, said aloud.
+    read().unwrap_or_else(|error| {
+        eprintln!(
+            "Provider balancing: runs in {} unreadable: {error}",
+            project_path.display()
+        );
+        BTreeMap::new()
+    })
 }
 
 pub fn insert(conn: &Connection, row: &UsageRecord) -> Result<(), String> {

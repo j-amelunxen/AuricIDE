@@ -1,8 +1,8 @@
 'use client';
 
-import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency } from '@/lib/goals/types';
 import { normalizeBundle } from '@/lib/goals/goalDependencies';
-import { getGoalBlockers } from '@/lib/store/goalsSlice';
+import { getGoalBlockers } from '@/lib/goals/model/goalDependencyAdapters';
 import { summarizeBlockers } from '@/lib/orchestration/blockerLabel';
 
 interface GoalDependencyChipsProps {

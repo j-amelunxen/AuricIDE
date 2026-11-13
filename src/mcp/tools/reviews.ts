@@ -1,3 +1,4 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
@@ -10,10 +11,6 @@ export interface TicketReviewRow {
   reason: string;
   reviewer: string;
   created_at: string;
-}
-
-function now(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
 }
 
 function getReview(db: Database.Database, id: string): TicketReviewRow | undefined {
@@ -39,7 +36,7 @@ export function submitTicketReview(
   db.prepare(
     `INSERT INTO pm_ticket_reviews (id, ticket_id, verdict, reason, reviewer, created_at)
      VALUES (?, ?, ?, ?, 'review-agent', ?)`
-  ).run(id, params.ticketId, params.pass ? 1 : 0, params.reason, now());
+  ).run(id, params.ticketId, params.pass ? 1 : 0, params.reason, formatUtcStamp());
   return getReview(db, id)!;
 }
 

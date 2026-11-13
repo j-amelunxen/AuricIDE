@@ -174,15 +174,9 @@ pub fn finish(
 }
 
 fn write_to_inbox(app: &tauri::AppHandle, record: &AgentLaunchRunInput) -> Result<(), String> {
-    use tauri::Manager;
-    let inbox = app
-        .try_state::<crate::notifications::NotificationsState>()
-        .ok_or_else(|| "The inbox is unavailable".to_string())?;
-    let conn = inbox
-        .conn
-        .lock()
-        .map_err(|_| "The inbox is unavailable".to_string())?;
-    crate::notifications::record_launch_run_impl(&conn, record)
+    crate::notifications::with_inbox(app, "the launch run was not recorded", |conn| {
+        crate::notifications::record_launch_run_impl(conn, record)
+    })
 }
 
 fn report(record: &AgentLaunchRunInput, outcome: Result<(), String>) {
@@ -192,6 +186,25 @@ fn report(record: &AgentLaunchRunInput, outcome: Result<(), String>) {
             record.request_uid, record.agent_id, record.status
         );
     }
+}
+
+/// The human discarded an interrupted agent that served request `uid`: the
+/// request learns it was killed first, and only then is the anchor let go
+/// (`forget`), so a failed write or a quit in between leaves the agent to be
+/// discarded again. Runs on the caller's thread: the command answers after.
+pub fn discard(
+    app: &tauri::AppHandle,
+    uid: &str,
+    agent_id: &str,
+    forget: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    let verdict = killed(uid, agent_id);
+    finish(
+        &RETRY_DELAYS,
+        &std::thread::sleep,
+        &mut || write_to_inbox(app, &verdict),
+        forget,
+    )
 }
 
 /// Writes `record` on a thread of its own, with retries: the caller is a
@@ -471,7 +484,7 @@ mod tests {
         persistence.record_spawn(agent).unwrap();
         notifications::record_launch_run_impl(&inbox, &started(Some("req-1"), &info()).unwrap())
             .unwrap();
-        std::fs::create_dir(anchors.with_extension("json.tmp")).unwrap();
+        let blocked = crate::json_store::test_support::block_writes(&anchors);
 
         let outcome = finish(
             &RETRY_DELAYS,
@@ -506,7 +519,7 @@ mod tests {
         assert_eq!(status, "completed");
 
         // Once saving works again, the file is cleaned for good.
-        std::fs::remove_dir(anchors.with_extension("json.tmp")).unwrap();
+        drop(blocked);
         restarted.save().unwrap();
         assert!(AgentPersistence::load(Some(anchors))
             .interrupted()

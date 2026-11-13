@@ -4,17 +4,15 @@
 process.env.TZ = 'Europe/Berlin';
 
 import { describe, expect, it } from 'vitest';
+import { computeBurndown } from './metrics/burndown';
 import {
-  computeBurndown,
   computeEpicProjections,
   computeProjectProjection,
-  computeStatusDurations,
-  computeTicketMetrics,
   computeVelocity,
   computeVelocityBasis,
-  formatDuration,
-  parseHistoryTime,
-} from './metrics';
+} from './metrics/projections';
+import { computeStatusDurations, computeTicketMetrics } from './metrics/ticketMetrics';
+import { formatDuration, parseHistoryTime } from './metrics/time';
 
 const DAY = 24 * 60 * 60 * 1000;
 

@@ -6,12 +6,8 @@ import {
   type Completion,
 } from '@codemirror/autocomplete';
 import fuzzysort from 'fuzzysort';
-import type { HeadingRange } from '@/lib/editor/markdownHeadingParser';
-
-// Facet to provide file paths from React
-export const fileListFacet = Facet.define<string[], string[]>({
-  combine: (values) => values[0] ?? [],
-});
+import type { HeadingRange } from '@/lib/markdown/markdownHeadingParser';
+import { projectFilesFacet } from './editorFacets';
 
 // Facet to provide headings for a given file path (or '' for current file)
 export type HeadingProvider = (filePath: string) => HeadingRange[];
@@ -89,7 +85,7 @@ function fileCompletion(
   query: string,
   from: number
 ): CompletionResult | null {
-  const filePaths = context.state.facet(fileListFacet);
+  const filePaths = context.state.facet(projectFilesFacet);
 
   // Extract display names (basenames without extension for .md files)
   const items = filePaths.map((p) => {
@@ -110,7 +106,6 @@ function fileCompletion(
     label: item.display,
     detail: item.base !== item.display ? item.base : undefined,
     apply: (view, completion, from, to) => {
-      // Insert the display text + closing ]]
       view.dispatch({
         changes: { from, to, insert: `${item.display}]]` },
       });

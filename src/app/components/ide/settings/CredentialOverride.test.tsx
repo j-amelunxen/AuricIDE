@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -29,6 +29,7 @@ vi.mock('@/lib/tauri/db', () => ({
 }));
 
 import { CredentialOverride } from './CredentialOverride';
+import { CREDENTIAL_GROUPS } from './credentialGroups';
 
 const FIELDS = [
   { key: 'api_key', label: 'API Key', secret: true },
@@ -38,11 +39,13 @@ const FIELDS = [
 const renderOverride = () =>
   render(
     <CredentialOverride
-      namespace="llm_settings"
-      title="LLM"
-      icon="psychology"
-      blurb="The model behind analysis."
-      fields={FIELDS}
+      group={{
+        namespace: 'llm_settings',
+        title: 'LLM',
+        icon: 'psychology',
+        blurb: 'The model behind analysis.',
+        fields: FIELDS,
+      }}
     />
   );
 
@@ -154,46 +157,11 @@ describe('CredentialOverride', () => {
   });
 });
 
-describe('CredentialOverride – the screens built on it', () => {
-  it('points the LLM screen at the llm_settings namespace', async () => {
-    const { LlmContent } = await import('./LlmContent');
-    loadProjectCredentials.mockResolvedValue({});
-
-    render(<LlmContent />);
-
-    await waitFor(() =>
-      expect(loadProjectCredentials).toHaveBeenCalledWith('/tmp/project', 'llm_settings')
-    );
-  });
-
-  it('points the Judge screen at its own namespace, not the LLM one', async () => {
-    // Sharing a namespace would make the judge review with the same model it
-    // is meant to be independent of.
-    const { JudgeLlmContent } = await import('./JudgeLlmContent');
-
-    render(<JudgeLlmContent />);
-
-    await waitFor(() =>
-      expect(loadProjectCredentials).toHaveBeenCalledWith('/tmp/project', 'judge_llm_settings')
-    );
-  });
-
-  it('points the Excalidraw screen at excalidraw_settings', async () => {
-    const { ExcalidrawContent } = await import('./ExcalidrawContent');
-
-    render(<ExcalidrawContent />);
-
-    await waitFor(() =>
-      expect(loadProjectCredentials).toHaveBeenCalledWith('/tmp/project', 'excalidraw_settings')
-    );
-  });
-
-  it('renders one field per credential the namespace defines', async () => {
-    const { LlmContent } = await import('./LlmContent');
-
-    render(<LlmContent />);
-
-    const section = await screen.findByText(/the model behind analysis/i);
-    expect(within(section.parentElement as HTMLElement).getByText('Base URL')).toBeInTheDocument();
+describe('CREDENTIAL_GROUPS', () => {
+  // Sharing a namespace would make the judge review with the same model it is
+  // meant to be independent of, and two screens would overwrite each other.
+  it('gives every group its own namespace', () => {
+    const namespaces = Object.values(CREDENTIAL_GROUPS).map((group) => group.namespace);
+    expect(new Set(namespaces).size).toBe(namespaces.length);
   });
 });

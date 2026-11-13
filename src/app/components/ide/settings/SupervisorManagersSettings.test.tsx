@@ -4,7 +4,7 @@ import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { readManagerPresentations } from '@/lib/quickAccess/managerPresentation';
 import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import { SupervisorManagersSettings } from './SupervisorManagersSettings';
 

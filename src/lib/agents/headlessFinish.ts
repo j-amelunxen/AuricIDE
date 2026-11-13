@@ -1,4 +1,4 @@
-import type { AgentConfig } from '../tauri/agents';
+import type { AgentConfig } from './types';
 import { llmCall } from '../tauri/llm';
 import type { NotificationInput } from '../tauri/notifications';
 import { clipFinishSummary, deriveFinishSummary } from './finishSummary';

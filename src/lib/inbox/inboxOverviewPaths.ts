@@ -1,6 +1,6 @@
 import type { InboxItem } from '@/lib/tauri/inbox';
 import { MAX_RECENT, type RecentProject } from '@/lib/store/recentProjectsSlice';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 export interface InboxOverviewPathSources {
   starredProjects: StarredProject[];

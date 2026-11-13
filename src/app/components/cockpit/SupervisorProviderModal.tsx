@@ -1,16 +1,8 @@
 'use client';
 
+import type { SupervisorProviderChoice } from '@/lib/agents/types';
+
 import { ModalShell } from '@/app/components/ui/ModalShell';
-
-export interface SupervisorCandidateInfo {
-  id: string;
-  name: string;
-}
-
-export interface SupervisorProviderChoice {
-  candidates: SupervisorCandidateInfo[];
-  resolve: (providerId: string | null) => void;
-}
 
 export interface SupervisorProviderModalProps {
   choice: SupervisorProviderChoice | null;

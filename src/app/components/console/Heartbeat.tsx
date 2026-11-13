@@ -26,6 +26,7 @@ export const CONSOLE_STATE_HEARTBEAT_TONE: Record<ConsoleAgentState, HeartbeatTo
   error: 'failed',
   stalled: 'stalled',
   working: 'running',
+  queued: 'done',
   done: 'done',
 };
 

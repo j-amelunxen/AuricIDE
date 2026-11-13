@@ -1,12 +1,12 @@
 'use client';
 
+import { providerName, providerTag } from '@/lib/usage/quota';
 import { useState } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import {
   externalOnMs,
   externalStateLabel,
-  formatExternalSpan,
   isExternalLive,
   isExternalStale,
   type ExternalAgent,
@@ -26,6 +26,7 @@ import {
   type TimelineTone,
 } from '@/lib/agents/supervisorTimeline';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { formatAgentDurationShort } from '@/lib/agents/duration';
 
 const BAR_TONE: Record<TimelineTone, string> = {
   running: 'border-primary/50 bg-primary/25 text-primary-light',
@@ -542,8 +543,8 @@ function formatLastSeen(at: number): string {
 function externalRowTitle(row: ExternalTimelineRow, now: number): string {
   const { external } = row;
   const registeredUntil = external.finishedAt ?? now;
-  const registered = formatExternalSpan(Math.max(0, registeredUntil - external.registeredAt));
-  const on = formatExternalSpan(externalOnMs(external, now));
+  const registered = formatAgentDurationShort(Math.max(0, registeredUntil - external.registeredAt));
+  const on = formatAgentDurationShort(externalOnMs(external, now));
   const state = externalStateLabel(external, now);
   const reason = external.endReason ? ` (${external.endReason})` : '';
   const head =
@@ -553,14 +554,8 @@ function externalRowTitle(row: ExternalTimelineRow, now: number): string {
 }
 
 function ProviderMark({ provider }: { provider: string }) {
-  const name = provider === 'claude' ? 'Claude Code' : provider === 'codex' ? 'Codex' : provider;
-  const letters = provider.replace(/[^a-z0-9]/gi, '');
-  const mark =
-    provider === 'claude'
-      ? 'CC'
-      : provider === 'codex'
-        ? 'CX'
-        : (letters.slice(0, 2) || '?').toUpperCase();
+  const name = providerName(provider);
+  const mark = providerTag(provider);
   return (
     <span
       title={name}

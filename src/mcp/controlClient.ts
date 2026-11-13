@@ -12,6 +12,7 @@ import {
   type ControlRequest,
   type ControlResult,
 } from '../lib/agents/agentControl.contract';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
 
 /**
  * Talks to the running IDE over its control socket (`docs/design-agent-control.md`).
@@ -19,8 +20,12 @@ import {
  * connection keeps a stuck answer from blocking the next question.
  */
 
-/** Spawn and kill wait on the frontend (up to 30 s in Rust), so they get more room. */
-const FRONTEND_METHOD_TIMEOUT_MS = 35_000;
+/**
+ * The methods Rust carries out through the frontend (`Dispatcher::via_frontend`
+ * in `control_socket/mod.rs`): it waits up to `frontendTimeoutMs` for the
+ * window, so the client waits that long plus the grace period.
+ */
+const FRONTEND_METHODS: ReadonlySet<string> = new Set(['spawn', 'kill', 'dismiss']);
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 export interface ControlCallOptions {
@@ -32,7 +37,7 @@ export function controlSocketPath(
   env: Readonly<Record<string, string | undefined>> = process.env
 ): string {
   return (
-    env.AURIC_CONTROL_SOCKET ||
+    env[AURIC_ENV.controlSocket] ||
     join(homedir(), 'Library', 'Application Support', 'com.auricide.ide', 'control.sock')
   );
 }
@@ -50,7 +55,9 @@ export function controlTimeoutMs<M extends ControlMethod>(
     const { waitSeconds } = params as ControlParams<'await_result'>;
     return (waitSeconds + CONTROL_LIMITS.awaitClientGraceSeconds) * 1000;
   }
-  return method === 'spawn' || method === 'kill' ? FRONTEND_METHOD_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+  return FRONTEND_METHODS.has(method)
+    ? CONTROL_LIMITS.frontendTimeoutMs + CONTROL_LIMITS.awaitClientGraceSeconds * 1000
+    : DEFAULT_TIMEOUT_MS;
 }
 
 let nextRequestId = 1;

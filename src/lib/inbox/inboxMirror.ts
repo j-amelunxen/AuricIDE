@@ -5,7 +5,7 @@ import type {
   ProjectPmOverview,
   ProjectTicketDigest,
 } from '@/lib/tauri/inbox';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 
 export interface LiveInboxTicket {
   id: string;

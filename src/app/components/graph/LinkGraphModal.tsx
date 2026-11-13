@@ -34,7 +34,6 @@ function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'i
         className="flex flex-col w-full h-full rounded-2xl border border-white/10 bg-[#050510] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/2 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary neon-glow border border-primary/20">
@@ -74,7 +73,6 @@ function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'i
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 relative min-h-0">
           <LinkGraphView
             hideFullscreen

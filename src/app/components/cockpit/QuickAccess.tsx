@@ -8,17 +8,12 @@ import {
   type QuickAccessSort,
 } from '@/lib/quickAccess/badge';
 import { useStore } from '@/lib/store';
-import {
-  quickAccessCombos,
-  quickAccessSkills,
-  type QuickAccessCombo,
-  type QuickAccessSkill,
-} from '@/lib/store/starredProjectsSlice';
+import { quickAccessCombos, quickAccessSkills } from '@/lib/quickAccess/projectEntries';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
 import { DOCK_DRAG_MIME, dockPlaceNextTo, splitDock } from '@/lib/quickAccess/dock';
 import { moveGridTile, parseGridOrder, serializeGridOrder } from '@/lib/quickAccess/gridOrder';
 import type { ListDropPlace } from '@/lib/pm/customOrder';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
@@ -29,7 +24,8 @@ import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { SUPERVISOR_WHEEL_ID, SupervisorTile, type SupervisorTileProps } from './SupervisorTile';
 import { ManagerTiles } from './ManagerTiles';
 import { ProjectTile, type ProjectTileProps } from './ProjectTile';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useProjectDirty } from '@/lib/hooks/useProjectDirty';
 import { copyToClipboard } from '@/lib/tauri/clipboard';

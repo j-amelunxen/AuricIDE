@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 // Stands in for Rust's `starred_projects_update_settings`: applies the
 // tri-state the way the backend does and answers with the stored list.

@@ -2,7 +2,7 @@
 
 import { useState, type DragEvent } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { TicketStatusChip } from '@/app/components/pm/TicketStatusChip';
 import { projectIconFor } from '@/lib/quickAccess/icon';
 import { calculateDailyGoalsProgress } from '@/lib/inbox/dailyGoals';
@@ -14,7 +14,7 @@ import {
 } from '@/lib/inbox/inboxTicketStatus';
 import type { TicketStatus } from '@/lib/pm/enums';
 import type { InboxItem, ProjectPmOverview } from '@/lib/tauri/inbox';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 export interface InboxDailyGoalsSectionProps {
   goals: InboxItem[];

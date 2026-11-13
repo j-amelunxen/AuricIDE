@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS } from '@/lib/config/appConfig';
+import { APP_CONFIG_KEYS, subscribeAppPrefs } from '@/lib/config/appConfig';
 import { loadSupervisorPresets, type SupervisorPresets } from './supervisorPresets';
 
 /**
@@ -11,13 +11,12 @@ import { loadSupervisorPresets, type SupervisorPresets } from './supervisorPrese
  */
 export function useSupervisorPresets(): SupervisorPresets {
   const [presets, setPresets] = useState(loadSupervisorPresets);
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-      if (key === APP_CONFIG_KEYS.supervisorQuickAccess) setPresets(loadSupervisorPresets());
-    };
-    window.addEventListener(APP_CONFIG_CHANGED_EVENT, onChange);
-    return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onChange);
-  }, []);
+  useEffect(
+    () =>
+      subscribeAppPrefs([APP_CONFIG_KEYS.supervisorQuickAccess], () =>
+        setPresets(loadSupervisorPresets())
+      ),
+    []
+  );
   return presets;
 }

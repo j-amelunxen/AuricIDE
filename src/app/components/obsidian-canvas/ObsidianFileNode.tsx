@@ -1,5 +1,6 @@
 'use client';
 
+import { baseName } from '@/lib/paths/baseName';
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,14 +19,10 @@ export interface ObsidianFileNodeData {
   onTicketClick?: (ticketId: string) => void;
 }
 
-function basename(filePath: string): string {
-  return filePath.split('/').pop() ?? filePath;
-}
-
 export function ObsidianFileNode({ data, selected }: NodeProps & { data: ObsidianFileNodeData }) {
   const borderColor = getNodeBorderColor(data.color);
   const containerStyle = getNodeBorderStyle(data.color, selected);
-  const fileName = basename(data.file);
+  const fileName = baseName(data.file);
 
   // One state tagged with the file it belongs to. "Still loading" is then the
   // absence of an answer for *this* file rather than a flag the effect has to

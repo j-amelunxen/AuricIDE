@@ -1,9 +1,9 @@
-use git2::{Repository, StatusOptions};
+use git2::StatusOptions;
 use std::fs;
 use std::path::Path;
 
 pub fn git_discard_impl(repo_path: &str, file_path: &str) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    let repo = super::open_repo(repo_path)?;
 
     let mut opts = StatusOptions::new();
     opts.pathspec(file_path)

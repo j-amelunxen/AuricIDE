@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { usageRow } from '@/lib/pm/usage/testRow';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { GoalCost } from './GoalCost';
 
 const goal = (id: string, parentId: string | null = null) => ({ id, parentId }) as PmGoal;

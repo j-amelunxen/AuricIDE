@@ -1,6 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createBlueprintsSlice, type BlueprintsSlice } from './blueprintsSlice';
 import type { Blueprint, BlueprintState } from '../tauri/blueprints';
 import type { SyncResult } from '../blueprints/serverSync';
 
@@ -8,7 +7,6 @@ const mockBlueprintsLoad = vi.fn<(...args: unknown[]) => Promise<BlueprintState>
   Promise.resolve({ blueprints: [] })
 );
 const mockBlueprintsSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
-const mockBlueprintsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockSyncWithServer = vi.fn<(...args: unknown[]) => Promise<SyncResult>>(() =>
   Promise.resolve({ addedLocally: [], pushedToServer: [] })
@@ -17,7 +15,6 @@ const mockSyncWithServer = vi.fn<(...args: unknown[]) => Promise<SyncResult>>(()
 vi.mock('../tauri/blueprints', () => ({
   blueprintsLoad: (...args: unknown[]) => mockBlueprintsLoad(...args),
   blueprintsSave: (...args: unknown[]) => mockBlueprintsSave(...args),
-  blueprintsClear: (...args: unknown[]) => mockBlueprintsClear(...args),
 }));
 
 vi.mock('../tauri/db', () => ({
@@ -29,7 +26,7 @@ vi.mock('../blueprints/serverSync', () => ({
 }));
 
 function createTestStore() {
-  return create<BlueprintsSlice>()((...a) => ({ ...createBlueprintsSlice(...a) }));
+  return createFullTestStore();
 }
 
 function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
@@ -180,19 +177,6 @@ describe('blueprintsSlice', () => {
     });
     expect(store.getState().blueprintsDirty).toBe(false);
     expect(store.getState().blueprints).toEqual(store.getState().blueprintsDraft);
-  });
-
-  it('clearBlueprints calls IPC and resets state', async () => {
-    const store = createTestStore();
-    store.getState().addBlueprint(makeBlueprint());
-
-    await store.getState().clearBlueprints('/project');
-
-    expect(mockInitProjectDb).toHaveBeenCalledWith('/project');
-    expect(mockBlueprintsClear).toHaveBeenCalledWith('/project');
-    expect(store.getState().blueprints).toHaveLength(0);
-    expect(store.getState().blueprintsDraft).toHaveLength(0);
-    expect(store.getState().blueprintsDirty).toBe(false);
   });
 
   it('discardBlueprintChanges restores persisted state', () => {

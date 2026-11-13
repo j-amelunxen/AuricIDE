@@ -1,5 +1,6 @@
 'use client';
 
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -153,7 +154,7 @@ function ObsidianCanvasViewInner({
     (e: React.DragEvent) => {
       e.preventDefault();
       const filePath = e.dataTransfer.getData('text/plain');
-      if (!filePath || !/\.(md|markdown)$/i.test(filePath)) return;
+      if (!filePath || !isMarkdownPath(filePath)) return;
       if (!onFileDrop) return;
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       onFileDrop(filePath, position);

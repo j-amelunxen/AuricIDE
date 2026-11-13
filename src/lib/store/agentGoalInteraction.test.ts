@@ -1,9 +1,6 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createAgentSlice } from './agentSlice';
-import { createGoalsSlice } from './goalsSlice';
-import type { StoreState } from './index';
-import type { PmGoal } from '../tauri/goals';
+import type { PmGoal } from '../goals/types';
 
 vi.mock('../tauri/agents', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +22,6 @@ vi.mock('../tauri/agents', () => ({
 vi.mock('../tauri/goals', () => ({
   goalsLoad: vi.fn(async () => ({ goals: [], goalRuns: [], requirementLinks: [] })),
   goalsSave: vi.fn(async () => undefined),
-  goalsClear: vi.fn(async () => undefined),
 }));
 
 vi.mock('../tauri/db', () => ({
@@ -52,15 +48,12 @@ function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
 }
 
 describe('Agent and Goal Interaction', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-expect-error - Partial store for testing (only agent+goals slices)
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-    }));
+
+    store = createFullTestStore();
   });
 
   async function spawnForGoal() {

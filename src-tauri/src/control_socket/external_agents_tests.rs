@@ -32,7 +32,7 @@ fn supervisor_in(id: &str, run_dir: &str) -> AgentInfo {
 fn world() -> World {
     let project = tempfile::tempdir().unwrap();
     crate::database::init_db(project.path().to_str().unwrap()).unwrap();
-    let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
+    let path = crate::project_path::canonical_project_path(&project.path().to_string_lossy());
     let h = harness(vec![
         supervisor_in("agent-sup", RUN_DIR),
         supervisor_in("agent-sup-2", SECOND_RUN_DIR),
@@ -330,9 +330,6 @@ fn the_event_name_is_the_one_the_frontend_listens_for() {
     assert_eq!(fixtures["changedEvent"], CHANGED_EVENT);
     assert_eq!(fixtures["commands"]["list"], "external_agents_list");
     assert_eq!(fixtures["commands"]["close"], "external_agent_close");
-    let lib = include_str!("../lib.rs");
-    assert!(lib.contains("external_agents::external_agents_list"));
-    assert!(lib.contains("external_agents::external_agent_close"));
     assert_eq!(
         fixtures["methods"],
         json!(["external_register", "external_stop", "external_list"])

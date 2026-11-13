@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { dragItems } from '@/lib/explorer/treeSelection';
 import { canDropInto, dropTargetAt, elementAt } from './dropTarget';
+import { pastDragThreshold, swallowNextClick } from '@/lib/ui/pointerDrag';
 
 /**
  * Moving explorer rows by dragging them onto a folder.
@@ -14,8 +15,6 @@ import { canDropInto, dropTargetAt, elementAt } from './dropTarget';
  * never land anywhere in the real app. Mouse events are not intercepted.
  */
 
-/** Pixels the pointer travels before a press becomes a drag (a click stays a click). */
-export const DRAG_THRESHOLD_PX = 4;
 /** How long a collapsed folder is hovered before it opens. */
 export const AUTO_EXPAND_MS = 600;
 /** Distance from the pane's top/bottom edge at which the pane scrolls by itself. */
@@ -188,7 +187,7 @@ export function useTreeDrag({
       return;
     }
     if (!session.current) {
-      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD_PX) return;
+      if (!pastDragThreshold(start, e)) return;
       const { selectedPaths: paths, selectedPath: primary } = latest.current;
       document.body.style.userSelect = 'none';
       track(e.clientX, e.clientY, dragItems(paths, primary, start.path));
@@ -254,14 +253,4 @@ export function useTreeDrag({
 
 function placeGhost(node: HTMLElement | null, x: number, y: number) {
   if (node) node.style.transform = `translate(${x + 14}px, ${y + 10}px)`;
-}
-
-function swallowNextClick() {
-  const swallow = (e: MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-  };
-  window.addEventListener('click', swallow, { capture: true, once: true });
-  // No click follows when the release landed on another element than the press.
-  setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
 }

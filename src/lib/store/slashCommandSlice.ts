@@ -1,7 +1,7 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
+import { APP_CONFIG_KEYS, readAppJson, writeAppJson } from '@/lib/config/appConfig';
 import type { SlashCommand } from '@/lib/editor/slashCommandSource';
-
-const STORAGE_KEY = 'auric-custom-slash-commands';
 
 export interface SlashCommandSlice {
   customSlashCommands: SlashCommand[];
@@ -11,14 +11,13 @@ export interface SlashCommandSlice {
 }
 
 function persist(commands: SlashCommand[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(commands));
-  } catch {
-    // storage full or unavailable — silently ignore
-  }
+  writeAppJson(APP_CONFIG_KEYS.customSlashCommands, commands);
 }
 
-export const createSlashCommandSlice: StateCreator<SlashCommandSlice> = (set, get) => ({
+export const createSlashCommandSlice: StateCreator<StoreState, [], [], SlashCommandSlice> = (
+  set,
+  get
+) => ({
   customSlashCommands: [],
 
   addCustomSlashCommand: (cmd) => {
@@ -35,16 +34,7 @@ export const createSlashCommandSlice: StateCreator<SlashCommandSlice> = (set, ge
   },
 
   loadCustomSlashCommands: () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as SlashCommand[];
-        if (Array.isArray(parsed)) {
-          set({ customSlashCommands: parsed });
-        }
-      }
-    } catch {
-      // corrupted data — keep empty
-    }
+    const parsed = readAppJson(APP_CONFIG_KEYS.customSlashCommands);
+    if (Array.isArray(parsed)) set({ customSlashCommands: parsed as SlashCommand[] });
   },
 });

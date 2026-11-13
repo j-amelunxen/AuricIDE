@@ -71,7 +71,8 @@ pub fn dispatch_impl(
                 params![key],
                 |row| row.get(0),
             )
-            .ok(),
+            .optional()
+            .map_err(|e| format!("Failed to look up the notification it replaces: {}", e))?,
         None => None,
     };
     let uid = input
@@ -288,7 +289,8 @@ pub fn is_launch_request(conn: &Connection, uid: &str) -> Result<bool, String> {
     .map_err(|e| format!("Failed to look up launch request: {}", e))
 }
 
-const LAUNCH_RUN_STATUSES: [&str; 5] = ["running", "interrupted", "completed", "failed", "killed"];
+pub(crate) const LAUNCH_RUN_STATUSES: [&str; 5] =
+    ["running", "interrupted", "completed", "failed", "killed"];
 
 /// Records what became of an agent launch request.
 ///
@@ -656,9 +658,7 @@ pub fn goal_is_under_root_in_project(
     goal_id: &str,
     root_id: &str,
 ) -> Result<bool, String> {
-    let path = std::path::Path::new(project_path)
-        .join(".auric")
-        .join("project.db");
+    let path = crate::database::project_db_path(std::path::Path::new(project_path));
     if !path.is_file() {
         return Err(format!("Project database not found: {}", path.display()));
     }

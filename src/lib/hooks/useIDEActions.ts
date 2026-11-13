@@ -1,8 +1,10 @@
 'use client';
 
 import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
+import { isMarkdownPath } from '@/lib/markdown/markdownPath';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { loadProjectData } from '@/lib/store/projectSession';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { readProjectLinkEntries } from '@/lib/hooks/ide/projectLinkIndex';
 import { listProviders } from '@/lib/tauri/providers';
@@ -91,7 +93,6 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // On mount: check CLI connection status
   useEffect(() => {
     import('@/lib/tauri/agents').then((m) => {
       m.checkCliStatus()
@@ -207,11 +208,7 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
         void handleRefreshDirsRef.current(changedDirs, summary),
       onProjectDataChange: () => {
         const s = useStore.getState();
-        const root = s.rootPath;
-        if (!root) return;
-        void s.refreshPmData(root);
-        void s.loadRequirements(root);
-        void s.loadGoals(root);
+        if (s.rootPath) loadProjectData(s, s.rootPath, 'refresh');
       },
       onEvidenceChange: () => {
         // Lazy: the engine itself skips goals without machine predicates,
@@ -307,7 +304,6 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
     import('@/lib/tauri/fs').then((m) => {
       m.listAllFiles(path).then(async (files) => {
         if (canceled) return;
-        state.setProjectFiles(files);
         state.setAllFiles(files);
         // Claims on machine-checked stations (older ones included, even those a
         // judge rejected) are settled by their predicate once the file list is
@@ -316,7 +312,7 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
           void import('@/lib/evidence/engine').then((e) => e.checkClaimedStations());
         }
 
-        const mdFiles = files.filter((f) => /\.(md|markdown)$/i.test(f));
+        const mdFiles = files.filter(isMarkdownPath);
         const entries = await perfBreadcrumbs.span(
           'project-index-read',
           () => readProjectLinkEntries(mdFiles, m.readFile, () => canceled),
@@ -329,8 +325,9 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
       });
     });
 
-    state.initProjectDb(path);
-    state.loadPmData(path);
+    // Loading is the opener's (projectSession.loadProjectData); this effect
+    // only owns the database connection's lifetime.
+    void state.initProjectDb(path);
 
     return () => {
       canceled = true;

@@ -1,5 +1,10 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
-import type { Notification } from '@/lib/notifications/types';
+import {
+  isOpenQuestion,
+  LOCAL_ONLY_NOTIFICATION_ID,
+  type Notification,
+} from '@/lib/notifications/types';
 import { deservesOsBanner, notifyOs, osBannerForBatch } from '@/lib/notifications/os';
 import { chimeIfWanted } from '@/lib/notifications/sound';
 import {
@@ -52,9 +57,6 @@ export interface NotificationsSlice {
   dismissNotification: (uid: string) => Promise<void>;
 }
 
-/** Rows that never reached the database carry this id, so they can never move the cursor. */
-const LOCAL_ONLY_ID = 0;
-
 let localUidCounter = 0;
 
 function localUid(): string {
@@ -101,16 +103,14 @@ function inScope(notification: Notification, scope: NotificationScope | undefine
   return scope === undefined || notification.projectPath === scope;
 }
 
-/** A question nobody has answered. Bulk clears go around these. */
-function isOpenQuestion(notification: Notification): boolean {
-  return notification.kind === 'ask' && notification.answeredAt === null;
-}
-
 function highestId(notifications: Notification[]): number {
   return notifications.reduce((max, n) => Math.max(max, n.id), 0);
 }
 
-export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, get) => ({
+export const createNotificationsSlice: StateCreator<StoreState, [], [], NotificationsSlice> = (
+  set,
+  get
+) => ({
   notifications: [],
   notificationsUnreadCount: 0,
   notificationsCursor: 0,
@@ -156,7 +156,7 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
       return stored;
     } catch {
       const local: Notification = {
-        id: LOCAL_ONLY_ID,
+        id: LOCAL_ONLY_NOTIFICATION_ID,
         uid: input.uid ?? localUid(),
         createdAt: new Date().toISOString(),
         projectPath: input.projectPath ?? null,
@@ -290,8 +290,18 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
 
     try {
       await notificationsAnswer(uid, answer);
-    } catch {
-      /* see markNotificationRead */
+    } catch (error) {
+      // A row only this window knows (browser mode) has nobody to tell.
+      if (target.id === LOCAL_ONLY_NOTIFICATION_ID) return;
+      // The agent never got the answer: take it back, so the question stays open.
+      const reverted = get().notifications.map((n) =>
+        n.uid === uid
+          ? { ...n, answer: target.answer, answeredAt: target.answeredAt, readAt: target.readAt }
+          : n
+      );
+      set({ notifications: reverted, notificationsUnreadCount: unreadCount(reverted) });
+      const reason = error instanceof Error ? error.message : String(error);
+      get().showToast(`Could not send the answer: ${reason}`, 'error');
     }
   },
 

@@ -5,6 +5,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import {
+  CLAUDE_SKILL_SOURCE,
   loadSkillSources,
   saveSkillSources,
   type SkillSourceRule,
@@ -64,15 +65,15 @@ export function SkillDiscoveryContent() {
             <SettingsToggle
               label={source.label || 'Custom source'}
               description={
-                source.id === 'claude'
-                  ? '.claude/commands and .claude/skills'
+                source.id === CLAUDE_SKILL_SOURCE.id
+                  ? `${CLAUDE_SKILL_SOURCE.commandsDir} and ${CLAUDE_SKILL_SOURCE.skillsDir}`
                   : 'Custom folder layout'
               }
               checked={source.enabled}
               onChange={(enabled) => update(source.id, { enabled })}
               testId={`skill-source-toggle-${source.id}`}
             />
-            {source.id !== 'claude' && (
+            {source.id !== CLAUDE_SKILL_SOURCE.id && (
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <label className="col-span-2">
                   <span className="sr-only">Source name</span>

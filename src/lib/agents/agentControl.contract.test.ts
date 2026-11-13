@@ -42,6 +42,9 @@ describe('agent control contract', () => {
     expect(CONTROL_LIMITS.defaultAwaitSeconds).toBe(fixtures.limits.defaultAwaitSeconds);
     expect(CONTROL_LIMITS.maxAwaitSeconds).toBe(fixtures.limits.maxAwaitSeconds);
     expect(CONTROL_LIMITS.awaitClientGraceSeconds).toBe(fixtures.limits.awaitClientGraceSeconds);
+    expect(CONTROL_LIMITS.waitingReasonMaxChars).toBe(fixtures.limits.waitingReasonMaxChars);
+    expect(CONTROL_LIMITS.waitingDefaultMs).toBe(fixtures.limits.waitingDefaultMs);
+    expect(CONTROL_LIMITS.waitingMaxMs).toBe(fixtures.limits.waitingMaxMs);
   });
 
   it('knows exactly the roles, run sources and run result sources the fixtures name', () => {

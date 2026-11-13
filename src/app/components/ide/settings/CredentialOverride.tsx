@@ -8,21 +8,7 @@ import { CREDENTIAL_NAMESPACES, loadAppCredentials } from '@/lib/tauri/appCreden
 import { loadProjectCredentials } from '@/lib/config/projectConfig';
 import { isCredentialConfigured } from '@/lib/config/credentialStatus';
 import { dbDelete, dbSet } from '@/lib/tauri/db';
-
-export interface OverrideField {
-  key: string;
-  label: string;
-  secret?: boolean;
-  placeholder?: string;
-}
-
-interface CredentialOverrideProps {
-  namespace: string;
-  title: string;
-  icon: string;
-  blurb: string;
-  fields: OverrideField[];
-}
+import type { CredentialGroup } from './credentialGroups';
 
 /** What a secret looks like when it is only being reported, never re-shown. */
 function mask(value: string): string {
@@ -36,15 +22,12 @@ function mask(value: string): string {
  * The point of the screen is telling apart "this project sets its own" from
  * "this project uses the machine's". Without that distinction an inherited
  * value shown in a plain field would look like a project setting, and clearing
- * it would look like clearing the key everywhere.
+ * it would look like clearing the key everywhere. The values themselves live
+ * under Application → Credentials: a key belongs to this machine, not to one
+ * repository.
  */
-export function CredentialOverride({
-  namespace,
-  title,
-  icon,
-  blurb,
-  fields,
-}: CredentialOverrideProps) {
+export function CredentialOverride({ group }: { group: CredentialGroup }) {
+  const { namespace, title, icon, blurb, fields } = group;
   const rootPath = useStore((s) => s.rootPath);
   const showToast = useStore((s) => s.showToast);
   const setLlmConfigured = useStore((s) => s.setLlmConfigured);

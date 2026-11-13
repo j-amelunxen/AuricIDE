@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 
 export interface FileNode {
@@ -95,7 +96,7 @@ function mapNodeAtPath(
   return changed ? next : nodes;
 }
 
-export const createFileTreeSlice: StateCreator<FileTreeSlice> = (set) => ({
+export const createFileTreeSlice: StateCreator<StoreState, [], [], FileTreeSlice> = (set) => ({
   fileTree: [],
   selectedPath: null,
   rootPath: null,

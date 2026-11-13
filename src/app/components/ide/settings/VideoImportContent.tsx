@@ -6,7 +6,7 @@ import { dbGet, dbSet } from '@/lib/tauri/db';
 import {
   getVideoImportPreflight,
   installLocalParakeet,
-  SETUP_PROGRESS_EVENT,
+  onVideoImportSetupProgress,
   type Preflight,
   type PreflightCheck,
   type TranscriptionMode,
@@ -15,38 +15,13 @@ import { parseToolFailure, type ToolFailure } from '@/lib/videoImport/toolFailur
 import { ToolFailureNotice } from '../../videoImport/ToolFailureNotice';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
-
-const NS = 'video_import_settings';
-
-interface VideoImportSettings {
-  transcriptionMode: TranscriptionMode;
-  remoteEndpoint: string;
-  remoteApiKey: string;
-  remoteModel: string;
-  localCommand: string;
-  localArgs: string;
-  visionEnabled: boolean;
-}
-
-const DEFAULTS: VideoImportSettings = {
-  transcriptionMode: 'automatic',
-  remoteEndpoint: '',
-  remoteApiKey: '',
-  remoteModel: 'nvidia/parakeet-tdt-0.6b-v3',
-  localCommand: 'parakeet-mlx',
-  localArgs: '{audio} --output-dir {outputDir} --output-format json --highlight-words',
-  visionEnabled: true,
-};
-
-const KEY: Record<keyof VideoImportSettings, string> = {
-  transcriptionMode: 'transcription_mode',
-  remoteEndpoint: 'remote_endpoint',
-  remoteApiKey: 'remote_api_key',
-  remoteModel: 'remote_model',
-  localCommand: 'local_command',
-  localArgs: 'local_args',
-  visionEnabled: 'vision_enabled',
-};
+import {
+  VIDEO_IMPORT_DEFAULTS,
+  VIDEO_IMPORT_SETTINGS_NS,
+  VIDEO_IMPORT_SETTING_KEYS,
+  visionEnabledFrom,
+  type VideoImportSettings,
+} from '@/lib/videoImport/settings';
 
 /**
  * One dependency, stated the way a person can act on it: what we needed, what
@@ -95,7 +70,7 @@ interface VideoImportContentProps {
 
 export function VideoImportContent({ onOpenMachine }: VideoImportContentProps = {}) {
   const rootPath = useStore((s) => s.rootPath);
-  const [settings, setSettings] = useState(DEFAULTS);
+  const [settings, setSettings] = useState(VIDEO_IMPORT_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [checking, setChecking] = useState(false);
@@ -107,16 +82,18 @@ export function VideoImportContent({ onOpenMachine }: VideoImportContentProps = 
     if (!rootPath) return;
     let cancelled = false;
     void Promise.all(
-      (Object.keys(KEY) as Array<keyof VideoImportSettings>).map(async (name) => [
-        name,
-        await dbGet(rootPath, NS, KEY[name]),
-      ])
+      (Object.keys(VIDEO_IMPORT_SETTING_KEYS) as Array<keyof VideoImportSettings>).map(
+        async (name) => [
+          name,
+          await dbGet(rootPath, VIDEO_IMPORT_SETTINGS_NS, VIDEO_IMPORT_SETTING_KEYS[name]),
+        ]
+      )
     ).then((rows) => {
       if (cancelled) return;
-      const next = { ...DEFAULTS };
+      const next = { ...VIDEO_IMPORT_DEFAULTS };
       for (const [name, value] of rows as Array<[keyof VideoImportSettings, string | null]>) {
         if (value === null) continue;
-        if (name === 'visionEnabled') next[name] = value !== 'false';
+        if (name === 'visionEnabled') next[name] = visionEnabledFrom(value);
         else if (name === 'transcriptionMode') next[name] = value as TranscriptionMode;
         else next[name] = value;
       }
@@ -158,27 +135,17 @@ export function VideoImportContent({ onOpenMachine }: VideoImportContentProps = 
   // The install downloads well over a hundred megabytes and can take minutes.
   // Without this the panel is a button that says "Installing…" and nothing
   // else, which is indistinguishable from a hang.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void import('@tauri-apps/api/event')
-      .then(({ listen }) =>
-        listen<string>(SETUP_PROGRESS_EVENT, (event) => setProgress(String(event.payload)))
-      )
-      .then((off) => {
-        if (disposed) off();
-        else unlisten = off;
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useEffect(() => onVideoImportSetupProgress(setProgress), []);
 
   const save = <K extends keyof VideoImportSettings>(name: K, value: VideoImportSettings[K]) => {
     setSettings((current) => ({ ...current, [name]: value }));
-    if (rootPath) void dbSet(rootPath, NS, KEY[name], String(value));
+    if (rootPath)
+      void dbSet(
+        rootPath,
+        VIDEO_IMPORT_SETTINGS_NS,
+        VIDEO_IMPORT_SETTING_KEYS[name],
+        String(value)
+      );
   };
 
   const install = async () => {

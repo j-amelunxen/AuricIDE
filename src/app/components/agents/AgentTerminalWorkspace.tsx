@@ -1,5 +1,6 @@
 'use client';
 
+import { stopConfirmation } from './endAgent';
 import {
   useCallback,
   useEffect,
@@ -10,7 +11,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { loadAppConfig } from '@/lib/config/appConfig';
 import { distinctStreamColors, supervisorFamilyColors } from '@/lib/agents/streamColors';
@@ -22,7 +23,6 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import {
   filterFocusTerminalAgents,
   hasTerminal,
-  isFinishedAgent,
   isSupervisorAgent,
   splitTerminalAgents,
 } from '@/lib/agents/fleet';
@@ -77,10 +77,10 @@ interface AgentTerminalWorkspaceProps {
    */
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   /**
-   * Does the actual ending. Called once, after the stop question was answered
-   * and the dying tab was left.
+   * Does the actual ending. Called once, after the stop question was answered;
+   * calls `onEnded` once the agent has really ended, before any merge question.
    */
-  onEndAgent?: (target: AgentInfo) => void | Promise<void>;
+  onEndAgent?: (target: AgentInfo, onEnded: () => void) => unknown;
   /** Which tabs get an end control. Absent: every tab, as long as onEndAgent is given. */
   canEndAgent?: (target: AgentInfo) => boolean;
   /** Saves what the active terminal shows. readScreen answers null while the terminal is still opening. */
@@ -466,24 +466,17 @@ export function AgentTerminalWorkspace({
     async (target: AgentInfo) => {
       if (!onEndAgent || !canEnd(target)) return;
 
-      if (!isFinishedAgent(target) && target.status === 'running') {
-        const go = await confirm({
-          title: 'Stop this agent?',
-          message: `Stop ${target.name}? Its work in progress is lost.`,
-          confirmLabel: 'Stop',
-        });
-        if (!go) return;
-      }
+      if (target.status === 'running' && !(await confirm(stopConfirmation(target)))) return;
 
-      // Leave the dying tab before the process dies, so the screen does not
-      // sit on a snapshot of an agent that is already gone.
-      if (target.id === agent.id) {
+      // Leave the ended tab before the merge question, so the screen does not
+      // sit on a snapshot of an agent that is gone. A stop that failed leaves
+      // the tab where it is: the agent is still running.
+      await onEndAgent(target, () => {
+        if (target.id !== agent.id) return;
         const next = neighborAfterClose(tabGroups, target.id);
         if (next) onSwitchAgent?.(next);
         else onClose();
-      }
-
-      await onEndAgent(target);
+      });
     },
     [agent.id, tabGroups, canEnd, confirm, onClose, onEndAgent, onSwitchAgent]
   );
@@ -533,7 +526,6 @@ export function AgentTerminalWorkspace({
       onMouseDownCapture={leaveMaximizeOutside}
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
     >
-      {/* Header */}
       <div
         {...headerProps}
         className={`flex items-center gap-3 px-5 py-3 border-b border-white/10 glass flex-shrink-0 ${headerProps?.className ?? ''}`.trimEnd()}
@@ -714,7 +706,6 @@ export function AgentTerminalWorkspace({
                       isActive={isActive}
                       now={now}
                       onSelect={() => {
-                        if (tabDrag.consumeClick()) return;
                         if (maximizedId && a.id !== maximizedId) setMaximizedPick(null);
                         grid.show(a.id);
                       }}

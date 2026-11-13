@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
+import type { InterruptedAgent } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AgentsPanel } from './AgentsPanel';
 import { useStore } from '@/lib/store';
 
@@ -129,28 +130,53 @@ describe('AgentsPanel', () => {
         agents={agentsWithRepo}
         onSpawn={vi.fn()}
         onKill={vi.fn()}
-        onKillRepo={vi.fn()}
+        onStopAgents={vi.fn()}
       />
     );
     expect(screen.getByText('Stop all')).toBeInTheDocument();
   });
 
-  it('Kill All calls onKillRepo with repo path', async () => {
+  it('Stop all stops the running agents of the repo', async () => {
     const user = userEvent.setup();
-    const onKillRepo = vi.fn();
+    const onStopAgents = vi.fn();
     const agentsWithRepo = [{ ...agents[0], repoPath: '/repo-a' }];
     render(
       <AgentsPanel
         agents={agentsWithRepo}
         onSpawn={vi.fn()}
         onKill={vi.fn()}
-        onKillRepo={onKillRepo}
+        onStopAgents={onStopAgents}
       />
     );
     await user.click(screen.getByText('Stop all'));
     // Killing running agents asks first (see "destructive actions" below).
     await answer(user, 'Stop all');
-    expect(onKillRepo).toHaveBeenCalledWith('/repo-a');
+    expect(onStopAgents).toHaveBeenCalledWith(['agent-1']);
+  });
+
+  it('Stop all also clears the stopped agents of the repo, counting only the working ones', async () => {
+    const user = userEvent.setup();
+    const onStopAgents = vi.fn();
+    const onDismissFinished = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[
+          { ...agents[0], repoPath: '/repo-a' },
+          { ...agents[0], id: 'agent-9', name: 'Done', repoPath: '/repo-a', status: 'idle' },
+        ]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+    await user.click(screen.getByText('Stop all'));
+    expect(
+      within(await screen.findByRole('dialog')).getByText(/1 running agent\b/)
+    ).toBeInTheDocument();
+    await answer(user, 'Stop all');
+    expect(onDismissFinished).toHaveBeenCalledWith('agent-9');
+    expect(onStopAgents).toHaveBeenCalledWith(['agent-1']);
   });
 
   it('renders a collapse button when onCollapse is provided', () => {
@@ -293,30 +319,40 @@ describe('AgentsPanel destructive actions', () => {
 
   it('asks before killing every agent of a repo', async () => {
     const user = userEvent.setup();
-    const onKillRepo = vi.fn();
+    const onStopAgents = vi.fn();
 
     render(
-      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+      />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
 
     // The question is on screen and nothing has died yet — the part the
     // browser's confirm() could not deliver inside the webview.
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(onKillRepo).not.toHaveBeenCalled();
+    expect(onStopAgents).not.toHaveBeenCalled();
   });
 
   it('leaves the agents alone when the question is declined', async () => {
     const user = userEvent.setup();
-    const onKillRepo = vi.fn();
+    const onStopAgents = vi.fn();
 
     render(
-      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+      />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
     await answer(user, 'Cancel');
 
-    expect(onKillRepo).not.toHaveBeenCalled();
+    expect(onStopAgents).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -324,7 +360,7 @@ describe('AgentsPanel destructive actions', () => {
     const user = userEvent.setup();
 
     render(
-      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={vi.fn()} />
+      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onStopAgents={vi.fn()} />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
 
@@ -333,17 +369,54 @@ describe('AgentsPanel destructive actions', () => {
     expect(message).toContain('api');
   });
 
-  it('kills the repo once confirmed', async () => {
+  it('stops exactly the agents the question counted', async () => {
     const user = userEvent.setup();
-    const onKillRepo = vi.fn();
+    const onStopAgents = vi.fn();
+
+    const { rerender } = render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /stop all/i }));
+    await question();
+    // An agent started while the question is open was not part of the answer.
+    rerender(
+      <AgentsPanel
+        agents={[...repoAgents, { ...agents[0], id: 'late', repoPath: '/work/api' }]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+      />
+    );
+    await answer(user, 'Stop all');
+
+    expect(onStopAgents).toHaveBeenCalledWith(['a1', 'a2']);
+  });
+
+  it('reports a stop that failed and keeps the cards', async () => {
+    const user = userEvent.setup();
+    const showToast = vi.fn(() => 0);
+    useStore.setState({ showToast });
+    const onStopAgents = vi.fn().mockRejectedValue(new Error('Could not stop agent a1: refused'));
 
     render(
-      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onStopAgents={onStopAgents}
+      />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
     await answer(user, 'Stop all');
 
-    expect(onKillRepo).toHaveBeenCalledWith('/work/api');
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Could not stop agent a1: refused', 'error')
+    );
   });
 });
 
@@ -1280,7 +1353,7 @@ describe('AgentsPanel – collapsible repo groups', () => {
         agents={repoAgents}
         onSpawn={vi.fn()}
         onKill={vi.fn()}
-        onKillRepo={vi.fn()}
+        onStopAgents={vi.fn()}
         collapsedRepos={['/work/api']}
         onToggleRepoCollapsed={vi.fn()}
       />

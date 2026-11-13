@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
-import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
+import { UNGROUPED_REPO_KEY } from '@/lib/agents/fleet';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface DailyTip {

@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 import { diffTabId } from '@/lib/git/diffTabId';
 import type { DiffSource } from '@/lib/git/diffTab';
 import { relativeToRepo } from '@/lib/git/repos';
@@ -5,10 +6,6 @@ import { useStore } from '@/lib/store';
 import { diffFiles } from '@/lib/tauri/compare';
 
 const SEPARATOR = ' ↔ ';
-
-function baseName(path: string): string {
-  return path.split('/').pop() ?? path;
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

@@ -1,14 +1,16 @@
 import { goalBriefSections } from '@/lib/goals/goalBrief';
-import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
+import type { ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
-import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { AgentConfig, AgentInfo } from '@/lib/agents/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
-import { getGoalDescendants } from '../goalsSlice';
-import { isGoalBlockedByDependency } from '../goals/goalDependencyAdapters';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/goals/types';
+import type { PmDependency, PmTestCase, PmTicket } from '@/lib/pm/types';
+import { getGoalDescendants } from '../../goals/model/goalTreeHelpers';
+import { isGoalBlockedByDependency } from '../../goals/model/goalDependencyAdapters';
 import { getStationGoalWork, ticketsWorkedAsTickets } from './conductorStationGoals';
-import { MAX_TICKET_ATTEMPTS, PRIORITY_ORDER, type ConductorPreflight } from './conductorTypes';
+import { MAX_TICKET_ATTEMPTS, type ConductorPreflight } from './conductorTypes';
+import { blockingTicket } from '@/lib/pm/blocking';
+import { priorityUrgency } from '@/lib/pm/enums';
 
 /**
  * A goal or planning agent the conductor started. These never enter
@@ -113,19 +115,11 @@ export function getUnblockedOpenTickets(
   allTickets: PmTicket[]
 ): PmTicket[] {
   const byId = new Map(allTickets.map((t) => [t.id, t]));
-  const isBlocked = (ticket: PmTicket): boolean =>
-    dependencies.some((d) => {
-      if (d.sourceId !== ticket.id || d.targetType !== 'ticket') return false;
-      const target = byId.get(d.targetId);
-      return target !== undefined && !isClosedTicketStatus(target.status);
-    });
-
   return scopedTickets
-    .filter((t) => t.status === 'open' && !isBlocked(t))
+    .filter((t) => t.status === 'open' && !blockingTicket(t, dependencies, byId))
     .sort(
       (a, b) =>
-        (PRIORITY_ORDER[a.priority] ?? 4) - (PRIORITY_ORDER[b.priority] ?? 4) ||
-        a.sortOrder - b.sortOrder
+        priorityUrgency(b.priority) - priorityUrgency(a.priority) || a.sortOrder - b.sortOrder
     );
 }
 

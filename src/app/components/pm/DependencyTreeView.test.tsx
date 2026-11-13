@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { DependencyTreeView } from './DependencyTreeView';
-import type { PmEpic, PmTicket, PmDependency } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency } from '@/lib/pm/types';
 
 // Mock React Flow to avoid rendering the whole thing in tests
 vi.mock('@xyflow/react', () => ({

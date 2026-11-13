@@ -11,12 +11,13 @@ import { TicketCreateModal } from './TicketCreateModal';
 import { DependencyTreeView } from './DependencyTreeView';
 import { MetricsView } from './MetricsView';
 import { CostsView } from './costsView/CostsView';
-import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/pm/types';
 import { isHiddenTicketStatus } from '@/lib/pm/enums';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
 import { ProjectManagerHeader, type PmViewMode } from './modal/ProjectManagerHeader';
 import { ProjectManagerColumns } from './modal/ProjectManagerColumns';
 import { formatEpicDeleteMessage, formatTicketDeleteMessage } from './modal/pmModalHelpers';
+import { useSaveShortcut } from '@/lib/hooks/useSaveShortcut';
 
 export { ProjectManagerHeader } from './modal/ProjectManagerHeader';
 export { ProjectManagerColumns } from './modal/ProjectManagerColumns';
@@ -132,17 +133,7 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
     onEscape: handleClose,
   });
 
-  useEffect(() => {
-    if (!active) return;
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        if (pmDirty) void handleSave();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [active, handleSave, pmDirty]);
+  useSaveShortcut(active, pmDirty, handleSave);
 
   const filteredTickets = (
     selectedEpicId === null ? draftTickets : draftTickets.filter((t) => t.epicId === selectedEpicId)

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { useStore } from '@/lib/store';
 
 const { save, writeFile } = vi.hoisted(() => ({ save: vi.fn(), writeFile: vi.fn() }));

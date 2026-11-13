@@ -1,4 +1,5 @@
 use super::media::{expand_local_args, parse_transcription};
+use super::{settings_from, SETTINGS_NS, SETTING_KEYS};
 use std::path::Path;
 
 #[test]
@@ -35,4 +36,30 @@ fn local_argument_template_substitutes_audio_path() {
             "json"
         ]
     );
+}
+
+/// The settings screen (`src/lib/videoImport/settings.ts`) reads the same
+/// namespace, keys and defaults.
+#[test]
+fn settings_match_the_shared_fixture() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/lib/videoImport/videoImportSettings.fixtures.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture["namespace"], SETTINGS_NS);
+    let defaults = fixture["defaults"].as_object().unwrap();
+    let mut keys: Vec<&str> = defaults.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    let mut ours = SETTING_KEYS.to_vec();
+    ours.sort_unstable();
+    assert_eq!(keys, ours);
+
+    let empty = settings_from(&Default::default());
+    let default = |key: &str| defaults[key].as_str().unwrap().to_string();
+    assert_eq!(empty.mode, default("transcription_mode"));
+    assert_eq!(empty.remote_endpoint, default("remote_endpoint"));
+    assert_eq!(empty.remote_api_key, default("remote_api_key"));
+    assert_eq!(empty.remote_model, default("remote_model"));
+    assert_eq!(empty.local_command, default("local_command"));
+    assert_eq!(empty.local_args, default("local_args"));
 }

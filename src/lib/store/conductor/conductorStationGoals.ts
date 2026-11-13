@@ -1,12 +1,12 @@
 import { isLaunchRequest } from '@/lib/notifications/launchRequest';
-import type { Notification } from '@/lib/notifications/types';
+import { LOCAL_ONLY_NOTIFICATION_ID, type Notification } from '@/lib/notifications/types';
 import { isClosedGoalStatus, isValidSkip } from '@/lib/pm/enums';
-import type { AgentInfo } from '@/lib/tauri/agents';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
-import type { PmTicket } from '@/lib/tauri/pm';
-import { getGoalChildren, getGoalDescendants } from '../goals/goalTreeHelpers';
-import { isGoalBlockedByDependency } from '../goals/goalDependencyAdapters';
-import { getGoalWorkMode } from '../goals/goalSatisfaction';
+import type { AgentInfo } from '@/lib/agents/types';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/goals/types';
+import type { PmTicket } from '@/lib/pm/types';
+import { getGoalChildren, getGoalDescendants } from '../../goals/model/goalTreeHelpers';
+import { isGoalBlockedByDependency } from '../../goals/model/goalDependencyAdapters';
+import { getGoalWorkMode } from '../../goals/model/goalSatisfaction';
 import { MAX_TICKET_ATTEMPTS } from './conductorTypes';
 
 /**
@@ -24,9 +24,6 @@ import { MAX_TICKET_ATTEMPTS } from './conductorTypes';
  * tickets, so pressing Start without a goal never fans agents out across the
  * whole project.
  */
-
-/** Rows that never reached the database carry this id (notificationsSlice). */
-const LOCAL_ONLY_ID = 0;
 
 export interface StationGoalWork {
   /** Every open stations goal in scope: a run can at least check whether it is achieved. */
@@ -108,7 +105,7 @@ function stationGoalsInScope(input: StationGoalInput): PmGoal[] {
 function hasOpenRequest(input: StationGoalInput, goalId: string): boolean {
   return input.notifications.some(
     (n) =>
-      n.id !== LOCAL_ONLY_ID &&
+      n.id !== LOCAL_ONLY_NOTIFICATION_ID &&
       isLaunchRequest(n) &&
       n.refId === goalId &&
       n.answeredAt === null &&

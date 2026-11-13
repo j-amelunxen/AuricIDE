@@ -87,6 +87,7 @@ pub fn resolve_models(
     match discover(&discovery) {
         Ok(models) if !models.is_empty() => {
             if let Some(path) = cache_path.as_ref() {
+                // The cache only spares the next start a discovery run.
                 let _ = write_cache(path, &models);
             }
             merge_catalog(static_models, &models, provider_id)

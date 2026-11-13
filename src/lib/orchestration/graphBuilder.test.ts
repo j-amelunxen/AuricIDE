@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildOrchestrationGraph } from './graphBuilder';
-import type { PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
-import type { PmTicket } from '../tauri/pm';
-import type { AgentInfo } from '../tauri/agents';
+import type { PmGoal, PmGoalRun, PmGoalStation } from '../goals/types';
+import type { PmTicket } from '../pm/types';
+import type { AgentInfo } from '../agents/types';
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {

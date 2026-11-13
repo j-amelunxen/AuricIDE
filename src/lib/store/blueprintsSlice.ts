@@ -1,15 +1,14 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { withPersistFeedback } from './persistFeedback';
 import type { Blueprint, BlueprintState } from '../tauri/blueprints';
 import {
   blueprintsLoad as ipcBlueprintsLoad,
   blueprintsSave as ipcBlueprintsSave,
-  blueprintsClear as ipcBlueprintsClear,
 } from '../tauri/blueprints';
 import { initProjectDb } from '../tauri/db';
 import { syncWithServer, type SyncStatus } from '../blueprints/serverSync';
-
-const SERVER_URL_KEY = 'auric-blueprint-server-url';
 
 export interface BlueprintsSlice {
   // Persisted state (last saved)
@@ -27,10 +26,8 @@ export interface BlueprintsSlice {
   blueprintServerUrl: string;
   blueprintSyncStatus: SyncStatus;
   blueprintSyncError: string | null;
-  // Actions
   loadBlueprints: (projectPath: string) => Promise<void>;
   saveBlueprints: (projectPath: string) => Promise<void>;
-  clearBlueprints: (projectPath: string) => Promise<void>;
   resetBlueprintsInMemory: () => void;
   addBlueprint: (blueprint: Blueprint) => void;
   updateBlueprint: (id: string, updates: Partial<Blueprint>) => void;
@@ -44,7 +41,10 @@ export interface BlueprintsSlice {
   syncWithBlueprintServer: (projectPath: string) => Promise<void>;
 }
 
-export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) => ({
+export const createBlueprintsSlice: StateCreator<StoreState, [], [], BlueprintsSlice> = (
+  set,
+  get
+) => ({
   // Persisted state
   blueprints: [],
   // Draft state
@@ -96,16 +96,6 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
       });
     }),
 
-  clearBlueprints: async (projectPath) => {
-    await initProjectDb(projectPath);
-    await ipcBlueprintsClear(projectPath);
-    set({
-      blueprints: [],
-      blueprintsDraft: [],
-      blueprintsDirty: false,
-    });
-  },
-
   resetBlueprintsInMemory: () =>
     set({ blueprints: [], blueprintsDraft: [], blueprintsDirty: false }),
 
@@ -138,22 +128,12 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
 
   setBlueprintServerUrl: (url) => {
     set({ blueprintServerUrl: url });
-    try {
-      localStorage.setItem(SERVER_URL_KEY, url);
-    } catch {
-      // storage unavailable — silently ignore
-    }
+    writeAppPref(APP_CONFIG_KEYS.blueprintServerUrl, url);
   },
 
   loadBlueprintServerUrl: () => {
-    try {
-      const raw = localStorage.getItem(SERVER_URL_KEY);
-      if (raw !== null) {
-        set({ blueprintServerUrl: raw });
-      }
-    } catch {
-      // corrupted or unavailable — keep default
-    }
+    const raw = readAppPref(APP_CONFIG_KEYS.blueprintServerUrl);
+    if (raw !== null) set({ blueprintServerUrl: raw });
   },
 
   syncWithBlueprintServer: async (projectPath) => {

@@ -16,9 +16,10 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useMemo, useEffect, useState, useCallback } from 'react';
 import dagre from '@dagrejs/dagre';
-import type { PmEpic, PmTicket, PmDependency } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency } from '@/lib/pm/types';
 import { EpicNode, TicketNode } from './PmNodes';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import { buildTicketStatusPriorityPowerOptions } from './ticketContextMenu';
 import { calculateHeat } from '@/lib/pm/heat';
 import { accentColor } from '@/lib/theme/accent';

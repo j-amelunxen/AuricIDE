@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { ScheduleRun } from '@/lib/notifications/scheduleCalendar';
+import { pastDragThreshold, swallowNextClick } from '@/lib/ui/pointerDrag';
 
 /**
  * Moving a run by dragging it to another slot, in the calendar or the timeline.
@@ -17,9 +18,6 @@ import type { ScheduleRun } from '@/lib/notifications/scheduleCalendar';
  * drop means (`onDrop`); this hook owns the press, the threshold, Escape and
  * the cleanup.
  */
-
-/** Pixels the pointer travels before a press becomes a drag (a click stays a click). */
-export const RUN_DRAG_THRESHOLD_PX = 4;
 
 export interface RunDragState {
   run: ScheduleRun;
@@ -68,21 +66,9 @@ export function useRunDrag({ resolveTarget, isValidTarget, onDrop }: UseRunDragO
       setDrag(null);
     };
 
-    // The click that follows a drop lands on whatever is under the pointer —
-    // a cell that would open "new schedule". A drag must not also be a click.
-    const swallowClick = () => {
-      const release = () => window.removeEventListener('click', stop, true);
-      const stop = (e: Event) => {
-        e.stopPropagation();
-        release();
-      };
-      window.addEventListener('click', stop, true);
-      setTimeout(release, 0);
-    };
-
     function onMove(e: PointerEvent) {
       if (!dragging) {
-        if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < RUN_DRAG_THRESHOLD_PX) return;
+        if (!pastDragThreshold(origin, e)) return;
         dragging = true;
         document.body.style.userSelect = 'none';
       }
@@ -98,13 +84,13 @@ export function useRunDrag({ resolveTarget, isValidTarget, onDrop }: UseRunDragO
 
     function onUp() {
       const drop = dragging && valid && target !== null && target !== run.at ? target : null;
-      if (dragging) swallowClick();
+      if (dragging) swallowNextClick();
       end();
       if (drop !== null) latest.current.onDrop(run, drop);
     }
 
     function onCancel() {
-      if (dragging) swallowClick();
+      if (dragging) swallowNextClick();
       end();
     }
 

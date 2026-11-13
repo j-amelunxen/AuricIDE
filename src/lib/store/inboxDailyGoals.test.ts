@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
 const mockList = vi.fn();
@@ -23,8 +23,6 @@ vi.mock('@/lib/tauri/inbox', () => ({
   inboxCaptureTicket: (...args: unknown[]) => mockCaptureTicket(...args),
 }));
 
-import { createInboxSlice, type InboxSlice } from './inboxSlice';
-
 function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
     id: 'item-1',
@@ -45,12 +43,12 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
 }
 
 describe('inboxSlice daily goals', () => {
-  let store: StoreApi<InboxSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockOverview.mockResolvedValue([]);
-    store = createStore<InboxSlice>()((...a) => ({ ...createInboxSlice(...a) }));
+    store = createFullTestStore();
   });
 
   describe('toggleDailyGoal', () => {

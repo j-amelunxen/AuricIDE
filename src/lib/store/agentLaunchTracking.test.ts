@@ -1,9 +1,7 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createAgentSlice } from './agentSlice';
-import { createGoalsSlice } from './goalsSlice';
-import type { StoreState } from './index';
-import { goalsLoad, goalsSave, type PmGoal, type PmGoalRun } from '../tauri/goals';
+import { goalsLoad, goalsSave } from '../tauri/goals';
+import type { PmGoal, PmGoalRun } from '../goals/types';
 
 vi.mock('../tauri/agents', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,7 +25,6 @@ vi.mock('../tauri/agents', () => ({
 vi.mock('../tauri/goals', () => ({
   goalsLoad: vi.fn(async () => ({ goals: [], goalRuns: [], requirementLinks: [] })),
   goalsSave: vi.fn(async () => ({ conflicts: [] })),
-  goalsClear: vi.fn(async () => undefined),
 }));
 
 vi.mock('../tauri/db', () => ({ initProjectDb: vi.fn(async () => undefined) }));
@@ -56,15 +53,12 @@ function goal(): PmGoal {
 }
 
 describe('agents started from a launch request are tracked', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-expect-error - Partial store for testing (only agent+goals slices)
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-    }));
+
+    store = createFullTestStore();
     store.setState({ goalsDraft: [goal()] });
   });
 
@@ -377,7 +371,7 @@ describe('agents started from a launch request are tracked', () => {
  * agents changed in the meantime (only the run row is written).
  */
 describe('the goal run of a launch request is stored at once', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
   const saved = new Map<string, PmGoalRun>();
 
   beforeEach(() => {
@@ -387,12 +381,9 @@ describe('the goal run of a launch request is stored at once', () => {
       for (const run of payload.goalRuns) saved.set(run.id, run);
       return { conflicts: [] };
     });
-    // @ts-expect-error - Partial store for testing (only agent+goals slices)
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-    }));
-    store.setState({ goalsDraft: [goal()], rootPath: '/repo' } as never);
+
+    store = createFullTestStore();
+    store.setState({ goalsDraft: [goal()], rootPath: '/repo' });
   });
 
   const spawn = (extra: Record<string, unknown> = {}) =>
@@ -439,11 +430,8 @@ describe('the goal run of a launch request is stored at once', () => {
       stations: [],
       dependencies: [],
     });
-    // @ts-expect-error - Partial store for testing (only agent+goals slices)
-    const restarted = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-    }));
+
+    const restarted = createFullTestStore();
     await restarted.getState().loadGoals('/repo');
 
     expect(restarted.getState().goalRuns).toEqual([

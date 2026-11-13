@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import {
   buildBulkGoalMenuOptions,
   describeBulkOffer,

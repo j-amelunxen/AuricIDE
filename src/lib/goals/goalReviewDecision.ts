@@ -39,7 +39,8 @@ export const GOAL_REVIEW_MAX_ATTEMPTS = 3;
  * `human_pending`: a human station covers the criterion and the person has not
  * checked it yet. It does not hold an approval back; the station does.
  */
-export type GoalReviewCriterionMet = 'yes' | 'no' | 'unclear' | 'human_pending';
+export const GOAL_REVIEW_CRITERION_MET = ['yes', 'no', 'unclear', 'human_pending'] as const;
+export type GoalReviewCriterionMet = (typeof GOAL_REVIEW_CRITERION_MET)[number];
 
 export interface GoalReviewCriterion {
   criterion: string;

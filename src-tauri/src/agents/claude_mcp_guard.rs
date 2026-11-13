@@ -12,16 +12,18 @@
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-/// The server name every binding registers (`crate::mcp::write_agent_mcp_configs`).
-const AURIC_SERVER: &str = "auric-pm";
-
 /// Where Claude Code keeps its global config: `$CLAUDE_CONFIG_DIR/.claude.json`
-/// when that is set, `~/.claude.json` otherwise.
-fn claude_global_config_path() -> Option<PathBuf> {
+/// when that is set, `<home>/.claude.json` otherwise. Shared with the
+/// supervisor's pre-trust, which writes to the same file.
+pub(crate) fn claude_global_config_in(home: &Path) -> PathBuf {
     if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
-        return Some(PathBuf::from(dir).join(".claude.json"));
+        return PathBuf::from(dir).join(".claude.json");
     }
-    dirs::home_dir().map(|home| home.join(".claude.json"))
+    home.join(".claude.json")
+}
+
+fn claude_global_config_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| claude_global_config_in(&home))
 }
 
 /// The folder whose entry disables `auric-pm` for an agent running in `cwd`,
@@ -45,7 +47,11 @@ pub fn folder_disabling_auric_pm(
                 .get(folder.to_string_lossy().as_ref())
                 .and_then(|entry| entry.get("disabledMcpServers"))
                 .and_then(Value::as_array)
-                .is_some_and(|names| names.iter().any(|n| n.as_str() == Some(AURIC_SERVER)))
+                .is_some_and(|names| {
+                    names
+                        .iter()
+                        .any(|n| n.as_str() == Some(crate::mcp::AURIC_PM_SERVER))
+                })
         })
         .map(Path::to_path_buf)
 }

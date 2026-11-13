@@ -3,7 +3,7 @@
 import { EpicSidebar } from '../EpicSidebar';
 import { TicketTable } from '../TicketTable';
 import { TicketEditPanel } from '../TicketEditPanel';
-import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/pm/types';
 
 export interface ProjectManagerColumnsProps {
   draftEpics: PmEpic[];

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '../store';
-import type { AgentConfig, AgentInfo } from '../tauri/agents';
+import type { AgentConfig, AgentInfo } from './types';
 import { clearFinishPolishCache } from './headlessFinish';
 import { installLaneSummarySubscriber } from './laneSummarySubscriber';
 

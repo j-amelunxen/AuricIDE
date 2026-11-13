@@ -46,7 +46,6 @@ export function extractMermaidBlocks(markdown: string): MermaidBlock[] {
       to: blockEnd,
     });
 
-    // Advance the pattern past this block
     pattern.lastIndex = blockEnd;
   }
 

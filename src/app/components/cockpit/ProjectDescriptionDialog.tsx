@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { DESCRIPTION_MAX_CHARS, normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { useStore } from '@/lib/store';
-import type { StarredProject } from '@/lib/tauri/starredProjects';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 interface ProjectDescriptionDialogProps {
   project: StarredProject;

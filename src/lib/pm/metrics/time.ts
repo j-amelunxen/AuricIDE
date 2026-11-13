@@ -1,3 +1,5 @@
+import { parseUtcStamp } from '@/lib/time/utcStamp';
+
 // ---------------------------------------------------------------------------
 // Time parsing, UTC math, formatting, and statistical helpers
 // ---------------------------------------------------------------------------
@@ -9,9 +11,7 @@
  * the clock — those were off by the machine's offset.
  */
 export function parseHistoryTime(value: string): number {
-  const sqlite = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(value);
-  if (sqlite) return Date.parse(`${sqlite[1]}T${sqlite[2]}${sqlite[3] ?? ''}Z`);
-  return Date.parse(value);
+  return parseUtcStamp(value) ?? Number.NaN;
 }
 
 /**

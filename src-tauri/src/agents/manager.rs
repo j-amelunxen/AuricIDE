@@ -1,13 +1,7 @@
 use super::persistence::{persisted_from_config, persistence_record_spawn};
 use super::project_binding::resolve_project_binding;
 
-pub(super) fn is_reserved_auric_env(key: &str) -> bool {
-    matches!(
-        key,
-        "AURIC_PROJECT_ROOT" | "AURIC_MCP_DB_PATH" | "AURIC_NOTIFICATIONS_DB"
-    )
-}
-use super::shell_env::cached_login_shell_env;
+use crate::machine::cached_login_shell_env;
 
 /// Set on every agent process the IDE spawns, and so inherited by every MCP
 /// server that agent starts. `auric-mcp --control` refuses to run under it:
@@ -23,7 +17,7 @@ pub(super) fn apply_agent_env(
         // Project authority must come exclusively from the resolved binding
         // above. In particular, a deliberately general agent must not inherit
         // a stale binding from the shell that launched AuricIDE.
-        if !is_reserved_auric_env(key) {
+        if !crate::auric_env::is_project_binding(key) {
             cmd.env(key, value);
         }
     }
@@ -36,40 +30,20 @@ pub(super) fn apply_agent_env(
     // Last, so neither the shell nor a provider config can clear it.
     cmd.env(IDE_AGENT_MARKER, "1");
 }
+use super::pty::{AgentPty, PendingAgentPty, TerminalState, DEFAULT_PTY_COLS, DEFAULT_PTY_ROWS};
 use super::types::*;
 use crate::agent_persistence::AgentPersistenceState;
-use crate::agent_usage::capture::{
-    EvidenceWait, UsageCapture, UsageRecordedEvent, EXIT_EVIDENCE_WAIT, USAGE_RECORDED_EVENT,
-};
+use crate::agent_usage::capture::UsageCapture;
 use crate::agent_usage::holdback::ResultHoldback;
-use crate::agent_usage::record::Outcome;
-use crate::commands::terminal_commands::{DEFAULT_PTY_COLS, DEFAULT_PTY_ROWS};
 use crate::providers::ProviderRegistryState;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
-pub async fn list_agents_impl(state: &AgentManagerState) -> Result<Vec<AgentInfo>, String> {
+pub async fn list_agents_impl(state: &AgentManagerState) -> Vec<AgentInfo> {
     let manager = state.lock().await;
-    let infos: Vec<AgentInfo> = manager.agents.values().map(|p| p.info.clone()).collect();
-    Ok(infos)
-}
-
-/// A bound agent needs provider material that points its MCP at the bound
-/// project. Without it the spawn is refused, unless the provider config opted
-/// in to starting unbound (`allowUnboundMcp`) because its CLI cannot take one.
-pub fn binding_injection_for(
-    provider_id: &str,
-    injection: crate::providers::SpawnInjection,
-    allows_unbound: bool,
-) -> Result<crate::providers::SpawnInjection, String> {
-    if injection.is_empty() && !allows_unbound {
-        return Err(format!(
-            "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
-        ));
-    }
-    Ok(injection)
+    manager.agents.values().map(|p| p.info.clone()).collect()
 }
 
 pub fn resolve_permitted_provider(
@@ -87,9 +61,7 @@ pub fn resolve_permitted_provider(
                  Import its config under Settings → Providers, or pick an installed one."
             )
         })?,
-        None => providers
-            .get("claude")
-            .unwrap_or_else(|| providers.default_provider()),
+        None => providers.default_provider(),
     };
     let resolved_id = provider.info().id;
 
@@ -139,7 +111,7 @@ pub fn attach_usage_sidecar(
 }
 
 async fn resolved_mcp_node(runtime: &std::path::Path) -> String {
-    let path_var = crate::node_runtime::path_from_env(cached_login_shell_env().await);
+    let path_var = crate::machine::path_from_env(cached_login_shell_env().await);
     crate::node_runtime::command_for_mcp(runtime, &path_var)
 }
 
@@ -163,13 +135,8 @@ fn resolve_extra_mcp(
         &crate::supervisor::current_policy(&app_data),
         binding.project_root(),
     );
-    if !resolved.servers.is_empty()
-        && !crate::connectors::provider_consumes_mcp_config(
-            provider_id,
-            provider,
-            binding.provider_binding(),
-        )?
-    {
+    let mcp_binding = provider.mcp_binding();
+    if !resolved.servers.is_empty() && !mcp_binding.reads_mcp_config() {
         resolved
             .skipped
             .extend(
@@ -182,7 +149,7 @@ fn resolve_extra_mcp(
                     }),
             );
     }
-    let resolved = crate::extra_mcp::for_provider(provider_id, resolved);
+    let resolved = crate::extra_mcp::for_provider(mcp_binding, resolved);
     for skipped in &resolved.skipped {
         eprintln!(
             "Extra MCP server {} not started for {provider_id}: {}",
@@ -246,17 +213,19 @@ fn bind_to_project_mcp(
     provider_binding.connectors = connectors.to_vec();
     provider_binding.extra_servers = extras.to_vec();
     let (provider_id, provider) = provider;
-    // Spawning honours `allowUnboundMcp`; `list_agent_providers` deliberately
-    // does not (see `providers::supports_isolated_mcp_binding`), so agents
-    // started over MCP only ever get providers bound to this project.
-    let provider_injection = binding_injection_for(
+    // Spawning honours `allowUnboundMcp`; the provider list handed to MCP
+    // (`mcp::agent_providers_env`) deliberately does not, so agents started
+    // over MCP only ever get providers bound to this project.
+    let provider_injection = crate::providers::binding_injection_for(
         provider_id,
-        crate::providers::project_binding_material(provider_id, provider, &provider_binding)?,
+        crate::providers::project_binding_material(provider, &provider_binding)?,
         provider.allows_unbound_mcp(),
     )?;
-    let spawn_cmd = spawn_cmd.with_injection(provider_injection).with_injection(
-        crate::providers::connector_tool_filter_injection(provider_id, connectors),
-    );
+    let connector_filter =
+        crate::providers::connector_tool_filter_injection(runs_claude_code(&spawn_cmd), connectors);
+    let spawn_cmd = spawn_cmd
+        .with_injection(provider_injection)
+        .with_injection(connector_filter);
     // Reserved Auric variables are applied after provider material so a
     // provider config cannot accidentally point MCP at a different project.
     Ok(spawn_cmd.with_injection(crate::providers::SpawnInjection {
@@ -265,453 +234,13 @@ fn bind_to_project_mcp(
             let mut env = binding.environment();
             if let Some(path) = notifications_db.as_ref() {
                 env.push((
-                    "AURIC_NOTIFICATIONS_DB".to_string(),
+                    crate::auric_env::NOTIFICATIONS_DB.to_string(),
                     path.to_string_lossy().into_owned(),
                 ));
             }
             env
         },
     }))
-}
-
-/// The provider a supervisor runs on in this version: its scope is enforced
-/// through Claude Code's `--allowedTools` and `--strict-mcp-config`.
-#[allow(dead_code)]
-pub const DEFAULT_SUPERVISOR_PROVIDER: &str = "claude";
-/// The supervisor's one MCP server, and the tool pattern pre-approved for it.
-pub const SUPERVISOR_MCP_SERVER: &str = "auric-supervisor";
-
-/// What a supervisor spawn always runs with, whatever the caller asked for:
-/// interactive, in its own folder, bound to no project, in Claude's
-/// `default` permission mode so its own Bash and Edit calls ask the human.
-pub fn supervisor_config(mut config: AgentConfig, cwd: &std::path::Path) -> AgentConfig {
-    config.cwd = Some(cwd.to_string_lossy().into_owned());
-    config.project_path = None;
-    config.headless = Some(false);
-    config.permission_mode = Some("default".to_string());
-    config.dangerously_ignore_permissions = Some(false);
-    config.auto_accept_edits = Some(false);
-    config.launch_request_uid = None;
-    config.agent_notification_uid = None;
-    config.agent_notification_action_id = None;
-    config
-}
-
-pub const SUPERVISOR_PROVIDERS: [&str; 2] = ["claude", "codex"];
-
-pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
-    if SUPERVISOR_PROVIDERS.contains(&provider_id) {
-        Ok(())
-    } else {
-        Err(format!(
-            "The supervisor supports Claude Code and Codex in this version; '{provider_id}' cannot run it."
-        ))
-    }
-}
-
-/// Codex flags for a supervisor: `-c` overrides for its one server, `auric-supervisor`.
-pub fn supervisor_codex_arguments(
-    runtime: &std::path::Path,
-    socket: &std::path::Path,
-    pm_child_env: &std::collections::BTreeMap<String, String>,
-    node: &str,
-) -> Result<Vec<String>, String> {
-    let runtime_str =
-        serde_json::to_string(&runtime.to_string_lossy()).map_err(|e| e.to_string())?;
-    let node_str = serde_json::to_string(node).map_err(|e| e.to_string())?;
-    let sup_args =
-        format!("mcp_servers.{SUPERVISOR_MCP_SERVER}.args=[{runtime_str},\"--supervisor\"]");
-    let sup_env = format!(
-        "mcp_servers.{SUPERVISOR_MCP_SERVER}.env={}",
-        crate::providers::toml_inline_table(&crate::mcp::supervisor_server_env(
-            socket,
-            pm_child_env
-        )?)?
-    );
-    Ok(vec![
-        "-c".to_string(),
-        crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{SUPERVISOR_MCP_SERVER}.command={node_str}"
-        )),
-        "-c".to_string(),
-        crate::providers::shell_quote_argument(&sup_args),
-        "-c".to_string(),
-        crate::providers::shell_quote_argument(&sup_env),
-        "-c".to_string(),
-        crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{SUPERVISOR_MCP_SERVER}.required=true"
-        )),
-        "-c".to_string(),
-        crate::providers::shell_quote_argument(&format!(
-            "mcp_servers.{SUPERVISOR_MCP_SERVER}.default_tools_approval_mode=\"approve\""
-        )),
-    ])
-}
-
-/// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
-/// built-in tools it has: the file tools, `Skill`, `ToolSearch` (many MCP
-/// tools load deferred, and without it they are out of reach), and `Bash`
-/// for background sleep timers. Other shell commands require an approved skill
-/// or tool pattern. PM tools of its projects run through `pm_call` on its own
-/// server. Claude in Chrome is pre-approved when the policy switches it on
-/// (`chrome`). `--restricted` confines the file tools
-/// to the working directory (the run folder), ignores the user's, project's
-/// and local settings files, so allow rules such as `Bash(npx:*)` there do
-/// not apply, and loads no skills from disk; the approved ones come in through
-/// `--plugin-dir`. `dontAsk` refuses whatever `--allowedTools` does not name,
-/// so a shell command outside the skills' patterns is refused, not asked.
-/// `--mcp-config`, `--tools`, `--plugin-dir` and `--allowedTools` take several
-/// values, so each is followed by another flag rather than by the task.
-/// Checked against Claude Code 2.1.301.
-pub fn supervisor_claude_arguments(
-    mcp_config_path: &str,
-    skills: &crate::supervisor::SkillPlugin,
-    chrome: bool,
-    denied_tools: &[String],
-) -> Vec<String> {
-    let quoted = |value: &str| {
-        format!(
-            "\"{}\"",
-            crate::providers::shell_escape_double_quoted(value)
-        )
-    };
-    let mut tools = SUPERVISOR_FILE_TOOLS.to_vec();
-    tools.push("Bash");
-    let mut arguments = vec![
-        "--mcp-config".to_string(),
-        quoted(mcp_config_path),
-        "--strict-mcp-config".to_string(),
-        "--tools".to_string(),
-        quoted(&tools.join(",")),
-        "--restricted".to_string(),
-    ];
-    if let Some(dir) = &skills.dir {
-        arguments.push("--plugin-dir".to_string());
-        arguments.push(quoted(&dir.to_string_lossy()));
-    }
-    if !skills.dirs.is_empty() {
-        arguments.push("--add-dir".to_string());
-        arguments.extend(skills.dirs.iter().map(|dir| quoted(dir)));
-    }
-    arguments.push("--allowedTools".to_string());
-    arguments.push(quoted(&format!("mcp__{SUPERVISOR_MCP_SERVER}__*")));
-    if chrome {
-        arguments.push(quoted(&format!("mcp__{CHROME_MCP_SERVER}__*")));
-    }
-    arguments.extend(SUPERVISOR_FILE_TOOLS.iter().map(|tool| tool.to_string()));
-    // run_in_background changes delivery, not the command permission rule.
-    arguments.push(quoted("Bash(sleep *)"));
-    arguments.extend(
-        skills
-            .bash
-            .iter()
-            .map(|pattern| quoted(&format!("Bash({pattern})"))),
-    );
-    // Explicit either way: the user's Claude Code may enable Chrome by itself.
-    arguments.push(if chrome { "--chrome" } else { "--no-chrome" }.to_string());
-    if !denied_tools.is_empty() {
-        arguments.push(DENIED_TOOLS_FLAG.to_string());
-        arguments.extend(denied_tools.iter().map(|rule| quoted(rule)));
-    }
-    arguments.push("--permission-mode".to_string());
-    arguments.push("dontAsk".to_string());
-    arguments
-}
-
-/// Fixture `instructions.denyFlag`. Takes several values, so it is followed by
-/// another flag, never by the task.
-const DENIED_TOOLS_FLAG: &str = "--disallowedTools";
-
-/// A Project Manager may not change its own instructions: they are the
-/// human's, and the prompt alone is no proof (fixture `instructions.denyRules`,
-/// checked against the real CLI).
-pub fn manager_denied_tools() -> Vec<String> {
-    ["Edit", "Write"]
-        .iter()
-        .map(|tool| {
-            format!(
-                "{tool}(./{})",
-                crate::supervisor::managers::INSTRUCTIONS_FILE_NAME
-            )
-        })
-        .collect()
-}
-
-/// The MCP server name Claude Code gives its Chrome integration.
-pub const CHROME_MCP_SERVER: &str = "claude-in-chrome";
-
-/// The built-in tools every supervisor has. They reach only its run folder.
-pub const SUPERVISOR_FILE_TOOLS: [&str; 7] = [
-    "Read",
-    "Write",
-    "Edit",
-    "Glob",
-    "Grep",
-    "Skill",
-    "ToolSearch",
-];
-
-/// The deny rules of a run that belongs to a Project Manager, none for any
-/// other. A registry that cannot be read says "none": a manager folder cannot
-/// have got this far, `admit_supervisor` refuses its resume first, and a new
-/// run folder is never one.
-pub(super) fn manager_denied_tools_for_run(
-    app_data: &std::path::Path,
-    run_name: &str,
-) -> Vec<String> {
-    let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
-    let is_manager = crate::supervisor::managers::launch_candidates(&registry)
-        .is_ok_and(|managers| managers.iter().any(|manager| manager.run_dir == run_name));
-    if is_manager {
-        manager_denied_tools()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Binds a supervisor to its own MCP server (`auric-mcp --supervisor`) and
-/// nothing else, and hands it the skills the policy approves.
-fn bind_to_supervisor_mcp(
-    spawn_cmd: crate::providers::SpawnCommand,
-    app: &AppHandle,
-    provider_id: &str,
-    cwd: Option<&str>,
-    node: &str,
-) -> Result<(crate::providers::SpawnCommand, OwnedFile), String> {
-    let runtime = crate::mcp::runtime_entrypoint(app)?;
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("The supervisor needs the app data directory: {error}"))?;
-    let run_name = cwd
-        .and_then(|cwd| std::path::Path::new(cwd).file_name())
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "The supervisor has no run folder.".to_string())?;
-    let policy = crate::supervisor::current_policy(&app_data);
-    let denied_tools = manager_denied_tools_for_run(&app_data, run_name);
-    let mut skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
-    crate::supervisor::apply_tool_grants(&mut skills, &policy.tools);
-    // For the project servers `pm_call` starts. No AURIC_AGENT_CWD:
-    // `request_agent_launch` stays refused, so every agent a supervisor starts
-    // goes through `spawn_agent` and the policy.
-    let pm_child_env = crate::mcp::agent_mcp_server_env(
-        Some(&crate::notifications::db_path_in(&app_data)),
-        app.try_state::<ProviderRegistryState>()
-            .as_deref()
-            .map(|registry| registry.as_ref()),
-        None,
-    );
-    let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
-        &app_data,
-        &runtime,
-        &pm_child_env,
-        node,
-    )?);
-    let arguments = if provider_id == "codex" {
-        supervisor_codex_arguments(
-            &runtime,
-            &crate::control_socket::socket_path_in(&app_data),
-            &pm_child_env,
-            node,
-        )?
-    } else {
-        supervisor_claude_arguments(
-            &config_file.0.to_string_lossy(),
-            &skills,
-            policy.supervisor.chrome,
-            &denied_tools,
-        )
-    };
-    Ok((
-        spawn_cmd.with_injection(crate::providers::SpawnInjection {
-            arguments,
-            env_vars: Vec::new(),
-        }),
-        config_file,
-    ))
-}
-
-/// The first gate of every spawn, before anything is resolved or opened
-/// (ADR 0004). A supervisor spawn gets its fixed shape (`supervisor_config`);
-/// a spawn that names the supervisor that asked for it is checked against the
-/// supervisor policy again. The dispatcher checked before the frontend saw
-/// the request; this holds whatever route the spawn took from there.
-///
-/// `app_data` is where the policy file lives, `home` where the supervisor's
-/// run folders go; without them, both kinds of spawn are refused rather than
-/// run unchecked.
-pub fn admit_spawn(
-    mut config: AgentConfig,
-    app_data: Option<&std::path::Path>,
-    home: Option<&std::path::Path>,
-    agents: &[AgentInfo],
-    offered: &std::collections::BTreeMap<String, Vec<String>>,
-    modes_for: &dyn Fn(
-        &crate::supervisor::policy::SupervisorPolicy,
-    ) -> std::collections::BTreeMap<
-        String,
-        crate::supervisor::policy::ProviderModes,
-    >,
-) -> Result<AgentConfig, String> {
-    let needs_app_data = || {
-        app_data.ok_or_else(|| {
-            "The app data directory is unavailable; a supervisor spawn cannot be checked"
-                .to_string()
-        })
-    };
-    if config.role() == AgentRole::Supervisor {
-        return admit_supervisor(config, app_data, home, agents);
-    }
-    if config.supervisor_key.is_some() {
-        return Err(crate::supervisor::several::WORKER_KEY_MESSAGE.to_string());
-    }
-    let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {
-        return Ok(config);
-    };
-    let app_data = needs_app_data()?;
-    let policy = crate::supervisor::current_policy(app_data);
-    let quota_blocks = crate::quota_blocks::store::active_blocks(app_data);
-    let project = config
-        .project_path
-        .as_deref()
-        .map(crate::supervisor::canonical_project_path);
-    let project_policy = project
-        .as_deref()
-        .map(|path| crate::provider_policy::policy_for_project(std::path::Path::new(path)))
-        .unwrap_or_default();
-    let running = crate::supervisor::running_children(agents, &supervisor_id);
-    let modes = modes_for(&policy);
-    crate::supervisor::check_child_config_with_blocks(
-        &config,
-        project.as_deref(),
-        &crate::supervisor::ChildCheckInputs {
-            policy: &policy,
-            offered,
-            modes: &modes,
-            project_policy: &project_policy,
-            running: &running,
-        },
-        &quota_blocks,
-    )?;
-    // Booked as the supervisor's, whatever the frontend said.
-    config.run_source = Some(crate::control_socket::protocol::RUN_SOURCE_SUPERVISOR.to_string());
-    Ok(config)
-}
-
-/// A supervisor spawn: its run folder (new, or an earlier one no live
-/// supervisor works in) and its key (its own, else on a resume the run's;
-/// well formed and free among the live supervisors), written back to the run
-/// folder so the next resume finds it.
-///
-/// A run folder and a key that belong to a Project Manager are one thing
-/// (`several::manager_launch`, fixture `launchKey`): the launch runs as that
-/// manager, under its name, and books the instructions it starts with.
-fn admit_supervisor(
-    mut config: AgentConfig,
-    app_data: Option<&std::path::Path>,
-    home: Option<&std::path::Path>,
-    agents: &[AgentInfo],
-) -> Result<AgentConfig, String> {
-    use crate::supervisor::{managers, several};
-    if config.spawned_by_agent_id.is_some() {
-        return Err("A supervisor cannot start another supervisor.".to_string());
-    }
-    let home = home.ok_or_else(|| {
-        "The home directory is unavailable; the supervisor has nowhere to work".to_string()
-    })?;
-    let requested_dir = config.resume_run_dir.take();
-    let requested_key = config.supervisor_key.take();
-    let registry = app_data.map(|dir| dir.join(managers::REGISTRY_FILE_NAME));
-    let candidates = if requested_dir.is_some() || requested_key.is_some() {
-        let registry = registry.as_deref().ok_or_else(|| {
-            "The app data directory is unavailable; a Project Manager cannot be looked up"
-                .to_string()
-        })?;
-        managers::launch_candidates(registry)?
-    } else {
-        Vec::new()
-    };
-    let runs_root = crate::supervisor::supervisor_runs_root(home);
-    let resume_dir = requested_dir
-        .map(|requested| {
-            crate::supervisor::reuse_supervisor_run_dir(home, &requested).map_err(|error| {
-                managers::missing_manager_folder(&candidates, &runs_root, &requested)
-                    .unwrap_or(error)
-            })
-        })
-        .transpose()?;
-    let resume_folder = resume_dir
-        .as_deref()
-        .and_then(|dir| dir.file_name())
-        .map(|name| name.to_string_lossy().into_owned());
-    let manager = several::manager_launch(
-        &candidates,
-        resume_folder.as_deref(),
-        requested_key.as_deref(),
-    )?;
-    // A key that opens a manager's folder is checked before the folder: the
-    // client named the key, so "key in use" is the answer it can act on.
-    if let (Some(manager), None) = (manager, &resume_dir) {
-        several::check_key(agents, &manager.key)?;
-    }
-    let resuming = resume_dir.is_some() || manager.is_some();
-    let cwd = match (resume_dir, manager) {
-        (Some(dir), _) => dir,
-        (None, Some(manager)) => {
-            let folder = managers::resolve_manager_run(&runs_root, &manager.run_dir)?;
-            crate::supervisor::reuse_supervisor_run_dir(home, &folder.to_string_lossy())?
-        }
-        (None, None) => {
-            let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
-            crate::supervisor::new_supervisor_run_dir(home, &started)?
-        }
-    };
-    if resuming {
-        if let Some(holder) = several::run_dir_holder(agents, &cwd) {
-            return Err(several::run_dir_in_use_message(&cwd, &holder.id));
-        }
-    }
-    let own_key = manager.map(|m| m.key.clone()).or(requested_key);
-    let from_run = own_key.is_none();
-    let key = several::launch_key(own_key, &cwd, resuming);
-    // A key the folder merely remembers must not turn a plain run into a
-    // manager: the key is the manager's address, and only its own folder answers.
-    if let (None, true, Some(key)) = (manager, from_run, key.as_deref()) {
-        if let Some(holder) = candidates.iter().find(|m| m.key == key) {
-            return Err(several::manager_key_reserved_message(
-                &holder.key,
-                &holder.name,
-            ));
-        }
-    }
-    if let Some(key) = key.as_deref() {
-        match several::live_supervisor_with_key(agents, key) {
-            Some(holder) if from_run => {
-                return Err(several::run_key_in_use_message(&cwd, key, &holder.id));
-            }
-            _ => several::check_key(agents, key)?,
-        }
-    }
-    if let (Some(manager), Some(registry)) = (manager, registry.as_deref()) {
-        let instructions = managers::read_instructions(registry, &runs_root, &manager.key)?;
-        // A restored session replays the prompt it started with, so what
-        // it was launched with is not these instructions: it books a new
-        // session and leaves the launch as it was.
-        config.launch_to_book = Some(super::types::LaunchToBook {
-            key: manager.key.clone(),
-            restored: config.replaces_agent_id.is_some(),
-            instructions,
-        });
-        config.name = manager.name.clone();
-    }
-    // The key is an address, not something the run depends on: a folder that
-    // cannot take the file still runs, it only forgets the key on a resume.
-    if let Err(error) = several::write_run_key(&cwd, key.as_deref()) {
-        eprintln!("Supervisor: {error}");
-    }
-    config.supervisor_key = key;
-    config.resumed_run_dir = resuming.then(|| cwd.to_string_lossy().into_owned());
-    Ok(supervisor_config(config, &cwd))
 }
 
 /// Runs the agent under `write_sandbox` when its provider config asks for it
@@ -762,16 +291,9 @@ fn check_launch_request_directory(
     request_uid: &str,
     cwd: Option<&str>,
 ) -> Result<(), String> {
-    let inbox = app
-        .try_state::<crate::notifications::NotificationsState>()
-        .ok_or_else(|| {
-            "The inbox is unavailable; a launch request cannot be checked".to_string()
-        })?;
-    let conn = inbox
-        .conn
-        .lock()
-        .map_err(|_| "The inbox is unavailable; a launch request cannot be checked".to_string())?;
-    super::launch_dir::check_launch_directory(&conn, request_uid, cwd)
+    crate::notifications::with_inbox(app, "a launch request cannot be checked", |conn| {
+        super::launch_dir::check_launch_directory(conn, request_uid, cwd)
+    })
 }
 
 /// Sub-goal 09: an agent-written Start button (notify, an agent's schedule)
@@ -784,43 +306,35 @@ fn check_agent_notification_directory(app: &AppHandle, config: &AgentConfig) -> 
         .agent_notification_action_id
         .as_deref()
         .ok_or_else(|| format!("The Start button on '{uid}' names no action"))?;
-    let inbox = app
-        .try_state::<crate::notifications::NotificationsState>()
-        .ok_or_else(|| "The inbox is unavailable; a Start button cannot be checked".to_string())?;
-    let conn = inbox
-        .conn
-        .lock()
-        .map_err(|_| "The inbox is unavailable; a Start button cannot be checked".to_string())?;
-    super::launch_dir::check_agent_notification_directory(
-        &conn,
-        uid,
-        action_id,
-        config.cwd.as_deref(),
-    )
+    crate::notifications::with_inbox(app, "a Start button cannot be checked", |conn| {
+        super::launch_dir::check_agent_notification_directory(
+            conn,
+            uid,
+            action_id,
+            config.cwd.as_deref(),
+        )
+    })
 }
 
 // code-gate: complexity-cyclomatic, complexity-function-length - existing PTY setup plus output pump; sub-goal 09 moved the MCP binding out, splitting the pump is its own refactor
 pub async fn spawn_agent_impl(
     config: AgentConfig,
     state: &AgentManagerState,
+    terminals: &TerminalState,
     app: &AppHandle,
     providers: &ProviderRegistryState,
-    on_exit: impl FnOnce(String) + Send + 'static,
-) -> Result<
-    (
-        AgentInfo,
-        Box<dyn std::io::Write + Send>,
-        Box<dyn MasterPty + Send>,
-    ),
-    String,
-> {
-    let config = admit_spawn(
+) -> Result<(AgentInfo, PendingAgentPty), String> {
+    let config = crate::supervisor::admit(
         config,
-        app.path().app_data_dir().ok().as_deref(),
-        dirs::home_dir().as_deref(),
-        &list_agents_impl(state).await?,
-        &crate::supervisor::model_names(&crate::supervisor::offered_models(providers.as_ref())),
-        &|policy| crate::supervisor::provider_modes(providers.as_ref(), policy),
+        crate::supervisor::AdmissionInputs {
+            app_data: app.path().app_data_dir().ok().as_deref(),
+            home: dirs::home_dir().as_deref(),
+            agents: &list_agents_impl(state).await,
+            offered: &crate::supervisor::model_names(&crate::supervisor::offered_models(
+                providers.as_ref(),
+            )),
+            modes_for: &|policy| crate::supervisor::provider_modes(providers.as_ref(), policy),
+        },
     )?;
     let is_supervisor = config.role() == AgentRole::Supervisor;
 
@@ -858,7 +372,7 @@ pub async fn spawn_agent_impl(
         resolve_permitted_provider(config.provider.as_deref(), providers, &policy)?;
     let provider_id = provider_id.as_str();
     if is_supervisor {
-        check_supervisor_provider(provider_id)?;
+        crate::supervisor::launch::check_supervisor_provider(provider_id)?;
     }
     // Refuse models the CLI no longer accepts. Supervisor policy already
     // filters via model_names; this covers every other spawn path (UI, retry,
@@ -890,13 +404,8 @@ pub async fn spawn_agent_impl(
     } else {
         Vec::new()
     };
-    if let Some(binding) = project_binding.as_ref() {
-        connectors = crate::connectors::for_provider(
-            connectors,
-            provider_id,
-            provider.as_ref(),
-            binding.provider_binding(),
-        )?;
+    if project_binding.is_some() {
+        connectors = crate::connectors::for_provider(connectors, provider.as_ref());
     }
     let extra_mcp = resolve_extra_mcp(
         app,
@@ -923,8 +432,13 @@ pub async fn spawn_agent_impl(
     );
     if is_supervisor {
         let node = resolved_mcp_node(&crate::mcp::runtime_entrypoint(app)?).await;
-        let (bound, config_file) =
-            bind_to_supervisor_mcp(spawn_cmd, app, provider_id, config.cwd.as_deref(), &node)?;
+        let (bound, config_file) = crate::supervisor::launch::bind_to_supervisor_mcp(
+            spawn_cmd,
+            app,
+            provider_id,
+            config.cwd.as_deref(),
+            &node,
+        )?;
         spawn_cmd = bound;
         launch_file = Some(config_file);
     } else if let Some(binding) = project_binding.as_ref() {
@@ -1003,7 +517,7 @@ pub async fn spawn_agent_impl(
     let mut manager = state.lock().await;
     if is_supervisor {
         let live: Vec<AgentInfo> = manager.agents.values().map(|p| p.info.clone()).collect();
-        refuse_late_supervisor(&live, &config, || {
+        crate::supervisor::launch::refuse_late_supervisor(&live, &config, || {
             let _ = child.kill();
         })?;
     }
@@ -1064,8 +578,12 @@ pub async fn spawn_agent_impl(
         })?;
     }
 
-    let process = AgentProcess {
+    let pty = AgentPty::new(&id, terminals);
+    let pending_pty = pty.prepare(writer, pair.master);
+    let pty_for_cleanup = pty.clone();
+    let process = AgentSession {
         info: info.clone(),
+        pty,
         child,
         launch_request_uid: launch_request_uid.clone(),
         usage: usage.clone(),
@@ -1135,7 +653,7 @@ pub async fn spawn_agent_impl(
             let end_offset = emitted.advance(&error_msg);
 
             let _ = app_clone.emit(
-                "agent-output",
+                super::types::AGENT_OUTPUT_EVENT,
                 AgentOutputEvent {
                     agent_id: id_clone.clone(),
                     stream: "stderr".to_string(),
@@ -1147,10 +665,7 @@ pub async fn spawn_agent_impl(
             );
         }
 
-        let proc_opt = {
-            let mut mgr = state_clone.lock().await;
-            mgr.agents.remove(&id_clone)
-        };
+        let proc_opt = claim_agent(&state_clone, &id_clone).await;
         let report_exit = proc_opt.is_some();
 
         let (exit_code, raw_exit, finished_info) = match proc_opt {
@@ -1174,240 +689,65 @@ pub async fn spawn_agent_impl(
             }
             None => (0, None, finished_info),
         };
-        if report_exit {
-            let (end, raw) = match raw_exit {
-                Some(raw) => (raw.kind(), Some(raw)),
-                None => (super::exit_log::EndKind::WaitFailed, None),
-            };
-            log_agent_end(&app_clone, &finished_info, end, raw);
-        }
-
-        let status = if exit_code == 0 {
-            AgentStatus::Idle
-        } else {
-            AgentStatus::Error
-        };
-        // Before anyone is told the agent ended, so a supervisor that wakes on
-        // the result and starts a retry already meets the block.
-        if let Some(buffers) = &output_buffers {
-            super::quota_detection::record_quota_block(&app_clone, &finished_info, buffers);
-        }
-        // Before the buffer is marked finished, so a waiter that sees the
-        // finished buffer always finds the result next to it. A kill got
-        // there first when the agent is gone from the manager, and its
-        // result stands.
-        if let (true, Some(results)) = (report_exit, &run_results) {
-            let console_tail = || {
-                output_buffers
-                    .as_ref()
-                    .and_then(|buffers| {
-                        buffers.read(
-                            &id_clone,
-                            super::run_results::CONSOLE_TAIL_ANSWER_BYTES,
-                            None,
-                        )
-                    })
-                    .map(|slice| slice.text)
-            };
-            results.record_finished(
-                super::run_results::RunResult::from_finish(
-                    &id_clone,
-                    status.clone(),
-                    Some(exit_code),
-                    cli_result.as_ref(),
-                    console_tail,
-                    now_ms(),
-                )
-                .with_transcript_report(|| transcript_report_of(usage.as_ref())),
-                finished_info.clone(),
-            );
-        }
-        if let Some(buffers) = &output_buffers {
-            buffers.finish(&id_clone, status.clone());
-        }
-
-        let _ = app_clone.emit(
-            "agent-status",
-            AgentStatusEvent {
-                agent_id: id_clone.clone(),
-                status,
-                exit_code: Some(exit_code),
-                repo_path: rp_clone,
+        super::finish::finish_agent(
+            super::finish::Context {
+                app: &app_clone,
+                buffers: output_buffers.as_ref(),
+                results: run_results.as_ref(),
             },
-        );
-
-        // A kill got there first when the agent is gone from the manager: it
-        // reported the verdict and let go of the anchor itself.
-        if report_exit {
-            let outcome = if exit_code == 0 {
-                Outcome::Success
-            } else {
-                Outcome::Error
-            };
-            // Not awaited: the transcript may still be landing, and the run's
-            // exit must not wait for it.
-            let app = app_clone.clone();
-            tauri::async_runtime::spawn(async move {
-                finish_run_records(
-                    &app,
-                    finished_info,
-                    usage,
-                    outcome,
-                    cli_result,
-                    EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
-                )
-                .await
-            });
-        }
-
-        if report_exit {
-            let verdict = launch_request_uid
-                .as_deref()
-                .map(|uid| super::launch_runs::ended(uid, &id_clone, exit_code));
-            super::launch_runs::end(&app_clone, &id_clone, verdict);
-        }
-        on_exit(id_clone);
+            super::finish::Run {
+                info: finished_info,
+                usage,
+                cli_result,
+                launch_request_uid,
+            },
+            super::finish::How::Exit {
+                exit_code,
+                raw: raw_exit,
+                claimed: report_exit,
+            },
+        )
+        .await;
+        pty_for_cleanup.remove();
     });
 
     if let Some(run_dir) = adoption_run_dir.as_deref() {
-        adopt_children(app, &mut manager, run_dir, replaces.as_deref(), &id);
+        crate::supervisor::launch::adopt_children(
+            app,
+            &mut manager,
+            run_dir,
+            replaces.as_deref(),
+            &id,
+        );
     }
     manager.agents.insert(id, process);
     if let Some(booking) = launch_to_book {
-        book_manager_launch(app, &booking);
+        crate::supervisor::launch::book_manager_launch(app, &booking);
     }
 
-    Ok((info, writer, pair.master))
+    Ok((info, pending_pty))
 }
 
-/// Books the launch of a Project Manager once its process really runs, so a
-/// spawn that failed on the way leaves `lastLaunch` as it was.
-fn book_manager_launch(app: &AppHandle, booking: &super::types::LaunchToBook) {
-    let Ok(app_data) = app.path().app_data_dir() else {
-        return;
-    };
-    let registry = app_data.join(crate::supervisor::managers::REGISTRY_FILE_NAME);
-    if let Err(error) = apply_booking(&registry, booking) {
-        eprintln!("Project Manager: {error}");
-    }
+/// Publishes the process's PTY and then re-checks under the manager lock.
+/// An immediate exit may clean up before publication; that late registration
+/// must not resurrect its writer. Keep this two-phase order with the exit pump.
+pub async fn spawn_agent_with_session(
+    config: AgentConfig,
+    state: &AgentManagerState,
+    terminals: &TerminalState,
+    providers: &ProviderRegistryState,
+    app: AppHandle,
+) -> Result<AgentInfo, String> {
+    let (info, pending) = spawn_agent_impl(config, state, terminals, &app, providers).await?;
+    publish_agent_pty(&info.id, pending, state).await;
+    Ok(info)
 }
 
-/// A restore books a new session only; any other start books the launch too.
-pub(super) fn apply_booking(
-    registry: &std::path::Path,
-    booking: &super::types::LaunchToBook,
-) -> Result<(), String> {
-    use crate::supervisor::managers;
-    if booking.restored {
-        managers::record_session_start(registry, &booking.key)
-    } else {
-        managers::record_launch(registry, &booking.key, booking.instructions.as_deref())
-    }
-}
-
-/// A supervisor that resumed a run takes over the children of the
-/// supervisors that worked there before it: on the running agents, in the
-/// restart file and in the kept results, and the frontend is told so its
-/// list follows (`supervisor::several::CHILDREN_ADOPTED_EVENT`). Without
-/// this a resumed supervisor would see none of its earlier children.
-fn adopt_children(
-    app: &AppHandle,
-    manager: &mut super::types::AgentManager,
-    run_dir: &str,
-    replaces: Option<&str>,
-    new_id: &str,
-) {
-    let persistence = app.try_state::<crate::agent_persistence::AgentPersistenceState>();
-    let results = app.try_state::<super::run_results::RunResultsState>();
-    adopt_into(
-        manager.agents.values_mut().map(|process| &mut process.info),
-        persistence.as_deref(),
-        results.as_deref().map(|results| results.as_ref()),
-        (run_dir, replaces, new_id),
-        |adoption| {
-            let _ = app.emit(crate::supervisor::several::CHILDREN_ADOPTED_EVENT, adoption);
-        },
-    );
-}
-
-/// The checks of `admit_spawn` again, over the manager's list at the moment
-/// the started supervisor is entered into it. The loser of a race is stopped
-/// (`kill`) before the refusal is returned, so it never runs unlisted.
-pub(super) fn refuse_late_supervisor(
-    live: &[AgentInfo],
-    config: &AgentConfig,
-    kill: impl FnOnce(),
-) -> Result<(), String> {
-    let checked = crate::supervisor::several::recheck(
-        live,
-        config.supervisor_key.as_deref(),
-        config.resumed_run_dir.as_deref(),
-    );
-    if checked.is_err() {
-        kill();
-    }
-    checked
-}
-
-/// `adopt_children` without the app: the live agents, the restart file and
-/// the kept results, then `emit` once with what moved. `target` is the run
-/// folder, the id the supervisor replaces by name, and its new id.
-pub(super) fn adopt_into<'a>(
-    live: impl IntoIterator<Item = &'a mut AgentInfo>,
-    persistence: Option<&crate::agent_persistence::AgentPersistenceState>,
-    results: Option<&super::run_results::RunResults>,
-    (run_dir, replaces, new_id): (&str, Option<&str>, &str),
-    emit: impl FnOnce(&crate::supervisor::several::Adoption),
-) -> Option<crate::supervisor::several::Adoption> {
-    use crate::supervisor::several::{adoption_for, Earlier};
-    let persisted: Vec<crate::agent_persistence::PersistedAgent> = persistence
-        .and_then(|state| state.lock().ok().map(|p| p.agents().cloned().collect()))
-        .unwrap_or_default();
-    let finished = results
-        .map(|results| results.finished_agents())
-        .unwrap_or_default();
-    let earlier = persisted
-        .iter()
-        .map(|agent| Earlier {
-            id: &agent.id,
-            role: agent.role,
-            cwd: agent.cwd.as_deref(),
-        })
-        .chain(finished.iter().map(|agent| Earlier {
-            id: &agent.id,
-            role: Some(agent.role),
-            cwd: agent.repo_path.as_deref(),
-        }));
-    let adoption = adoption_for(std::path::Path::new(run_dir), new_id, replaces, earlier)?;
-    for info in live {
-        adoption.apply(&mut info.spawned_by_agent_id);
-    }
-    if let Some(state) = persistence {
-        let saved = state
-            .lock()
-            .map_err(|_| "Agent persistence is unavailable".to_string())
-            .and_then(|mut p| p.adopt_children(&adoption));
-        if let Err(error) = saved {
-            eprintln!("Agent persistence: {error}");
-        }
-    }
-    if let Some(results) = results {
-        results.adopt_children(&adoption);
-    }
-    emit(&adoption);
-    Some(adoption)
-}
-
-/// The run's last finished turn and where it was read, where it can be.
-fn transcript_report_of(
-    usage: Option<&UsageCapture>,
-) -> Option<(String, crate::agent_usage::report::ReportSource)> {
-    let home = dirs::home_dir()?;
-    match usage?.latest_report(&home) {
-        crate::agent_usage::report::ReportLookup::Found { report, source } => {
-            Some((report.text, source))
-        }
-        crate::agent_usage::report::ReportLookup::Missing(_) => None,
+async fn publish_agent_pty(id: &str, pending: PendingAgentPty, state: &AgentManagerState) {
+    let pty = pending.publish();
+    let manager = state.lock().await;
+    if !manager.agents.contains_key(id) {
+        pty.remove();
     }
 }
 
@@ -1445,169 +785,6 @@ async fn prepare_usage_capture(
             eprintln!("Agent usage: preparing the capture aborted: {error}");
             None
         }
-    }
-}
-
-/// Reads a finished run's evidence, appends its usage row and tells the
-/// frontend. Returns the written row when one was booked. A failure is logged,
-/// never raised: the run itself already ended.
-async fn book_usage(
-    app: &AppHandle,
-    capture: UsageCapture,
-    outcome: Outcome,
-    cli_result: Option<crate::agent_usage::claude::CliResult>,
-    wait: EvidenceWait,
-) -> Option<crate::agent_usage::record::UsageRecord> {
-    let Ok(home) = app.path().home_dir() else {
-        return None;
-    };
-    let claude_prices = app
-        .try_state::<crate::cc_usage::CcUsageService>()
-        .and_then(|service| service.plugin_by_id("claude-code"));
-    let project_path = capture.event_project_path().to_string();
-    let booked = tokio::task::spawn_blocking(move || {
-        capture.book(
-            &home,
-            claude_prices.as_ref(),
-            outcome,
-            cli_result,
-            chrono::Utc::now(),
-            wait,
-        )
-    })
-    .await;
-    match booked {
-        Ok(Ok(Some(row))) => {
-            let _ = app.emit(
-                USAGE_RECORDED_EVENT,
-                UsageRecordedEvent {
-                    project_path,
-                    row: row.clone(),
-                },
-            );
-            Some(row)
-        }
-        Ok(Ok(None)) => None,
-        Ok(Err(error)) => {
-            eprintln!("Agent usage: could not record a run: {error}");
-            None
-        }
-        Err(error) => {
-            eprintln!("Agent usage: recording a run aborted: {error}");
-            None
-        }
-    }
-}
-
-/// Books usage (when the run belonged to an initialised project) and writes
-/// the finished task to the monthly JSONL log when task logging is enabled.
-///
-/// The task log entry is stamped with `finished_at` taken before waiting for
-/// the transcript, so the recorded duration and month match the actual moment
-/// the run ended.
-async fn finish_run_records(
-    app: &AppHandle,
-    info: AgentInfo,
-    capture: Option<UsageCapture>,
-    outcome: Outcome,
-    cli_result: Option<crate::agent_usage::claude::CliResult>,
-    wait: EvidenceWait,
-) {
-    let finished_at = chrono::Utc::now();
-    let cli_summary = cli_result
-        .as_ref()
-        .map(crate::task_log::TaskUsageSummary::from_cli_result);
-    let usage_row = match capture {
-        Some(capture) => book_usage(app, capture, outcome, cli_result, wait).await,
-        None => None,
-    };
-    let summary = usage_row
-        .as_ref()
-        .map(crate::task_log::TaskUsageSummary::from_usage_record)
-        .or(cli_summary);
-    record_task_log(app, info, finished_at, outcome, summary).await;
-}
-
-/// Writes the agent's ending to `agent-exits.jsonl` (see `exit_log`). Output
-/// size and silence are read before the console buffer is marked finished;
-/// the memory probes and the file write run off the caller's thread. A log
-/// that cannot be written is reported on stderr and never changes the ending.
-fn log_agent_end(
-    app: &AppHandle,
-    info: &AgentInfo,
-    end: super::exit_log::EndKind,
-    raw: Option<super::exit_log::RawExit>,
-) {
-    use super::exit_log;
-    let Ok(app_data) = app.path().app_data_dir() else {
-        return;
-    };
-    let (output_bytes, silent_for_ms) = app
-        .try_state::<super::output_buffer::OutputBuffersState>()
-        .map_or((0, None), |buffers| {
-            (
-                buffers.total_bytes(&info.id),
-                buffers
-                    .silent_for(&info.id)
-                    .map(|silent| silent.as_millis() as u64),
-            )
-        });
-    let info = info.clone();
-    let ended_at_ms = now_ms();
-    tauri::async_runtime::spawn_blocking(move || {
-        let role = serde_json::to_value(info.role)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_default();
-        let facts = exit_log::RunFacts {
-            agent_id: &info.id,
-            provider: &info.provider,
-            model: &info.model,
-            headless: info.headless,
-            role: &role,
-            project_path: info.project_path.as_deref(),
-            started_at_ms: info.started_at,
-            ended_at_ms,
-            output_bytes,
-            silent_for_ms,
-        };
-        let record = exit_log::build_record(
-            &facts,
-            end,
-            raw.as_ref(),
-            exit_log::read_system_memory(),
-            chrono::Utc::now().to_rfc3339(),
-        );
-        if let Err(error) = exit_log::append_record(&app_data, &record) {
-            eprintln!("{error}");
-        }
-    });
-}
-
-async fn record_task_log(
-    app: &AppHandle,
-    info: AgentInfo,
-    finished_at: chrono::DateTime<chrono::Utc>,
-    outcome: Outcome,
-    summary: Option<crate::task_log::TaskUsageSummary>,
-) {
-    let Ok(app_data) = app.path().app_data_dir() else {
-        return;
-    };
-    let recorded = tokio::task::spawn_blocking(move || {
-        crate::task_log::record_finished_task_in(
-            &app_data,
-            &info,
-            finished_at,
-            outcome,
-            summary.as_ref(),
-        )
-    })
-    .await;
-    match recorded {
-        Ok(Ok(_)) => {}
-        Ok(Err(error)) => eprintln!("Task log: could not record a finished task: {error}"),
-        Err(error) => eprintln!("Task log: recording a finished task aborted: {error}"),
     }
 }
 
@@ -1685,13 +862,6 @@ fn shown(holdback: &mut Option<&mut ResultHoldback>, text: &str) -> String {
     }
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
 pub async fn emit_agent_output(
     app: &AppHandle,
     id: &str,
@@ -1705,7 +875,7 @@ pub async fn emit_agent_output(
         .as_millis() as u64;
 
     let _ = app.emit(
-        "agent-output",
+        super::types::AGENT_OUTPUT_EVENT,
         AgentOutputEvent {
             agent_id: id.to_string(),
             stream: "stdout".to_string(),
@@ -1717,85 +887,73 @@ pub async fn emit_agent_output(
     );
 }
 
+/// The first process remover owns its usage/result/launch ending.
+async fn claim_agent(state: &AgentManagerState, agent_id: &str) -> Option<AgentSession> {
+    state.lock().await.agents.remove(agent_id)
+}
+
+async fn claim_killed_agent(
+    state: &AgentManagerState,
+    agent_id: &str,
+) -> Result<Option<AgentSession>, String> {
+    let mut manager = state.lock().await;
+    let Some(process) = manager.agents.get_mut(agent_id) else {
+        return Ok(None);
+    };
+    // Keep the process and its registration available on a native failure.
+    // EOF uses this same lock, so it cannot miss a remove/reinsert window.
+    // portable-pty's Unix kill may spend its bounded SIGHUP grace here.
+    process
+        .child
+        .kill()
+        .map_err(|error| format!("Could not stop agent {agent_id}: {error}"))?;
+    let process = manager.agents.remove(agent_id);
+    drop(manager);
+    // A writer's Drop can re-enter the manager (or another spawn can join).
+    // Never drop it while holding the manager lock.
+    if let Some(process) = &process {
+        process.pty.remove();
+    }
+    Ok(process)
+}
+
 pub async fn kill_agent_impl(
     agent_id: &str,
     state: &AgentManagerState,
+    terminals: &TerminalState,
     app: &AppHandle,
 ) -> Result<(), String> {
-    let mut manager = state.lock().await;
-    let mut process = manager
-        .agents
-        .remove(agent_id)
-        .ok_or_else(|| format!("Agent not found: {}", agent_id))?;
-    drop(manager);
-
-    let _ = process.child.kill();
-    log_agent_end(app, &process.info, super::exit_log::EndKind::IdeKill, None);
-    let buffers = app.try_state::<super::output_buffer::OutputBuffersState>();
-    if let Some(results) = app.try_state::<super::run_results::RunResultsState>() {
-        let console_tail = || {
-            buffers
-                .as_ref()
-                .and_then(|buffers| {
-                    buffers.read(
-                        agent_id,
-                        super::run_results::CONSOLE_TAIL_ANSWER_BYTES,
-                        None,
-                    )
-                })
-                .map(|slice| slice.text)
-        };
-        results.record_finished(
-            super::run_results::RunResult::from_finish(
-                agent_id,
-                AgentStatus::Idle,
-                None,
-                None,
-                console_tail,
-                now_ms(),
-            ),
-            process.info.clone(),
-        );
-    }
-    // Finished now, not when the PTY closes: a grandchild that inherited the
-    // PTY can keep it open long after the agent itself is gone.
-    if let Some(buffers) = buffers {
-        buffers.finish(agent_id, AgentStatus::Idle);
-    }
-    // Tokens spent before a kill were spent, so the run is booked from its
-    // transcript. Off this call: the kill answers now, the row follows.
-    let capture = process.usage.take();
-    let killed_info = process.info.clone();
-    let app_for_records = app.clone();
-    tauri::async_runtime::spawn(async move {
-        finish_run_records(
-            &app_for_records,
-            killed_info,
-            capture,
-            Outcome::Killed,
-            None,
-            EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
-        )
-        .await
-    });
-    let verdict = process
-        .launch_request_uid
-        .as_deref()
-        .map(|uid| super::launch_runs::killed(uid, agent_id));
-    super::launch_runs::end(app, agent_id, verdict);
-
-    let _ = app.emit(
-        "agent-status",
-        AgentStatusEvent {
-            agent_id: agent_id.to_string(),
-            status: AgentStatus::Idle,
-            exit_code: None,
-            repo_path: process.info.repo_path,
-        },
-    );
-
+    let Some(process) = claim_killed_agent(state, agent_id).await? else {
+        AgentPty::new(agent_id, terminals).remove();
+        return Err(format!("Agent not found: {}", agent_id));
+    };
+    finish_killed_agent(process, app).await;
     Ok(())
 }
+
+async fn finish_killed_agent(mut process: AgentSession, app: &AppHandle) {
+    let buffers = app.try_state::<super::output_buffer::OutputBuffersState>();
+    let results = app.try_state::<super::run_results::RunResultsState>();
+    super::finish::finish_agent(
+        super::finish::Context {
+            app,
+            buffers: buffers.as_deref(),
+            results: results.as_deref(),
+        },
+        super::finish::Run {
+            info: process.info,
+            usage: process.usage.take(),
+            cli_result: None,
+            launch_request_uid: process.launch_request_uid,
+        },
+        super::finish::How::Kill,
+    )
+    .await;
+}
+
+#[cfg(test)]
+#[path = "kill_tests.rs"]
+mod kill_tests;
 
 pub async fn rename_agent_impl(
     agent_id: &str,
@@ -1826,28 +984,6 @@ pub async fn rename_agent_impl(
     Ok(info)
 }
 
-pub async fn kill_agents_for_repo_impl(
-    repo_path: &str,
-    state: &AgentManagerState,
-    app: &AppHandle,
-) -> Result<u32, String> {
-    let ids_to_kill: Vec<String> = {
-        let manager = state.lock().await;
-        manager
-            .agents
-            .values()
-            .filter(|p| p.info.repo_path.as_deref() == Some(repo_path))
-            .map(|p| p.info.id.clone())
-            .collect()
-    };
-
-    let count = ids_to_kill.len() as u32;
-    for id in ids_to_kill {
-        kill_agent_impl(&id, state, app).await?;
-    }
-    Ok(count)
-}
-
 /// Longest the app's shutdown waits for the runs still alive to be booked.
 const SHUTDOWN_BOOKING_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -1872,26 +1008,24 @@ async fn book_at_shutdown(app: &AppHandle, runs: Vec<(AgentInfo, Option<UsageCap
     let deadline = tokio::time::Instant::now() + SHUTDOWN_BOOKING_BUDGET;
     let finished_at = chrono::Utc::now();
     for (info, capture) in runs {
-        log_agent_end(app, &info, super::exit_log::EndKind::AppQuit, None);
-        let usage_row = if let Some(capture) = capture {
-            let read = book_usage(
+        super::finish::finish_agent(
+            super::finish::Context {
                 app,
-                capture.clone(),
-                Outcome::Killed,
-                None,
-                EvidenceWait::Now,
-            );
-            match tokio::time::timeout_at(deadline, read).await {
-                Ok(row) => row,
-                Err(_) => book_usage(app, capture, Outcome::Killed, None, EvidenceWait::Skip).await,
-            }
-        } else {
-            None
-        };
-        let summary = usage_row
-            .as_ref()
-            .map(crate::task_log::TaskUsageSummary::from_usage_record);
-        record_task_log(app, info, finished_at, Outcome::Killed, summary).await;
+                buffers: None,
+                results: None,
+            },
+            super::finish::Run {
+                info,
+                usage: capture,
+                cli_result: None,
+                launch_request_uid: None,
+            },
+            super::finish::How::Quit {
+                deadline,
+                finished_at,
+            },
+        )
+        .await;
     }
 }
 
@@ -2083,5 +1217,116 @@ mod output_pump_tests {
 
         pump.await.unwrap();
         assert_eq!(everything_emitted(out).await, "w\u{e4}r\n");
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    use portable_pty::{Child, ChildKiller, ExitStatus};
+    use std::future::{poll_fn, Future};
+    use std::task::Poll;
+
+    #[derive(Debug)]
+    struct TestChild;
+
+    impl ChildKiller for TestChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
+            Box::new(Self)
+        }
+    }
+
+    impl Child for TestChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+            Ok(None)
+        }
+        fn wait(&mut self) -> std::io::Result<ExitStatus> {
+            Ok(ExitStatus::with_exit_code(0))
+        }
+        fn process_id(&self) -> Option<u32> {
+            None
+        }
+        #[cfg(windows)]
+        fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+            None
+        }
+    }
+
+    fn session(id: &str, repo: &str, terminals: &TerminalState) -> AgentSession {
+        AgentSession {
+            info: super::super::tests::session_info(id, Some(repo)),
+            child: Box::new(TestChild),
+            pty: AgentPty::new(id, terminals),
+            launch_request_uid: None,
+            usage: None,
+            launch_file: None,
+        }
+    }
+
+    fn pending(pty: &AgentPty) -> PendingAgentPty {
+        let pair = native_pty_system().openpty(PtySize::default()).unwrap();
+        pty.prepare(Box::new(Vec::new()), pair.master)
+    }
+
+    #[tokio::test]
+    async fn exit_before_publication_cannot_resurrect_a_terminal() {
+        let terminals = TerminalState::default();
+        let state = new_agent_manager_state();
+        let pty = AgentPty::new("agent-1", &terminals);
+        let pending = pending(&pty);
+        pty.remove(); // output pump cleaned up before spawn's late publication
+        publish_agent_pty("agent-1", pending, &state).await;
+        assert!(terminals.sessions.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn exit_between_publication_and_manager_recheck_leaves_no_writer() {
+        let terminals = TerminalState::default();
+        let state = new_agent_manager_state();
+        let mut manager = state.lock().await;
+        let process = session("agent-1", "/repo", &terminals);
+        let pty = process.pty.clone();
+        let pending = pending(&pty);
+        manager.agents.insert("agent-1".into(), process);
+        let mut publication = Box::pin(publish_agent_pty("agent-1", pending, &state));
+        poll_fn(|cx| {
+            assert!(
+                publication.as_mut().poll(cx).is_pending(),
+                "recheck waits for manager"
+            );
+            Poll::Ready(())
+        })
+        .await;
+        assert_eq!(
+            terminals.sessions.lock().unwrap().len(),
+            1,
+            "writer published first"
+        );
+        manager.agents.remove("agent-1");
+        pty.remove(); // kill/exit cleanup while publication is waiting
+        drop(manager);
+        publication.await;
+        assert!(terminals.sessions.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_live_agent_keeps_its_published_writer_and_only_one_ending_claims_it() {
+        let terminals = TerminalState::default();
+        let state = new_agent_manager_state();
+        let process = session("agent-1", "/repo", &terminals);
+        let pending = pending(&process.pty);
+        state.lock().await.agents.insert("agent-1".into(), process);
+        publish_agent_pty("agent-1", pending, &state).await;
+        assert_eq!(terminals.sessions.lock().unwrap().len(), 1);
+        let (exit, kill) = tokio::join!(
+            claim_agent(&state, "agent-1"),
+            claim_agent(&state, "agent-1")
+        );
+        assert_eq!(usize::from(exit.is_some()) + usize::from(kill.is_some()), 1);
+        exit.or(kill).unwrap().pty.remove();
+        assert!(terminals.sessions.lock().unwrap().is_empty());
     }
 }

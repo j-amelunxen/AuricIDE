@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket } from '@/lib/pm/types';
 import { useListDragReorder } from '@/lib/pm/useListDragReorder';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -50,7 +50,6 @@ export function EpicSidebar({
 
   return (
     <div className="flex h-full flex-col border-r border-white/[0.08]">
-      {/* Section header */}
       <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08]">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-muted/50">
           Epics
@@ -65,9 +64,7 @@ export function EpicSidebar({
         </button>
       </div>
 
-      {/* Epic list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {/* "All" filter */}
         <button
           type="button"
           onClick={() => onSelectEpic(null)}
@@ -85,7 +82,6 @@ export function EpicSidebar({
 
         {epics.length > 0 && <div className="mx-3.5 my-1 h-px bg-white/[0.05]" />}
 
-        {/* Individual epics */}
         {orderedEpics.map((epic) => (
           <div
             key={epic.id}

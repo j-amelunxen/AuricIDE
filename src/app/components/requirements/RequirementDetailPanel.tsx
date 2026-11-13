@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { PmRequirement } from '@/lib/tauri/requirements';
+import type { PmRequirement } from '@/lib/pm/types';
 import { LinkifiedText } from '@/app/components/common/LinkifiedText';
 
 interface RequirementDetailPanelProps {

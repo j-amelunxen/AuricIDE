@@ -54,6 +54,23 @@ pub struct Schedule {
     pub exceptions: Vec<ScheduleException>,
 }
 
+/// The words a schedule is stored with (`spec_kind`, `every_unit`,
+/// `catch_up`); the frontend's `scheduleVocabulary.ts` and the MCP writers use
+/// the same ones, pinned by `backendNames.fixtures.json`.
+pub mod vocabulary {
+    pub const CRON: &str = "cron";
+    pub const EVERY: &str = "every";
+    pub const HOUR: &str = "hour";
+    pub const DAY: &str = "day";
+    pub const WEEK: &str = "week";
+    pub const EVERY_UNITS: [&str; 3] = [HOUR, DAY, WEEK];
+    pub const COALESCE: &str = "coalesce";
+    pub const SKIP: &str = "skip";
+    /// Every missed occurrence, up to a cap; also what an unknown value means.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub const ALL: &str = "all";
+}
+
 /// At most this many exceptions per schedule.
 pub const MAX_EXCEPTIONS: usize = 500;
 

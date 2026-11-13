@@ -9,7 +9,7 @@
 //! purpose"); marks live in `<app_data_dir>/agent-waiting.json`, so an IDE
 //! restart keeps them.
 
-use crate::supervisor::write_json_atomic;
+use crate::json_store::{self, write_json, Unreadable};
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -137,15 +137,11 @@ pub fn path_in(app_data: &Path) -> PathBuf {
 /// unreadable file is no marks: the worst case is a stall notice, never a lost
 /// agent.
 pub fn read_active(app_data: &Path, now_ms: u64) -> Vec<WaitingMark> {
-    let Ok(raw) = std::fs::read_to_string(path_in(app_data)) else {
+    let Ok(Some(file)) =
+        json_store::load::<WaitingFile>(&path_in(app_data), Some(1), Unreadable::Empty)
+    else {
         return Vec::new();
     };
-    let Ok(file) = serde_json::from_str::<WaitingFile>(&raw) else {
-        return Vec::new();
-    };
-    if file.version != 1 {
-        return Vec::new();
-    }
     file.marks
         .into_iter()
         .filter(|mark| mark.until_ms > now_ms)
@@ -201,7 +197,7 @@ impl WaitingMarks {
             version: 1,
             marks: self.marks.clone(),
         };
-        if let Err(error) = write_json_atomic(&path_in(dir), &file) {
+        if let Err(error) = write_json(&path_in(dir), &file) {
             eprintln!("agent waiting marks not saved: {error}");
         }
     }

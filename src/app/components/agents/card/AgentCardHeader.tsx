@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { agentStateLabel, type AgentState } from '@/lib/agents/state';
 import { ComboProgressBadge } from '../ComboProgressBadge';

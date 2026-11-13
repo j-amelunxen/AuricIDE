@@ -74,11 +74,8 @@ describe('buildImportSpecPrompt', () => {
     expect(prompt).toMatch(/autonomous|without.*(asking|question|clarif)/i);
   });
 
-  it('handles empty spec text gracefully', () => {
-    const prompt = buildImportSpecPrompt('');
-    expect(prompt).toBeDefined();
-    expect(prompt.length).toBeGreaterThan(0);
-    expect(prompt).toContain('create_epic');
+  it('still tells the agent how to import when the spec is empty', () => {
+    expect(buildImportSpecPrompt('')).toContain('create_epic');
   });
 
   it('handles very long spec text (100k chars)', () => {

@@ -11,23 +11,7 @@ import {
   loadAppCredentials,
   setAppCredential,
 } from '@/lib/tauri/appCredentials';
-
-interface Field {
-  key: string;
-  label: string;
-  placeholder?: string;
-  secret?: boolean;
-  hint?: string;
-}
-
-interface Group {
-  namespace: string;
-  title: string;
-  icon: string;
-  blurb: string;
-  fields: Field[];
-  toggles?: { key: string; label: string; description: string; defaultOn: boolean }[];
-}
+import { CREDENTIAL_GROUPS } from './credentialGroups';
 
 /**
  * The keys and endpoints this machine uses, in one place.
@@ -36,70 +20,6 @@ interface Group {
  * for every project you opened. A project can still override any of these — see
  * the matching screens under Project — but it no longer has to have its own.
  */
-const GROUPS: Group[] = [
-  {
-    namespace: CREDENTIAL_NAMESPACES.llm,
-    title: 'LLM',
-    icon: 'psychology',
-    blurb: 'The model behind analysis, generation and the conductor.',
-    fields: [
-      { key: 'base_url', label: 'Base URL', placeholder: 'https://openrouter.ai/api/v1' },
-      { key: 'api_key', label: 'API Key', secret: true },
-      { key: 'model', label: 'Model', placeholder: 'moonshotai/kimi-k2-thinking' },
-    ],
-    toggles: [
-      {
-        key: 'reasoning_enabled',
-        label: 'Reasoning',
-        description: 'Send the reasoning extension (OpenRouter only)',
-        defaultOn: true,
-      },
-    ],
-  },
-  {
-    namespace: CREDENTIAL_NAMESPACES.judge,
-    title: 'Judge',
-    icon: 'gavel',
-    blurb: 'A second model that reviews claimed work. Independent of the one that built it.',
-    fields: [
-      { key: 'base_url', label: 'Base URL', placeholder: 'https://openrouter.ai/api/v1' },
-      { key: 'api_key', label: 'API Key', secret: true },
-      { key: 'model', label: 'Model', placeholder: 'moonshotai/kimi-k2-thinking' },
-    ],
-    toggles: [
-      {
-        key: 'reasoning_enabled',
-        label: 'Reasoning',
-        description: 'Send the reasoning extension (OpenRouter only)',
-        defaultOn: true,
-      },
-    ],
-  },
-  {
-    namespace: CREDENTIAL_NAMESPACES.excalidraw,
-    title: 'Excalidraw+',
-    icon: 'draw',
-    blurb: 'Read scenes and collections from an Excalidraw+ workspace.',
-    fields: [{ key: 'api_key', label: 'API Key', secret: true }],
-  },
-  {
-    namespace: CREDENTIAL_NAMESPACES.videoImport,
-    title: 'Video Import',
-    icon: 'video_file',
-    blurb: 'Where narrated recordings get transcribed.',
-    fields: [
-      { key: 'remote_endpoint', label: 'Remote Endpoint' },
-      { key: 'remote_api_key', label: 'Remote API Key', secret: true },
-      {
-        key: 'remote_model',
-        label: 'Remote Model',
-        placeholder: 'nvidia/parakeet-tdt-0.6b-v3',
-      },
-      { key: 'local_command', label: 'Local Command', placeholder: 'parakeet-mlx' },
-    ],
-  },
-];
-
 export function CredentialsContent() {
   const showToast = useStore((s) => s.showToast);
   const rootPath = useStore((s) => s.rootPath);
@@ -123,7 +43,10 @@ export function CredentialsContent() {
     let cancelled = false;
     void (async () => {
       const loaded = await Promise.all(
-        GROUPS.map(async (group) => [group.namespace, await loadAppCredentials(group.namespace)])
+        Object.values(CREDENTIAL_GROUPS).map(async (group) => [
+          group.namespace,
+          await loadAppCredentials(group.namespace),
+        ])
       );
       if (cancelled) return;
       setValues(Object.fromEntries(loaded) as Record<string, Record<string, string>>);
@@ -169,7 +92,7 @@ export function CredentialsContent() {
         override any of them under Project.
       </p>
 
-      {GROUPS.map((group) => (
+      {Object.values(CREDENTIAL_GROUPS).map((group) => (
         <SettingsSection key={group.namespace} title={group.title} icon={group.icon}>
           <p className="text-xs text-foreground-muted leading-relaxed">{group.blurb}</p>
           {group.fields.map((field) => (

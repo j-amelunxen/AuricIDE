@@ -1,6 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { create } from 'zustand';
-import { createQASlice, type QASlice } from './qaSlice';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -26,7 +25,7 @@ vi.mock('@/lib/tauri/db', () => ({
 // ---------------------------------------------------------------------------
 
 function createTestStore() {
-  return create<QASlice>()((...a) => ({ ...createQASlice(...a) }));
+  return createFullTestStore();
 }
 
 const ROOT = '/root';

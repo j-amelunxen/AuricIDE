@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal, PmGoalStation, StationPredicate } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation, StationPredicate } from '@/lib/goals/types';
 import type { CommitInfo } from '@/lib/tauri/git';
 import { evaluatePredicate, evidenceClassFor, type EvidenceContext } from './predicates';
 import {
@@ -10,7 +10,7 @@ import {
   parseVerdictJson,
   reopenStationForRetry,
 } from './engine';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import { STATION_STALE_MS, staleStations } from './staleness';
 import { detectForks, FORK_MIN_COMMITS } from './forkDetector';
 

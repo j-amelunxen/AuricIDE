@@ -132,16 +132,6 @@ describe('agent IPC wrappers', () => {
     });
   });
 
-  describe('killAgentsForRepo', () => {
-    it('calls invoke correctly', async () => {
-      mockInvoke.mockResolvedValueOnce(5);
-      const { killAgentsForRepo } = await import('./agents');
-      const result = await killAgentsForRepo('/my/repo');
-      expect(result).toBe(5);
-      expect(mockInvoke).toHaveBeenCalledWith('kill_agents_for_repo', { repoPath: '/my/repo' });
-    });
-  });
-
   describe('recordAgentPromptHistory', () => {
     it('calls invoke with projectPath and entry', async () => {
       mockInvoke.mockResolvedValueOnce(undefined);

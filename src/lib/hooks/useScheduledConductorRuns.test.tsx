@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { UNATTENDED_AFTER_MS } from '@/lib/conductor/scheduledRun';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { Notification } from '@/lib/notifications/types';
 import type { Tab } from '@/lib/store/tabsSlice';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 
 // idleForMs' own timing behaviour is covered by userActivity.test.ts; here the
 // hook only needs a controllable value to drive the gate.

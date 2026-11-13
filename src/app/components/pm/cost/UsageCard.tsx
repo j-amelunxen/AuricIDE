@@ -1,11 +1,12 @@
 'use client';
 
+import { formatTokens } from '@/lib/usage/breakdown';
 import { useMemo } from 'react';
-import { formatDuration } from '@/lib/pm/metrics';
+import { formatDuration } from '@/lib/pm/metrics/time';
 import { sumUsage } from '@/lib/pm/usage/aggregate';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
 import { UsageRunLog } from './UsageRunLog';
-import { formatTokens, formatTotalCost, unpricedNote } from './usageFormat';
+import { formatTotalCost, unpricedNote } from './usageFormat';
 
 /** The "Cost" box shared by tickets and goals: the totals, then every run behind them. */
 export function UsageCard({ rows }: { rows: readonly AgentUsageRow[] }) {

@@ -7,10 +7,6 @@ import type {
   ObsidianSide,
 } from '../../lib/obsidian-canvas/types';
 
-// ---------------------------------------------------------------------------
-// Zod schemas
-// ---------------------------------------------------------------------------
-
 export const ObsidianSideSchema = z.enum(['top', 'bottom', 'left', 'right']);
 export const ObsidianColorSchema = z.enum(['1', '2', '3', '4', '5', '6']);
 
@@ -85,10 +81,6 @@ export const CanvasOperationSchema = z.discriminatedUnion('op', [
 
 export type CanvasOperation = z.infer<typeof CanvasOperationSchema>;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 export function generateCanvasId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
@@ -110,10 +102,6 @@ export function countNodeTypes(nodes: ObsidianNode[]): Record<string, number> {
   }
   return nodeTypes;
 }
-
-// ---------------------------------------------------------------------------
-// Core pure function
-// ---------------------------------------------------------------------------
 
 export function applyOperations(
   input: ObsidianCanvasData,
@@ -208,7 +196,6 @@ export function applyOperations(
         const idx = nodes.findIndex((n) => n.id === op.id);
         if (idx === -1) throw new Error(`Operation ${i}: node "${op.id}" not found`);
         nodes.splice(idx, 1);
-        // Cascade: remove connected edges
         for (let e = edges.length - 1; e >= 0; e--) {
           if (edges[e].fromNode === op.id || edges[e].toNode === op.id) {
             edges.splice(e, 1);
@@ -271,10 +258,6 @@ export function applyOperations(
 
   return { data: { nodes, edges }, refMap };
 }
-
-// ---------------------------------------------------------------------------
-// Embed helper
-// ---------------------------------------------------------------------------
 
 export interface EmbedOptions {
   files: string[];

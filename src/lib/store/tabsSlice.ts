@@ -1,4 +1,7 @@
+import type { StoreGet } from '@/lib/store/types';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
+import { repoPathFromGraphTabId } from '@/lib/git/graphTabId';
 
 export interface Tab {
   id: string;
@@ -26,50 +29,24 @@ export interface TabsSlice {
   renamePath: (oldPath: string, newPath: string) => void;
 }
 
-// Diagnostics live in a sibling slice (DiagnosticsSlice) but are keyed by
-// the same file path as a tab's id. Closed tabs must not keep their lint
-// results around forever, so we reach across slices via the combined store —
-// the same cross-slice pattern used in agentSlice.ts.
-function clearDiagnosticsFor(get: () => TabsSlice, ids: string[]): void {
-  const combined = get() as TabsSlice & { clearDiagnostics?: (id: string) => void };
-  if (typeof combined.clearDiagnostics !== 'function') return;
+/**
+ * What other slices keep per tab goes with the tab: lint results (keyed by the
+ * file path a tab's id is), a diff, a merge document, a review session, a git
+ * graph.
+ */
+function onTabsClosed(get: StoreGet, ids: string[]): void {
+  const store = get();
   for (const id of ids) {
-    combined.clearDiagnostics(id);
+    store.clearDiagnostics(id);
+    store.clearDiffTab(id);
+    store.closeMergeDoc(id);
+    store.closeReviewSession(id);
+    const graphRepo = repoPathFromGraphTabId(id);
+    if (graphRepo !== null) store.closeGraph(graphRepo);
   }
 }
 
-function clearDiffTabsFor(get: () => TabsSlice, ids: string[]): void {
-  const combined = get() as TabsSlice & { clearDiffTab?: (id: string) => void };
-  if (typeof combined.clearDiffTab !== 'function') return;
-  for (const id of ids) {
-    combined.clearDiffTab(id);
-  }
-}
-
-function closeMergeDocsFor(get: () => TabsSlice, ids: string[]): void {
-  const combined = get() as TabsSlice & { closeMergeDoc?: (id: string) => void };
-  if (typeof combined.closeMergeDoc !== 'function') return;
-  for (const id of ids) {
-    combined.closeMergeDoc(id);
-  }
-}
-
-function closeReviewSessionsFor(get: () => TabsSlice, ids: string[]): void {
-  const combined = get() as TabsSlice & { closeReviewSession?: (id: string) => void };
-  if (typeof combined.closeReviewSession !== 'function') return;
-  for (const id of ids) {
-    combined.closeReviewSession(id);
-  }
-}
-
-function onTabsClosed(get: () => TabsSlice, ids: string[]): void {
-  clearDiagnosticsFor(get, ids);
-  clearDiffTabsFor(get, ids);
-  closeMergeDocsFor(get, ids);
-  closeReviewSessionsFor(get, ids);
-}
-
-export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
+export const createTabsSlice: StateCreator<StoreState, [], [], TabsSlice> = (set, get) => ({
   openTabs: [],
   activeTabId: null,
 
@@ -161,6 +138,6 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     });
 
     set({ openTabs: nextTabs, activeTabId: newActiveId });
-    clearDiagnosticsFor(get, staleIds);
+    for (const id of staleIds) get().clearDiagnostics(id);
   },
 });

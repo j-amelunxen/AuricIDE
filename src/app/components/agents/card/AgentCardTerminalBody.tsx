@@ -40,7 +40,6 @@ export function AgentCardTerminalBody({
         <div ref={logEndRef} />
       </div>
 
-      {/* Interactive Input for Agent */}
       <div className="mt-1 flex items-center gap-1 border-t border-white/5 pt-1">
         <span className="text-primary font-bold opacity-50">❯</span>
         <input

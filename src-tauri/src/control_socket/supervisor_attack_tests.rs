@@ -13,10 +13,11 @@
 use super::caller::{descends_from_agent, parent_pid, MAX_ANCESTORS};
 use super::protocol::tests::sample_agent;
 use super::*;
+use crate::project_path::canonical_project_path;
 use crate::supervisor::policy::{
     check_spawn, parse, RunningChildren, SpawnRequest, SupervisorPolicy,
 };
-use crate::supervisor::{canonical_project_path, with_canonical_keys};
+use crate::supervisor::with_canonical_keys;
 use serde_json::json;
 
 // ── A minimal fake backend ──────────────────────────────────────────────────
@@ -135,6 +136,10 @@ fn child_of(id: &str, parent: &str, project: &str) -> AgentInfo {
     }
 }
 
+/// How long the fake frontend may take. None of these tests is about the
+/// timeout itself; 50 ms failed them whenever the machine was busy.
+const FRONTEND_WAIT: Duration = Duration::from_secs(5);
+
 fn rig(max_running: u32, timeout: Duration) -> Rig {
     let project = tempfile::tempdir().unwrap();
     std::fs::create_dir(project.path().join(".auric")).unwrap();
@@ -226,7 +231,7 @@ fn spawn_request(r: &Rig, extra: Value) -> Value {
 /// Running out of depth is not evidence that no agent is above; it must refuse.
 #[test]
 fn attack_a_process_nested_deeper_than_the_cap_below_a_worker_is_refused() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     r.backend
         .agent_pids
         .lock()
@@ -316,7 +321,7 @@ fn attack_a_process_orphaned_by_the_agent_shell_is_still_the_agents() {
 
 #[test]
 fn guard_a_worker_chain_is_refused_and_a_terminal_chain_is_external() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     r.backend
         .agent_pids
         .lock()
@@ -365,7 +370,7 @@ fn strip_id(message: &str, id: &str) -> String {
 
 #[test]
 fn guard_ids_that_are_not_my_children_answer_exactly_like_ids_that_do_not_exist() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     r.results.record(
         crate::agents::run_results::RunResult::from_finish(
             "agent-dead-child",
@@ -429,7 +434,7 @@ fn guard_ids_that_are_not_my_children_answer_exactly_like_ids_that_do_not_exist(
 /// the supervisor started; every other id looks like one that does not exist.
 #[test]
 fn guard_a_supervisor_types_only_into_its_own_child() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     for text in ["y", "", "\u{1b}[B"] {
         let own = ask(
             &r,
@@ -452,7 +457,7 @@ fn guard_a_supervisor_types_only_into_its_own_child() {
 /// choose is dropped; what the frontend receives is what Rust decided.
 #[test]
 fn guard_a_supervisor_cannot_smuggle_fields_into_the_frontend_request() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     *r.backend.spawn_delay.lock().unwrap() = Some(Duration::from_millis(1));
     let response = ask(
         &r,
@@ -482,7 +487,7 @@ fn guard_a_supervisor_cannot_smuggle_fields_into_the_frontend_request() {
 
 #[test]
 fn guard_a_supervisor_cannot_name_a_role_or_a_permission_mode() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     for (extra, code) in [
         (json!({ "role": "supervisor" }), "invalid_params"),
         (json!({ "role": "worker" }), "invalid_params"),
@@ -504,7 +509,7 @@ fn guard_a_supervisor_cannot_name_a_role_or_a_permission_mode() {
 
 #[test]
 fn guard_an_external_caller_cannot_impersonate_a_supervisors_child() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     *r.backend.spawn_delay.lock().unwrap() = Some(Duration::from_millis(1));
     let response = ask(
         &r,
@@ -522,7 +527,7 @@ fn guard_an_external_caller_cannot_impersonate_a_supervisors_child() {
 
 #[test]
 fn guard_model_and_path_tricks_are_denied() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     let symlink_dir = tempfile::tempdir().unwrap();
     let link = symlink_dir.path().join("alias");
     std::os::unix::fs::symlink(&r.path, &link).unwrap();
@@ -581,7 +586,7 @@ fn guard_model_and_path_tricks_are_denied() {
 /// installed" — the check and the use disagree about what was asked for.
 #[test]
 fn attack_the_provider_the_check_approved_is_the_provider_that_is_started() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     *r.backend.spawn_delay.lock().unwrap() = Some(Duration::from_millis(1));
     let response = ask(
         &r,
@@ -602,7 +607,7 @@ fn attack_the_provider_the_check_approved_is_the_provider_that_is_started() {
 /// that of a folder that does not exist, so probing teaches nothing about either.
 #[test]
 fn guard_pm_target_refuses_a_project_outside_the_policy() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     let foreign = tempfile::tempdir().unwrap();
     std::fs::create_dir(foreign.path().join(".auric")).unwrap();
     std::fs::write(foreign.path().join(".auric/project.db"), b"").unwrap();
@@ -640,7 +645,7 @@ fn guard_pm_target_refuses_a_project_outside_the_policy() {
 
 #[test]
 fn guard_list_projects_shows_only_policy_allowed_projects() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     let entry = |path: &str| ProjectEntry {
         path: path.into(),
         name: path.into(),
@@ -726,7 +731,7 @@ fn attack_a_policy_refusal_does_not_queue_behind_a_slow_spawn() {
 
 #[test]
 fn guard_many_awaits_do_not_block_other_requests() {
-    let r = rig(2, Duration::from_millis(50));
+    let r = rig(2, FRONTEND_WAIT);
     std::thread::scope(|scope| {
         let waiters: Vec<_> = (0..24)
             .map(|_| {
@@ -815,8 +820,8 @@ fn bypass_equivalents(provider: &Value) -> Vec<String> {
 }
 
 /// The provider as the app would load it from its config file.
-fn provider_from(config: &Value) -> crate::providers::DynamicProvider {
-    crate::providers::DynamicProvider::new(serde_json::from_value(config.clone()).unwrap())
+fn provider_from(config: &Value) -> crate::providers::dynamic::DynamicProvider {
+    crate::providers::dynamic::DynamicProvider::new(serde_json::from_value(config.clone()).unwrap())
 }
 
 /// FINDING SV-3. The policy refuses exactly the string `bypassPermissions`.
@@ -1006,7 +1011,7 @@ fn guard_case_and_normalisation_variants_of_a_folder_share_one_key() {
 /// least deny Bash, and must not load the user's allow rules.
 #[test]
 fn attack_the_supervisor_launch_removes_the_builtin_tools() {
-    let args = crate::agents::supervisor_claude_arguments(
+    let args = crate::supervisor::launch::supervisor_claude_arguments(
         "/x/supervisor.mcp.json",
         &crate::supervisor::SkillPlugin::default(),
         false,
@@ -1077,8 +1082,12 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
 
     let mut plugin = crate::supervisor::SkillPlugin::default();
     crate::supervisor::apply_tool_grants(&mut plugin, &parsed.policy.tools);
-    let args =
-        crate::agents::supervisor_claude_arguments("/x/supervisor.mcp.json", &plugin, false, &[]);
+    let args = crate::supervisor::launch::supervisor_claude_arguments(
+        "/x/supervisor.mcp.json",
+        &plugin,
+        false,
+        &[],
+    );
     let joined = args.join(" ");
     let tools_flag = args
         .iter()
@@ -1098,7 +1107,7 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
     );
 }
 
-/// FINDING SV-5. `write_policy_atomic` uses one fixed temp name for every
+/// FINDING SV-5. The policy write (now `json_store::write_json`) used one fixed temp name for every
 /// writer, so two writers share a file: one truncates while the other is still
 /// writing, and the rename publishes half a file. A reader (every spawn check)
 /// then sees "malformed" and the supervisor is locked out until the next save.
@@ -1121,7 +1130,7 @@ fn attack_concurrent_policy_saves_never_publish_a_torn_file() {
         ))
         .policy
     };
-    crate::supervisor::write_policy_atomic(&path, &big(0)).unwrap();
+    crate::json_store::write_json(&path, &big(0)).unwrap();
     let torn = std::sync::atomic::AtomicUsize::new(0);
     let done = std::sync::atomic::AtomicBool::new(false);
     std::thread::scope(|scope| {
@@ -1130,7 +1139,7 @@ fn attack_concurrent_policy_saves_never_publish_a_torn_file() {
                 let (path, policy) = (path.clone(), big(n));
                 scope.spawn(move || {
                     for _ in 0..150 {
-                        let _ = crate::supervisor::write_policy_atomic(&path, &policy);
+                        let _ = crate::json_store::write_json(&path, &policy);
                     }
                 })
             })

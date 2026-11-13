@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { SHOW_SUPERVISOR_RUNS_EVENT } from '@/lib/agents/showSupervisorRuns';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { SupervisorManager } from '@/lib/tauri/supervisorManagers';
 import { QuickAccess } from './QuickAccess';
 

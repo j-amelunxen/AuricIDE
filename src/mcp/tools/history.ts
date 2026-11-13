@@ -3,10 +3,6 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { resolveGoalId, resolveTicketId } from './resolve';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface StatusHistoryEntry {
   id: string;
   ticket_id: string;
@@ -24,10 +20,6 @@ export interface GoalStatusHistoryEntry {
   changed_at: string;
   source: string;
 }
-
-// ---------------------------------------------------------------------------
-// Pure functions
-// ---------------------------------------------------------------------------
 
 export function insertStatusHistory(
   db: Database.Database,
@@ -87,10 +79,6 @@ export function listGoalStatusHistory(
     .prepare('SELECT * FROM pm_goal_status_history ORDER BY changed_at ASC, rowid ASC')
     .all() as GoalStatusHistoryEntry[];
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerHistoryTools(server: FastMCP, db: Database.Database): void {
   server.addTool({

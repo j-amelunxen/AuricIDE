@@ -1,7 +1,8 @@
 'use client';
 
+import { SelectChevron } from './spawnDialog/SelectChevron';
 import { useState } from 'react';
-import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
+import type { AgentConfig, PermissionMode } from '@/lib/agents/types';
 import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
 import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { buildImportSpecPrompt } from '@/lib/pm/importSpecPrompt';
@@ -19,17 +20,6 @@ interface ImportSpecDialogProps {
 export function ImportSpecDialog(props: ImportSpecDialogProps) {
   if (!props.isOpen) return null;
   return <ImportSpecDialogPanel {...props} />;
-}
-
-/** Dropdown affordance for `appearance-none` selects. */
-function SelectChevron() {
-  return (
-    <AuricIcon
-      name="expand_more"
-      aria-hidden="true"
-      className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
-    />
-  );
 }
 
 function ImportSpecDialogPanel({

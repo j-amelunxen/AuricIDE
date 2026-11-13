@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { useStore } from '@/lib/store';
 import { useConfirm, type ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';

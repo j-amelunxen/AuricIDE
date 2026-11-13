@@ -1,20 +1,17 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
+import { draftDiffers, rebaseDraft } from './draftMerge';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { withPersistFeedback } from './persistFeedback';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import { writeChanged } from './stableRefs';
-import type {
-  PmRequirement,
-  PmRequirementTestLink,
-  RequirementsState,
-} from '../tauri/requirements';
+import type { RequirementsState } from '../tauri/requirements';
+import type { PmRequirement, PmRequirementTestLink } from '../pm/types';
 import {
   requirementsLoad as ipcRequirementsLoad,
   requirementsSave as ipcRequirementsSave,
-  requirementsClear as ipcRequirementsClear,
 } from '../tauri/requirements';
 import { initProjectDb } from '../tauri/db';
-
-// --- Pure helpers ---
 
 /**
  * Wire format for appliesTo is either a string[] (domain) or a JSON string
@@ -37,29 +34,6 @@ export function parseAppliesTo(value: unknown): string[] {
   return [];
 }
 
-export function getStaleRequirements(
-  requirements: PmRequirement[],
-  staleDays: number
-): PmRequirement[] {
-  return requirements.filter(
-    (r) =>
-      r.status === 'verified' &&
-      r.lastVerifiedAt !== null &&
-      Date.now() - Date.parse(r.lastVerifiedAt) > staleDays * 86400000
-  );
-}
-
-export function getUnverifiedRequirements(requirements: PmRequirement[]): PmRequirement[] {
-  return requirements.filter((r) => r.status === 'active' || r.status === 'implemented');
-}
-
-export function getTestLinksForRequirement(
-  testLinks: PmRequirementTestLink[],
-  requirementId: string
-): PmRequirementTestLink[] {
-  return testLinks.filter((l) => l.requirementId === requirementId);
-}
-
 export interface RequirementsSlice {
   /** True while project data is being read; distinguishes empty from not-yet. */
   requirementsLoading: boolean;
@@ -72,21 +46,17 @@ export interface RequirementsSlice {
   requirementsDraft: PmRequirement[];
   requirementTestLinksDraft: PmRequirementTestLink[];
   requirementsDirty: boolean;
-  // Track which project is currently loaded
   currentRequirementsProject: string | null;
   // UI state
   requirementsModalOpen: boolean;
   selectedRequirementId: string | null;
-  // Filters
   requirementFilterCategory: string;
   requirementFilterType: string;
   requirementFilterStatus: string;
   requirementFilterVerification: string;
   requirementSearchQuery: string;
-  // Actions
   loadRequirements: (projectPath: string) => Promise<void>;
   saveRequirements: (projectPath: string) => Promise<void>;
-  clearRequirements: (projectPath: string) => Promise<void>;
   resetRequirementsInMemory: () => void;
   addRequirement: (req: PmRequirement) => void;
   updateRequirement: (id: string, updates: Partial<PmRequirement>) => void;
@@ -102,7 +72,10 @@ export interface RequirementsSlice {
   setRequirementSearchQuery: (query: string) => void;
 }
 
-export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, get) => ({
+export const createRequirementsSlice: StateCreator<StoreState, [], [], RequirementsSlice> = (
+  set,
+  get
+) => ({
   // Persisted state
   requirements: [],
   requirementsLoading: IDLE_LOAD_STATE.loading,
@@ -151,9 +124,27 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
             currentRequirementsProject: projectPath,
           });
         } else {
+          // Keep the person's edits, field by field, on top of what agents wrote
+          // meanwhile; a stale draft row would otherwise put their values back.
+          const draft = get();
+          const requirementsDraft = rebaseDraft(
+            draft.requirementsDraft,
+            draft.requirements,
+            requirements
+          );
+          const requirementTestLinksDraft = rebaseDraft(
+            draft.requirementTestLinksDraft,
+            draft.requirementTestLinks,
+            state.testLinks
+          );
           writeChanged(set, get(), {
             requirements,
+            requirementsDraft,
             requirementTestLinks: state.testLinks,
+            requirementTestLinksDraft,
+            requirementsDirty:
+              draftDiffers(requirementsDraft, requirements) ||
+              draftDiffers(requirementTestLinksDraft, state.testLinks),
             currentRequirementsProject: projectPath,
           });
         }
@@ -163,6 +154,9 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
 
   saveRequirements: (projectPath) =>
     withPersistFeedback(get(), 'requirements', async () => {
+      // The save replaces every row; after a failed load that would delete the ones never read.
+      if (get().requirementsLoadError)
+        throw new Error(`the requirements did not load, so saving would replace it`);
       await initProjectDb(projectPath);
       const { requirementsDraft, requirementTestLinksDraft } = get();
       // Rust expects applies_to as a JSON string
@@ -180,18 +174,6 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
         requirementsDirty: false,
       });
     }),
-
-  clearRequirements: async (projectPath) => {
-    await initProjectDb(projectPath);
-    await ipcRequirementsClear(projectPath);
-    set({
-      requirements: [],
-      requirementsDraft: [],
-      requirementTestLinks: [],
-      requirementTestLinksDraft: [],
-      requirementsDirty: false,
-    });
-  },
 
   resetRequirementsInMemory: () =>
     set({
@@ -221,7 +203,7 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
     })),
 
   verifyRequirement: (id) => {
-    const lastVerifiedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const lastVerifiedAt = formatUtcStamp();
     set((s) => ({
       requirementsDraft: s.requirementsDraft.map((r) =>
         r.id === id ? { ...r, status: 'verified', lastVerifiedAt } : r

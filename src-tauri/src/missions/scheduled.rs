@@ -1,6 +1,7 @@
 use super::{
     prepare_impl, publish_impl, CreateMissionInput, CreatedMissionWithSchedule, MissionRecurrence,
 };
+use crate::schedules::vocabulary;
 use crate::schedules::{self, Schedule};
 use chrono::Utc;
 use rusqlite::Connection;
@@ -28,7 +29,7 @@ pub fn build_schedule(
                 let hour = parts.next().unwrap();
                 let minute = parts.next().unwrap();
                 (
-                    "cron".into(),
+                    vocabulary::CRON.into(),
                     Some(format!("0 {minute} {hour} * * *")),
                     None,
                     None,
@@ -48,7 +49,7 @@ pub fn build_schedule(
                 let hour = parts.next().unwrap();
                 let minute = parts.next().unwrap();
                 (
-                    "cron".into(),
+                    vocabulary::CRON.into(),
                     Some(format!("0 {minute} {hour} * * {weekday}")),
                     None,
                     None,
@@ -61,19 +62,19 @@ pub fn build_schedule(
                 every_unit,
                 time_of_day,
             } => {
-                if *every_n < 1 || !matches!(every_unit.as_str(), "hour" | "day" | "week") {
+                if *every_n < 1 || !vocabulary::EVERY_UNITS.contains(&every_unit.as_str()) {
                     return Err("Mission interval is invalid".to_string());
                 }
                 if let Some(time) = time_of_day {
                     valid_time(time)?;
                 }
                 (
-                    "every".into(),
+                    vocabulary::EVERY.into(),
                     None,
                     Some(*every_n),
                     Some(every_unit.clone()),
                     Some(created_at.clone()),
-                    if every_unit == "hour" {
+                    if every_unit == vocabulary::HOUR {
                         None
                     } else {
                         Some(time_of_day.clone().unwrap_or_else(|| "09:00".into()))
@@ -86,9 +87,7 @@ pub fn build_schedule(
         id: mission.schedule_id.clone(),
         name: mission.name.clone(),
         enabled: true,
-        project_path: std::path::Path::new(&mission.path)
-            .ancestors()
-            .nth(3)
+        project_path: super::project_of(std::path::Path::new(&mission.path))
             .map(|path| path.to_string_lossy().to_string())
             .or_else(|| Some(input.project_path.clone())),
         project_name: input.project_name.clone(),
@@ -100,7 +99,7 @@ pub fn build_schedule(
         anchor_at,
         time_of_day,
         timezone: input.timezone.clone(),
-        catch_up: "coalesce".into(),
+        catch_up: vocabulary::COALESCE.into(),
         payload: serde_json::json!({ "title": mission.name }).to_string(),
         last_fired_at: None,
         last_checked_at: Some(created_at.clone()),

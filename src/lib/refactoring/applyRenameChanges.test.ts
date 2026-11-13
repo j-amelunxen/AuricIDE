@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyChangesToContent, type HeadingRenameChange } from './applyRenameChanges';
+import {
+  applyChangesToContent,
+  describeWorkspaceFailures,
+  readWorkspaceFiles,
+  writeWorkspaceChanges,
+  type HeadingRenameChange,
+} from './applyRenameChanges';
 
 describe('applyChangesToContent', () => {
   it('applies a single change', () => {
@@ -50,5 +56,51 @@ describe('applyChangesToContent', () => {
 
     const result = applyChangesToContent(content, changes);
     expect(result).toBe('[[#X]][[#Y]]');
+  });
+});
+
+describe('workspace edits', () => {
+  const change = (filePath: string): HeadingRenameChange => ({
+    filePath,
+    from: 2,
+    to: 5,
+    oldText: 'Old',
+    newText: 'New',
+  });
+
+  it('reports an unreadable file instead of dropping it', async () => {
+    const { contents, failed } = await readWorkspaceFiles(['/a.md', '/b.md'], async (path) => {
+      if (path === '/b.md') throw new Error('denied');
+      return '# Old';
+    });
+    expect([...contents.keys()]).toEqual(['/a.md']);
+    expect(failed).toEqual([{ path: '/b.md', reason: 'denied' }]);
+  });
+
+  it('writes every file it can and names the one it could not', async () => {
+    const disk = new Map<string, string>();
+    const contents = new Map([
+      ['/a.md', '# Old'],
+      ['/b.md', '# Old'],
+      ['/c.md', '# Old'],
+    ]);
+    const { written, failed } = await writeWorkspaceChanges(
+      [change('/a.md'), change('/b.md'), change('/c.md')],
+      contents,
+      async (path, content) => {
+        if (path === '/b.md') throw new Error('read-only');
+        disk.set(path, content);
+      }
+    );
+    expect([...written.keys()]).toEqual(['/a.md', '/c.md']);
+    expect(disk.get('/c.md')).toBe('# New');
+    expect(failed).toEqual([{ path: '/b.md', reason: 'read-only' }]);
+    expect(describeWorkspaceFailures('Renamed', failed)).toBe(
+      'Renamed: one file was left unchanged (b.md).'
+    );
+  });
+
+  it('says nothing when every file was written', () => {
+    expect(describeWorkspaceFailures('Renamed', [])).toBeNull();
   });
 });

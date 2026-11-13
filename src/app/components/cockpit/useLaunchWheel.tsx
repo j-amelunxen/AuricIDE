@@ -14,7 +14,8 @@ import {
   slotIndexAt,
   wheelSlotChoices,
 } from '@/lib/quickAccess/wheel';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { SkillWheel, useSkillWheel } from './SkillWheel';
 
 interface LaunchWheelOptions {

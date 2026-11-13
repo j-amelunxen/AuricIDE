@@ -1,6 +1,6 @@
-import { formatCost, formatTokens } from '@/lib/usage/breakdown';
+import { formatCost } from '@/lib/usage/breakdown';
 import type { UsageTotals } from '@/lib/pm/usage/aggregate';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
 
 /** An unknown cost is shown as this, never as $0.00. */
 export const NO_PRICE = '—';
@@ -24,5 +24,3 @@ export function unpricedNote(totals: UsageTotals): string | null {
 export function rowTokens(row: AgentUsageRow): number {
   return row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens;
 }
-
-export { formatTokens };

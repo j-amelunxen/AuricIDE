@@ -13,6 +13,7 @@ const projectsPmOverviewMock = vi.fn(async (paths: string[]): Promise<ProjectPmO
     hasDb: true,
     open: 0,
     inProgress: 0,
+    toTest: 0,
     inReview: 0,
     done: 0,
     epics: [],

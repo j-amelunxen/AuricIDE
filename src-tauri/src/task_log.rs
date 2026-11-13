@@ -287,6 +287,22 @@ fn append_if_enabled(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn task_title_follows_the_shared_cases() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/lib/agents/taskTitle.fixtures.json"))
+                .unwrap();
+        assert_eq!(fixture["maxChars"], super::TITLE_MAX_CHARS);
+        for case in fixture["cases"].as_array().unwrap() {
+            assert_eq!(
+                super::task_title(case["name"].as_str().unwrap(), case["task"].as_str()),
+                case["expected"].as_str().unwrap(),
+                "{}",
+                case["why"]
+            );
+        }
+    }
+
     use super::*;
     use chrono::TimeZone;
 

@@ -57,10 +57,6 @@ export function inboxMediaKind(path: string): 'image' | 'video' | null {
   return kind === 'text' ? null : kind;
 }
 
-export function isInboxMediaPath(path: string): boolean {
-  return inboxMediaKind(path) !== null;
-}
-
 /** Whether a dropped path is attachable at all — text documents included. */
 export function isInboxAttachmentPath(path: string): boolean {
   return inboxAttachmentKind(path) !== null;

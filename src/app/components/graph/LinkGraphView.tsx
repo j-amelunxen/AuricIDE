@@ -1,5 +1,7 @@
 'use client';
 
+import { isVirtualTabId } from '@/lib/git/virtualTabId';
+import { isMindmapTabId } from '@/lib/ide/mindmapTabId';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ReactFlow,
@@ -35,7 +37,7 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
 
   const activeFilePath = useStore((s) => {
     const activeTab = s.activeTabId;
-    if (activeTab && !activeTab.startsWith('diff::') && !activeTab.startsWith('mindmap::')) {
+    if (activeTab && !isVirtualTabId(activeTab) && !isMindmapTabId(activeTab)) {
       return activeTab;
     }
     return null;
@@ -74,7 +76,6 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
       data-testid="link-graph-view"
       className={isFullscreen ? 'flowchart-fullscreen-overlay' : 'h-full w-full'}
     >
-      {/* Search + Fullscreen toolbar */}
       <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[rgba(10,10,16,0.9)] border border-white/10">
           <AuricIcon name="search" className="text-sm text-foreground-muted" />
@@ -102,7 +103,6 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
         )}
       </div>
 
-      {/* Stats badge */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(10,10,16,0.9)] border border-white/10 text-[10px] text-foreground-muted">
         <span>{filteredNodes.length} nodes</span>
         <span className="text-white/20">|</span>

@@ -1,5 +1,6 @@
 import { connectorPolicySchema, type ConnectorPolicy } from './connectorPolicy';
 import fixtures from './supervisorPolicy.fixtures.json';
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 import type { ModelOption, ProviderInfo } from '../tauri/providers';
 import { isProviderAllowed, type ProviderPolicy, DEFAULT_PROVIDER_POLICY } from './providerPolicy';
 import { findBlockForModel, type QuotaBlock } from './quotaBlocks';
@@ -137,18 +138,6 @@ export const SUPERVISOR_PARSE_REASONS = fixtures.reasons.parse as Record<
   SupervisorParseReason,
   string
 >;
-export const SUPERVISOR_DENIED_REASON_TEXT = fixtures.reasons.checkSpawn as Record<
-  SupervisorDeniedReason,
-  string
->;
-
-export type SupervisorModelChoiceReason = 'no_ranked_model' | 'model_reason_required';
-
-/** Human sentences for the reasons `resolveSupervisorModel` can give. */
-export const SUPERVISOR_MODEL_CHOICE_REASON_TEXT = fixtures.reasons.modelChoice as Record<
-  SupervisorModelChoiceReason,
-  string
->;
 
 /** From this rank on, a supervisor's spawn has to say why it needs the model. */
 export const REASON_REQUIRED_FROM_RANK: number = fixtures.reasonRequiredFromRank;
@@ -201,8 +190,7 @@ function providerId(value: string): string {
 
 /** Absolute, without a trailing slash. Canonicalising (realpath) is Rust's job. */
 export function normalizeProjectPath(path: string): string {
-  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path;
-  return trimmed || '/';
+  return withoutTrailingSlash(path) || '/';
 }
 
 class InvalidEntry extends Error {
@@ -522,6 +510,27 @@ export function supervisorModelsOf(
   return models;
 }
 
+/**
+ * The supervisor with `model` set for `provider` (blank clears it). Writes the
+ * legacy `model` field in step with the Claude entry: the reader above falls
+ * back to it, so leaving it behind would bring a cleared Claude model back.
+ */
+export function withSupervisorModel(
+  supervisor: SupervisorPolicy['supervisor'],
+  provider: string,
+  model: string
+): SupervisorPolicy['supervisor'] {
+  const models = { ...supervisorModelsOf(supervisor) };
+  const id = providerId(provider);
+  if (model) models[id] = model;
+  else delete models[id];
+  const claude = providerId(DEFAULTS.supervisor.provider) || 'claude';
+  const next = { ...supervisor, model: models[claude] ?? null };
+  if (Object.keys(models).length > 0) next.models = models;
+  else delete next.models;
+  return next;
+}
+
 /** The configured model for this provider, or `null` to use the provider's default. */
 export function supervisorModelFor(
   supervisor: SupervisorPolicy['supervisor'],
@@ -839,9 +848,6 @@ export function checkSupervisorSpawn(
   return { ok: true, permissionMode: entry.permissionMode[provider] ?? null };
 }
 
-export type SupervisorModelDecision =
-  { ok: true; model: string; picked: boolean } | { ok: false; reason: SupervisorModelChoiceReason };
-
 function allowedOffers(offered: ModelOption[], allowed: string[]): ModelOption[] {
   return offered.filter((option) => allowed.includes(option.value));
 }
@@ -871,25 +877,4 @@ export function smallestRankedModel(offered: ModelOption[], allowed: string[]): 
     }
   }
   return best;
-}
-
-/**
- * Which model a spawn runs, before `checkSupervisorSpawn` (the fixtures'
- * `modelChoiceRules`): the smallest ranked allowed one when none is named,
- * then the size gate. Rust's `resolve_model` is the gate; this tells the
- * launch prompt which model "leave it out" means.
- */
-export function resolveSupervisorModel(
-  offered: ModelOption[],
-  allowed: string[],
-  model: string | null,
-  modelReason: string | null
-): SupervisorModelDecision {
-  const picked = model === null;
-  const chosen = model ?? smallestRankedModel(offered, allowed)?.value ?? null;
-  if (chosen === null) return { ok: false, reason: 'no_ranked_model' };
-  const rank = allowedOffers(offered, allowed).find((option) => option.value === chosen)?.rank;
-  const large = typeof rank === 'number' && rank >= REASON_REQUIRED_FROM_RANK;
-  if (large && !modelReason?.trim()) return { ok: false, reason: 'model_reason_required' };
-  return { ok: true, model: chosen, picked };
 }

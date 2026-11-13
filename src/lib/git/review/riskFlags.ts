@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 /**
  * Deterministic risk flags for a review session (`docs/design-merge-panel.md`,
  * "The diff viewer is a review panel now"). A flag is a chip on a hunk and
@@ -37,10 +38,6 @@ export interface RiskFlag {
 
 // ── Path classification ────────────────────────────────────────────
 
-function basename(path: string): string {
-  return path.slice(path.lastIndexOf('/') + 1);
-}
-
 const TEST_PATH_PATTERNS: readonly RegExp[] = [
   /(^|\/)(__tests__|tests?|spec|e2e)\//,
   /\.(test|spec)\.[cm]?[jt]sx?$/,
@@ -72,7 +69,7 @@ const LOCKFILES = new Set([
 ]);
 
 export function isLockfile(path: string): boolean {
-  return LOCKFILES.has(basename(path));
+  return LOCKFILES.has(baseName(path));
 }
 
 const GENERATED_PATH_PATTERNS: readonly RegExp[] = [

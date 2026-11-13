@@ -57,7 +57,6 @@ export function Header({
         data-tauri-drag-region
         className="flex h-12 shrink-0 select-none items-center justify-between pr-4 pl-[calc(1rem+var(--titlebar-gutter,0px))]"
       >
-        {/* Left: Brand & Breadcrumbs */}
         <div data-tauri-drag-region className="flex items-center gap-6">
           <div
             data-testid="header-logo"
@@ -111,7 +110,6 @@ export function Header({
           )}
         </div>
 
-        {/* Right: Controls & Status */}
         <div className="flex items-center gap-4">
           <button
             data-testid="command-palette-trigger"

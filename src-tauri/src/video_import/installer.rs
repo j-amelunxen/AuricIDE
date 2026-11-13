@@ -1,7 +1,7 @@
-use super::failure::{self, Stage};
-use super::preflight::{self, resolve_executable, Preflight};
+use super::failure::Stage;
+use super::preflight::{self, Preflight};
 use super::{runtime_dir, tool_error, write_log, ToolFailure};
-use crate::agents::cached_login_shell_env;
+use crate::machine::{cached_login_shell_env, resolve_executable};
 use std::process::Stdio;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -39,7 +39,7 @@ where
     let mut lines = BufReader::new(stream).lines();
     tokio::spawn(async move {
         while let Ok(Some(line)) = lines.next_line().await {
-            let readable = failure::readable_details(&line);
+            let readable = crate::ansi::readable_details(&line);
             if !readable.trim().is_empty() {
                 let _ = app.emit(SETUP_PROGRESS_EVENT, readable);
             }
@@ -146,7 +146,7 @@ pub async fn install_local(app: &tauri::AppHandle) -> Result<Preflight, String> 
         // so a green exit code is not proof the executable is where we need it.
         return Err(ToolFailure {
             summary: "The install reported success, but the runtime executable is not where it was expected.".to_string(),
-            details: failure::readable_details(&transcript.output),
+            details: crate::ansi::readable_details(&transcript.output),
             log_path: log,
         }
         .into_ipc_error());

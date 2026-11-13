@@ -1,35 +1,7 @@
-import { rankCommands } from './fuzzy';
 import manifest from './commands.json';
 
 import type { Command, CommandCategory } from './types';
 export type { Command, CommandCategory };
-
-export function createCommandRegistry(): {
-  register: (cmd: Command) => void;
-  unregister: (id: string) => void;
-  search: (query: string) => Command[];
-  getAll: () => Command[];
-} {
-  const commands = new Map<string, Command>();
-
-  return {
-    register(cmd: Command): void {
-      commands.set(cmd.id, cmd);
-    },
-
-    unregister(id: string): void {
-      commands.delete(id);
-    },
-
-    search(query: string): Command[] {
-      return rankCommands(Array.from(commands.values()), query).map((r) => r.command);
-    },
-
-    getAll(): Command[] {
-      return Array.from(commands.values());
-    },
-  };
-}
 
 export const defaultCommands: Omit<Command, 'action'>[] = manifest.commands.map((c) => ({
   id: c.id,

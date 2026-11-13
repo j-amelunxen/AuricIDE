@@ -3,10 +3,6 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { resolveId, resolveTicketId, typeToTable } from './resolve';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface DependencyRow {
   id: string;
   source_type: string;
@@ -37,10 +33,6 @@ export interface DependencyInfo {
   target_name: string;
   target_status: string;
 }
-
-// ---------------------------------------------------------------------------
-// Pure functions
-// ---------------------------------------------------------------------------
 
 export function createDependency(
   db: Database.Database,
@@ -89,10 +81,6 @@ export function listDependencies(
 
   return db.prepare(baseSql).all() as DependencyInfo[];
 }
-
-// ---------------------------------------------------------------------------
-// MCP tool registration
-// ---------------------------------------------------------------------------
 
 export function registerDependencyTools(server: FastMCP, db: Database.Database): void {
   server.addTool({

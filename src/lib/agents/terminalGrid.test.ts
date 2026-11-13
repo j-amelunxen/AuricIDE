@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   autoPlace,
-  DROP_ZONES,
   isSplit,
   paneLayout,
   placeAgent,
@@ -100,7 +99,7 @@ describe('terminalGrid – placing a terminal', () => {
       const next: GridCells[] = [];
       for (const cells of frontier) {
         for (const id of agents) {
-          for (const zone of DROP_ZONES) {
+          for (const zone of ['left', 'right', 'top', 'bottom', 'center'] as const) {
             const result = placeAgent(cells, id, zone);
             const covered = paneLayout(result).reduce(
               (sum, pane) => sum + pane.rowSpan * pane.colSpan,

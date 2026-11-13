@@ -1,6 +1,6 @@
 'use client';
 
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import type { ConductorDecision } from '@/lib/store/conductorSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { DECISION_ICONS } from './conductorHelpers';

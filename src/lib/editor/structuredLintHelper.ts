@@ -1,7 +1,8 @@
-import type { Facet } from '@codemirror/state';
 import type { Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
 import { useStore } from '@/lib/store';
+import type { StoreDiagnostic } from '@/lib/store/diagnosticsSlice';
+import { currentFilePathFacet } from './editorFacets';
 
 export interface StructuredParseError {
   line: number;
@@ -16,14 +17,11 @@ export interface StructuredParseError {
  */
 export function createStructuredLinterSource<T extends StructuredParseError>(
   parseErrors: (text: string) => T[],
-  filePathFacet: Facet<string, string>,
   sourceName: string
 ): (view: EditorView) => Diagnostic[] {
   return (view: EditorView): Diagnostic[] => {
     const text = view.state.doc.toString();
     const errors = parseErrors(text);
-    const filePath = view.state.facet(filePathFacet);
-
     const diagnostics: Diagnostic[] = errors.map((error) => {
       const lineCount = view.state.doc.lines;
       const safeLine = Math.min(Math.max(error.line, 1), lineCount);
@@ -40,19 +38,23 @@ export function createStructuredLinterSource<T extends StructuredParseError>(
       };
     });
 
-    if (filePath) {
-      useStore.getState().setDiagnostics(
-        filePath,
-        errors.map((e) => ({
-          line: e.line,
-          column: e.column,
-          message: e.message,
-          ruleId: sourceName,
-          severity: 'error' as const,
-        }))
-      );
-    }
+    publishDiagnostics(
+      view,
+      errors.map((e) => ({
+        line: e.line,
+        column: e.column,
+        message: e.message,
+        ruleId: sourceName,
+        severity: 'error' as const,
+      }))
+    );
 
     return diagnostics;
   };
+}
+
+/** Hands a linter's findings for the open file to the Problems panel (the store). */
+export function publishDiagnostics(view: EditorView, rows: StoreDiagnostic[]): void {
+  const filePath = view.state.facet(currentFilePathFacet);
+  if (filePath) useStore.getState().setDiagnostics(filePath, rows);
 }

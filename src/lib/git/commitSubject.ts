@@ -1,3 +1,4 @@
+import { baseName } from '@/lib/paths/baseName';
 import type { GitFileStatus } from '@/lib/tauri/git';
 
 /** How much of the change reaches the model. A subject line needs the shape of
@@ -31,11 +32,6 @@ const INSTRUCTION = [
   'Answer with the line and nothing else.',
 ].join(' ');
 
-function basename(path: string): string {
-  const parts = path.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
 function verbFor(files: readonly ChangedFile[]): string {
   if (files.every((f) => f.status === 'added' || f.status === 'untracked')) return 'Add';
   if (files.every((f) => f.status === 'deleted')) return 'Remove';
@@ -49,7 +45,7 @@ function verbFor(files: readonly ChangedFile[]): string {
 export function fallbackCommitSubject(files: readonly ChangedFile[]): string {
   if (files.length === 0) return 'Update working tree';
   const verb = verbFor(files);
-  const first = basename(files[0].path);
+  const first = baseName(files[0].path);
   if (files.length === 1) return `${verb} ${first}`;
   const rest = files.length - 1;
   return `${verb} ${first} and ${rest} more file${rest === 1 ? '' : 's'}`;

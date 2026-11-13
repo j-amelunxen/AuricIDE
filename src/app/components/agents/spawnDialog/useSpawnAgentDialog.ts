@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import type { PermissionMode } from '@/lib/tauri/agents';
+import type { PermissionMode } from '@/lib/agents/types';
 import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
 import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';

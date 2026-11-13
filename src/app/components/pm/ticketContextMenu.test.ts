@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import { buildTicketStatusPriorityPowerOptions } from './ticketContextMenu';
 
 const ticket: PmTicket = {

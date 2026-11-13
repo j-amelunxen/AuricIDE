@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ContextMenu } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
 import { isClosedTicketStatus, type TicketStatus } from '@/lib/pm/enums';
 import { TICKET_STATUS_BADGE_CLASS, TICKET_STATUS_LABEL } from '@/lib/pm/ticketStatusStyle';
 import {

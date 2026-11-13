@@ -14,7 +14,7 @@
       "metrics": [
         {
           "label": "non-test files in src/app",
-          "value": "439"
+          "value": "449"
         }
       ],
       "detail": "./ui.scene.json",
@@ -41,8 +41,8 @@
       "weight": 0.7,
       "metrics": [
         {
-          "label": "slices",
-          "value": "36"
+          "label": "slice creators",
+          "value": "37"
         }
       ],
       "detail": "./store.scene.json",
@@ -68,7 +68,7 @@
       "metrics": [
         {
           "label": "wrapper files",
-          "value": "50"
+          "value": "55"
         }
       ],
       "position": [0.05, -5.5, 0]
@@ -134,7 +134,8 @@
       "group": "fleet",
       "level": 4,
       "weight": 0.5,
-      "position": [1.85, -22.6, 0]
+      "position": [1.85, -22.6, 0],
+      "detail": "./supervisor.scene.json"
     },
     {
       "id": "quotaBlocks",
@@ -211,12 +212,13 @@
     },
     {
       "id": "imports",
-      "label": "Imports, machine tools, formatters",
+      "label": "Imports and shared foundations",
       "preset": "box",
       "group": "backend",
       "level": 4,
       "weight": 0.3,
-      "position": [-15.95, -22.6, 0]
+      "position": [-15.95, -22.6, 0],
+      "detail": "./foundations.scene.json"
     },
     {
       "id": "platform",
@@ -522,16 +524,16 @@
       "preset": "hud-panel",
       "rows": [
         {
-          "label": "store slices",
-          "value": "36"
+          "label": "store creators",
+          "value": "37"
         },
         {
-          "label": "Rust files (non-test)",
-          "value": "210"
+          "label": "Rust files incl. tests",
+          "value": "298"
         },
         {
           "label": "MCP tool files",
-          "value": "25"
+          "value": "26"
         },
         {
           "label": "link methods",

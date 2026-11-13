@@ -1,7 +1,7 @@
 import type { RefObject, KeyboardEvent } from 'react';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
-import { SkillInvocationInput } from '@/app/components/cockpit/SkillInvocationInput';
+import { SkillInvocationInput } from '@/app/components/ui/SkillInvocationInput';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { spawnAttachmentLabel } from '@/lib/agents/spawnAttachments';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';

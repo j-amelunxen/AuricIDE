@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DependencySelector } from './DependencySelector';
-import type { PmDependency } from '@/lib/tauri/pm';
+import type { PmDependency } from '@/lib/pm/types';
 
 const availableItems = [
   { id: 'e-1', type: 'epic' as const, name: 'Auth Epic' },

@@ -1,21 +1,26 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import { writeChanged } from './stableRefs';
 import { withPersistFeedback } from './persistFeedback';
+import type { GoalsSyncResult } from '../tauri/goals';
 import type {
   GoalsState,
   GoalRunOutcome,
-  GoalsSyncResult,
   PmGoal,
   PmGoalDependency,
   PmGoalRequirementLink,
   PmGoalRun,
   PmGoalStation,
-} from '../tauri/goals';
+} from '../goals/types';
 import { normalizeBundle, type GoalDependencyError } from '../goals/goalDependencies';
-import { getIntroducedDependencyErrors, toDependencyEdges } from './goals/goalDependencyAdapters';
+import {
+  getIntroducedDependencyErrors,
+  toDependencyEdges,
+} from '../goals/model/goalDependencyAdapters';
 import { dropIntroducedDependencyDrafts } from './goals/goalDependencyRebase';
-import { editedRows, findClashes, rebaseDraft } from '../goals/draftMerge';
+import { editedRows, findClashes, rebaseDraft } from './draftMerge';
 import {
   mergeConflicts,
   pinClashes,
@@ -24,63 +29,17 @@ import {
   type GoalConflictChoice,
   type GoalConflictTable,
 } from '../goals/goalConflicts';
-import type { ToastSlice } from './toastSlice';
 import { insertHumanStation, moveStation } from '../goals/stationOrder';
-import {
-  goalsLoad as ipcGoalsLoad,
-  goalsSave as ipcGoalsSave,
-  goalsClear as ipcGoalsClear,
-} from '../tauri/goals';
+import { goalsLoad as ipcGoalsLoad, goalsSave as ipcGoalsSave } from '../tauri/goals';
 import { initProjectDb } from '../tauri/db';
-import type { PmTicket } from '../tauri/pm';
-import {
-  getRootGoals,
-  getGoalChildren,
-  getGoalDescendants,
-  planGoalMove,
-  type GoalDropPosition,
-  type GoalMoveUpdate,
-} from './goals/goalTreeHelpers';
-import {
-  getGoalProgress,
-  getGoalCompletion,
-  getGoalSatisfaction,
-  getGoalStationProgress,
-  getGoalWorkMode,
-  getGoalWorkflowStage,
-  getGoalWorkProgress,
-  getRunsForGoal,
-  nowTimestamp,
-  type GoalProgress,
-  type GoalSatisfaction,
-  type GoalWorkflowStage,
-  type GoalWorkflowStep,
-} from './goals/goalSatisfaction';
-
-export {
-  getRootGoals,
-  getGoalChildren,
-  getGoalDescendants,
-  planGoalMove,
-  type GoalDropPosition,
-  type GoalMoveUpdate,
-  getGoalProgress,
-  getGoalCompletion,
-  getGoalSatisfaction,
-  getGoalStationProgress,
-  getGoalWorkMode,
-  getGoalWorkflowStage,
-  getGoalWorkProgress,
-  getRunsForGoal,
-  type GoalProgress,
-  type GoalSatisfaction,
-  type GoalWorkflowStage,
-  type GoalWorkflowStep,
-};
-export { getGoalBlockers, getSiblingWaves } from './goals/goalDependencyAdapters';
+import { getGoalDescendants } from '../goals/model/goalTreeHelpers';
 
 /** What `addGoalDependency`/`setGoalBundle` hand back so the UI can toast the reason. */
 export type GoalDependencyResult = { ok: true } | { ok: false; error: GoalDependencyError };
+
+function nowTimestamp(): string {
+  return formatUtcStamp();
+}
 
 // saveGoals is a read-modify-write with awaits in the middle. Serialize
 // invocations so an overlapping save (heartbeat tick + agent-status tick)
@@ -118,10 +77,8 @@ export interface GoalsSlice {
   goalLinesOpen: boolean;
   /** True only when Goal Lines replaced Goals — Esc should then reopen Goals. */
   goalLinesReturnToGoals: boolean;
-  // Actions
   loadGoals: (projectPath: string) => Promise<void>;
   saveGoals: (projectPath: string) => Promise<void>;
-  clearGoals: (projectPath: string) => Promise<void>;
   resetGoalsInMemory: () => void;
   addGoal: (goal: PmGoal) => void;
   updateGoal: (id: string, updates: Partial<PmGoal>) => void;
@@ -176,17 +133,14 @@ export interface GoalsSlice {
 
 /**
  * Drop the goal link from every ticket that pointed at one of the deleted
- * goals (cross-slice, optional — the goals slice runs without PM in tests).
+ * goals. The complete store supplies the PM action and draft.
  * Tickets carry the link on their own side and save through `savePmData`, so a
  * ticket left pointing at a deleted goal would keep claiming that link while
  * dropping out of the subtree walk `getGoalSatisfaction` does. `updateTicket`
  * owns the PM dirty flag, so routing through it keeps the change persistable.
  */
-function clearGoalLinkOnTickets(state: GoalsSlice, deletedGoalIds: Set<string>): void {
-  const pm = state as GoalsSlice & {
-    pmDraftTickets?: PmTicket[];
-    updateTicket?: (id: string, updates: Partial<PmTicket>) => void;
-  };
+function clearGoalLinkOnTickets(state: StoreState, deletedGoalIds: Set<string>): void {
+  const pm = state;
   if (!pm.pmDraftTickets || !pm.updateTicket) return;
   for (const ticket of pm.pmDraftTickets) {
     if (ticket.goalId && deletedGoalIds.has(ticket.goalId)) {
@@ -212,7 +166,7 @@ function pinnedBases(state: GoalsSlice) {
  * forever. Returns the goals/edges to actually use as the draft.
  */
 function guardDependencyDraft(
-  state: GoalsSlice,
+  state: StoreState,
   fresh: { goals: PmGoal[]; edges: PmGoalDependency[] },
   rebasedGoals: PmGoal[],
   rebasedEdges: PmGoalDependency[]
@@ -222,7 +176,7 @@ function guardDependencyDraft(
     edges: rebasedEdges,
   });
   if (repair.droppedEdgeIds.length > 0 || repair.resetBundleGoalIds.length > 0) {
-    (state as Partial<ToastSlice>).showToast?.(
+    state.showToast(
       'A goal dependency change conflicted with one written elsewhere and was reverted.',
       'error'
     );
@@ -260,7 +214,7 @@ async function saveGoalsRecoveringDependencyDraft(
  * a clash means an agent and the person disagree, which the person must see.
  */
 function noteConflicts(
-  state: GoalsSlice,
+  state: StoreState,
   found: GoalConflict[],
   fresh: { goals: PmGoal[]; goalRuns: PmGoalRun[]; stations: PmGoalStation[] }
 ): GoalConflict[] {
@@ -275,7 +229,7 @@ function noteConflicts(
   const known = new Set(state.goalConflicts.map((c) => `${c.table}/${c.id}`));
   const added = merged.filter((c) => !known.has(`${c.table}/${c.id}`));
   if (added.length > 0) {
-    const showToast = (state as Partial<ToastSlice>).showToast;
+    const showToast = state.showToast;
     showToast?.(
       added.length === 1
         ? `An agent changed ${added[0].columns.join(', ')} while you were editing it. Your change is not saved yet: keep it or take the agent's value.`
@@ -286,7 +240,7 @@ function noteConflicts(
   return merged;
 }
 
-export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
+export const createGoalsSlice: StateCreator<StoreState, [], [], GoalsSlice> = (set, get) => ({
   goals: [],
   goalsLoading: IDLE_LOAD_STATE.loading,
   goalsLoadError: IDLE_LOAD_STATE.error,
@@ -554,25 +508,6 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       // A failed save must not poison the queue for subsequent saves
     });
     return next;
-  },
-
-  clearGoals: async (projectPath) => {
-    await initProjectDb(projectPath);
-    await ipcGoalsClear(projectPath);
-    set({
-      goals: [],
-      goalsDraft: [],
-      goalRuns: [],
-      goalRunsDraft: [],
-      goalRequirementLinks: [],
-      goalRequirementLinksDraft: [],
-      goalStations: [],
-      goalStationsDraft: [],
-      goalDependencies: [],
-      goalDependenciesDraft: [],
-      goalsDirty: false,
-      goalConflicts: [],
-    });
   },
 
   resetGoalsInMemory: () =>
@@ -902,7 +837,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
     set({
       selectedGoalId: id,
       ...(id !== null && { conductorScopeEpicId: null }),
-    } as Partial<GoalsSlice>),
+    }),
   setOrchestrationOpen: (open) => set({ orchestrationOpen: open }),
   setGoalLinesOpen: (open, opts) =>
     set({

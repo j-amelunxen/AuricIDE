@@ -6,7 +6,8 @@ import {
   type EvidenceKindValue,
   type StationKind,
 } from '@/lib/pm/enums';
-import type { StationPredicate, StationSourceContext } from '@/lib/tauri/goals';
+import type { StationPredicate, StationSourceContext } from '@/lib/goals/types';
+import { sliceModelJson } from '@/lib/text/modelJson';
 
 /**
  * What the planner LLM is allowed to say. Everything that crosses this
@@ -59,18 +60,13 @@ export const PLANNER_OP_NAMES = [
 /** Pulls the first JSON object/array out of a model response, tolerating
  * markdown fences and prose around it. */
 export function extractJson(raw: string): unknown {
-  const cleaned = raw.replace(/```(?:json)?/g, '');
-  const start = cleaned.search(/[[{]/);
-  if (start === -1) {
-    throw new Error(`No JSON found in planner response: "${raw.slice(0, 120)}"`);
-  }
-  const closer = cleaned[start] === '{' ? '}' : ']';
-  const end = cleaned.lastIndexOf(closer);
-  if (end <= start) {
-    throw new Error(`Unterminated JSON in planner response: "${raw.slice(0, 120)}"`);
+  const slice = sliceModelJson(raw, { arrays: true });
+  if (!slice.ok) {
+    const what = slice.reason === 'none' ? 'No JSON found' : 'Unterminated JSON';
+    throw new Error(`${what} in planner response: "${raw.slice(0, 120)}"`);
   }
   try {
-    return JSON.parse(cleaned.slice(start, end + 1));
+    return JSON.parse(slice.text);
   } catch (e) {
     throw new Error(`Planner response is not valid JSON: ${(e as Error).message}`);
   }

@@ -1,5 +1,6 @@
-import type { Schedule, ScheduleCatchUp, ScheduleEveryUnit } from '@/lib/tauri/schedules';
-import { parseNotificationTimestamp } from './format';
+import type { Schedule } from '@/lib/tauri/schedules';
+import type { ScheduleCatchUp, ScheduleEveryUnit } from '@/lib/notifications/scheduleVocabulary';
+import { parseUtcDate } from '@/lib/time/utcStamp';
 
 /**
  * Turning a schedule back into words.
@@ -64,24 +65,11 @@ export function formatScheduleRhythm(schedule: Schedule): string {
   }
 
   const expr = schedule.cronExpr?.trim() ?? '';
-  const fields = expr.split(/\s+/);
-  // Six fields, seconds first — what the editor writes and what the `cron`
-  // crate expects.
-  if (fields.length === 6) {
-    const [, minute, hour, dayOfMonth, month, dayOfWeek] = fields;
-    const time =
-      /^\d+$/.test(hour) && /^\d+$/.test(minute)
-        ? `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
-        : null;
-
-    if (dayOfMonth === '*' && month === '*' && time !== null) {
-      if (dayOfWeek === '*') return `daily · ${time}`;
-      const days = dayOfWeek
-        .split(',')
-        .map((day) => WEEKDAY_NAMES[day.toUpperCase()])
-        .filter((day): day is string => day !== undefined);
-      if (days.length > 0) return `${days.join(', ')} · ${time}`;
-    }
+  const simple = readSimpleCron(expr);
+  if (simple) {
+    const time = `${String(simple.hour).padStart(2, '0')}:${String(simple.minute).padStart(2, '0')}`;
+    if (simple.weekdays === null) return `daily · ${time}`;
+    return `${simple.weekdays.map((day) => WEEKDAY_NAMES[day]).join(', ')} · ${time}`;
   }
 
   return expr === '' ? 'no rhythm' : expr;
@@ -92,7 +80,7 @@ export function formatNextDue(schedule: Schedule, now: number): string {
   if (!schedule.enabled) return 'off';
   if (schedule.nextDueAt === null) return 'no date';
 
-  const at = parseNotificationTimestamp(schedule.nextDueAt);
+  const at = parseUtcDate(schedule.nextDueAt);
   if (at === null) return 'no date';
 
   const minutes = Math.round((at.getTime() - now) / 60_000);
@@ -105,6 +93,32 @@ export function formatNextDue(schedule: Schedule, now: number): string {
   if (hours < 24) return `in ${hours} h`;
 
   return `in ${Math.round(hours / 24)} d`;
+}
+
+/** Weekday names the cron crate reads, Sunday first (the crate counts Sunday as 1). */
+export const CRON_WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
+
+/**
+ * The daily or weekly rhythm a cron expression holds in the shape
+ * `dailyCron`/`weeklyCron` write: a fixed minute and hour on every day of every
+ * month, on all weekdays (`weekdays: null`) or on named ones. Five fields read
+ * as second 0. Anything else is a hand-written expression: null.
+ */
+export function readSimpleCron(
+  expr: string | null | undefined
+): { second: string; minute: number; hour: number; weekdays: string[] | null } | null {
+  const fields = expr?.trim().split(/\s+/) ?? [];
+  if (fields.length === 5) fields.unshift('0');
+  if (fields.length !== 6) return null;
+  const [second, minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+  if (!/^\d+$/.test(minute) || !/^\d+$/.test(hour) || dayOfMonth !== '*' || month !== '*') {
+    return null;
+  }
+  if (dayOfWeek === '*')
+    return { second, minute: Number(minute), hour: Number(hour), weekdays: null };
+  const weekdays = dayOfWeek.toUpperCase().split(',');
+  if (!weekdays.every((day) => (CRON_WEEKDAYS as readonly string[]).includes(day))) return null;
+  return { second, minute: Number(minute), hour: Number(hour), weekdays };
 }
 
 /**

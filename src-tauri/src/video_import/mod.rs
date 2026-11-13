@@ -1,5 +1,5 @@
 pub(crate) mod failure;
-mod installer;
+pub(crate) mod installer;
 mod media;
 pub(crate) mod preflight;
 
@@ -9,13 +9,15 @@ mod tests;
 pub use media::*;
 pub use preflight::Preflight;
 
-use crate::database::{kv_get, DatabaseState};
+use crate::database::DatabaseState;
 use failure::{describe_failure, FailureReport, Stage};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 
-const SETTINGS_NS: &str = "video_import_settings";
+/// Where each import keeps its source copy, frames and analysis, inside `.auric`.
+const IMPORTS_DIR: &str = "video-imports";
+const SETTINGS_NS: &str = crate::app_config::namespaces::VIDEO_IMPORT;
 
 /// The runtime AuricIDE installs and manages itself. A `local_command` equal
 /// to this means "whatever Setup produced"; anything else is the user's own
@@ -148,36 +150,28 @@ pub fn load_settings(
 
     // A project without an open database overrides nothing, rather than
     // failing the import outright.
-    let project = {
-        let connections = state.connections.lock().unwrap();
-        match connections.get(project_path) {
-            Some(conn) => {
-                let mut found = std::collections::BTreeMap::new();
-                for key in SETTING_KEYS {
-                    if let Some(value) = kv_get(conn, SETTINGS_NS, key)? {
-                        found.insert(key.to_string(), value);
-                    }
-                }
-                found
-            }
-            None => std::collections::BTreeMap::new(),
-        }
-    };
+    let project = state.kv_values(project_path, SETTINGS_NS, &SETTING_KEYS)?;
 
-    let settings = crate::app_config::merge_namespace(global, project);
+    Ok(settings_from(&crate::app_config::merge_namespace(
+        global, project,
+    )))
+}
 
-    Ok(TranscriptionSettings {
-        mode: setting(&settings, "transcription_mode", "automatic"),
-        remote_endpoint: setting(&settings, "remote_endpoint", ""),
-        remote_api_key: setting(&settings, "remote_api_key", ""),
-        remote_model: setting(&settings, "remote_model", "nvidia/parakeet-tdt-0.6b-v3"),
-        local_command: setting(&settings, "local_command", "parakeet-mlx"),
+/// The stored values with each missing key at its default. The defaults are
+/// the settings screen's too (`videoImportSettings.fixtures.json`).
+fn settings_from(settings: &std::collections::BTreeMap<String, String>) -> TranscriptionSettings {
+    TranscriptionSettings {
+        mode: setting(settings, "transcription_mode", "automatic"),
+        remote_endpoint: setting(settings, "remote_endpoint", ""),
+        remote_api_key: setting(settings, "remote_api_key", ""),
+        remote_model: setting(settings, "remote_model", "nvidia/parakeet-tdt-0.6b-v3"),
+        local_command: setting(settings, "local_command", "parakeet-mlx"),
         local_args: setting(
-            &settings,
+            settings,
             "local_args",
             "{audio} --output-dir {outputDir} --output-format json --highlight-words",
         ),
-    })
+    }
 }
 
 /// Everything the local runtime needs, checked and reported per dependency.
@@ -199,9 +193,8 @@ pub fn video_import_save_process(
     import_id: String,
     process_json: String,
 ) -> Result<String, String> {
-    let path = Path::new(&project_path)
-        .join(".auric")
-        .join("video-imports")
+    let path = crate::database::auric_dir(Path::new(&project_path))
+        .join(IMPORTS_DIR)
         .join(import_id)
         .join("process-analysis.json");
     let _: serde_json::Value = serde_json::from_str(&process_json)
@@ -229,9 +222,8 @@ pub async fn video_import_analyze_media(
     let duration_ms = video_duration_ms(&source).await?;
     let id = import_id();
     // Import artifacts are durable project provenance, not disposable OS temp files.
-    let workspace = Path::new(&project_path)
-        .join(".auric")
-        .join("video-imports")
+    let workspace = crate::database::auric_dir(Path::new(&project_path))
+        .join(IMPORTS_DIR)
         .join(&id);
     let frame_dir = workspace.join("frames");
     std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;

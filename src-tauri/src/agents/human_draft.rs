@@ -79,11 +79,6 @@ fn has_text(data: &str) -> bool {
     false
 }
 
-/// The agent id behind a terminal session id, for agents' consoles only.
-pub fn agent_of_session(session_id: &str) -> Option<&str> {
-    session_id.strip_prefix("agent-")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +132,7 @@ mod tests {
 
     #[test]
     fn only_agent_consoles_are_tracked() {
+        use crate::agents::pty::agent_of_session;
         assert_eq!(agent_of_session("agent-agent-7"), Some("agent-7"));
         assert_eq!(agent_of_session("shell-1"), None);
     }

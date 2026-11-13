@@ -12,15 +12,17 @@ import { GoalTree } from './GoalTree';
 import { toggleGoalSelection, type GoalBulkUpdate } from '@/lib/goals/bulkGoalMenu';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalTable } from './GoalTable';
-import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
+import { APP_CONFIG_KEYS, readAppPref, removeAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
-import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
-import type { PmGoal } from '@/lib/tauri/goals';
+import { GoalsWorkflowStrip } from './GoalsWorkflowStrip';
+import type { PmGoal } from '@/lib/goals/types';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
-import { getGoalWorkMode, planGoalMove, type GoalDropPosition } from '@/lib/store/goalsSlice';
+import { getGoalWorkMode } from '@/lib/goals/model/goalSatisfaction';
+import { planGoalMove, type GoalDropPosition } from '@/lib/goals/model/goalTreeHelpers';
 import { buildGoalLaunchPrompt, buildMetaGoalSplitPrompt } from '@/lib/goals/goalLaunchPrompt';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useSaveShortcut } from '@/lib/hooks/useSaveShortcut';
 
 export function GoalsModal() {
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
@@ -77,8 +79,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [workflowStripVisible, setWorkflowStripVisible] = useState(
-    () =>
-      typeof window === 'undefined' || localStorage.getItem(WORKFLOW_STRIP_DISMISSED_KEY) !== '1'
+    () => readAppPref(APP_CONFIG_KEYS.goalsWorkflowStripDismissed) !== '1'
   );
 
   const [detailView, setDetailView] = useState<'details' | 'table'>(() =>
@@ -90,7 +91,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
   };
 
   const dismissWorkflowStrip = useCallback(() => {
-    localStorage.setItem(WORKFLOW_STRIP_DISMISSED_KEY, '1');
+    writeAppPref(APP_CONFIG_KEYS.goalsWorkflowStripDismissed, '1');
     setWorkflowStripVisible(false);
   }, []);
 
@@ -98,7 +99,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     if (workflowStripVisible) {
       dismissWorkflowStrip();
     } else {
-      localStorage.removeItem(WORKFLOW_STRIP_DISMISSED_KEY);
+      removeAppPref(APP_CONFIG_KEYS.goalsWorkflowStripDismissed);
       setWorkflowStripVisible(true);
     }
   }, [workflowStripVisible, dismissWorkflowStrip]);
@@ -141,17 +142,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     onEscape: handleClose,
   });
 
-  useEffect(() => {
-    if (!active) return;
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        if (goalsDirty) void handleSave();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [active, handleSave, goalsDirty]);
+  useSaveShortcut(active, goalsDirty, handleSave);
 
   const selectedGoal = useMemo(
     () => goalsDraft.find((g) => g.id === selectedGoalId) ?? null,
@@ -308,7 +299,6 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
             : 'flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl'
         }
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
             <AuricIcon name="flag" className="text-primary-light" />
@@ -397,7 +387,6 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
 
         {workflowStripVisible && <GoalsWorkflowStrip onDismiss={dismissWorkflowStrip} />}
 
-        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex w-[420px] flex-col border-r border-white/5">
             <GoalTree
@@ -483,7 +472,6 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        {/* Conductor */}
         <ConductorPanel {...conductor} />
       </div>
 

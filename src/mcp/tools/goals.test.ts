@@ -20,7 +20,7 @@ import {
   listGoalDependencies,
   goalDependsOnIds,
   goalBlockedByInfo,
-} from './goals';
+} from './goalsDb';
 import { createTestDb } from '../db';
 
 function insertEpicAndTicket(db: Database.Database, ticketId = 't1', status = 'open'): void {
@@ -161,6 +161,28 @@ describe('goal MCP tools', () => {
       const c = createGoal(db, { name: 'C', parentId: p.id }, 'mcp');
       expect(deleteGoal(db, p.id)).toBe(true);
       expect(getGoal(db, c.id)).toBeNull();
+    });
+
+    it('unlinks the tickets of the deleted goal and its sub-goals, and keeps them', () => {
+      const p = createGoal(db, { name: 'P' }, 'mcp');
+      const c = createGoal(db, { name: 'C', parentId: p.id }, 'mcp');
+      const other = createGoal(db, { name: 'Other' }, 'mcp');
+      insertEpicAndTicket(db, 't1');
+      insertEpicAndTicket(db, 't2');
+      insertEpicAndTicket(db, 't3');
+      linkTicketToGoal(db, 't1', p.id);
+      linkTicketToGoal(db, 't2', c.id);
+      linkTicketToGoal(db, 't3', other.id);
+
+      deleteGoal(db, p.id);
+
+      const goalOf = (id: string) =>
+        (
+          db.prepare('SELECT goal_id FROM pm_tickets WHERE id = ?').get(id) as {
+            goal_id: string | null;
+          }
+        ).goal_id;
+      expect([goalOf('t1'), goalOf('t2'), goalOf('t3')]).toEqual([null, null, other.id]);
     });
   });
 

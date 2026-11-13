@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EpicSidebar } from './EpicSidebar';
-import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket } from '@/lib/pm/types';
 
 const makeEpic = (overrides: Partial<PmEpic> = {}): PmEpic => ({
   id: 'epic-1',

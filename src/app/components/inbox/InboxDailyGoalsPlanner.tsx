@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import { getProjectDailyGoal } from '@/lib/inbox/dailyGoals';
 import type { InboxItem, ProjectPmOverview } from '@/lib/tauri/inbox';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
@@ -55,7 +55,6 @@ export function InboxDailyGoalsPlanner({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
     >
       <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel-bg shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] p-4">
           <div className="flex items-center gap-2.5">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
@@ -84,14 +83,12 @@ export function InboxDailyGoalsPlanner({
           </button>
         </div>
 
-        {/* Status bar */}
         <div className="border-b border-white/5 bg-white/[0.01] px-4 py-2">
           <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
             {plannedCount} of {projects.length} projects have a daily goal
           </span>
         </div>
 
-        {/* Project list */}
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {projects.length === 0 ? (
             <p className="py-8 text-center text-[12px] text-foreground-muted">
@@ -191,7 +188,6 @@ export function InboxDailyGoalsPlanner({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end border-t border-white/10 bg-white/[0.02] p-3">
           <button
             type="button"

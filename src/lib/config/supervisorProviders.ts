@@ -91,7 +91,9 @@ export function writeSupervisorInstructions(
   const keys = Object.keys(updated);
   if (keys.length === 0) {
     removeAppPref(APP_CONFIG_KEYS.supervisorInstructions);
-  } else if (keys.length === 1 && keys[0] === 'claude') {
+  } else if (keys.length === 1 && keys[0] === 'claude' && !updated.claude.trim().startsWith('{')) {
+    // The format older builds wrote and read. Text that opens like a JSON
+    // object would read back as a provider map, so it is stored as one.
     writeAppPref(APP_CONFIG_KEYS.supervisorInstructions, updated.claude);
   } else {
     writeAppPref(APP_CONFIG_KEYS.supervisorInstructions, JSON.stringify(updated));

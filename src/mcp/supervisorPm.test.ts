@@ -14,10 +14,10 @@ import {
   PmGateway,
   pmChildTarget,
   PmStdioChild,
-  PM_CHILD_ENV,
   type PmToolResult,
 } from './supervisorPm';
-import type { ControlCaller } from './tools/agentControl';
+import { AURIC_ENV } from '@/lib/config/auricEnv';
+import type { ControlCaller } from './controlTypes';
 import { registerSupervisorTools } from './tools/supervisor';
 
 /**
@@ -99,7 +99,9 @@ function rig(options: { maxChildren?: number; timeoutMs?: number } = {}) {
           ...process.env,
           AURIC_CONTROL_SOCKET: '/nowhere/control.sock',
           AURIC_AGENT_CWD: '/must/not/arrive',
-          [PM_CHILD_ENV]: JSON.stringify({ AURIC_NOTIFICATIONS_DB: join(root, 'inbox.db') }),
+          [AURIC_ENV.pmChildEnv]: JSON.stringify({
+            AURIC_NOTIFICATIONS_DB: join(root, 'inbox.db'),
+          }),
         },
         RUNTIME
       );
@@ -425,7 +427,7 @@ describe('what the project servers run with', () => {
         AURIC_IDE_AGENT: '1',
         AURIC_CONTROL_SOCKET: '/s',
         AURIC_AGENT_CWD: '/inherited',
-        [PM_CHILD_ENV]: JSON.stringify({
+        [AURIC_ENV.pmChildEnv]: JSON.stringify({
           AURIC_NOTIFICATIONS_DB: '/n.db',
           AURIC_AGENT_CWD: '/declared',
         }),
@@ -442,10 +444,10 @@ describe('what the project servers run with', () => {
   });
 
   it('fails clearly on a broken environment variable', () => {
-    const broken = { [PM_CHILD_ENV]: JSON.stringify({ A: 1 }) };
-    expect(() => pmChildTarget('/p', broken, { ...RUNTIME })).toThrow(PM_CHILD_ENV);
-    expect(() => pmChildTarget('/p', { [PM_CHILD_ENV]: '{' }, { ...RUNTIME })).toThrow(
-      PM_CHILD_ENV
+    const broken = { [AURIC_ENV.pmChildEnv]: JSON.stringify({ A: 1 }) };
+    expect(() => pmChildTarget('/p', broken, { ...RUNTIME })).toThrow(AURIC_ENV.pmChildEnv);
+    expect(() => pmChildTarget('/p', { [AURIC_ENV.pmChildEnv]: '{' }, { ...RUNTIME })).toThrow(
+      AURIC_ENV.pmChildEnv
     );
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { GoalLine } from '@/lib/goals/goalLinesLayout';
 import { humanStationsDue } from '@/lib/goals/forYou';
 import { formatAgentDuration } from '@/lib/agents/duration';

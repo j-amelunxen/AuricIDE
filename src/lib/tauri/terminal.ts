@@ -1,9 +1,11 @@
 import { invoke } from './invoke';
+import { agentIdOfSession } from '../agents/sessionId';
 import { onAgentPtyResized } from './agentEvents';
 import { acceptWindowMessage } from './agentWindow';
 import { resizeAgentMirror } from '../terminal/agentMirror';
 
-const AGENT_SESSION_PREFIX = 'agent-';
+/** A shell's output arrives as `<prefix><id>`; Rust: `terminal_commands::TERMINAL_OUTPUT_EVENT_PREFIX`. */
+export const TERMINAL_OUTPUT_EVENT_PREFIX = 'terminal-out-';
 
 interface PtySize {
   rows: number;
@@ -32,8 +34,8 @@ export async function spawnShell(
 export async function resizeShell(id: string, rows: number, cols: number): Promise<void> {
   // Agent PTYs have a headless mirror that must stay in lockstep with the
   // PTY size, or its screen snapshot would be laid out for the wrong width.
-  if (id.startsWith(AGENT_SESSION_PREFIX)) {
-    const agentId = id.slice(AGENT_SESSION_PREFIX.length);
+  const agentId = agentIdOfSession(id);
+  if (agentId !== null) {
     resizeAgentMirror(agentId, rows, cols);
     if (ptyResizeSyncInstalled) {
       await resizeSharedAgentPty(id, agentId, { rows, cols });
@@ -104,7 +106,7 @@ export async function onTerminalOut(
   callback: (line: string) => void
 ): Promise<() => void> {
   const { listen } = await import('@tauri-apps/api/event');
-  const unlisten = await listen<string>(`terminal-out-${id}`, (event) => {
+  const unlisten = await listen<string>(`${TERMINAL_OUTPUT_EVENT_PREFIX}${id}`, (event) => {
     callback(event.payload);
   });
 

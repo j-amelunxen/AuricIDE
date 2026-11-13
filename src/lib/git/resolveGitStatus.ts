@@ -1,10 +1,7 @@
 import type { GitFileStatus, GitRepoRef } from '@/lib/tauri/git';
 import type { FileNode } from '@/lib/store/fileTreeSlice';
 import { relativeToRepo, repoForPath } from './repos';
-
-function stripSlash(path: string): string {
-  return path.endsWith('/') ? path.slice(0, -1) : path;
-}
+import { withoutTrailingSlash } from '@/lib/paths/withoutTrailingSlash';
 
 function toBadge(status: GitFileStatus['status']): FileNode['gitStatus'] {
   if (status === 'untracked' || status === 'added') return 'added';
@@ -28,7 +25,7 @@ export function resolveGitStatus(
   statuses: GitFileStatus[]
 ): FileNode['gitStatus'] {
   const { exact, ignoredDirs } = indexFor(statuses);
-  const target = stripSlash(relativePath);
+  const target = withoutTrailingSlash(relativePath);
   const hit = exact.get(target);
   if (hit) return toBadge(hit);
 
@@ -57,7 +54,7 @@ function indexFor(statuses: GitFileStatus[]): StatusIndex {
   const exact = new Map<string, GitFileStatus['status']>();
   const ignoredDirs = new Set<string>();
   for (const s of statuses) {
-    const path = stripSlash(s.path);
+    const path = withoutTrailingSlash(s.path);
     if (!exact.has(path)) exact.set(path, s.status);
     if (s.status === 'ignored') ignoredDirs.add(path);
   }

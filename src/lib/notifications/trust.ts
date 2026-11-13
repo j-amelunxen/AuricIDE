@@ -23,7 +23,7 @@ export type NotificationTrust = 'user' | 'foreign';
  * `src/mcp/notificationsDb.ts`); mirrors `MCP_SCHEDULE_ID_PREFIX` in
  * `src-tauri/src/schedules/database.rs`.
  */
-const MCP_SCHEDULE_ID_PREFIX = 'mcp-';
+export const MCP_SCHEDULE_ID_PREFIX = 'mcp-';
 
 /**
  * Sub-goal 09, review r4: until r4 the runner fired an agent's schedule as

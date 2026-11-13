@@ -17,15 +17,6 @@ describe('showReferencesFacet', () => {
     callback('test', 'entity', []);
   });
 
-  it('returns the provided callback', () => {
-    const mockCallback: ShowReferencesCallback = vi.fn();
-    const state = EditorState.create({
-      extensions: [showReferencesFacet.of(mockCallback)],
-    });
-    const callback = state.facet(showReferencesFacet);
-    expect(callback).toBe(mockCallback);
-  });
-
   it('uses the first callback when multiple are provided', () => {
     const first: ShowReferencesCallback = vi.fn();
     const second: ShowReferencesCallback = vi.fn();

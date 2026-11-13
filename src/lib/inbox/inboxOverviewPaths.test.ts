@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { inboxOverviewPaths } from './inboxOverviewPaths';
 import type { InboxItem } from '@/lib/tauri/inbox';
 import { MAX_RECENT, type RecentProject } from '@/lib/store/recentProjectsSlice';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
   return {

@@ -1,11 +1,13 @@
 'use client';
 
+import type { SettingsCategory } from '@/lib/settings/types';
+
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
-import { LlmContent } from './settings/LlmContent';
-import { JudgeLlmContent } from './settings/JudgeLlmContent';
+import { CredentialOverride } from './settings/CredentialOverride';
+import { CREDENTIAL_GROUPS } from './settings/credentialGroups';
 import { AgentContent } from './settings/AgentContent';
 import { ProjectAgentContent } from './settings/ProjectAgentContent';
 import { GitContent } from './settings/GitContent';
@@ -19,7 +21,6 @@ import { SystemContent } from './settings/SystemContent';
 import { MaintenanceContent } from './settings/MaintenanceContent';
 import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
-import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
 import { PushoverContent } from './settings/PushoverContent';
 import { AuricSkillsContent } from './settings/AuricSkillsContent';
@@ -30,31 +31,6 @@ import {
 } from './settings/SupervisorContent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
-
-const JUDGE_HINT =
-  'A second model that reviews claimed work. Independent of the one that built it.';
-
-export type SettingsCategory =
-  | 'agent'
-  | 'skills'
-  | 'supervisor'
-  | 'credentials'
-  | 'llm'
-  | 'judge'
-  | 'commands'
-  | 'editor'
-  | 'appearance'
-  | 'system'
-  | 'machine'
-  | 'mcp'
-  | 'blueprints'
-  | 'excalidraw'
-  | 'video-import'
-  | 'pushover'
-  | 'providers'
-  | 'project-agent'
-  | 'git'
-  | 'maintenance';
 
 /**
  * Which layer a setting belongs to. The split is the whole point of this
@@ -86,6 +62,8 @@ interface SettingsNavItem {
   label: string;
   /** Pages of this category, listed beneath it while it is open or a search finds them. */
   pages?: readonly { id: SupervisorSection; label: string }[];
+  /** Said beside the entry (tooltip and info icon) where its name alone does not explain it. */
+  hint?: string;
 }
 
 interface SettingsNavGroup {
@@ -158,7 +136,7 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     scope: 'project',
     items: [
       { id: 'llm', icon: 'psychology', label: 'LLM' },
-      { id: 'judge', icon: 'gavel', label: 'Judge' },
+      { id: 'judge', icon: 'gavel', label: 'Judge', hint: CREDENTIAL_GROUPS.judge.blurb },
       { id: 'excalidraw', icon: 'draw', label: 'Excalidraw+' },
       { id: 'video-import', icon: 'video_file', label: 'Video Import' },
     ],
@@ -233,9 +211,9 @@ function SettingsDialog({
       case 'project-agent':
         return <ProjectAgentContent />;
       case 'llm':
-        return <LlmContent />;
+        return <CredentialOverride group={CREDENTIAL_GROUPS.llm} />;
       case 'judge':
-        return <JudgeLlmContent />;
+        return <CredentialOverride group={CREDENTIAL_GROUPS.judge} />;
       case 'commands':
         return <CommandsContent />;
       case 'editor':
@@ -255,7 +233,7 @@ function SettingsDialog({
       case 'blueprints':
         return <BlueprintSyncContent />;
       case 'excalidraw':
-        return <ExcalidrawContent />;
+        return <CredentialOverride group={CREDENTIAL_GROUPS.excalidraw} />;
       case 'video-import':
         return <VideoImportContent onOpenMachine={() => openPage('machine')} />;
       case 'pushover':
@@ -278,7 +256,6 @@ function SettingsDialog({
         data-testid="settings-modal"
         className="glass-card w-[900px] max-w-[95vw] h-[78vh] overflow-hidden rounded-xl border border-white/10 bg-surface shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-2">
             <AuricIcon name="settings" className="text-primary text-sm" />
@@ -299,9 +276,7 @@ function SettingsDialog({
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar Nav */}
           <div className="w-[200px] flex-shrink-0 border-r border-white/5 py-2 flex flex-col">
             <div className="px-3 pb-2">
               <input
@@ -339,7 +314,6 @@ function SettingsDialog({
                           </div>
                           {group.items.map((cat) => {
                             const isActive = activeCategory === cat.id;
-                            const isJudge = cat.id === 'judge';
                             return (
                               <Fragment key={cat.id}>
                                 <div className="flex items-center">
@@ -347,7 +321,7 @@ function SettingsDialog({
                                     data-testid={`settings-nav-${cat.id}`}
                                     aria-expanded={cat.pages ? isActive || !!query : undefined}
                                     onClick={() => openPage(cat.id)}
-                                    title={isJudge ? JUDGE_HINT : undefined}
+                                    title={cat.hint}
                                     className={`min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-xs transition-colors border-l-2 ${
                                       isActive
                                         ? 'border-primary text-primary-light bg-primary/5'
@@ -357,7 +331,7 @@ function SettingsDialog({
                                     <AuricIcon name={cat.icon} className="text-sm" />
                                     {cat.label}
                                   </button>
-                                  {isJudge && <InfoTooltip description={JUDGE_HINT} />}
+                                  {cat.hint && <InfoTooltip description={cat.hint} />}
                                 </div>
                                 {cat.pages && (isActive || query) && (
                                   <SubPageNav
@@ -379,7 +353,6 @@ function SettingsDialog({
             </div>
           </div>
 
-          {/* Right Content */}
           <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
             {renderContent()}
           </div>

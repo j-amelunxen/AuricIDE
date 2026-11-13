@@ -14,7 +14,7 @@
       "metrics": [
         {
           "label": "files in src/app",
-          "value": "439"
+          "value": "449"
         }
       ],
       "position": [-3.55, 0, 0],
@@ -41,8 +41,8 @@
       "weight": 0.7,
       "metrics": [
         {
-          "label": "slices",
-          "value": "36"
+          "label": "slice creators",
+          "value": "37"
         }
       ],
       "position": [-4.2, -5.5, 0],
@@ -68,7 +68,7 @@
       "metrics": [
         {
           "label": "wrapper files",
-          "value": "50"
+          "value": "55"
         }
       ],
       "position": [4.2, -5.5, 0]
@@ -83,8 +83,8 @@
       "accent": true,
       "metrics": [
         {
-          "label": "rust files",
-          "value": "210"
+          "label": "Rust files incl. tests",
+          "value": "298"
         }
       ],
       "position": [3.75, -11.2, 0],
@@ -100,8 +100,8 @@
       "accent": true,
       "metrics": [
         {
-          "label": "rust files",
-          "value": "17"
+          "label": "runtime source files",
+          "value": "21"
         }
       ],
       "position": [-8.9, -17.1, 0],
@@ -203,7 +203,7 @@
       "metrics": [
         {
           "label": "tool files",
-          "value": "25"
+          "value": "26"
         }
       ],
       "position": [13.4, -17.1, 0],
@@ -434,7 +434,6 @@
       "kind": "calls"
     }
   ],
-  "tour": ["ui", "store", "backend", "agents", "agentClis", "mcp", "controlSocket", "projectDb"],
   "annotations": [
     {
       "id": "facts",
@@ -442,20 +441,20 @@
       "preset": "hud-panel",
       "rows": [
         {
-          "label": "store slices",
-          "value": "36"
+          "label": "store creators",
+          "value": "37"
         },
         {
           "label": "IPC wrapper files",
-          "value": "50"
+          "value": "55"
         },
         {
-          "label": "rust files",
-          "value": "210"
+          "label": "Rust files incl. tests",
+          "value": "298"
         },
         {
           "label": "MCP tool files",
-          "value": "25"
+          "value": "26"
         }
       ]
     }

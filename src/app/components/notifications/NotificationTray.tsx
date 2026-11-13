@@ -5,7 +5,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatNextDue } from '@/lib/notifications/scheduleFormat';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { InboxErrorNote, InboxHeading } from './InboxChrome';
 import { NotificationRow } from './NotificationRow';

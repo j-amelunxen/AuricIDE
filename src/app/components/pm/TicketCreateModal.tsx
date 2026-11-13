@@ -1,23 +1,21 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/pm/types';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { AuricIcon } from '../ui/AuricIcon';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useConfirm } from '@/lib/hooks/useConfirm';
-import {
-  generateDependencyProposalPrompt,
-  parseDependencyResponse,
-} from '@/lib/pm/dependencyProposal';
 import { DISCARD_UNSAVED_PM, ticketCreateFormIsDirty } from '@/lib/pm/unsavedLeave';
 import { DependencyProposalModal } from './DependencyProposalModal';
 import { DependencySelector } from './DependencySelector';
 import { TicketSkillsField } from './TicketSkillsField';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { PRIORITY_NAME, TICKET_STATUS_NAME } from '@/lib/pm/labels';
+import { useDependencyProposal } from './useDependencyProposal';
 
 interface TicketCreateModalProps {
   isOpen: boolean;
@@ -43,35 +41,47 @@ interface TicketCreateModalProps {
 }
 
 const statusConfig: { value: PmTicket['status']; label: string; activeClass: string }[] = [
-  { value: 'open', label: 'Open', activeClass: 'bg-white/10 text-foreground border-white/20' },
+  {
+    value: 'open',
+    label: TICKET_STATUS_NAME.open,
+    activeClass: 'bg-white/10 text-foreground border-white/20',
+  },
   {
     value: 'in_progress',
-    label: 'In Progress',
+    label: TICKET_STATUS_NAME.in_progress,
     activeClass: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/25',
   },
   {
     value: 'to_test',
-    label: 'To Test',
+    label: TICKET_STATUS_NAME.to_test,
     activeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25',
   },
   {
     value: 'done',
-    label: 'Done',
+    label: TICKET_STATUS_NAME.done,
     activeClass: 'bg-green-500/15 text-green-300 border-green-500/25',
   },
 ];
 
 const priorityConfig: { value: PmTicket['priority']; label: string; activeClass: string }[] = [
-  { value: 'low', label: 'Low', activeClass: 'bg-blue-500/15 text-blue-300 border-blue-500/25' },
-  { value: 'normal', label: 'Normal', activeClass: 'bg-white/10 text-foreground border-white/20' },
+  {
+    value: 'low',
+    label: PRIORITY_NAME.low,
+    activeClass: 'bg-blue-500/15 text-blue-300 border-blue-500/25',
+  },
+  {
+    value: 'normal',
+    label: PRIORITY_NAME.normal,
+    activeClass: 'bg-white/10 text-foreground border-white/20',
+  },
   {
     value: 'high',
-    label: 'High',
+    label: PRIORITY_NAME.high,
     activeClass: 'bg-orange-500/15 text-orange-300 border-orange-500/25',
   },
   {
     value: 'critical',
-    label: 'Critical',
+    label: PRIORITY_NAME.critical,
     activeClass: 'bg-red-500/15 text-red-300 border-red-500/25',
   },
 ];
@@ -100,13 +110,10 @@ function TicketCreateForm({
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
-  const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
+  const llm = useLLM();
+  const isLlmLoading = llm.isLoading;
+  const proposal = useDependencyProposal(llm);
   const { discovered } = useProjectSkills();
-  const [proposalModalOpen, setProposalModalOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<{ id: string; name: string; reason: string }[]>(
-    []
-  );
-  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
   const { confirm, confirmDialog } = useConfirm();
 
   const handleRequestClose = useCallback(async () => {
@@ -141,7 +148,7 @@ function TicketCreateForm({
     id: 'ticket-create',
     kind: 'tool',
     active: true,
-    onEscape: proposalModalOpen ? undefined : () => void handleRequestClose(),
+    onEscape: proposal.modal.isOpen ? undefined : () => void handleRequestClose(),
   });
 
   const getTicketData = () => ({
@@ -166,50 +173,19 @@ function TicketCreateForm({
   const handleProposeDependencies = async () => {
     const epic = epics.find((e) => e.id === epicId);
     if (!epic) return;
-
-    setProposalModalOpen(true);
-    setSuggestions([]);
-    setSelectedSuggestionIds([]);
-
-    const epicTickets = allTickets.filter((t) => t.epicId === epicId);
-    const dummyTicket: PmTicket = {
+    const now = new Date().toISOString();
+    const draft: PmTicket = {
       ...getTicketData(),
-      statusUpdatedAt: new Date().toISOString(),
+      statusUpdatedAt: now,
       sortOrder: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
-
-    const prompt = generateDependencyProposalPrompt(dummyTicket, epic, epicTickets);
-
-    const response = await llmCall([{ role: 'user', content: prompt }]);
-    if (response) {
-      const parsed = parseDependencyResponse(response);
-      const suggestionsWithNames = parsed
-        .map((s) => {
-          const depTicket = allTickets.find((t) => t.id === s.id);
-          return { ...s, name: depTicket?.name || 'Unknown' };
-        })
-        .filter((s) => s.id !== ticketId);
-
-      setSuggestions(suggestionsWithNames);
-      setSelectedSuggestionIds(suggestionsWithNames.map((s) => s.id));
-    }
+    await proposal.propose(draft, epic, allTickets);
   };
 
   const handleConfirmSuggestions = () => {
-    const newDeps = selectedSuggestionIds
-      .filter((id) => !localDependencies.some((d) => d.targetId === id))
-      .map((id) => ({
-        id: crypto.randomUUID(),
-        sourceType: 'ticket' as const,
-        sourceId: ticketId,
-        targetType: 'ticket' as const,
-        targetId: id,
-      }));
-
-    setLocalDependencies((prev) => [...prev, ...newDeps]);
-    setProposalModalOpen(false);
+    setLocalDependencies((prev) => [...prev, ...proposal.accept(ticketId, prev)]);
   };
 
   return (
@@ -225,7 +201,6 @@ function TicketCreateForm({
         aria-labelledby="ticket-create-title"
         className="relative w-[500px] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <h3 id="ticket-create-title" className="text-sm font-semibold text-foreground">
             New Ticket
@@ -240,7 +215,6 @@ function TicketCreateForm({
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-white/10 px-5 shrink-0">
           <button
             type="button"
@@ -271,11 +245,9 @@ function TicketCreateForm({
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[60vh]">
           {activeTab === 'details' ? (
             <>
-              {/* Name */}
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
                   Name <span className="text-red-400/70">*</span>
@@ -290,7 +262,6 @@ function TicketCreateForm({
                 />
               </div>
 
-              {/* Epic + Status row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 flex items-center text-xs font-medium text-foreground-muted">
@@ -350,7 +321,6 @@ function TicketCreateForm({
                 </div>
               </div>
 
-              {/* Priority */}
               <div>
                 <label className="mb-1.5 flex items-center text-xs font-medium text-foreground-muted">
                   Priority
@@ -374,7 +344,6 @@ function TicketCreateForm({
                 </div>
               </div>
 
-              {/* Description */}
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
                   Description
@@ -415,7 +384,6 @@ function TicketCreateForm({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-white/10 shrink-0">
           <button
             type="button"
@@ -435,22 +403,7 @@ function TicketCreateForm({
         </div>
       </div>
 
-      <DependencyProposalModal
-        isOpen={proposalModalOpen}
-        onClose={() => {
-          setProposalModalOpen(false);
-          llmAbort();
-        }}
-        onConfirm={handleConfirmSuggestions}
-        suggestions={suggestions}
-        selectedIds={selectedSuggestionIds}
-        onToggleSuggestion={(id) =>
-          setSelectedSuggestionIds((prev) =>
-            prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-          )
-        }
-        isLoading={isLlmLoading}
-      />
+      <DependencyProposalModal {...proposal.modal} onConfirm={handleConfirmSuggestions} />
       {confirmDialog}
     </div>
   );

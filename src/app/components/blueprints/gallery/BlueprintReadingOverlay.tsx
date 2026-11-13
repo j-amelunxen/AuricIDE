@@ -30,7 +30,6 @@ export function BlueprintReadingOverlay({
       className="fixed inset-0 z-[var(--z-tool-nested)] bg-[#07070f]/95 backdrop-blur-sm overflow-y-auto custom-scrollbar"
     >
       <div className="max-w-3xl mx-auto px-6 py-10">
-        {/* Reading header */}
         <div className="flex items-center justify-between mb-8">
           <button
             onClick={onBack}
@@ -48,7 +47,6 @@ export function BlueprintReadingOverlay({
           </button>
         </div>
 
-        {/* Title */}
         <h1
           id="blueprint-reading-title"
           className="text-3xl font-bold text-foreground mb-4 leading-tight"
@@ -56,7 +54,6 @@ export function BlueprintReadingOverlay({
           {blueprint.name}
         </h1>
 
-        {/* Badges */}
         <div className="flex flex-wrap gap-2 mb-6">
           {COMPLEXITY_MAP[blueprint.complexity] && (
             <span
@@ -70,7 +67,6 @@ export function BlueprintReadingOverlay({
           </span>
         </div>
 
-        {/* Tech stack */}
         {blueprint.techStack && (
           <div className="mb-5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
@@ -89,7 +85,6 @@ export function BlueprintReadingOverlay({
           </div>
         )}
 
-        {/* Goal */}
         {blueprint.goal && (
           <div className="mb-6">
             <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
@@ -101,7 +96,6 @@ export function BlueprintReadingOverlay({
 
         <div className="border-t border-white/10 mb-8" />
 
-        {/* Full description */}
         {blueprint.description ? (
           <div className={READING_MARKDOWN_CLASSES}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{blueprint.description}</ReactMarkdown>

@@ -1,30 +1,4 @@
-import type { Priority, RequirementStatusValue, RequirementTypeValue } from '@/lib/pm/enums';
-export interface PmRequirement {
-  id: string;
-  reqId: string;
-  title: string;
-  description: string;
-  type: RequirementTypeValue;
-  category: string;
-  priority: Priority;
-  status: RequirementStatusValue;
-  rationale: string;
-  acceptanceCriteria: string;
-  source: string;
-  lastVerifiedAt: string | null;
-  appliesTo: string[];
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PmRequirementTestLink {
-  id: string;
-  requirementId: string;
-  testCaseId: string;
-  createdAt: string;
-}
-
+import type { PmRequirement, PmRequirementTestLink } from '@/lib/pm/types';
 import { invoke } from './invoke';
 
 export interface RequirementsState {
@@ -41,8 +15,4 @@ export async function requirementsSave(
   payload: RequirementsState
 ): Promise<void> {
   await invoke('requirements_save', { projectPath, payload });
-}
-
-export async function requirementsClear(projectPath: string): Promise<void> {
-  await invoke('requirements_clear', { projectPath });
 }

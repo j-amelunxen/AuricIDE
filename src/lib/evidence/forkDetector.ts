@@ -1,5 +1,5 @@
 import type { CommitInfo } from '@/lib/tauri/git';
-import type { PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoalStation } from '@/lib/goals/types';
 
 /**
  * Unclaimed work: commits appeared that no station claims. The detector

@@ -1,0 +1,288 @@
+{
+  "formatVersion": 1,
+  "id": "system.agent-session",
+  "title": "Agent sessions and completion",
+  "description": "AgentSession groups process, metadata and PTY registration. Native kill failure retains all three; accepted kills claim under the manager lock, then release the writer after unlocking and finish once. The frontend stops exactly the confirmed IDs one by one and ends nothing the backend did not confirm. Publication checks, reason-specific completion and quit restart anchors remain.",
+  "nodes": [
+    {
+      "id": "commands",
+      "label": "Agent and terminal IPC adapters",
+      "preset": "rings",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.6,
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "manager",
+      "label": "Agent runtime and output pump",
+      "preset": "core",
+      "group": "runtime",
+      "level": 1,
+      "weight": 1,
+      "accent": true,
+      "position": [0, -5.6, 0]
+    },
+    {
+      "id": "session",
+      "label": "AgentSession",
+      "preset": "box",
+      "group": "runtime",
+      "level": 2,
+      "weight": 0.8,
+      "position": [0.05, -11.5, 0]
+    },
+    {
+      "id": "child",
+      "label": "PTY child process",
+      "preset": "sphere",
+      "group": "runtime",
+      "level": 3,
+      "weight": 0.6,
+      "position": [2.05, -17.1, 0]
+    },
+    {
+      "id": "pty",
+      "label": "AgentPty and PendingAgentPty",
+      "preset": "rings",
+      "group": "terminal",
+      "level": 2,
+      "weight": 0.8,
+      "position": [7.65, -11.5, 0]
+    },
+    {
+      "id": "registry",
+      "label": "TerminalState and TerminalSession",
+      "preset": "cylinder",
+      "group": "terminal",
+      "level": 3,
+      "weight": 0.7,
+      "position": [9.35, -17.1, 0]
+    },
+    {
+      "id": "finish",
+      "label": "finish_agent: Exit / Kill / Quit",
+      "preset": "core",
+      "group": "completion",
+      "level": 2,
+      "weight": 0.9,
+      "accent": true,
+      "position": [-7.65, -11.5, 0]
+    },
+    {
+      "id": "results",
+      "label": "RunResultsState",
+      "preset": "cylinder",
+      "group": "completion",
+      "level": 3,
+      "weight": 0.6,
+      "position": [-9.35, -17.1, 0]
+    },
+    {
+      "id": "buffers",
+      "label": "OutputBuffersState",
+      "preset": "cylinder",
+      "group": "completion",
+      "level": 3,
+      "weight": 0.6,
+      "position": [-5.15, -17.1, 0]
+    },
+    {
+      "id": "usage",
+      "label": "Usage capture and booking",
+      "preset": "stack",
+      "group": "records",
+      "level": 4,
+      "weight": 0.5,
+      "position": [-7.85, -22.4, 0]
+    },
+    {
+      "id": "taskLog",
+      "label": "Monthly task log",
+      "preset": "stack",
+      "group": "records",
+      "level": 4,
+      "weight": 0.4,
+      "position": [-3.95, -22.4, 0]
+    },
+    {
+      "id": "launch",
+      "label": "Launch verdict and persistence",
+      "preset": "stack",
+      "group": "records",
+      "level": 4,
+      "weight": 0.6,
+      "position": [0.05, -22.4, 0]
+    },
+    {
+      "id": "exitLog",
+      "label": "Diagnostic exit log",
+      "preset": "stack",
+      "group": "records",
+      "level": 4,
+      "weight": 0.4,
+      "position": [4.05, -22.4, 0]
+    },
+    {
+      "id": "quota",
+      "label": "Quota detection (Exit only)",
+      "preset": "box",
+      "group": "records",
+      "level": 4,
+      "weight": 0.4,
+      "position": [7.85, -22.4, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "commands",
+      "to": "manager",
+      "kind": "calls",
+      "label": "spawn and kill"
+    },
+    {
+      "from": "commands",
+      "to": "pty",
+      "kind": "calls",
+      "label": "write and resize"
+    },
+    {
+      "from": "manager",
+      "to": "session",
+      "kind": "contains",
+      "label": "live runs"
+    },
+    {
+      "from": "session",
+      "to": "child",
+      "kind": "contains",
+      "label": "process ownership"
+    },
+    {
+      "from": "session",
+      "to": "pty",
+      "kind": "contains",
+      "label": "registration handle"
+    },
+    {
+      "from": "manager",
+      "to": "pty",
+      "kind": "calls",
+      "label": "prepare, publish, remove"
+    },
+    {
+      "from": "pty",
+      "to": "registry",
+      "kind": "dependency",
+      "label": "key and registry handle"
+    },
+    {
+      "from": "registry",
+      "to": "child",
+      "kind": "dataflow",
+      "label": "stdin and resize"
+    },
+    {
+      "from": "child",
+      "to": "manager",
+      "kind": "dataflow",
+      "label": "PTY output"
+    },
+    {
+      "from": "manager",
+      "to": "buffers",
+      "kind": "dataflow",
+      "label": "output pump"
+    },
+    {
+      "from": "manager",
+      "to": "finish",
+      "kind": "calls",
+      "label": "claimed run or late EOF"
+    },
+    {
+      "from": "finish",
+      "to": "results",
+      "kind": "calls",
+      "label": "first-remover result"
+    },
+    {
+      "from": "finish",
+      "to": "buffers",
+      "kind": "calls",
+      "label": "after result capture"
+    },
+    {
+      "from": "finish",
+      "to": "usage",
+      "kind": "calls",
+      "label": "async or quit budget"
+    },
+    {
+      "from": "finish",
+      "to": "taskLog",
+      "kind": "calls",
+      "label": "after usage capture"
+    },
+    {
+      "from": "finish",
+      "to": "launch",
+      "kind": "calls",
+      "label": "Exit and Kill only"
+    },
+    {
+      "from": "finish",
+      "to": "exitLog",
+      "kind": "calls",
+      "label": "reason-specific ending"
+    },
+    {
+      "from": "finish",
+      "to": "quota",
+      "kind": "calls",
+      "label": "before Exit observable"
+    },
+    {
+      "from": "manager",
+      "to": "child",
+      "kind": "calls",
+      "label": "kill before session claim"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "lifecycle",
+      "preset": "hud-panel",
+      "text": "Preserved lifecycle boundaries",
+      "rows": [
+        {
+          "label": "Terminal lifetime",
+          "value": "registry + active calls"
+        },
+        {
+          "label": "Publication",
+          "value": "publish, then recheck"
+        },
+        {
+          "label": "Result text",
+          "value": "before buffer eviction"
+        },
+        {
+          "label": "Repo kill",
+          "value": "snapshot, keep failed"
+        },
+        {
+          "label": "Quit budget",
+          "value": "2 seconds for all runs"
+        },
+        {
+          "label": "Quit anchors",
+          "value": "kept for restart"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

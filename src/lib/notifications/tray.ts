@@ -1,6 +1,6 @@
 import type { Schedule } from '@/lib/tauri/schedules';
-import { parseNotificationTimestamp } from './format';
-import type { Notification } from './types';
+import { parseUtcDate } from '@/lib/time/utcStamp';
+import { isOpenQuestion, type Notification } from './types';
 
 /**
  * What the sidebar tray shows of an inbox that is usually longer than it.
@@ -43,7 +43,7 @@ export function selectTray(notifications: Notification[], size = TRAY_SIZE): Tra
   const rest: Notification[] = [];
 
   for (const notification of notifications) {
-    if (notification.kind === 'ask' && notification.answeredAt === null) pinned.push(notification);
+    if (isOpenQuestion(notification)) pinned.push(notification);
     else rest.push(notification);
   }
 
@@ -76,7 +76,7 @@ export function nextDueSchedule(schedules: Schedule[], _nowMs: number): Schedule
 
   for (const schedule of schedules) {
     if (!schedule.enabled || schedule.nextDueAt === null) continue;
-    const at = parseNotificationTimestamp(schedule.nextDueAt);
+    const at = parseUtcDate(schedule.nextDueAt);
     if (at === null) continue;
     if (at.getTime() < bestAt) {
       best = schedule;

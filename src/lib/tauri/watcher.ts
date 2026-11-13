@@ -1,8 +1,15 @@
 import { invoke } from './invoke';
 
+/** Batches of file changes under a watched directory. */
+export const FILE_EVENTS_EVENT = 'file-events';
+
 export interface FsChangeEvent {
   path: string;
-  kind: string;
+  /**
+   * The event changed a file's bytes or metadata, never which paths exist
+   * (Rust classifies notify's event kind). Absent counts as structural.
+   */
+  contentOnly?: boolean;
   /**
    * Whether the path existed when the watcher sent its batch. Absent means
    * unknown, and callers must then assume the worst.
@@ -29,7 +36,7 @@ export function onFsChange(callback: (event: FsChangeEvent) => void): () => void
 
       // Rust collects a burst of changes into one batch rather than one IPC
       // message per path; the callback still sees them one at a time.
-      const unsub = await listen<FsChangeEvent[]>('file-events', (event) => {
+      const unsub = await listen<FsChangeEvent[]>(FILE_EVENTS_EVENT, (event) => {
         for (const change of event.payload) callback(change);
       });
 

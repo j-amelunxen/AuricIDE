@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentWindowHostBridge } from './AgentWindowHostBridge';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { AgentWindowHostHandlers } from '@/lib/agents/agentWindowHost';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { useStore } from '@/lib/store';

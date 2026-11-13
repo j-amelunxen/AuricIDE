@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useStore } from '@/lib/store';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import { PlannerPanel } from './PlannerPanel';
 
 const mockLlmCall = vi.fn<(...a: unknown[]) => Promise<{ content: string }>>();

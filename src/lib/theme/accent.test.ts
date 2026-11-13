@@ -8,7 +8,6 @@ import {
   accentRgb,
   applyAccent,
   isAccentId,
-  loadAccent,
   saveAccent,
 } from './accent';
 import { clearThemeOverrides } from './catalog/apply';
@@ -44,15 +43,6 @@ describe('accent theme', () => {
     expect(isAccentId(42)).toBe(false);
   });
 
-  it('loadAccent returns the default when nothing is stored', () => {
-    expect(loadAccent()).toBe(DEFAULT_ACCENT_ID);
-  });
-
-  it('loadAccent ignores an invalid stored value', () => {
-    localStorage.setItem(ACCENT_STORAGE_KEY, 'not-a-real-accent');
-    expect(loadAccent()).toBe(DEFAULT_ACCENT_ID);
-  });
-
   it('applyAccent stamps the data-accent attribute on <html>', () => {
     applyAccent('blue');
     expect(document.documentElement.dataset.accent).toBe('blue');
@@ -68,7 +58,6 @@ describe('accent theme', () => {
     expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('cyan');
     expect(localStorage.getItem('auric.theme')).toBe('cyan');
     expect(document.documentElement.dataset.accent).toBe('cyan');
-    expect(loadAccent()).toBe('cyan');
   });
 
   it('saveAccent ignores an unknown accent (no persistence, no apply)', () => {

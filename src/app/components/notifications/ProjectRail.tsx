@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import { ProjectTileFace } from '@/app/components/ui/ProjectTileFace';
 import type { ProjectGroup } from '@/lib/notifications/commandCenter';
 import { formatNextDue } from '@/lib/notifications/scheduleFormat';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 
 export interface ProjectRailProps {
   /** Already ordered by `groupByProject` — rendered in the order handed over. */

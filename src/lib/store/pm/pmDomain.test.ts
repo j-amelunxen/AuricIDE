@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '../../tauri/pm';
+import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '../../pm/types';
 import { transitionPmDomain, type PmDomainState } from './pmDomain';
 
 function makeEpic(overrides: Partial<PmEpic> = {}): PmEpic {

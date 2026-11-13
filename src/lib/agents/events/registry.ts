@@ -102,15 +102,6 @@ export function drainHeartbeatKinds(agentId: string): AgentEventKind[] {
 }
 
 /**
- * Drops an agent's whole runtime record — extractor, stream capture and
- * pending heartbeat counts alike. Call this everywhere an agent itself is removed (dismissed,
- * killed, evicted); otherwise this map grows for the app's whole lifetime.
- */
-export function dropAgentExtractor(agentId: string): void {
-  runtimeByAgent.delete(agentId);
-}
-
-/**
  * Drops every tracked runtime record whose id is not in `keepAgentIds` —
  * the sweep for an id that only ever showed up in `appendAgentLog` and never
  * landed in `agents` at all, which no single-id removal would otherwise

@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { computeGoalMetrics, formatDuration } from '@/lib/pm/metrics';
+import { computeGoalMetrics } from '@/lib/pm/metrics/goalMetrics';
 import { goalsLoadStatusHistory, type GoalStatusHistoryEntry } from '@/lib/tauri/goalHistory';
-import { statusLabel, TimingCard, type TimingRow } from '@/app/components/pm/TimingCard';
+import { TimingCard, timingRows } from '@/app/components/pm/TimingCard';
+import { parseUtcDate } from '@/lib/time/utcStamp';
 
 interface GoalTimingProps {
   goalId: string;
@@ -13,7 +14,8 @@ interface GoalTimingProps {
 }
 
 function formatSince(changedAt: string): string {
-  const date = new Date(changedAt.includes('T') ? changedAt : `${changedAt.replace(' ', 'T')}Z`);
+  const date = parseUtcDate(changedAt);
+  if (!date) return changedAt;
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -54,25 +56,12 @@ export function GoalTiming({ goalId, status }: GoalTimingProps) {
   );
   if (!metrics || metrics.trackedSince === null) return null;
 
-  const rows: TimingRow[] = [];
-  if (metrics.timeInCurrentStatus !== null) {
-    rows.push({
-      label: statusLabel(metrics.currentStatus),
-      value: formatDuration(metrics.timeInCurrentStatus),
-    });
-  }
-  for (const [spellStatus, ms] of Object.entries(metrics.timeInStatus)) {
-    rows.push({ label: statusLabel(spellStatus), value: formatDuration(ms) });
-  }
-  if (metrics.reviewRounds > 0) {
-    rows.push({ label: 'Review rounds', value: String(metrics.reviewRounds) });
-  }
-  if (metrics.cycleTime !== null) {
-    rows.push({ label: 'Cycle', value: formatDuration(metrics.cycleTime) });
-  }
-  if (metrics.leadTime !== null) {
-    rows.push({ label: 'Lead', value: formatDuration(metrics.leadTime) });
-  }
+  const rows = timingRows(
+    metrics,
+    metrics.reviewRounds > 0
+      ? [{ label: 'Review rounds', value: String(metrics.reviewRounds) }]
+      : []
+  );
 
   const note = metrics.backfilled
     ? `Tracked since ${formatSince(metrics.trackedSince)}. Earlier status changes were not recorded.`

@@ -1,3 +1,5 @@
+import type { StoreGet, StoreSet } from '@/lib/store/types';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import type { TicketStatus } from '@/lib/pm/enums';
 import {
@@ -21,30 +23,6 @@ import {
 import { settledInboxItems } from '@/lib/inbox/inboxTicketStatus';
 import { inboxPatchFromNewerDigest, ticketUpdatesFromInboxPatch } from '@/lib/inbox/inboxMirror';
 import { itemsToUnflagForProject } from '@/lib/inbox/dailyGoals';
-
-/**
- * The pieces of the wider store this slice reaches into, cast rather than
- * imported — `rootPath` lives in `fileTreeSlice`, `refreshPmData` in
- * `pmSlice`, and pulling either type in directly would make this slice
- * depend on the whole store shape it is itself composed into. `get()` is
- * cast to `Partial<CrossSlices>` and every field is accessed optionally,
- * because an isolated store built from just `createInboxSlice` (as the tests
- * here do) genuinely does not have them.
- */
-interface CrossSlices {
-  rootPath: string | null;
-  refreshPmData: (projectPath: string) => Promise<void>;
-  updateTicket: (
-    id: string,
-    updates: {
-      name?: string;
-      description?: string;
-      priority?: string;
-      dueDate?: string | null;
-      status?: TicketStatus;
-    }
-  ) => void;
-}
 
 /**
  * The app-level GTD inbox. Items live here independent of any project until
@@ -107,21 +85,21 @@ function replaceItem(items: InboxItem[], id: string, updated: InboxItem): InboxI
  * would otherwise still be showing the state from before.
  */
 async function storeAttachment(
-  set: (partial: Partial<InboxSlice>) => void,
-  get: () => InboxSlice,
+  set: StoreSet,
+  get: StoreGet,
   call: () => Promise<InboxItem>
 ): Promise<InboxItem | null> {
   try {
     const item = await call();
     set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
 
-    const cross = get() as unknown as Partial<CrossSlices>;
+    const cross = get();
     if (
       item.ticketId !== null &&
       item.projectPath !== null &&
       item.projectPath === cross.rootPath
     ) {
-      void cross.refreshPmData?.(item.projectPath);
+      void cross.refreshPmData(item.projectPath);
     }
     return item;
   } catch (error) {
@@ -130,7 +108,7 @@ async function storeAttachment(
   }
 }
 
-export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
+export const createInboxSlice: StateCreator<StoreState, [], [], InboxSlice> = (set, get) => ({
   inboxItems: [],
   inboxLoading: false,
   inboxError: null,
@@ -165,7 +143,7 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       // After assign the ticket is the durable record. The open project's
       // draft must move with the inbox row or Save in PM would write the
       // previous title/priority back over what we just stored.
-      const cross = get() as unknown as Partial<CrossSlices>;
+      const cross = get();
       if (
         item.ticketId !== null &&
         item.projectPath !== null &&
@@ -173,7 +151,7 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       ) {
         const updates = ticketUpdatesFromInboxPatch(patch);
         if (Object.keys(updates).length > 0) {
-          cross.updateTicket?.(item.ticketId, updates);
+          cross.updateTicket(item.ticketId, updates);
         }
       }
     } catch (error) {
@@ -208,9 +186,9 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       // The inbox overview and the open project's own PM draft (pmSlice) are
       // two separate caches. If the project just assigned into is the one
       // open right now, that draft needs the new ticket too.
-      const cross = get() as unknown as Partial<CrossSlices>;
+      const cross = get();
       if (cross.rootPath === request.projectPath) {
-        void cross.refreshPmData?.(request.projectPath);
+        void cross.refreshPmData(request.projectPath);
       }
     } catch (error) {
       set({ inboxError: describeError(error) });
@@ -230,13 +208,13 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       const item = await inboxDetach(itemId, attachmentId);
       set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
 
-      const cross = get() as unknown as Partial<CrossSlices>;
+      const cross = get();
       if (
         item.ticketId !== null &&
         item.projectPath !== null &&
         item.projectPath === cross.rootPath
       ) {
-        void cross.refreshPmData?.(item.projectPath);
+        void cross.refreshPmData(item.projectPath);
       }
     } catch (error) {
       set({ inboxError: describeError(error) });
@@ -270,12 +248,12 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
     try {
       await inboxSetTicketStatus({ projectPath, ticketId, status });
 
-      const cross = get() as unknown as Partial<CrossSlices>;
+      const cross = get();
       if (projectPath === cross.rootPath) {
         // Draft first so the inbox live path (and Mission Control) move
         // before the overview round-trip comes back.
-        cross.updateTicket?.(ticketId, { status });
-        void cross.refreshPmData?.(projectPath);
+        cross.updateTicket(ticketId, { status });
+        void cross.refreshPmData(projectPath);
       }
 
       await get().refreshInboxOverview(trackedOverviewPaths(get(), projectPath));
@@ -348,8 +326,8 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
  * overwritten by a stale overview snapshot.
  */
 async function persistMirrorsFromOverview(
-  get: () => InboxSlice,
-  set: (partial: Partial<InboxSlice>) => void,
+  get: StoreGet,
+  set: StoreSet,
   overview: Record<string, ProjectPmOverview>
 ): Promise<void> {
   let items = get().inboxItems;
@@ -378,8 +356,8 @@ async function persistMirrorsFromOverview(
  * already finished that work in PM.
  */
 async function dismissSettledInboxItems(
-  get: () => InboxSlice,
-  set: (partial: Partial<InboxSlice>) => void,
+  get: StoreGet,
+  set: StoreSet,
   overview: Record<string, ProjectPmOverview>
 ): Promise<void> {
   const settled = settledInboxItems(get().inboxItems, overview);

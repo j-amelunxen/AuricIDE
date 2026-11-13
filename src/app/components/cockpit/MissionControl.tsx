@@ -4,15 +4,13 @@ import { memo, useMemo, useState } from 'react';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { useStore } from '@/lib/store';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
-import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
+import { requirementProof } from '@/lib/pm/requirementFreshness';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
 import { TicketStatusChip } from '../pm/TicketStatusChip';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { PmTicket } from '@/lib/tauri/pm';
-
-const STALE_DAYS = 30;
+import type { PmTicket } from '@/lib/pm/types';
 
 const quietLinkClass =
   'flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light';
@@ -213,13 +211,8 @@ export function MissionControl({
   const liveTickets = tickets.filter((t) => !isClosedTicketStatus(t.status));
   const openTickets = liveTickets.length;
 
-  const relevantTruths = requirements.filter(
-    (r) => r.status === 'active' || r.status === 'implemented' || r.status === 'verified'
-  );
-  const needProof =
-    getStaleRequirements(relevantTruths, STALE_DAYS).length +
-    getUnverifiedRequirements(relevantTruths).length;
-  const heldTruths = relevantTruths.length - needProof;
+  const truths = requirementProof(requirements);
+  const needProof = truths.needProof;
 
   const projectName = rootPath?.split('/').pop() ?? '';
   // Teaching copy is for an empty cockpit. Specs, tickets or goals mean the
@@ -327,7 +320,7 @@ export function MissionControl({
             id="verify"
             icon="verified"
             label="Verify"
-            value={relevantTruths.length > 0 ? `${heldTruths}/${relevantTruths.length}` : '-'}
+            value={truths.relevant > 0 ? `${truths.held}/${truths.relevant}` : '-'}
             hint="Verified / total"
             onClick={openTruths}
           />

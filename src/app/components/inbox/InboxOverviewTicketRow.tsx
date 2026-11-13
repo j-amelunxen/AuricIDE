@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { TicketStatusChip } from '@/app/components/pm/TicketStatusChip';
-import { priorityLabel } from '@/app/components/pm/ticketContextMenu';
+import { PRIORITY_NAME } from '@/lib/pm/labels';
 import { setInboxTaskDragData } from '@/lib/inbox/inboxDrag';
 import type { TicketStatus } from '@/lib/pm/enums';
 import type { ProjectTicketDigest } from '@/lib/tauri/inbox';
@@ -50,7 +50,7 @@ export function InboxOverviewTicketRow({
         <p className="truncate text-left text-[12px] text-foreground">{ticket.name}</p>
         <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
           <span className="normal-case tracking-normal">
-            {priorityLabel[ticket.priority] ?? ticket.priority}
+            {PRIORITY_NAME[ticket.priority] ?? ticket.priority}
           </span>
           <span aria-hidden="true">·</span>
           <span className="truncate normal-case tracking-normal">{ticket.epicName}</span>

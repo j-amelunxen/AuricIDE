@@ -23,8 +23,6 @@ const ZONE_CELLS: Record<DropZone, readonly number[]> = {
   center: [0, 1, 2, 3],
 };
 
-export const DROP_ZONES = Object.keys(ZONE_CELLS) as DropZone[];
-
 /** How far in from an edge still counts as that edge, as a share of the area. */
 const EDGE_ZONE_SHARE = 0.28;
 

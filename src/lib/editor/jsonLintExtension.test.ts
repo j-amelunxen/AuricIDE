@@ -13,25 +13,18 @@ vi.mock('@/lib/store', () => ({
 }));
 
 // Import after mocks are registered
-import { jsonLintExtension, currentFilePathFacetJson, jsonLintSource } from './jsonLintExtension';
+import { jsonLintSource } from './jsonLintExtension';
+import { currentFilePathFacet } from './editorFacets';
 
 describe('jsonLintExtension', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('exports jsonLintExtension as defined', () => {
-    expect(jsonLintExtension).toBeDefined();
-  });
-
-  it('exports currentFilePathFacetJson as defined', () => {
-    expect(currentFilePathFacetJson).toBeDefined();
-  });
-
   it('jsonLintSource returns no diagnostics for valid JSON', async () => {
     const state = EditorState.create({
       doc: '{"key": "value", "num": 42}',
-      extensions: [json(), currentFilePathFacetJson.of('')],
+      extensions: [json(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -44,7 +37,7 @@ describe('jsonLintExtension', () => {
   it('jsonLintSource returns diagnostic for invalid JSON', async () => {
     const state = EditorState.create({
       doc: '{ "key": }',
-      extensions: [json(), currentFilePathFacetJson.of('')],
+      extensions: [json(), currentFilePathFacet.of('')],
     });
     const view = new EditorView({ state });
 
@@ -58,7 +51,7 @@ describe('jsonLintExtension', () => {
   it('pushes diagnostics to store when filePath facet is set', async () => {
     const state = EditorState.create({
       doc: '{ bad json }',
-      extensions: [json(), currentFilePathFacetJson.of('/path/to/file.json')],
+      extensions: [json(), currentFilePathFacet.of('/path/to/file.json')],
     });
     const view = new EditorView({ state });
 
@@ -74,7 +67,7 @@ describe('jsonLintExtension', () => {
   it('clears diagnostics for valid JSON when filePath facet is set', async () => {
     const state = EditorState.create({
       doc: '{"valid": true}',
-      extensions: [json(), currentFilePathFacetJson.of('/path/to/file.json')],
+      extensions: [json(), currentFilePathFacet.of('/path/to/file.json')],
     });
     const view = new EditorView({ state });
 

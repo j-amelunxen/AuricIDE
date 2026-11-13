@@ -1,5 +1,5 @@
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
 
 /**
  * What the supervisor tile can launch: its skills and the wheel slots they

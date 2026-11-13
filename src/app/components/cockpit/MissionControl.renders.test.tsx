@@ -1,8 +1,8 @@
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
-import type { PmTicket } from '@/lib/tauri/pm';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { PmTicket } from '@/lib/pm/types';
+import type { AgentInfo } from '@/lib/agents/types';
 
 // Mission Control stays on screen while agents work. Agents rewrite the
 // `agents` array every few seconds and tickets on every MCP update, so a row

@@ -26,34 +26,10 @@ describe('mermaidWidgetExtension', () => {
     vi.clearAllMocks();
   });
 
-  it('is a valid CodeMirror extension', () => {
-    expect(mermaidWidgetExtension).toBeDefined();
-  });
-
-  it('creates a view without errors when document has mermaid blocks', () => {
-    const doc = '# Title\n```mermaid\ngraph TD\n  A-->B\n```\n';
-    const view = createView(doc);
-    expect(view).toBeDefined();
-    view.destroy();
-  });
-
-  it('creates a view without errors when document has no mermaid blocks', () => {
-    const doc = '# Title\n\nJust regular markdown.\n```js\nconst x = 1;\n```\n';
-    const view = createView(doc);
-    expect(view).toBeDefined();
-    view.destroy();
-  });
-
   it('draws flowcharts with the real mermaid renderer, not the canvas widget', async () => {
     const view = createView('# Title\n```mermaid\ngraph TD\n  A-->B\n```\n');
     await vi.waitFor(() => expect(mermaid.render).toHaveBeenCalledTimes(1));
     expect(vi.mocked(mermaid.render).mock.calls[0][1]).toBe('graph TD\n  A-->B');
-    view.destroy();
-  });
-
-  it('handles empty documents', () => {
-    const view = createView('');
-    expect(view).toBeDefined();
     view.destroy();
   });
 });

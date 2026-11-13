@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { Terminal } from '@xterm/headless';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { OutputBatch } from './outputBatcher';
 import fixtures from './agentWindow.fixtures.json';
 

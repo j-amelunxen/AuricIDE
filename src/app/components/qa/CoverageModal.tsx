@@ -53,10 +53,8 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
       data-testid="coverage-modal-backdrop"
       onClick={onClose}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-      {/* Panel */}
       <div
         ref={dialogRef}
         role="dialog"
@@ -65,7 +63,6 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
         className="relative z-10 flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e14] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
             <AuricIcon name="analytics" className="text-xl text-primary" />
@@ -88,7 +85,6 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
           </button>
         </div>
 
-        {/* Summary metrics */}
         <div className="grid grid-cols-4 gap-px border-b border-white/8 bg-white/5">
           {(
             [
@@ -115,7 +111,6 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
           ))}
         </div>
 
-        {/* Toolbar */}
         <div className="flex items-center gap-3 border-b border-white/8 bg-white/2 px-5 py-3">
           <div className="relative flex-1">
             <AuricIcon
@@ -147,7 +142,6 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
           </div>
         </div>
 
-        {/* File list */}
         <div className="flex-1 overflow-y-auto px-4 py-3 custom-scrollbar">
           {sortedFiles.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center text-center">
@@ -219,7 +213,6 @@ function FileRow({ file }: { file: FileCoverage }) {
 
   return (
     <div className="group rounded-xl border border-white/5 bg-white/2 p-3 transition-all hover:border-white/10 hover:bg-white/4">
-      {/* File name + metrics */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <span
@@ -254,7 +247,6 @@ function FileRow({ file }: { file: FileCoverage }) {
           })}
         </div>
       </div>
-      {/* Lines progress bar */}
       <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/6">
         <div
           className={`h-full rounded-full transition-all duration-500 ${getBgColor(file.lines)}`}

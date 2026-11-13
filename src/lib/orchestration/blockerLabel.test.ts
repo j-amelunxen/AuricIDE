@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal } from '../tauri/goals';
+import type { PmGoal } from '../goals/types';
 import { summarizeBlockers } from './blockerLabel';
 
 const TS = '2026-01-10 10:00:00';

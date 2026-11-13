@@ -6,7 +6,6 @@ import {
   clipboardKeyAction,
   copyText,
   handleTerminalClipboardKey,
-  readClipboardText,
   terminalMenuActions,
 } from './interactions';
 
@@ -105,7 +104,7 @@ describe('handleTerminalClipboardKey', () => {
   });
 });
 
-describe('copyText / readClipboardText', () => {
+describe('copyText', () => {
   beforeEach(() => {
     Object.assign(navigator, {
       clipboard: {
@@ -125,13 +124,8 @@ describe('copyText / readClipboardText', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
 
-  it('reads clipboard text', async () => {
-    await expect(readClipboardText()).resolves.toBe('from-board');
-  });
-
-  it('returns empty string when the clipboard API is missing', async () => {
+  it('reports failure when the clipboard API is missing', async () => {
     Object.assign(navigator, { clipboard: undefined });
-    await expect(readClipboardText()).resolves.toBe('');
     await expect(copyText('x')).resolves.toBe(false);
   });
 });

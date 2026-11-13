@@ -84,7 +84,7 @@ fn an_agent_id_passes_the_terminal_session_round_trip() {
     let session = format!("agent-{id}");
     assert_eq!(session, "agent-agent-261101-4");
     assert_eq!(
-        crate::agents::human_draft::agent_of_session(&session),
+        crate::agents::pty::agent_of_session(&session),
         Some(id.as_str())
     );
 }
@@ -171,7 +171,7 @@ fn a_corrupt_file_is_reseeded_from_the_seconds_since_midnight_and_overwritten() 
             "agent-261101-36002"
         );
         match load(&dir.path().join(STATE_FILE_NAME)) {
-            Loaded::Valid(saved) => assert_eq!(saved, state(261101, 36002)),
+            Read::Valid(saved) => assert_eq!(saved, state(261101, 36002)),
             _ => panic!("the file was not rewritten for {garbage:?}"),
         }
     }

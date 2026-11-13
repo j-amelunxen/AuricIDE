@@ -1,0 +1,13 @@
+{
+  "$comment": "The video-import settings namespace, its keys and their defaults. Read by src/lib/videoImport/settings.ts and src-tauri/src/video_import/tests.rs; change it first.",
+  "namespace": "video_import_settings",
+  "defaults": {
+    "transcription_mode": "automatic",
+    "remote_endpoint": "",
+    "remote_api_key": "",
+    "remote_model": "nvidia/parakeet-tdt-0.6b-v3",
+    "local_command": "parakeet-mlx",
+    "local_args": "{audio} --output-dir {outputDir} --output-format json --highlight-words",
+    "vision_enabled": "true"
+  }
+}

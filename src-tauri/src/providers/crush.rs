@@ -85,6 +85,10 @@ impl AgentProvider for CrushProvider {
         }
     }
 
+    fn mcp_binding(&self) -> McpBinding {
+        McpBinding::CrushConfig
+    }
+
     fn project_binding_injection(&self, binding: &ProviderProjectBinding) -> SpawnInjection {
         match binding.crush_config_path.as_ref() {
             Some(path) => SpawnInjection {

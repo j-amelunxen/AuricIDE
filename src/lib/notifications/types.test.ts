@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import managerFixtures from '@/lib/agents/supervisorManagers.fixtures.json';
 import linkFixtures from '@/lib/agents/supervisorLink.fixtures.json';
-import {
-  isAnsweredNotification,
-  parseNotificationActions,
-  POLICY_PROPOSAL_ORIGIN,
-  type NotificationAction,
-} from './types';
+import { parseNotificationActions, POLICY_PROPOSAL_ORIGIN, type NotificationAction } from './types';
 
 /**
  * Actions arrive from outside the app — an MCP agent, a scheduled reminder,
@@ -489,22 +484,6 @@ describe('parseNotificationActions', () => {
     it('returns an empty list for an empty array', () => {
       expect(parse([])).toEqual([]);
     });
-  });
-});
-
-describe('isAnsweredNotification', () => {
-  it('is false while an ask is still open', () => {
-    expect(isAnsweredNotification({ kind: 'ask', answeredAt: null })).toBe(false);
-  });
-
-  it('is true once an ask carries an answer timestamp', () => {
-    expect(isAnsweredNotification({ kind: 'ask', answeredAt: '2026-08-12 10:00:00' })).toBe(true);
-  });
-
-  // An info notification has nothing to answer, so its buttons are one-shot
-  // navigation — it never enters the answered state.
-  it('is false for an info notification', () => {
-    expect(isAnsweredNotification({ kind: 'info', answeredAt: null })).toBe(false);
   });
 });
 

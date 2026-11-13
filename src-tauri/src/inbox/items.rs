@@ -282,7 +282,6 @@ pub fn capture_ticket_impl(
     ticket_id: &str,
     daily_goal: bool,
 ) -> Result<InboxItem, String> {
-    // 1. Check if already in inbox
     let existing_id: Option<String> = conn
         .query_row(
             "SELECT id FROM inbox_items WHERE ticket_id = ?1 AND dismissed_at IS NULL LIMIT 1",
@@ -303,7 +302,6 @@ pub fn capture_ticket_impl(
         );
     }
 
-    // 2. Read from project database
     if !Path::new(project_path).is_dir() {
         return Err(format!("Project folder does not exist: {}", project_path));
     }

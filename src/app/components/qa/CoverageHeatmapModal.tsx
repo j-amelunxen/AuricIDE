@@ -149,7 +149,6 @@ function CoverageHeatmapContent({
         className="relative z-10 flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e14] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
             <AuricIcon name="3d_rotation" className="text-xl text-primary" />
@@ -172,7 +171,6 @@ function CoverageHeatmapContent({
           </button>
         </div>
 
-        {/* 3D Canvas wrapper */}
         <div className="flex-1 relative bg-black/30">
           <Canvas camera={{ position: [0, 20, 30], fov: 45 }}>
             <color attach="background" args={['#0e0e14']} />
@@ -188,13 +186,11 @@ function CoverageHeatmapContent({
               maxDistance={150}
             />
 
-            {/* Floor Plane */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
               <planeGeometry args={[200, 200]} />
               <meshStandardMaterial color="#13131a" roughness={0.9} />
             </mesh>
 
-            {/* Grid helper */}
             <gridHelper args={[200, 50, '#222', '#111']} position={[0, -0.09, 0]} />
 
             <group>
@@ -210,7 +206,6 @@ function CoverageHeatmapContent({
             </group>
           </Canvas>
 
-          {/* Controls hint */}
           <div className="absolute top-4 left-4 pointer-events-none flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 backdrop-blur-sm">
             <AuricIcon name="touch_app" className="text-[14px] text-white/50" />
             <span className="text-[10px] font-medium text-white/60">
@@ -218,7 +213,6 @@ function CoverageHeatmapContent({
             </span>
           </div>
 
-          {/* Legend Overlay */}
           <div className="absolute bottom-4 left-4 bg-[#0e0e14]/90 border border-white/10 p-4 rounded-xl backdrop-blur-md pointer-events-none min-w-[180px]">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-foreground-muted mb-3">
               Legend

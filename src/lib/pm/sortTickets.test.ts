@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import { TICKET_DEFAULT_SORT, TICKET_SORTS, parseTicketSort, sortTickets } from './sortTickets';
 
 const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({

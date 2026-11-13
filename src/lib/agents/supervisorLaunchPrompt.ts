@@ -11,6 +11,7 @@ import {
   MANAGER_OKF_VERSION,
   memoryFindingLines,
 } from './supervisorManagers';
+import { baseName } from '@/lib/paths/baseName';
 
 /**
  * The start instruction of a supervisor agent (ADR 0004). Pure, so the exact
@@ -126,7 +127,7 @@ export function supervisorPromptSkills(
 ): SupervisorPromptSkill[] {
   const byName = new Map<string, SupervisorPromptSkill>();
   for (const path of Object.keys(skills).sort()) {
-    const name = path.replace(/\/+$/, '').split('/').pop() ?? '';
+    const name = baseName(path);
     if (name && !byName.has(name)) byName.set(name, { name, bash: skills[path].bash });
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));

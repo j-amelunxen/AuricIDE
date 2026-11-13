@@ -1,17 +1,13 @@
-use super::terminal_commands::{
-    TerminalSession, TerminalState, DEFAULT_PTY_COLS, DEFAULT_PTY_ROWS,
-};
 use crate::agent_persistence::AgentPersistenceState;
+use crate::agents::pty::TerminalState;
 use crate::agents::{self, AgentConfig, AgentInfo, AgentManagerState};
 use crate::memory_report;
 use crate::providers::{PromptTemplate, ProviderRegistryState};
 use crate::supervisor::attachments::copy_image_attachment;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::sync::Arc;
 use tauri::Manager;
 use tokio::process::Command;
-use tokio::sync::Mutex as AsyncMutex;
 
 #[tauri::command]
 pub async fn check_cli_status(
@@ -28,7 +24,7 @@ pub async fn check_cli_status(
 
     let mut command = Command::new(&vc.command);
     command.args(&vc.args);
-    for (key, value) in agents::cached_login_shell_env().await {
+    for (key, value) in crate::machine::cached_login_shell_env().await {
         command.env(key, value);
     }
     let output = command.output().await;
@@ -40,7 +36,7 @@ pub async fn check_cli_status(
 pub async fn list_agents(
     state: tauri::State<'_, AgentManagerState>,
 ) -> Result<Vec<AgentInfo>, String> {
-    agents::list_agents_impl(&state).await
+    Ok(agents::list_agents_impl(&state).await)
 }
 
 /// Copies human-provided image files into the running supervisor's restricted
@@ -54,16 +50,11 @@ pub async fn copy_supervisor_image_attachments(
 ) -> Result<Vec<String>, String> {
     let run_dir = {
         let manager = state.lock().await;
-        let process = manager
-            .agents
-            .get(&agent_id)
-            .ok_or("Supervisor is not running")?;
-        if process.info.role != agents::AgentRole::Supervisor {
+        let info = manager.info(&agent_id).ok_or("Supervisor is not running")?;
+        if info.role != agents::AgentRole::Supervisor {
             return Err("Only the supervisor may receive restricted attachments".to_string());
         }
-        process
-            .info
-            .repo_path
+        info.repo_path
             .clone()
             .ok_or("The supervisor has no run folder")?
     };
@@ -84,51 +75,7 @@ pub async fn spawn_agent(
     provider_state: tauri::State<'_, ProviderRegistryState>,
     app: tauri::AppHandle,
 ) -> Result<AgentInfo, String> {
-    spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await
-}
-
-pub async fn spawn_agent_with_session(
-    config: AgentConfig,
-    state: &AgentManagerState,
-    terminal_state: &TerminalState,
-    provider_state: &ProviderRegistryState,
-    app: tauri::AppHandle,
-) -> Result<AgentInfo, String> {
-    let app_for_cleanup = app.clone();
-    let (info, writer, master) = agents::spawn_agent_impl(
-        config,
-        state,
-        &app,
-        provider_state,
-        move |agent_id: String| {
-            let ts = app_for_cleanup.state::<TerminalState>();
-            let mut sessions = ts.sessions.lock().unwrap();
-            sessions.remove(&format!("agent-{}", agent_id));
-        },
-    )
-    .await?;
-
-    let session = Arc::new(AsyncMutex::new(TerminalSession {
-        writer: Some(writer),
-        master: Some(master),
-        rows: DEFAULT_PTY_ROWS,
-        cols: DEFAULT_PTY_COLS,
-    }));
-
-    {
-        let mut sessions = terminal_state.sessions.lock().unwrap();
-        sessions.insert(format!("agent-{}", info.id), session);
-    }
-
-    {
-        let manager = state.lock().await;
-        if !manager.agents.contains_key(&info.id) {
-            let mut sessions = terminal_state.sessions.lock().unwrap();
-            sessions.remove(&format!("agent-{}", info.id));
-        }
-    }
-
-    Ok(info)
+    agents::spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await
 }
 
 #[tauri::command]
@@ -138,12 +85,7 @@ pub async fn kill_agent(
     terminal_state: tauri::State<'_, TerminalState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    {
-        let mut sessions = terminal_state.sessions.lock().unwrap();
-        sessions.remove(&format!("agent-{}", agent_id));
-    }
-
-    agents::kill_agent_impl(&agent_id, &state, &app).await
+    agents::kill_agent_impl(&agent_id, &state, &terminal_state, &app).await
 }
 
 #[tauri::command]
@@ -186,51 +128,25 @@ pub async fn discard_interrupted_agent(
             .take_interrupted(&agent_id)
             .map(|_| ())
     };
-    // Discarding is the human ending the run: the request learns it first,
-    // and only then is the anchor let go, so a failed write or a quit in
-    // between leaves the agent to be discarded again (review r2).
     match served {
-        Some(uid) => {
-            let verdict = agents::launch_runs::killed(&uid, &agent_id);
-            agents::launch_runs::finish(
-                &agents::launch_runs::RETRY_DELAYS,
-                &std::thread::sleep,
-                &mut || {
-                    let inbox = app
-                        .try_state::<crate::notifications::NotificationsState>()
-                        .ok_or_else(|| "The inbox is unavailable".to_string())?;
-                    let conn = inbox
-                        .conn
-                        .lock()
-                        .map_err(|_| "The inbox is unavailable".to_string())?;
-                    crate::notifications::record_launch_run_impl(&conn, &verdict)
-                },
-                &mut forget,
-            )
-        }
+        Some(uid) => agents::launch_runs::discard(&app, &uid, &agent_id, &mut forget),
         None => forget(),
     }
 }
 
 /// Whether `agent_id`'s run for `uid` has its verdict.
 fn launch_run_is_final(app: &tauri::AppHandle, uid: &str, agent_id: &str) -> Result<bool, String> {
-    let inbox = app
-        .try_state::<crate::notifications::NotificationsState>()
-        .ok_or_else(|| "The inbox is unavailable; the run cannot be checked".to_string())?;
-    let conn = inbox
-        .conn
-        .lock()
-        .map_err(|_| "The inbox is unavailable; the run cannot be checked".to_string())?;
-    crate::notifications::launch_run_is_final_for(&conn, uid, agent_id)
+    crate::notifications::with_inbox(app, "the run cannot be checked", |conn| {
+        crate::notifications::launch_run_is_final_for(conn, uid, agent_id)
+    })
 }
 
 fn launch_request_exists(app: &tauri::AppHandle, uid: &str) -> bool {
-    app.try_state::<crate::notifications::NotificationsState>()
-        .and_then(|inbox| {
-            let conn = inbox.conn.lock().ok()?;
-            crate::notifications::is_launch_request(&conn, uid).ok()
-        })
-        .unwrap_or(false)
+    // An inbox that cannot be read holds no request this agent could serve.
+    crate::notifications::with_inbox(app, "a launch request cannot be checked", |conn| {
+        crate::notifications::is_launch_request(conn, uid)
+    })
+    .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -274,7 +190,8 @@ pub async fn resume_interrupted_agent(
     let config = agents::resumed_config(persisted, launch_request_uid);
 
     let spawned =
-        spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await;
+        agents::spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app)
+            .await;
     // A supervisor whose run folder or key another live supervisor holds can
     // be resumed once that one ends, and an archived Project Manager once it
     // is restored; the offer is not used up by trying.
@@ -290,33 +207,6 @@ pub async fn resume_interrupted_agent(
         }
     }
     spawned
-}
-
-#[tauri::command]
-pub async fn kill_agents_for_repo(
-    repo_path: String,
-    state: tauri::State<'_, AgentManagerState>,
-    terminal_state: tauri::State<'_, TerminalState>,
-    app: tauri::AppHandle,
-) -> Result<u32, String> {
-    let ids_to_kill: Vec<String> = {
-        let manager = state.lock().await;
-        manager
-            .agents
-            .values()
-            .filter(|p| p.info.repo_path.as_deref() == Some(&repo_path))
-            .map(|p| p.info.id.clone())
-            .collect()
-    };
-
-    {
-        let mut sessions = terminal_state.sessions.lock().unwrap();
-        for id in &ids_to_kill {
-            sessions.remove(&format!("agent-{}", id));
-        }
-    }
-
-    agents::kill_agents_for_repo_impl(&repo_path, &state, &app).await
 }
 
 #[tauri::command]
@@ -338,16 +228,10 @@ pub async fn get_system_memory(
     let known: Vec<memory_report::KnownProcess> = {
         let manager = agent_state.lock().await;
         manager
-            .agents
-            .values()
-            .filter_map(|agent| {
-                agent
-                    .child
-                    .process_id()
-                    .map(|pid| memory_report::KnownProcess {
-                        pid,
-                        label: format!("Agent: {}", agent.info.name),
-                    })
+            .processes()
+            .map(|(pid, info)| memory_report::KnownProcess {
+                pid,
+                label: format!("Agent: {}", info.name),
             })
             .collect()
     };

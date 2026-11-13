@@ -7,7 +7,6 @@
 //! history, and we already pay for each Codex reading we take.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -21,7 +20,7 @@ const STORE_VERSION: u32 = 1;
 /// One sample per this many seconds, per provider. Matches the Codex poller
 /// so a reading we already paid for is not thrown away, and Claude's denser
 /// status-line writes collapse into the same grid.
-const BUCKET_SECS: i64 = 15 * 60;
+const BUCKET_SECS: i64 = super::REFRESH_TTL_SECS;
 
 /// Keep two weekly windows of trail, so a reset still has a day of context
 /// on either side while the file stays bounded.
@@ -219,34 +218,27 @@ fn load_samples(path: &Path) -> (Vec<UsageSample>, Option<FileStamp>) {
 }
 
 fn preserve_corrupt_history(path: &Path) {
-    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let backup = path.with_file_name(format!("usage-limits-history.corrupt-{timestamp}.json.bak"));
-    let _ = fs::copy(path, backup);
+    crate::json_store::keep_corrupt_copy(path, "usage-limits-history");
 }
 
 /// Returns the stamp the renamed file carries, taken from the written handle
 /// so no other writer can slip in between.
 fn write_samples_atomic(path: &Path, samples: &[UsageSample]) -> Result<Option<FileStamp>, String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Usage limits history has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.tmp");
     let payload = serde_json::to_vec_pretty(&HistoryFile {
         version: STORE_VERSION,
         samples: samples.to_vec(),
     })
     .map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    let stamp = file
-        .metadata()
-        .ok()
-        .and_then(|metadata| FileStamp::of(&metadata));
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(stamp)
+    crate::json_store::write_atomic_inspect(
+        path,
+        &payload,
+        crate::json_store::Mode::Default,
+        |file| {
+            file.metadata()
+                .ok()
+                .and_then(|metadata| FileStamp::of(&metadata))
+        },
+    )
 }
 
 #[cfg(test)]

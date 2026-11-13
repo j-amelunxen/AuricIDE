@@ -1,4 +1,4 @@
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 
 /**
  * How much of a goal's description travels inside an agent prompt. The prompt

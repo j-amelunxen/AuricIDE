@@ -3,10 +3,10 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/goals/types';
 import { useStore } from '@/lib/store';
 import { usageRow } from '@/lib/pm/usage/testRow';
-import type { PmTicket } from '@/lib/tauri/pm';
+import type { PmTicket } from '@/lib/pm/types';
 import { MISSION_FIXTURES } from '@/lib/missions/missionFs.testing';
 
 // The mission panel reads through the Tauri fs wrappers; here they read the

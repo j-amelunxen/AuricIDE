@@ -455,8 +455,8 @@ fn load_goals(conn: &Connection) -> Result<Vec<PmGoal>, String> {
             })
         })
         .map_err(|e| format!("Failed to query goals: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read goals: {}", e))?;
     Ok(rows)
 }
 
@@ -486,8 +486,8 @@ fn load_goal_runs(conn: &Connection) -> Result<Vec<PmGoalRun>, String> {
             })
         })
         .map_err(|e| format!("Failed to query goal runs: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read goal runs: {}", e))?;
     Ok(rows)
 }
 
@@ -508,8 +508,8 @@ fn load_goal_requirement_links(conn: &Connection) -> Result<Vec<PmGoalRequiremen
             })
         })
         .map_err(|e| format!("Failed to query goal requirement links: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read goal requirement links: {}", e))?;
     Ok(rows)
 }
 
@@ -545,8 +545,8 @@ fn load_goal_stations(conn: &Connection) -> Result<Vec<PmGoalStation>, String> {
             })
         })
         .map_err(|e| format!("Failed to query goal stations: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read goal stations: {}", e))?;
     Ok(rows)
 }
 
@@ -570,8 +570,8 @@ fn load_goal_dependencies(conn: &Connection) -> Result<Vec<PmGoalDependency>, St
             })
         })
         .map_err(|e| format!("Failed to query goal dependencies: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read goal dependencies: {}", e))?;
     Ok(rows)
 }
 
@@ -583,17 +583,4 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
         stations: load_goal_stations(conn)?,
         dependencies: load_goal_dependencies(conn)?,
     })
-}
-
-pub fn goals_clear_impl(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "DELETE FROM pm_goal_status_history;
-         DELETE FROM pm_goal_dependencies;
-         DELETE FROM pm_goal_stations;
-         DELETE FROM pm_goal_requirement_links;
-         DELETE FROM pm_goal_runs;
-         DELETE FROM pm_goals;",
-    )
-    .map_err(|e| format!("Failed to clear goals: {}", e))?;
-    Ok(())
 }

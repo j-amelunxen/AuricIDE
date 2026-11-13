@@ -1,11 +1,7 @@
-import { Facet, type Extension } from '@codemirror/state';
+import type { Extension } from '@codemirror/state';
 import { linter, lintGutter } from '@codemirror/lint';
 import * as yaml from 'js-yaml';
 import { createStructuredLinterSource } from './structuredLintHelper';
-
-export const currentFilePathFacetYaml = Facet.define<string, string>({
-  combine: (values) => values[0] ?? '',
-});
 
 export interface YamlParseError {
   line: number;
@@ -34,10 +30,6 @@ export function parseYamlErrors(text: string): YamlParseError[] {
   }
 }
 
-export const yamlLintSource = createStructuredLinterSource(
-  parseYamlErrors,
-  currentFilePathFacetYaml,
-  'yaml'
-);
+export const yamlLintSource = createStructuredLinterSource(parseYamlErrors, 'yaml');
 
 export const yamlLintExtension: Extension = [linter(yamlLintSource, { delay: 300 }), lintGutter()];

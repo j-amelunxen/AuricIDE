@@ -1,3 +1,4 @@
+import type { StoreGet } from '@/lib/store/types';
 import { appendCapped, appendCappedLog } from '../../agents/appendCapped';
 import { deriveAgentActivity } from '@/lib/agents/activity';
 import { detectAwaitingInput } from '@/lib/agents/awaitingInput';
@@ -35,7 +36,7 @@ type AgentLogSet = (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<Agent
 export function handleAppendAgentLog(
   agentId: string,
   log: string,
-  get: () => AgentSlice,
+  get: StoreGet,
   set: AgentLogSet
 ): void {
   handleAppendAgentLogBatch([[agentId, [log]]], get, set);
@@ -55,7 +56,7 @@ export function handleAppendAgentLog(
  */
 export function handleAppendAgentLogBatch(
   batch: AgentLogBatch,
-  get: () => AgentSlice,
+  get: StoreGet,
   set: AgentLogSet
 ): void {
   const state = get();
@@ -171,7 +172,7 @@ export function handleAppendAgentLogBatch(
 export function handleAppendAgentTerminalChunks(
   agentId: string,
   chunks: readonly string[],
-  get: () => AgentSlice,
+  get: StoreGet,
   set: AgentLogSet
 ): void {
   if (chunks.length === 0) return;
@@ -202,11 +203,7 @@ function sameDigests(a: Record<string, string>, b: Record<string, string>): bool
  * nothing about them: a roster arrives several times a second, and a new
  * object each time would re-run every subscriber for no change.
  */
-export function handleApplyAgentRoster(
-  roster: AgentRoster,
-  get: () => AgentSlice,
-  set: AgentLogSet
-): void {
+export function handleApplyAgentRoster(roster: AgentRoster, get: StoreGet, set: AgentLogSet): void {
   const state = get();
   const onRoster = new Set(roster.agents.map((a) => a.id));
   // Left the roster, as opposed to not on it yet: a new agent's first output

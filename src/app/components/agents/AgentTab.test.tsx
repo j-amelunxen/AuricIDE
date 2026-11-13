@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentTab } from './AgentTab';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { TAB_PREVIEW_DELAY_MS, TAB_PREVIEW_GRACE_MS } from '@/lib/agents/tabPreview';
 
 const LONG_PROMPT = [

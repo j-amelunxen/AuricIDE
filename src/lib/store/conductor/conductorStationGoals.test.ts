@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GoalStatus, PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { GoalStatus, PmGoal, PmGoalStation } from '@/lib/goals/types';
 import { getStationGoalWork, type StationGoalInput } from './conductorStationGoals';
 
 // A stations goal with one open agent station: launchable unless its status

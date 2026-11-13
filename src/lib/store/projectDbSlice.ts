@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import {
   initProjectDb as ipcInitProjectDb,
@@ -10,7 +11,7 @@ export interface ProjectDbSlice {
   closeProjectDb: (projectPath: string) => Promise<void>;
 }
 
-export const createProjectDbSlice: StateCreator<ProjectDbSlice> = (set) => ({
+export const createProjectDbSlice: StateCreator<StoreState, [], [], ProjectDbSlice> = (set) => ({
   projectDbInitialized: false,
 
   initProjectDb: async (projectPath) => {

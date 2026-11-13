@@ -32,7 +32,7 @@ impl ProbeOutput {
 pub async fn run_probe(program: &Path, args: &[&str], timeout: Duration) -> Option<ProbeOutput> {
     let mut command = Command::new(program);
     command.args(args);
-    for (key, value) in crate::agents::cached_login_shell_env().await {
+    for (key, value) in crate::machine::cached_login_shell_env().await {
         command.env(key, value);
     }
     command.stdin(Stdio::null());

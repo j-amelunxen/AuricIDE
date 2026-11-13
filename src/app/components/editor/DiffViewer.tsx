@@ -10,22 +10,22 @@ import {
   type SideBySideRow,
 } from '@/lib/git/parseDiff';
 import { fileLevelFlags } from '@/lib/git/review/riskChips';
-import { useShortcutSheet, type ShortcutSheetContent } from '../git/shared/ShortcutSheet';
-import { isShortcutSheetKey } from '../git/shared/shortcutKeys';
-import { DiffNavButtons } from './diff/DiffNavButtons';
-import { HunkHeaderContext } from './diff/HunkHeaderContext';
-import { LineCommentContext } from './diff/LineCommentContext';
-import { LineEditContext } from './diff/LineEditContext';
-import { ModeOnlyChange } from './diff/ModeOnlyChange';
-import { SideBySideView } from './diff/SideBySideView';
-import { UnifiedView } from './diff/UnifiedView';
-import { UnlockedEditor } from './diff/UnlockedEditor';
-import { RiskChips } from './diff/RiskChips';
-import { useDiffViewerState } from './diff/useDiffViewerState';
-import { hunkCountOf } from './diff/types';
-import { useHunkHeaderApi } from './diff/useHunkHeaderApi';
-import { useNarrow } from './diff/useNarrow';
-import type { DiffViewerProps } from './diff/types';
+import { useShortcutSheet, type ShortcutSheetContent } from '../diff/ShortcutSheet';
+import { isShortcutSheetKey } from '../diff/shortcutKeys';
+import { DiffNavButtons } from '../diff/DiffNavButtons';
+import { HunkHeaderContext } from '../diff/HunkHeaderContext';
+import { LineCommentContext } from '../diff/LineCommentContext';
+import { LineEditContext } from '../diff/LineEditContext';
+import { ModeOnlyChange } from '../diff/ModeOnlyChange';
+import { SideBySideView } from '../diff/SideBySideView';
+import { UnifiedView } from '../diff/UnifiedView';
+import { UnlockedEditor } from '../diff/UnlockedEditor';
+import { RiskChips } from '../diff/RiskChips';
+import { useDiffViewerState } from '../diff/useDiffViewerState';
+import { hunkCountOf } from '../diff/types';
+import { useHunkHeaderApi } from '../diff/useHunkHeaderApi';
+import { useNarrow } from '../diff/useNarrow';
+import type { DiffViewerProps } from '../diff/types';
 
 export type { DiffLine, SideBySideRow, DiffViewerProps };
 export { parseDiff, buildSideBySideRows };

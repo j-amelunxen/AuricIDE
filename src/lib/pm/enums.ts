@@ -36,6 +36,16 @@ export function isClosedTicketStatus(status: string): boolean {
 export const PRIORITIES = ['low', 'normal', 'high', 'critical'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+/**
+ * How urgent a priority is, higher first: the one order the conductor, the
+ * goal board, the ticket list and the inbox sort by. A value outside the list
+ * counts as normal.
+ */
+export function priorityUrgency(priority: string): number {
+  const rank = (PRIORITIES as readonly string[]).indexOf(priority);
+  return rank === -1 ? PRIORITIES.indexOf('normal') : rank;
+}
+
 // 'in_review' is a goal whose work is claimed done while a reviewer's verdict
 // (pm_goal_reviews) is pending: still open, but no agent works it meanwhile.
 export const GOAL_STATUSES = [

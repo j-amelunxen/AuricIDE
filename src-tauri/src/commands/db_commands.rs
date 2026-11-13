@@ -4,6 +4,7 @@ use crate::database::{
 };
 use crate::inbox::{self, ProjectPmOverview};
 use std::fs;
+use std::path::Path;
 
 #[tauri::command]
 pub fn init_project_db(
@@ -26,11 +27,9 @@ pub fn db_get(
     key: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Option<String>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::kv_get(conn, &namespace, &key)
+    state.with_project(&project_path, |conn| {
+        database::kv_get(conn, &namespace, &key)
+    })
 }
 
 #[tauri::command]
@@ -41,11 +40,9 @@ pub fn db_set(
     value: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::kv_set(conn, &namespace, &key, &value)
+    state.with_project(&project_path, |conn| {
+        database::kv_set(conn, &namespace, &key, &value)
+    })
 }
 
 #[tauri::command]
@@ -55,11 +52,9 @@ pub fn db_delete(
     key: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<bool, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::kv_delete(conn, &namespace, &key)
+    state.with_project(&project_path, |conn| {
+        database::kv_delete(conn, &namespace, &key)
+    })
 }
 
 #[tauri::command]
@@ -68,11 +63,7 @@ pub fn db_list(
     namespace: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Vec<KvEntry>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::kv_list(conn, &namespace)
+    state.with_project(&project_path, |conn| database::kv_list(conn, &namespace))
 }
 
 #[tauri::command]
@@ -99,8 +90,8 @@ pub fn db_export(
         }
     }
 
-    let auric_dir = database::ensure_auric_dir(&project_path)?;
-    let db_path = auric_dir.join("project.db");
+    database::ensure_auric_dir(&project_path)?;
+    let db_path = database::project_db_path(Path::new(&project_path));
 
     if !db_path.exists() {
         return Err("Database file not found".to_string());
@@ -122,11 +113,18 @@ pub fn db_import(
         connections.remove(&project_path);
     }
 
-    let auric_dir = database::ensure_auric_dir(&project_path)?;
-    let db_path = auric_dir.join("project.db");
-
-    let _ = fs::remove_file(auric_dir.join("project.db-wal"));
-    let _ = fs::remove_file(auric_dir.join("project.db-shm"));
+    database::ensure_auric_dir(&project_path)?;
+    let db_path = database::project_db_path(Path::new(&project_path));
+    // A stale write-ahead log would be replayed onto the imported database.
+    for sidecar in ["-wal", "-shm"] {
+        let mut name = db_path.clone().into_os_string();
+        name.push(sidecar);
+        if let Err(error) = fs::remove_file(&name) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("Failed to remove the old database log: {error}"));
+            }
+        }
+    }
     if db_path.exists() {
         fs::remove_file(&db_path).map_err(|e| format!("Failed to remove old database: {}", e))?;
     }
@@ -148,11 +146,7 @@ pub fn pm_save(
     payload: PmSavePayload,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::pm_save_impl(conn, &payload)
+    state.with_project(&project_path, |conn| database::pm_save_impl(conn, &payload))
 }
 
 #[tauri::command]
@@ -160,11 +154,7 @@ pub fn pm_load(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<PmState, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::pm_load_impl(conn)
+    state.with_project(&project_path, database::pm_load_impl)
 }
 
 #[tauri::command]
@@ -172,11 +162,7 @@ pub fn pm_load_history(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Vec<PmStatusHistoryEntry>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::pm_load_history_impl(conn)
+    state.with_project(&project_path, database::pm_load_history_impl)
 }
 
 #[tauri::command]
@@ -185,11 +171,9 @@ pub fn goals_load_status_history(
     goal_id: Option<String>,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Vec<database::PmGoalStatusHistoryEntry>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::goal_status_history_load_impl(conn, goal_id.as_deref())
+    state.with_project(&project_path, |conn| {
+        database::goal_status_history_load_impl(conn, goal_id.as_deref())
+    })
 }
 
 #[tauri::command]
@@ -198,11 +182,9 @@ pub fn agent_prompt_history_add(
     entry: AgentPromptHistoryEntry,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::agent_prompt_history_add_impl(conn, &entry)
+    state.with_project(&project_path, |conn| {
+        database::agent_prompt_history_add_impl(conn, &entry)
+    })
 }
 
 #[tauri::command]
@@ -211,11 +193,9 @@ pub fn agent_prompt_history_list(
     limit: Option<usize>,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Vec<AgentPromptHistoryEntry>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::agent_prompt_history_list_impl(conn, limit)
+    state.with_project(&project_path, |conn| {
+        database::agent_prompt_history_list_impl(conn, limit)
+    })
 }
 
 #[tauri::command]
@@ -225,11 +205,9 @@ pub fn pm_latest_ticket_review(
     since_iso: Option<String>,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<Option<TicketReview>, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::pm_latest_ticket_review_impl(conn, &ticket_id, since_iso.as_deref())
+    state.with_project(&project_path, |conn| {
+        database::pm_latest_ticket_review_impl(conn, &ticket_id, since_iso.as_deref())
+    })
 }
 
 #[tauri::command]
@@ -237,11 +215,7 @@ pub fn pm_clear(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::pm_clear_impl(conn)
+    state.with_project(&project_path, database::pm_clear_impl)
 }
 
 #[tauri::command]
@@ -250,11 +224,9 @@ pub fn blueprints_save(
     payload: BlueprintState,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::blueprints_save_impl(conn, &payload)
+    state.with_project(&project_path, |conn| {
+        database::blueprints_save_impl(conn, &payload)
+    })
 }
 
 #[tauri::command]
@@ -262,23 +234,7 @@ pub fn blueprints_load(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<BlueprintState, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::blueprints_load_impl(conn)
-}
-
-#[tauri::command]
-pub fn blueprints_clear(
-    project_path: String,
-    state: tauri::State<'_, DatabaseState>,
-) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::blueprints_clear_impl(conn)
+    state.with_project(&project_path, database::blueprints_load_impl)
 }
 
 #[tauri::command]
@@ -287,11 +243,9 @@ pub fn requirements_save(
     payload: RequirementsState,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::requirements_save_impl(conn, &payload)
+    state.with_project(&project_path, |conn| {
+        database::requirements_save_impl(conn, &payload)
+    })
 }
 
 #[tauri::command]
@@ -299,23 +253,7 @@ pub fn requirements_load(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<RequirementsState, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::requirements_load_impl(conn)
-}
-
-#[tauri::command]
-pub fn requirements_clear(
-    project_path: String,
-    state: tauri::State<'_, DatabaseState>,
-) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::requirements_clear_impl(conn)
+    state.with_project(&project_path, database::requirements_load_impl)
 }
 
 #[tauri::command]
@@ -324,11 +262,9 @@ pub fn goals_save(
     payload: GoalsSyncPayload,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<database::GoalsSyncResult, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::goals_sync_impl(conn, &payload)
+    state.with_project(&project_path, |conn| {
+        database::goals_sync_impl(conn, &payload)
+    })
 }
 
 #[tauri::command]
@@ -336,23 +272,7 @@ pub fn goals_load(
     project_path: String,
     state: tauri::State<'_, DatabaseState>,
 ) -> Result<GoalsState, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::goals_load_impl(conn)
-}
-
-#[tauri::command]
-pub fn goals_clear(
-    project_path: String,
-    state: tauri::State<'_, DatabaseState>,
-) -> Result<(), String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(&project_path)
-        .ok_or("Database not initialized for this project")?;
-    database::goals_clear_impl(conn)
+    state.with_project(&project_path, database::goals_load_impl)
 }
 
 #[tauri::command]

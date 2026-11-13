@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ControlError } from '../lib/agents/agentControl.contract';
 import { PmGateway, type PmChild } from './supervisorPm';
-import type { ControlCaller } from './tools/agentControl';
+import type { ControlCaller } from './controlTypes';
 
 /**
  * The cache half of `verification/lean/AuricIDE/PmScope.lean`: the Lean model's

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
 import {
+  CONTROL_LIMITS,
   externalRegisterParams,
   externalStopParams,
   markWaitingParams,
@@ -21,8 +22,8 @@ import {
   sendAgentInputTool,
   setQuotaBlockTool,
   worktreeParam,
-  type ControlCaller,
 } from './agentControl';
+import { type ControlCaller } from '../controlTypes';
 
 /**
  * The supervisor tools, offered only by `auric-mcp --supervisor`
@@ -118,9 +119,11 @@ function registerWaitingTools(server: FastMCP, call: ControlCaller): void {
       'or to the human, and its card reads "waiting: <reason> (until HH:MM)". The mark ends ' +
       'by itself at until, when the agent prints something new, when it asks a question or ' +
       'shows a prompt, and when it finishes; normal stall detection then starts a fresh ' +
-      'inactivity window. reason is one short line (200 characters at most). until is an ISO ' +
-      '8601 time (2026-11-07T18:00:00Z) or a duration (90m, 2h, 1h30m); left out it is 2 h, ' +
-      'and more than 24 h is refused. Marking again replaces the earlier mark. Only your own ' +
+      `inactivity window. reason is one short line (${CONTROL_LIMITS.waitingReasonMaxChars} ` +
+      'characters at most). until is an ISO 8601 time (2026-11-07T18:00:00Z) or a duration ' +
+      `(90m, 2h, 1h30m); left out it is ${CONTROL_LIMITS.waitingDefaultMs / 3_600_000} h, and ` +
+      `more than ${CONTROL_LIMITS.waitingMaxMs / 3_600_000} h is refused. Marking again ` +
+      'replaces the earlier mark. Only your own ' +
       'running agents; any other id is unknown_agent. Returns { agentId, reason, until } with ' +
       'until as an ISO time.' +
       OWN_CHILDREN,

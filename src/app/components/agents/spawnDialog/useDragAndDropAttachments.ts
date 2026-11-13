@@ -1,7 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, type DragEvent, type RefObject } from 'react';
-import { attachPathDrop, attachSavedImagePaste, saveTempImage } from '@/lib/terminal/imageInsert';
+import {
+  attachPathDrop,
+  attachSavedImagePaste,
+  reportImageSaveFailure,
+  saveTempImage,
+} from '@/lib/terminal/imageInsert';
 import { mergeAttachmentPaths } from '@/lib/agents/spawnAttachments';
 
 export function useDragAndDropAttachments(dialogRef: RefObject<HTMLDivElement | null>) {
@@ -57,11 +62,7 @@ export function useDragAndDropAttachments(dialogRef: RefObject<HTMLDivElement | 
     }
     const images = files.filter((file) => file.type.startsWith('image/'));
     if (images.length === 0) return;
-    Promise.all(images.map(saveTempImage))
-      .then(addAttachments)
-      .catch(() => {
-        // Browser mode / IPC failure — nothing to attach
-      });
+    Promise.all(images.map(saveTempImage)).then(addAttachments).catch(reportImageSaveFailure);
   };
 
   return {

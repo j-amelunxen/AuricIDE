@@ -2,7 +2,7 @@ import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
 import type { ConductorLaunch, NotificationAction } from '@/lib/notifications/types';
 import type { ProviderInfo } from '@/lib/tauri/providers';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { Schedule } from '@/lib/tauri/schedules';
 

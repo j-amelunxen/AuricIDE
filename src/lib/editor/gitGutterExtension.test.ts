@@ -4,11 +4,7 @@ import {
   AddedMarker,
   ModifiedMarker,
   DeletedMarker,
-  gitChanges,
-  gitGutterExtension,
-  createGitGutter,
   diffToLineChanges,
-  type LineChange,
   type LineChangeType,
   type DiffLineLike,
 } from './gitGutterExtension';
@@ -78,49 +74,6 @@ describe('gitGutterExtension', () => {
       expect(addedEl.style.height).toBe('100%');
       expect(modifiedEl.style.height).toBe('100%');
       expect(deletedEl.style.height).toBe('100%');
-    });
-  });
-
-  describe('gitChanges Facet', () => {
-    it('is defined', () => {
-      expect(gitChanges).toBeDefined();
-    });
-  });
-
-  describe('gitGutterExtension', () => {
-    it('is defined as a valid Extension', () => {
-      expect(gitGutterExtension).toBeDefined();
-    });
-  });
-
-  describe('createGitGutter', () => {
-    it('returns a valid Extension array', () => {
-      const changes: LineChange[] = [
-        { line: 1, type: 'added' },
-        { line: 3, type: 'modified' },
-      ];
-      const extensions = createGitGutter(changes);
-      expect(extensions).toBeDefined();
-      expect(Array.isArray(extensions)).toBe(true);
-      expect(extensions.length).toBeGreaterThan(0);
-    });
-
-    it('handles empty changes array gracefully', () => {
-      const extensions = createGitGutter([]);
-      expect(extensions).toBeDefined();
-      expect(Array.isArray(extensions)).toBe(true);
-      expect(extensions.length).toBeGreaterThan(0);
-    });
-
-    it('handles all three change types', () => {
-      const changes: LineChange[] = [
-        { line: 1, type: 'added' },
-        { line: 2, type: 'modified' },
-        { line: 3, type: 'deleted' },
-      ];
-      const extensions = createGitGutter(changes);
-      expect(extensions).toBeDefined();
-      expect(Array.isArray(extensions)).toBe(true);
     });
   });
 

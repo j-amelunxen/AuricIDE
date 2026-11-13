@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from './page';
 import { useStore } from '@/lib/store';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 
 // Render counters for the memoized panels. Each wrapper calls the real
 // component as a function, so behaviour is unchanged — it only notes that the
@@ -129,9 +129,7 @@ vi.mock('@/lib/tauri/agents', () => ({
     startedAt: 0,
   }),
   killAgent: vi.fn().mockResolvedValue(undefined),
-  killAgentsForRepo: vi.fn().mockResolvedValue(0),
   listAgents: vi.fn().mockResolvedValue([]),
-  sendToAgent: vi.fn().mockResolvedValue(undefined),
   sendMessageToAgent: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -283,9 +281,7 @@ vi.mock('@codemirror/lint', () => ({
 vi.mock('@/lib/editor/markdownLintExtension', () => ({
   markdownLintExtension: [],
   lintConfigFacet: { of: () => [] },
-  fileListForLintFacet: { of: () => [] },
   headingIndexForLintFacet: { of: () => [] },
-  currentFilePathFacet: { of: () => [] },
 }));
 
 vi.mock('@/app/components/dev/PerformanceMonitor', () => ({
@@ -307,7 +303,6 @@ vi.mock('@/lib/editor/wikiLinkBrokenExtension', () => ({
 
 vi.mock('@/lib/editor/wikiLinkCompletionExtension', () => ({
   wikiLinkCompletion: () => null,
-  fileListFacet: { of: () => [] },
 }));
 
 vi.mock('@/lib/editor/wikiLinkHoverExtension', () => ({
@@ -333,7 +328,6 @@ vi.mock('@/lib/editor/markdownCompletionSource', () => ({
   headingLevelSource: () => null,
   linkTargetSource: () => null,
   imageTargetSource: () => null,
-  filePathsFacet: { of: () => [] },
 }));
 
 vi.mock('@/lib/hooks/useFileWatcher', () => ({
@@ -377,9 +371,7 @@ vi.mock('@/lib/hooks/useAgentEvents', () => ({
   useBatchedAgentEvents: vi.fn(),
 }));
 
-vi.mock('@/lib/canvas/markdownParser', () => ({
-  parseWorkflowMarkdown: vi.fn(() => ({ nodes: [], edges: [] })),
-}));
+vi.mock('@/lib/canvas/markdownParser', () => ({}));
 
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: Record<string, unknown>) => <div data-testid="react-flow" {...props} />,
@@ -666,7 +658,7 @@ describe('FileWatcher debouncing', () => {
     mockReadDirectory.mockClear();
 
     // Trigger a file event
-    onChange({ path: '/test/project/file.ts', kind: 'modify' });
+    onChange({ path: '/test/project/file.ts', contentOnly: false });
 
     // Flush microtasks — without debouncing, handleRefresh would have executed
     await act(async () => {
@@ -688,7 +680,7 @@ describe('FileWatcher debouncing', () => {
     const onChange = mockWatcher.mock.calls[mockWatcher.mock.calls.length - 1][1];
     mockReadDirectory.mockClear();
 
-    onChange({ path: '/test/project/file.ts', kind: 'modify' });
+    onChange({ path: '/test/project/file.ts', contentOnly: false });
 
     // Wait past the debounce period
     await act(async () => {
@@ -712,7 +704,7 @@ describe('FileWatcher debouncing', () => {
 
     // Fire 20 events rapidly (simulating agent modifying many files)
     for (let i = 0; i < 20; i++) {
-      onChange({ path: `/test/project/file${i}.ts`, kind: 'modify' });
+      onChange({ path: `/test/project/file${i}.ts`, contentOnly: false });
     }
 
     // Wait past debounce

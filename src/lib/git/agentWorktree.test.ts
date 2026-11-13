@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GitRepoRef } from '@/lib/tauri/git';
 import {
-  AURIC_WORKTREE_BRANCH_PREFIX,
   AURIC_WORKTREE_DIR_SUFFIX,
-  auricWorktreeDir,
-  isAuricWorktreeBranch,
   isAuricWorktreePath,
   needsWorktreeRepoPicker,
-  slugifyAgentWorktreeName,
   worktreeIsOccupied,
   worktreeSourceRepos,
 } from './agentWorktree';
@@ -21,39 +17,6 @@ function repo(
   return { path, relativePath, name, kind };
 }
 
-describe('slugifyAgentWorktreeName', () => {
-  it('lowercases and turns punctuation into dashes', () => {
-    expect(slugifyAgentWorktreeName('Fix login!!!')).toBe('fix-login');
-  });
-
-  it('collapses repeated separators and trims edges', () => {
-    expect(slugifyAgentWorktreeName('  --Hello   World--  ')).toBe('hello-world');
-  });
-
-  it('falls back to agent when nothing usable remains', () => {
-    expect(slugifyAgentWorktreeName('***')).toBe('agent');
-    expect(slugifyAgentWorktreeName('')).toBe('agent');
-  });
-
-  it('caps the slug so branch names stay short', () => {
-    const slug = slugifyAgentWorktreeName('a'.repeat(80));
-    expect(slug.length).toBeLessThanOrEqual(32);
-    expect(slug).toMatch(/^a+$/);
-  });
-});
-
-describe('auricWorktreeDir', () => {
-  it('places worktrees as a sibling folder next to the repo', () => {
-    expect(auricWorktreeDir('/Users/dev/AuricIDE')).toBe(
-      `/Users/dev/AuricIDE${AURIC_WORKTREE_DIR_SUFFIX}`
-    );
-  });
-
-  it('strips a trailing slash on the repo path', () => {
-    expect(auricWorktreeDir('/tmp/project/')).toBe(`/tmp/project${AURIC_WORKTREE_DIR_SUFFIX}`);
-  });
-});
-
 describe('isAuricWorktreePath', () => {
   it('recognises a checkout under the sibling worktree folder', () => {
     expect(isAuricWorktreePath(`/tmp/project${AURIC_WORKTREE_DIR_SUFFIX}/fix-login-ab12`)).toBe(
@@ -63,14 +26,6 @@ describe('isAuricWorktreePath', () => {
 
   it('rejects the main checkout', () => {
     expect(isAuricWorktreePath('/tmp/project')).toBe(false);
-  });
-});
-
-describe('isAuricWorktreeBranch', () => {
-  it('only accepts the reserved prefix', () => {
-    expect(isAuricWorktreeBranch(`${AURIC_WORKTREE_BRANCH_PREFIX}fix-login-ab12`)).toBe(true);
-    expect(isAuricWorktreeBranch('feature/login')).toBe(false);
-    expect(isAuricWorktreeBranch(null)).toBe(false);
   });
 });
 

@@ -1,9 +1,8 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { describe, expect, it } from 'vitest';
-import { create } from 'zustand';
-import { createLaneSummariesSlice, type LaneSummariesSlice } from './laneSummariesSlice';
 
 function makeStore() {
-  return create<LaneSummariesSlice>()((...a) => createLaneSummariesSlice(...a));
+  return createFullTestStore();
 }
 
 describe('laneSummariesSlice', () => {

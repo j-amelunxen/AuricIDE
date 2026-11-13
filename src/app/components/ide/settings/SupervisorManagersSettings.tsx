@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ManagerConfirmDialog } from '@/app/components/agents/SupervisorRunsPanel';
+import { ManagerConfirmDialog } from '@/app/components/ui/ManagerConfirmDialog';
 import { ManagerNameSheet } from '@/app/components/agents/ManagerNameSheet';
 import { useAskManager } from '@/app/components/agents/useAskManager';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -18,7 +18,7 @@ import { loadSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
 import { duplicateShortcuts, readMenuBarPrefs } from '@/lib/quickAccess/supervisorMenuBar';
 import { useManagerPresentations } from '@/lib/quickAccess/useManagerPresentations';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { openPathInDefaultApp, revealInFileManager } from '@/lib/tauri/opener';
 import {
   managerArchive,
@@ -49,9 +49,8 @@ export function SupervisorManagersSettings() {
   const { managers, error } = useProjectManagers();
   const presentations = useManagerPresentations();
   const agents = useStore((s) => s.agents);
-  const killRunningAgent = useStore((s) => s.killRunningAgent);
   const showToast = useStore((s) => s.showToast);
-  const { open } = useOpenManager();
+  const { open, restart } = useOpenManager();
   const { ask, sheet: askSheet } = useAskManager();
   const models = useSupervisorModels();
   const live = useMemo(() => runningSupervisors(agents), [agents]);
@@ -120,14 +119,7 @@ export function SupervisorManagersSettings() {
       );
       return;
     }
-    const stopped = await killRunningAgent(pending.live.id).then(
-      () => true,
-      (cause: unknown) => {
-        showToast(`Could not stop ${pending.manager.name}: ${detailOf(cause)}`, 'error');
-        return false;
-      }
-    );
-    if (stopped) await open(pending.manager.key);
+    await restart(pending.manager, pending.live.id);
   };
 
   return (

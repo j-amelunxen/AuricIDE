@@ -15,7 +15,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -103,33 +102,21 @@ pub fn read_snapshots(path: &Path) -> BTreeMap<String, UsageSnapshot> {
 }
 
 fn preserve_corrupt_store(path: &Path) {
-    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let backup = path.with_file_name(format!("usage-limits.corrupt-{timestamp}.json.bak"));
-    let _ = fs::copy(path, backup);
+    crate::json_store::keep_corrupt_copy(path, "usage-limits");
 }
 
-/// Writes through a temp file and a rename, so a read that lands mid-write
-/// sees either the old file or the new one.
 pub fn write_snapshots_atomic(
     path: &Path,
     snapshots: &BTreeMap<String, UsageSnapshot>,
 ) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Usage limits store has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.tmp");
-    let payload = serde_json::to_vec_pretty(&UsageLimitsFile {
-        version: STORE_VERSION,
-        snapshots: snapshots.clone(),
-    })
-    .map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_json_as(
+        path,
+        &UsageLimitsFile {
+            version: STORE_VERSION,
+            snapshots: snapshots.clone(),
+        },
+        crate::json_store::Mode::Default,
+    )
 }
 
 #[cfg(test)]

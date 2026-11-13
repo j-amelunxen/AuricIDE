@@ -436,6 +436,7 @@ export function SupervisorLinkSettings() {
     supervisorLinkPolicyGet().then(applyPolicy, failPolicy);
     supervisorLinkPolicyEffective().then(applyEffective, failEffective);
     supervisorLinkProposals().then(applyProposals, () => {});
+    // The usage line is optional; without it the panel shows no counter.
     supervisorLinkJobsUsage()
       .then((loaded) => alive.current && setUsage(loaded))
       .catch(() => {});

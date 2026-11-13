@@ -1,8 +1,5 @@
+import { baseName } from '@/lib/paths/baseName';
 const MAX_NAMES_SHOWN = 5;
-
-function basename(path: string): string {
-  return path.split('/').pop() ?? path;
-}
 
 /**
  * Warns about files that still link to what's about to be deleted, so a
@@ -13,14 +10,14 @@ export function computeBacklinkWarning(
   paths: string[],
   getBacklinksFor: (targetFileName: string) => string[]
 ): string | null {
-  const deletedBasenames = new Set(paths.map((p) => basename(p).toLowerCase()).filter(Boolean));
+  const deletedBasenames = new Set(paths.map((p) => baseName(p).toLowerCase()).filter(Boolean));
   const referencedBy = new Set<string>();
 
   for (const path of paths) {
-    const name = basename(path);
+    const name = baseName(path);
     if (!name) continue;
     for (const ref of getBacklinksFor(name)) {
-      if (!deletedBasenames.has(basename(ref).toLowerCase())) {
+      if (!deletedBasenames.has(baseName(ref).toLowerCase())) {
         referencedBy.add(ref);
       }
     }
@@ -28,7 +25,7 @@ export function computeBacklinkWarning(
 
   if (referencedBy.size === 0) return null;
 
-  const names = Array.from(referencedBy).map(basename).sort();
+  const names = Array.from(referencedBy).map(baseName).sort();
   const shown = names.slice(0, MAX_NAMES_SHOWN).join(', ');
   const rest = names.length > MAX_NAMES_SHOWN ? ` and ${names.length - MAX_NAMES_SHOWN} more` : '';
   return `Referenced by ${names.length} file${names.length === 1 ? '' : 's'}: ${shown}${rest}.`;

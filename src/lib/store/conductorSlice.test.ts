@@ -1,10 +1,6 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import { createAgentSlice } from './agentSlice';
-import { createGoalsSlice } from './goalsSlice';
-import { createPmSlice } from './pmSlice';
 import {
-  createConductorSlice,
   getConductorPreflight,
   getUnblockedOpenTickets,
   modelForPower,
@@ -13,9 +9,8 @@ import {
   GOAL_AGENT_TIMEOUT_MS,
   MAX_TICKET_ATTEMPTS,
 } from './conductorSlice';
-import type { StoreState } from './index';
-import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { PmGoal, PmGoalDependency, PmGoalStation } from '../tauri/goals';
+import type { PmDependency, PmTicket } from '../pm/types';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '../goals/types';
 import { spawnAgent } from '../tauri/agents';
 import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conductor/judgeBackend';
 import type { Notification } from '../notifications/types';
@@ -47,7 +42,6 @@ vi.mock('../tauri/agents', () => ({
 vi.mock('../tauri/goals', () => ({
   goalsLoad: vi.fn(async () => ({ goals: [], goalRuns: [], requirementLinks: [] })),
   goalsSave: vi.fn(async () => undefined),
-  goalsClear: vi.fn(async () => undefined),
 }));
 
 vi.mock('../tauri/pm', () => ({
@@ -528,18 +522,13 @@ describe('conductor pure helpers', () => {
 });
 
 describe('conductorSlice', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     agentCounter = 0;
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
-    }));
+
+    store = createFullTestStore();
   });
 
   it('spawns agents for unblocked tickets up to maxConcurrent, highest priority first', async () => {
@@ -622,7 +611,7 @@ describe('conductorSlice', () => {
           defaultPermissionMode: 'acceptEdits',
         },
       ],
-    } as Partial<StoreState>);
+    });
     store.getState().startConductor(null);
     await store.getState().conductorTick();
 
@@ -1504,7 +1493,7 @@ describe('conductorSlice', () => {
 });
 
 describe('conductor judge review gate', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const flush = () => new Promise((r) => setTimeout(r, 20));
 
@@ -1518,13 +1507,8 @@ describe('conductor judge review gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     agentCounter = 0;
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
-    }));
+
+    store = createFullTestStore();
   });
 
   async function runToIdle(requireReview: boolean): Promise<string> {
@@ -1968,20 +1952,14 @@ describe('conductor judge review gate', () => {
 });
 
 describe('conductor milestones in the notification inbox', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     agentCounter = 0;
-    const { createNotificationsSlice } = await import('./notificationsSlice');
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
-      ...createNotificationsSlice(...a),
-    }));
+    await import('./notificationsSlice');
+
+    store = createFullTestStore();
   });
 
   /**
@@ -2114,7 +2092,7 @@ describe('conductor milestones in the notification inbox', () => {
 });
 
 describe('conductor on a stations goal (no tickets)', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
   let dispatched: NotificationInput[];
   let rowId: number;
 
@@ -2154,12 +2132,8 @@ describe('conductor on a stations goal (no tickets)', () => {
     agentCounter = 0;
     rowId = 0;
     dispatched = [];
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
+
+    store = createFullTestStore({
       rootPath: '/repo',
       judgeLlmConfigured: false,
       notifications: [] as Notification[],
@@ -2169,7 +2143,7 @@ describe('conductor on a stations goal (no tickets)', () => {
         store.setState({ notifications: [...store.getState().notifications, stored] });
         return stored;
       },
-    }));
+    });
     store.setState({
       goalsDraft: [makeGoal({ id: 'g1', name: 'Write the guide', status: 'in_progress' })],
       pmDraftTickets: [],
@@ -2378,7 +2352,7 @@ describe('conductor on a stations goal (no tickets)', () => {
 
     function withKillSpy() {
       const kill = vi.fn(async () => {});
-      store.setState({ killRunningAgent: kill } as Partial<StoreState>);
+      store.setState({ killRunningAgent: kill });
       return kill;
     }
 
@@ -2647,7 +2621,7 @@ describe('conductor on a stations goal (no tickets)', () => {
 // goalDependencies.ts), and D depends on B, which the target-side expansion
 // turns into "D waits for the whole bundle".
 describe('conductor scoped to a goal tree with dependencies and a bundle', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   function dep(goalId: string, dependsOnGoalId: string) {
     return {
@@ -2670,13 +2644,8 @@ describe('conductor scoped to a goal tree with dependencies and a bundle', () =>
   beforeEach(() => {
     vi.clearAllMocks();
     agentCounter = 0;
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
-    }));
+
+    store = createFullTestStore();
     store.setState({
       goalsDraft: [
         makeGoal({ id: 'P', status: 'in_progress' }),
@@ -2731,18 +2700,13 @@ describe('conductor scoped to a goal tree with dependencies and a bundle', () =>
 });
 
 describe('conductor auto-achieves a bundle together, never one alone', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     agentCounter = 0;
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
-    }));
+
+    store = createFullTestStore();
     store.setState({
       goalsDraft: [
         makeGoal({ id: 'P', status: 'in_progress' }),
@@ -2851,7 +2815,7 @@ describe('conductor auto-achieves a bundle together, never one alone', () => {
 // child is closed as soon as it is finished so the next one in the chain can
 // start in the same run, and a goal with no line yet gets one planned.
 describe('conductor works a goal tree unattended', () => {
-  let store: StoreApi<StoreState>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   const dep = (goalId: string, dependsOnGoalId: string): PmGoalDependency => ({
     id: `${goalId}->${dependsOnGoalId}`,
@@ -2887,17 +2851,13 @@ describe('conductor works a goal tree unattended', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     agentCounter = 0;
-    // @ts-expect-error - Partial store for testing
-    store = createStore<StoreState>()((...a) => ({
-      ...createAgentSlice(...a),
-      ...createGoalsSlice(...a),
-      ...createPmSlice(...a),
-      ...createConductorSlice(...a),
+
+    store = createFullTestStore({
       rootPath: '/repo',
       judgeLlmConfigured: false,
       notifications: [] as Notification[],
       dispatchNotification: async () => null,
-    }));
+    });
     store.setState({ conductorMaxConcurrent: 10, pmDraftTickets: [], goalStationsDraft: [] });
   });
 

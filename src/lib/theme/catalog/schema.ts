@@ -180,7 +180,6 @@ export function parseTheme(raw: unknown): ParseThemeResult {
   return { ok: true, theme, warnings };
 }
 
-/** Parse a JSON string; wraps parseTheme. */
 export function parseThemeJson(json: string): ParseThemeResult {
   let raw: unknown;
   try {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import fixtures from './agentControl.fixtures.json';
 
 type Handler = (payload: unknown) => void;

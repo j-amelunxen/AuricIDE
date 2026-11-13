@@ -1,10 +1,10 @@
+import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CLAUDE_SKILL_SOURCE,
   enabledSkillSources,
   loadSkillSources,
   saveSkillSources,
-  SKILL_SOURCES_KEY,
   type SkillSourceRule,
 } from './skillSources';
 
@@ -38,17 +38,17 @@ describe('skill sources', () => {
   });
 
   it('falls back to Claude for unreadable storage', () => {
-    localStorage.setItem(SKILL_SOURCES_KEY, '{not json');
+    localStorage.setItem(APP_CONFIG_KEYS.skillSources, '{not json');
     expect(loadSkillSources()).toEqual([CLAUDE_SKILL_SOURCE]);
   });
 
   it('falls back to Claude when every stored rule lost its shape', () => {
-    localStorage.setItem(SKILL_SOURCES_KEY, JSON.stringify([{ id: 42 }, 'nope']));
+    localStorage.setItem(APP_CONFIG_KEYS.skillSources, JSON.stringify([{ id: 42 }, 'nope']));
     expect(loadSkillSources()).toEqual([CLAUDE_SKILL_SOURCE]);
   });
 
   it('drops a malformed rule but keeps the sound ones', () => {
-    localStorage.setItem(SKILL_SOURCES_KEY, JSON.stringify([custom, { id: 42 }]));
+    localStorage.setItem(APP_CONFIG_KEYS.skillSources, JSON.stringify([custom, { id: 42 }]));
     expect(loadSkillSources()).toEqual([custom]);
   });
 

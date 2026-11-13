@@ -1,5 +1,5 @@
 import type { LlmMessage } from '@/lib/tauri/llm';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/goals/types';
 import type { PlannerGraph } from './plannerSchema';
 
 /**

@@ -154,7 +154,6 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
         for ticket in &payload.tickets {
             match old_statuses.get(&ticket.id) {
                 Some(old_status) if old_status != &ticket.status => {
-                    // Status changed
                     conn.execute(
                         "INSERT INTO pm_status_history \
                          (id, ticket_id, from_status, to_status, changed_at, source) \
@@ -164,7 +163,6 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
                     .map_err(|e| format!("Failed to insert status history: {}", e))?;
                 }
                 None => {
-                    // New ticket
                     conn.execute(
                         "INSERT INTO pm_status_history \
                          (id, ticket_id, from_status, to_status, changed_at, source) \
@@ -232,8 +230,8 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
             })
         })
         .map_err(|e| format!("Failed to query epics: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read epics: {}", e))?;
 
     let mut ticket_stmt = conn
         .prepare(
@@ -253,7 +251,13 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
                 )
             })?;
             let skills_json: String = row.get(14)?;
-            let skills: Vec<String> = serde_json::from_str(&skills_json).unwrap_or_default();
+            let skills: Vec<String> = serde_json::from_str(&skills_json).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    14,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
 
             Ok(PmTicket {
                 id: row.get(0)?,
@@ -276,8 +280,8 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
             })
         })
         .map_err(|e| format!("Failed to query tickets: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read tickets: {}", e))?;
 
     let mut tc_stmt = conn
         .prepare(
@@ -298,8 +302,8 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
             })
         })
         .map_err(|e| format!("Failed to query test_cases: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read test_cases: {}", e))?;
 
     let mut dep_stmt = conn
         .prepare("SELECT id, source_type, source_id, target_type, target_id FROM pm_dependencies")
@@ -315,8 +319,8 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
             })
         })
         .map_err(|e| format!("Failed to query dependencies: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read dependencies: {}", e))?;
 
     Ok(PmState {
         epics,
@@ -345,8 +349,8 @@ pub fn pm_load_history_impl(conn: &Connection) -> Result<Vec<PmStatusHistoryEntr
             })
         })
         .map_err(|e| format!("Failed to query history: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read history: {}", e))?;
     Ok(entries)
 }
 

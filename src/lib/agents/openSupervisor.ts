@@ -3,10 +3,10 @@ import { supervisorWithKey } from '@/lib/agents/supervisorLaunch';
 import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 import { presentationOf, readManagerPresentations } from '@/lib/quickAccess/managerPresentation';
 import { resolveAuricSkillReference } from '@/lib/settings/auricSkills';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { SupervisorSkillLaunch } from '@/lib/store/agent/agentTypes';
 import type { StoreState } from '@/lib/store';
-import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessSkill } from '@/lib/quickAccess/types';
 
 interface OpenSupervisorHooks {
   /** Nothing is allowed in Settings → Supervisor yet; take the user there. */
@@ -178,8 +178,9 @@ async function openManagerNow(
 ): Promise<LaunchResult> {
   const task = options.task?.trim() ?? '';
   const automatic = options.automatic === true;
-  // The caller's fleet is a snapshot from before an earlier start finished.
-  const live = supervisorWithKey(store.agents, managerKey) ?? startedBefore;
+  // The caller's fleet is a snapshot from before an earlier call in the queue
+  // finished, so what that call started is newer than anything it lists.
+  const live = startedBefore ?? supervisorWithKey(store.agents, managerKey);
   if (task && live) {
     const outcome = await sendTaskToManager(store, live, task, automatic);
     if (outcome === 'opened') hooks.onShow(live.id);
@@ -231,11 +232,43 @@ export function openManager(
   hooks: OpenSupervisorHooks,
   options: OpenManagerOptions = {}
 ): Promise<OpenManagerOutcome> {
+  return inManagerQueue(managerKey, (startedBefore) =>
+    openManagerNow(store, managerKey, hooks, options, startedBefore)
+  );
+}
+
+/**
+ * Restart: stops the manager's running supervisor, then opens it again so it
+ * starts with its current instructions. Queued with every other call for the
+ * key, so an Open clicked meanwhile finds the new instance instead of starting
+ * a second one. A stop that fails is reported and opens nothing: the old
+ * instance is still running.
+ */
+export function restartManager(
+  store: () => ManagerStore & Pick<StoreState, 'killRunningAgent'>,
+  manager: { key: string; name: string },
+  runningAgentId: string,
+  hooks: OpenSupervisorHooks
+): Promise<OpenManagerOutcome> {
+  return inManagerQueue(manager.key, async () => {
+    try {
+      await store().killRunningAgent(runningAgentId);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      store().showToast(`Could not stop ${manager.name}: ${detail}`, 'error');
+      return { outcome: 'failed' };
+    }
+    // Read after the stop: the agent list from before it still holds the old instance.
+    return openManagerNow(store(), manager.key, hooks, {}, undefined);
+  });
+}
+
+function inManagerQueue(
+  managerKey: string,
+  run: (startedBefore: AgentInfo | undefined) => Promise<LaunchResult>
+): Promise<OpenManagerOutcome> {
   const previous = startsInFlight.get(managerKey);
-  const mine = (async () => {
-    const startedBefore = previous ? await previous : undefined;
-    return await openManagerNow(store, managerKey, hooks, options, startedBefore);
-  })();
+  const mine = (async () => run(previous ? await previous : undefined))();
   const tracked = mine.then(
     (result) => result.agent,
     () => undefined

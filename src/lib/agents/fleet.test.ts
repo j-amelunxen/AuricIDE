@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../tauri/agents';
+import type { AgentInfo } from './types';
 import {
   filterFocusTerminalAgents,
   isFinishedAgent,
   isSupervisorAgent,
+  repoStopSelection,
   splitFleet,
   supervisorChildSummary,
+  UNGROUPED_REPO_KEY,
 } from './fleet';
 
 const agent = (
@@ -220,5 +222,24 @@ describe('filterFocusTerminalAgents', () => {
   it('leaves the original list intact when focus mode is on but no supervisor exists', () => {
     const workers = [child, plain];
     expect(filterFocusTerminalAgents(workers, true)).toBe(workers);
+  });
+});
+
+describe('repoStopSelection', () => {
+  const fleet = [
+    agent('a', 'running', 0, { repoPath: '/repo' }),
+    agent('b', 'queued', 0, { repoPath: '/repo' }),
+    agent('c', 'idle', 0, { repoPath: '/repo' }),
+    agent('d', 'running', 0, { repoPath: '/other' }),
+    agent('e', 'running', 0, { repoPath: '/repo', role: 'supervisor' }),
+    agent('f', 'running'),
+  ];
+
+  it('stops the working agents of the repo and clears its stopped ones, never a supervisor', () => {
+    expect(repoStopSelection(fleet, '/repo')).toEqual({ running: ['a', 'b'], finished: ['c'] });
+  });
+
+  it('selects agents without a repo path under the ungrouped bucket', () => {
+    expect(repoStopSelection(fleet, UNGROUPED_REPO_KEY)).toEqual({ running: ['f'], finished: [] });
   });
 });

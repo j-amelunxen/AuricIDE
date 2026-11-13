@@ -8,7 +8,8 @@
 //! in `agentControl.fixtures.json`.
 
 use super::policy::SupervisorPolicy;
-use super::{canonical_project_path, pm_server_names, pm_slug};
+use super::{pm_server_names, pm_slug};
+use crate::project_path::canonical_project_path;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -125,7 +126,7 @@ pub fn pm_facts(policy: &SupervisorPolicy, wanted: Option<&str>) -> PmFacts {
             .projects
             .iter()
             .filter(|(path, rules)| {
-                rules.allowed && Path::new(path).join(".auric").join("project.db").is_file()
+                rules.allowed && crate::database::project_db_path(Path::new(path)).is_file()
             })
             .map(|(path, _)| path.clone())
             .collect(),

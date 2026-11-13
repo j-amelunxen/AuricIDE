@@ -2,7 +2,6 @@ import winkNLP, { type ItemEntity } from 'wink-nlp';
 import model from 'wink-eng-lite-web-model';
 import { SpanCollector, type HighlightSpan } from '@/lib/nlp/spanCollector';
 
-// ── Singleton wink-nlp instance ──
 const nlp = winkNLP(model);
 const its = nlp.its;
 

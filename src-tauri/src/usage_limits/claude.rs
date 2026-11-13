@@ -32,7 +32,7 @@ use super::contract::{
     normalize_claude, parse_wire, ClaudeStatusLinePayload, UsageError, UsageSnapshot,
 };
 
-const SOURCE: &str = "claude";
+const SOURCE: &str = super::contract::CLAUDE;
 
 /// Bumped when the generated script changes shape. The artifacts are compared
 /// by content, so this only has to be readable by a human wondering which
@@ -183,10 +183,7 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<(), String> {
     if fs::read_to_string(path).is_ok_and(|existing| existing == contents) {
         return Ok(());
     }
-    let temporary = path.with_extension("tmp");
-    fs::write(&temporary, contents).map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    crate::json_store::write_atomic(path, contents.as_bytes(), crate::json_store::Mode::Default)
 }
 
 /// Turns one dropped payload into a snapshot.

@@ -3,19 +3,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type Database from 'better-sqlite3';
-import { createGoal } from '../tools/goals';
+import { createGoal } from '../tools/goalsDb';
 import {
   createStation,
   listStations,
   markStationDone,
   reorderStation,
   requestHumanCheck,
-  resolveStationId,
   skipStation,
   stationRowToDomain,
   updateStation,
 } from '../tools/stations';
 import { createTestDb } from '../db';
+import { resolveId } from '../tools/resolve';
 import { createTestNotificationsDb } from '../notificationsDb';
 
 /** A project root no machine-checkable test station ever looks at. */
@@ -32,6 +32,48 @@ describe('station tools', () => {
 
   afterEach(() => {
     db.close();
+  });
+
+  describe('station ID resolution contract', () => {
+    function station(id: string): string {
+      const row = createStation(db, { goalId, name: id });
+      db.prepare('UPDATE pm_goal_stations SET id = ? WHERE id = ?').run(id, row.id);
+      return id;
+    }
+
+    it('prefers an exact ID even when another station extends it', () => {
+      station('abcd');
+      station('abcd-more');
+      expect(resolveId(db, 'pm_goal_stations', 'abcd')).toBe('abcd');
+    });
+
+    it('accepts unique short and empty prefixes', () => {
+      station('abc');
+      expect(resolveId(db, 'pm_goal_stations', 'a')).toBe('abc');
+      expect(resolveId(db, 'pm_goal_stations', '')).toBe('abc');
+    });
+
+    it('does not accept a missing full UUID without querying the station table', () => {
+      const missing = '12345678-1234-1234-1234-123456789abc';
+      expect(() => resolveId(db, 'pm_goal_stations', missing)).toThrow(
+        `Station '${missing}' not found`
+      );
+    });
+
+    it('keeps case-insensitive prefix lookup and the precise ambiguity error', () => {
+      station('abcd-one');
+      station('abcd-two');
+      expect(() => resolveId(db, 'pm_goal_stations', 'AB')).toThrow(
+        "Station prefix 'AB' is ambiguous (2 matches)"
+      );
+      expect(() => resolveId(db, 'pm_goal_stations', '')).toThrow(
+        "Station prefix '' is ambiguous (2 matches)"
+      );
+    });
+
+    it('keeps the station-specific missing-prefix error', () => {
+      expect(() => resolveId(db, 'pm_goal_stations', 'z')).toThrow("Station 'z' not found");
+    });
   });
 
   it('creates stations in order with dense sort orders', () => {
@@ -143,8 +185,8 @@ describe('station tools', () => {
 
   it('resolves station ids by unique prefix and rejects ambiguity', () => {
     const s = createStation(db, { goalId, name: 'Only' });
-    expect(resolveStationId(db, s.id.slice(0, 8))).toBe(s.id);
-    expect(() => resolveStationId(db, 'nope-')).toThrow(/not found/);
+    expect(resolveId(db, 'pm_goal_stations', s.id.slice(0, 8))).toBe(s.id);
+    expect(() => resolveId(db, 'pm_goal_stations', 'nope-')).toThrow(/not found/);
   });
 
   it('links a resolved ticket when updating a station', () => {

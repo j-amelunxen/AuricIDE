@@ -12,20 +12,17 @@ import { AuricIcon } from '../ui/AuricIcon';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
 import {
-  generateDependencyProposalPrompt,
-  parseDependencyResponse,
-} from '@/lib/pm/dependencyProposal';
-import {
   generateTestCaseDerivationPrompt,
   parseTestCaseResponse,
 } from '@/lib/pm/testCaseDerivation';
 import { DependencyProposalModal } from './DependencyProposalModal';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
-import { copyToClipboard } from '@/lib/tauri/clipboard';
 import type { DetailTab, TicketEditPanelProps } from './ticketEdit/types';
 import { TicketEditToolbar } from './ticketEdit/TicketEditToolbar';
 import { TicketDetailsTab } from './ticketEdit/TicketDetailsTab';
 import { TicketAdvancedTab } from './ticketEdit/TicketAdvancedTab';
+import { useCopyFeedback } from '@/lib/hooks/useCopyFeedback';
+import { useDependencyProposal } from './useDependencyProposal';
 
 export type { TicketEditPanelProps };
 
@@ -48,20 +45,17 @@ export function TicketEditPanel({
   onRemoveDependency,
 }: TicketEditPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback();
   const pmDirty = useStore((s) => s.pmDirty);
   const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
   const rootPath = useStore((s) => s.rootPath);
 
-  const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
+  const llm = useLLM();
+  const { call: llmCall, isLoading: isLlmLoading } = llm;
+  const proposal = useDependencyProposal(llm);
   const { discovered } = useProjectSkills();
-  const [proposalModalOpen, setProposalModalOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<{ id: string; name: string; reason: string }[]>(
-    []
-  );
-  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
 
   if (!ticket) {
     return (
@@ -73,28 +67,7 @@ export function TicketEditPanel({
 
   const handleProposeDependencies = async () => {
     const epic = epics.find((e) => e.id === ticket.epicId);
-    if (!epic) return;
-
-    setProposalModalOpen(true);
-    setSuggestions([]);
-    setSelectedSuggestionIds([]);
-
-    const epicTickets = allTickets.filter((t) => t.epicId === ticket.epicId);
-    const prompt = generateDependencyProposalPrompt(ticket, epic, epicTickets);
-
-    const response = await llmCall([{ role: 'user', content: prompt }]);
-    if (response) {
-      const parsed = parseDependencyResponse(response);
-      const suggestionsWithNames = parsed
-        .map((s) => {
-          const depTicket = allTickets.find((t) => t.id === s.id);
-          return { ...s, name: depTicket?.name || 'Unknown' };
-        })
-        .filter((s) => s.id !== ticket.id);
-
-      setSuggestions(suggestionsWithNames);
-      setSelectedSuggestionIds(suggestionsWithNames.map((s) => s.id));
-    }
+    if (epic) await proposal.propose(ticket, epic, allTickets);
   };
 
   const handleDeriveTestCases = async () => {
@@ -109,19 +82,7 @@ export function TicketEditPanel({
   };
 
   const handleConfirmSuggestions = () => {
-    selectedSuggestionIds.forEach((id) => {
-      // Avoid duplicates
-      if (!dependencies.some((d) => d.targetId === id)) {
-        onAddDependency({
-          id: crypto.randomUUID(),
-          sourceType: 'ticket',
-          sourceId: ticket.id,
-          targetType: 'ticket',
-          targetId: id,
-        });
-      }
-    });
-    setProposalModalOpen(false);
+    for (const dep of proposal.accept(ticket.id, dependencies)) onAddDependency(dep);
   };
 
   const getPrompt = () => {
@@ -146,11 +107,7 @@ export function TicketEditPanel({
 
   const handleCopyPrompt = async () => {
     const prompt = await getPrompt();
-    const ok = await copyToClipboard(prompt);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    await copy(prompt);
   };
 
   const tabs: { key: DetailTab; label: string; count?: number }[] = [
@@ -186,7 +143,6 @@ export function TicketEditPanel({
         onCopyPrompt={handleCopyPrompt}
       />
 
-      {/* Tab bar */}
       <div className="shrink-0 flex border-b border-white/10 px-4" role="tablist">
         {tabs.map((tab) => (
           <button
@@ -211,7 +167,6 @@ export function TicketEditPanel({
         ))}
       </div>
 
-      {/* Tab content — scrollable */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'details' && (
           <TicketDetailsTab
@@ -292,22 +247,7 @@ export function TicketEditPanel({
         )}
       </div>
 
-      <DependencyProposalModal
-        isOpen={proposalModalOpen}
-        onClose={() => {
-          setProposalModalOpen(false);
-          llmAbort();
-        }}
-        onConfirm={handleConfirmSuggestions}
-        suggestions={suggestions}
-        selectedIds={selectedSuggestionIds}
-        onToggleSuggestion={(id) =>
-          setSelectedSuggestionIds((prev) =>
-            prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-          )
-        }
-        isLoading={isLlmLoading}
-      />
+      <DependencyProposalModal {...proposal.modal} onConfirm={handleConfirmSuggestions} />
     </div>
   );
 }

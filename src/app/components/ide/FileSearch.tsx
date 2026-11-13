@@ -78,7 +78,6 @@ export function FileSearch({ files, isOpen, onClose, onSelect, rootPath }: FileS
 
   return (
     <SearchPaletteModal
-      isOpen={isOpen}
       onClose={onClose}
       ariaLabel="Go to file"
       overlayId="file-search"

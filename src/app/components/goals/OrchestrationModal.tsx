@@ -131,7 +131,6 @@ function OrchestrationModalContent() {
       data-testid="orchestration-modal"
       className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-black/80 backdrop-blur-sm"
     >
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
           <AuricIcon name="graph_3" className="text-primary-light" />
@@ -173,7 +172,6 @@ function OrchestrationModalContent() {
         </div>
       </div>
 
-      {/* Canvas */}
       <div className="flex-1">
         {nodes.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">

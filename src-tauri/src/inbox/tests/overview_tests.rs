@@ -12,7 +12,7 @@ fn overview_reports_has_db_false_for_a_project_without_one() {
     assert_eq!(overview.len(), 1);
     assert!(!overview[0].has_db);
     assert!(overview[0].error.is_none());
-    assert_eq!(overview[0].open, 0);
+    assert_eq!(overview[0].counts, StatusCounts::default());
 }
 
 #[test]
@@ -52,10 +52,16 @@ fn overview_counts_tickets_by_status_excluding_archived() {
     let overview = projects_pm_overview_impl(&[project.path().to_string_lossy().to_string()]);
     assert!(overview[0].has_db);
     assert!(overview[0].error.is_none());
-    assert_eq!(overview[0].open, 2);
-    assert_eq!(overview[0].in_progress, 1);
-    assert_eq!(overview[0].in_review, 1);
-    assert_eq!(overview[0].done, 1);
+    assert_eq!(
+        overview[0].counts,
+        StatusCounts {
+            open: 2,
+            in_progress: 1,
+            to_test: 1,
+            in_review: 1,
+            done: 1,
+        }
+    );
 }
 
 #[test]
@@ -130,7 +136,7 @@ fn overview_reports_an_error_instead_of_crashing_on_an_old_schema() {
     let overview = projects_pm_overview_impl(&[dir.path().to_string_lossy().to_string()]);
     assert!(overview[0].has_db);
     assert!(overview[0].error.is_some());
-    assert_eq!(overview[0].open, 0);
+    assert_eq!(overview[0].counts, StatusCounts::default());
     assert!(overview[0].tickets.is_empty());
 }
 

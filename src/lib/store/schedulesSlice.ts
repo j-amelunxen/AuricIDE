@@ -1,3 +1,4 @@
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import {
   schedulesDelete,
@@ -28,7 +29,10 @@ function byName(a: Schedule, b: Schedule): number {
   return a.name.localeCompare(b.name, 'de', { sensitivity: 'base' });
 }
 
-export const createSchedulesSlice: StateCreator<SchedulesSlice> = (set, get) => ({
+export const createSchedulesSlice: StateCreator<StoreState, [], [], SchedulesSlice> = (
+  set,
+  get
+) => ({
   schedules: [],
   schedulesStatus: 'idle',
 

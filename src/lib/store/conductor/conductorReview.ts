@@ -1,10 +1,12 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
+import type { StoreGet, StoreSet } from '@/lib/store/types';
 import {
   buildReviewAgentPrompt,
   createJudgeBackend,
   type AgentJudgeDeps,
   type JudgeVerdict,
 } from '@/lib/conductor/judgeBackend';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { pmLatestTicketReview } from '@/lib/tauri/reviews';
 import { conductorModelFor, conductorProviderInfo } from './conductorHelpers';
 import {
@@ -12,13 +14,12 @@ import {
   PENDING_REVIEW,
   type ConductorDecision,
   type ConductorSlice,
-  type FullConductorStore,
 } from './conductorTypes';
 
 export interface ConductorReviewContext {
-  get: () => ConductorSlice;
-  set: (fn: ((s: ConductorSlice) => Partial<ConductorSlice>) | Partial<ConductorSlice>) => void;
-  cross: () => FullConductorStore;
+  get: StoreGet;
+  set: StoreSet;
+  cross: StoreGet;
   addDecision: (decision: Omit<ConductorDecision, 'id' | 'timestamp'>) => void;
   persist: () => Promise<void>;
 }
@@ -27,13 +28,13 @@ export function completeLinkedStation(
   ticketId: string,
   evidenceKind: 'claim' | 'judged',
   note: string,
-  cross: () => FullConductorStore
+  cross: StoreGet
 ): void {
   const full = cross();
   const station = (full.goalStationsDraft ?? []).find((item) => item.ticketId === ticketId);
   if (!station || station.kind === 'human' || station.predicate.type === 'human') return;
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  full.updateStation?.(station.id, {
+  const timestamp = formatUtcStamp();
+  full.updateStation(station.id, {
     status: 'done',
     evidenceKind,
     evidenceNote: note,
@@ -52,7 +53,7 @@ export function createAgentJudgeDeps(ctx: ConductorReviewContext): AgentJudgeDep
       // model must not silently lose the conductor's model as well.
       const state = get();
       const provider = state.conductorJudgeProviderId ?? state.conductorProviderId ?? undefined;
-      const agent = await full.spawnNewAgent?.({
+      const agent = await full.spawnNewAgent({
         name: `review:${input.ticket.name.slice(0, 40)}`,
         model: conductorModelFor(
           [state.conductorJudgeModel, state.conductorModel],
@@ -78,9 +79,7 @@ export function createAgentJudgeDeps(ctx: ConductorReviewContext): AgentJudgeDep
     },
     latestReview: async (ticketId) => {
       const startedMs = get().conductorReviewStartedAt[ticketId];
-      const sinceIso = startedMs
-        ? new Date(startedMs).toISOString().replace('T', ' ').slice(0, 19)
-        : undefined;
+      const sinceIso = startedMs ? formatUtcStamp(startedMs) : undefined;
       const review = await pmLatestTicketReview(cross().rootPath ?? '', ticketId, sinceIso);
       return review ? { pass: review.pass, reason: review.reason } : null;
     },
@@ -104,7 +103,7 @@ export function applyVerdict(
   const { [ticketId]: _rev, ...restReview } = state.conductorReviewAssignments;
   const { [ticketId]: _at, ...restStarted } = state.conductorReviewStartedAt;
   if (verdict.pass) {
-    full.updateTicket?.(ticketId, { status: 'done' });
+    full.updateTicket(ticketId, { status: 'done' });
     completeLinkedStation(ticketId, 'judged', verdict.reason, cross);
     set((s: ConductorSlice) => ({
       conductorReviewAssignments: restReview,
@@ -118,7 +117,7 @@ export function applyVerdict(
     });
   } else {
     const fails = (state.conductorFailedTickets[ticketId] ?? 0) + 1;
-    full.updateTicket?.(ticketId, { status: 'open' });
+    full.updateTicket(ticketId, { status: 'open' });
     set((s: ConductorSlice) => ({
       conductorReviewAssignments: restReview,
       conductorReviewStartedAt: restStarted,
@@ -133,9 +132,7 @@ export function applyVerdict(
       ticketId,
     });
   }
-  void persist()
-    .then(() => get().conductorTick())
-    .catch(() => {});
+  void persist().then(() => get().conductorTick());
 }
 
 /**
@@ -166,7 +163,7 @@ export async function startReview(
       },
     };
   });
-  full.updateTicket?.(ticketId, { status: 'in_review' });
+  full.updateTicket(ticketId, { status: 'in_review' });
   addDecision({
     action: 'review_started',
     detail: 'Implementer finished · ticket sent to the judge',

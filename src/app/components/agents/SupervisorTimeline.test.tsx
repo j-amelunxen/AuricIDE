@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import type { ExternalAgent } from '@/lib/agents/externalAgents';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { buildSupervisorTimeline, type TimelineRangeId } from '@/lib/agents/supervisorTimeline';

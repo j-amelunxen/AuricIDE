@@ -39,37 +39,6 @@ fn test_requirements_save_and_load_roundtrip() {
 }
 
 #[test]
-fn test_requirements_clear() {
-    let conn = setup_in_memory_db();
-    let payload = RequirementsState {
-        requirements: vec![PmRequirement {
-            id: "r1".to_string(),
-            req_id: "REQ-01".to_string(),
-            title: "Test".to_string(),
-            description: "".to_string(),
-            r#type: "functional".to_string(),
-            category: "".to_string(),
-            priority: "normal".to_string(),
-            status: "draft".to_string(),
-            rationale: "".to_string(),
-            acceptance_criteria: "".to_string(),
-            source: "".to_string(),
-            applies_to: "[]".to_string(),
-            last_verified_at: None,
-            sort_order: 0,
-            created_at: "2026-01-01 00:00:00".to_string(),
-            updated_at: "2026-01-01 00:00:00".to_string(),
-        }],
-        test_links: vec![],
-    };
-    requirements_save_impl(&conn, &payload).unwrap();
-    requirements_clear_impl(&conn).unwrap();
-    let state = requirements_load_impl(&conn).unwrap();
-    assert_eq!(state.requirements.len(), 0);
-    assert_eq!(state.test_links.len(), 0);
-}
-
-#[test]
 fn test_requirements_save_replaces_existing() {
     let conn = setup_in_memory_db();
     let payload1 = RequirementsState {
@@ -176,31 +145,6 @@ fn test_requirement_test_links_save_and_load() {
     assert_eq!(state.test_links[0].id, "tl1");
     assert_eq!(state.test_links[0].requirement_id, "r1");
     assert_eq!(state.test_links[0].test_case_id, "tc1");
-}
-
-#[test]
-fn test_requirement_test_links_cleared_with_requirements() {
-    let conn = setup_in_memory_db();
-
-    let pm_payload = make_test_payload();
-    pm_save_impl(&conn, &pm_payload).unwrap();
-
-    let payload = RequirementsState {
-        requirements: vec![make_test_requirement("r1", "REQ-01")],
-        test_links: vec![PmRequirementTestLink {
-            id: "tl1".to_string(),
-            requirement_id: "r1".to_string(),
-            test_case_id: "tc1".to_string(),
-            created_at: "2026-01-01 00:00:00".to_string(),
-        }],
-    };
-    requirements_save_impl(&conn, &payload).unwrap();
-
-    requirements_clear_impl(&conn).unwrap();
-    let state = requirements_load_impl(&conn).unwrap();
-
-    assert_eq!(state.requirements.len(), 0);
-    assert_eq!(state.test_links.len(), 0);
 }
 
 #[test]

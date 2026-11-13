@@ -1,5 +1,4 @@
 import type { ControlResult } from './agentControl.contract';
-import { formatAgentDuration } from './duration';
 
 /**
  * A run the IDE tracks but does not run (`docs/design-external-agents.md`).
@@ -54,9 +53,4 @@ export function externalStateLabel(external: StaleFields, now: number): External
   if (external.state === 'failed') return 'Failed';
   if (isExternalStale(external, now)) return 'Stale?';
   return external.state === 'running' ? 'Running' : 'Off';
-}
-
-/** "9h" reads better than "9h 0m" when the figure sits inside a sentence. */
-export function formatExternalSpan(ms: number): string {
-  return formatAgentDuration(ms).replace(/ 0[mh]$/, '');
 }

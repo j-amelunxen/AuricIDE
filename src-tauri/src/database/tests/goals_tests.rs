@@ -88,17 +88,6 @@ fn test_deleting_a_goal_cascades_to_its_stations() {
 }
 
 #[test]
-fn test_goals_clear_also_clears_stations() {
-    let conn = setup_in_memory_db();
-    let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
-    payload.stations = vec![make_test_station("s1", "g1", 0)];
-    goals_sync_impl(&conn, &payload).unwrap();
-    goals_clear_impl(&conn).unwrap();
-    let state = goals_load_impl(&conn).unwrap();
-    assert_eq!(state.stations.len(), 0);
-}
-
-#[test]
 fn test_goals_save_and_load_roundtrip() {
     let conn = setup_in_memory_db();
 
@@ -123,18 +112,6 @@ fn test_goals_save_and_load_roundtrip() {
     assert_eq!(g1.goal_prompt, "Achieve orchestration");
     assert_eq!(g1.parent_id, None);
     assert_eq!(g2.parent_id, Some("g1".to_string()));
-}
-
-#[test]
-fn test_goals_clear() {
-    let conn = setup_in_memory_db();
-    let payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
-    goals_sync_impl(&conn, &payload).unwrap();
-    goals_clear_impl(&conn).unwrap();
-    let state = goals_load_impl(&conn).unwrap();
-    assert_eq!(state.goals.len(), 0);
-    assert_eq!(state.goal_runs.len(), 0);
-    assert_eq!(state.requirement_links.len(), 0);
 }
 
 #[test]
@@ -448,23 +425,6 @@ fn test_deleting_a_goal_cascades_its_dependency_edges() {
     payload.dependencies = vec![];
     payload.deleted_goal_ids = vec!["a".to_string()];
     goals_sync_impl(&conn, &payload).unwrap();
-
-    let state = goals_load_impl(&conn).unwrap();
-    assert_eq!(state.dependencies.len(), 0);
-}
-
-#[test]
-fn test_goals_clear_also_clears_dependencies() {
-    let conn = setup_in_memory_db();
-    let mut payload = sync_payload(
-        vec![make_test_goal("a", None), make_test_goal("b", None)],
-        vec![],
-        vec![],
-    );
-    payload.dependencies = vec![make_test_dependency("e1", "b", "a")];
-    goals_sync_impl(&conn, &payload).unwrap();
-
-    goals_clear_impl(&conn).unwrap();
 
     let state = goals_load_impl(&conn).unwrap();
     assert_eq!(state.dependencies.len(), 0);

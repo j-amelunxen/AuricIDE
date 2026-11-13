@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { generateTicketPrompt } from './prompt';
-import type { PmTicket, PmTestCase, PmDependency } from '../tauri/pm';
+import type { PmTicket, PmTestCase, PmDependency } from './types';
 
 vi.mock('@tauri-apps/plugin-fs', () => ({
   readTextFile: vi.fn(async (path: string) => `Content of ${path}`),

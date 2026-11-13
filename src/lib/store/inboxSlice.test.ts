@@ -1,5 +1,5 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand';
 import type { InboxItem, ProjectPmOverview } from '@/lib/tauri/inbox';
 
 const mockList = vi.fn();
@@ -25,8 +25,6 @@ vi.mock('@/lib/tauri/inbox', () => ({
   projectsPmOverview: (...args: unknown[]) => mockOverview(...args),
   inboxSetTicketStatus: (...args: unknown[]) => mockSetTicketStatus(...args),
 }));
-
-import { createInboxSlice, type InboxSlice } from './inboxSlice';
 
 let idCounter = 0;
 
@@ -56,6 +54,7 @@ function makeOverview(overrides: Partial<ProjectPmOverview> = {}): ProjectPmOver
     hasDb: true,
     open: 0,
     inProgress: 0,
+    toTest: 0,
     inReview: 0,
     done: 0,
     epics: [],
@@ -66,7 +65,7 @@ function makeOverview(overrides: Partial<ProjectPmOverview> = {}): ProjectPmOver
 }
 
 describe('inboxSlice', () => {
-  let store: StoreApi<InboxSlice>;
+  let store: ReturnType<typeof createFullTestStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -75,7 +74,7 @@ describe('inboxSlice', () => {
     // refresh; give it a harmless default so tests that aren't about the
     // overview itself don't have to stub it.
     mockOverview.mockResolvedValue([]);
-    store = createStore<InboxSlice>()((...a) => ({ ...createInboxSlice(...a) }));
+    store = createFullTestStore();
   });
 
   describe('loadInbox', () => {
@@ -171,7 +170,7 @@ describe('inboxSlice', () => {
         inboxItems: [assigned],
         rootPath: '/repo/alpha',
         updateTicket,
-      } as unknown as Partial<InboxSlice>);
+      });
       mockUpdate.mockResolvedValue(updated);
 
       await store.getState().updateInboxItem(assigned.id, {
@@ -193,7 +192,7 @@ describe('inboxSlice', () => {
         inboxItems: [original],
         rootPath: '/repo/alpha',
         updateTicket,
-      } as unknown as Partial<InboxSlice>);
+      });
       mockUpdate.mockResolvedValue(updated);
 
       await store.getState().updateInboxItem(original.id, { title: 'new' });
@@ -277,7 +276,7 @@ describe('inboxSlice', () => {
         inboxItems: [assigned],
         rootPath: '/repo/alpha',
         refreshPmData,
-      } as unknown as Partial<InboxSlice>);
+      });
       mockAttach.mockResolvedValue(assigned);
 
       await store.getState().attachInboxFile(assigned.id, '/tmp/shot.png');
@@ -402,7 +401,7 @@ describe('inboxSlice', () => {
     // stale until the next unrelated refresh.
     it("refreshes the open project's PM data when the assigned project is the one currently open", async () => {
       const refreshPmData = vi.fn().mockResolvedValue(undefined);
-      store.setState({ rootPath: '/repo/alpha', refreshPmData } as unknown as Partial<InboxSlice>);
+      store.setState({ rootPath: '/repo/alpha', refreshPmData });
       const original = makeItem();
       store.setState({ inboxItems: [original] });
       mockAssign.mockResolvedValue(makeItem({ id: original.id, projectPath: '/repo/alpha' }));
@@ -414,7 +413,7 @@ describe('inboxSlice', () => {
 
     it('does not refresh PM data when the assigned project is not the one currently open', async () => {
       const refreshPmData = vi.fn().mockResolvedValue(undefined);
-      store.setState({ rootPath: '/repo/other', refreshPmData } as unknown as Partial<InboxSlice>);
+      store.setState({ rootPath: '/repo/other', refreshPmData });
       const original = makeItem();
       store.setState({ inboxItems: [original] });
       mockAssign.mockResolvedValue(makeItem({ id: original.id, projectPath: '/repo/alpha' }));
@@ -425,7 +424,7 @@ describe('inboxSlice', () => {
     });
 
     it('does not throw when no PM refresh is wired in (e.g. an isolated store in tests)', async () => {
-      store.setState({ rootPath: '/repo/alpha' } as unknown as Partial<InboxSlice>);
+      store.setState({ rootPath: '/repo/alpha' });
       const original = makeItem();
       store.setState({ inboxItems: [original] });
       mockAssign.mockResolvedValue(makeItem({ id: original.id, projectPath: '/repo/alpha' }));
@@ -658,7 +657,7 @@ describe('inboxSlice', () => {
         rootPath: '/repo/alpha',
         updateTicket,
         refreshPmData,
-      } as unknown as Partial<InboxSlice>);
+      });
       mockSetTicketStatus.mockResolvedValue(undefined);
       mockOverview.mockResolvedValue([makeOverview({ projectPath: '/repo/alpha', open: 0 })]);
 
@@ -682,7 +681,7 @@ describe('inboxSlice', () => {
         rootPath: '/repo/other',
         updateTicket,
         refreshPmData,
-      } as unknown as Partial<InboxSlice>);
+      });
       mockSetTicketStatus.mockResolvedValue(undefined);
       mockOverview.mockResolvedValue([makeOverview({ projectPath: '/repo/alpha' })]);
 

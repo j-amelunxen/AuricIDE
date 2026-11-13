@@ -339,7 +339,7 @@ fn a_provider_that_no_longer_declares_a_transcript_is_skipped() {
 /// transcripts; the project itself is never written. Run with
 /// `AURIC_REPRICE_PROJECT=/path/to/project cargo test reprices_a_copy -- --ignored --nocapture`.
 #[test]
-#[ignore]
+#[ignore = "needs AURIC_REPRICE_PROJECT and this machine's real transcripts"]
 fn reprices_a_copy_of_a_real_project_against_the_real_transcripts() {
     let source = std::env::var("AURIC_REPRICE_PROJECT").expect("AURIC_REPRICE_PROJECT");
     let copy = tempfile::tempdir().unwrap();

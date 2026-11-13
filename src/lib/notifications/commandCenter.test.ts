@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Notification, NotificationAction } from './types';
 import type { Schedule } from '@/lib/tauri/schedules';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import type { StarredProject } from '@/lib/quickAccess/types';
 import {
   APP_WIDE_KEY,
   centerSummary,

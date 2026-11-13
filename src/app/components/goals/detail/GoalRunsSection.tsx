@@ -1,7 +1,7 @@
 'use client';
 
-import type { PmGoalRun } from '@/lib/tauri/goals';
-import type { AgentUsageRow, UsageCostSource } from '@/lib/tauri/agentUsage';
+import type { PmGoalRun } from '@/lib/goals/types';
+import type { AgentUsageRow, UsageCostSource } from '@/lib/pm/usage/types';
 import { formatRunCost } from '@/app/components/pm/cost/usageFormat';
 
 export const RUN_OUTCOME_STYLES: Record<string, string> = {

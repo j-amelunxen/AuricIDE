@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import {
-  MANAGER_INSTRUCTIONS_FILE,
   MANAGER_KNOWLEDGE_FOLDER,
   managerActivityMs,
   managerFolderFirst,
   mostRecentManagerKey,
   runsRailMemory,
 } from '@/lib/agents/managerRail';
-import { openManager, resumeSupervisor } from '@/lib/agents/openSupervisor';
+import { openManager, restartManager, resumeSupervisor } from '@/lib/agents/openSupervisor';
 import { runningSupervisors, supervisorUsingRunDir } from '@/lib/agents/supervisorLaunch';
 import {
   keyFromName,
@@ -19,7 +18,7 @@ import {
 } from '@/lib/agents/supervisorManagers';
 import { buildRunTree, supervisorRunLabel, type RunTreeNode } from '@/lib/agents/supervisorRuns';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { revealInFileManager } from '@/lib/tauri/opener';
 import {
   managerArchive,
@@ -37,14 +36,16 @@ import {
   type SupervisorRun,
 } from '@/lib/tauri/supervisorRuns';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { ManagerConfirmDialog } from '@/app/components/ui/ManagerConfirmDialog';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import { ManagerAskComposer } from './ManagerAskComposer';
 import { ManagerRow, MissingManagerRow, MoreActionsButton, type MenuPoint } from './ManagerRow';
 import { PromoteManagerSheet } from './PromoteManagerSheet';
 import { ManagerNameSheet } from './ManagerNameSheet';
 import { managerMenu, missingManagerMenu, runMenu } from './runMenus';
 import { useAskManager } from './useAskManager';
+import { instructionsPathOf } from '@/lib/agents/managerFolder';
 
 interface SupervisorRunsPanelProps {
   /** Opens a file in an editor tab, as the explorer does. */
@@ -383,66 +384,6 @@ function mostRecentManager(runs: SupervisorRun[], managers: SupervisorManager[])
 /** Wide enough for "Remove Project Manager…" without a truncation. */
 const MENU_WIDTH = 232;
 
-const CONFIRMATIONS: Record<
-  Confirmation['kind'],
-  {
-    title: (name: string) => string;
-    message: string;
-    confirmLabel: string;
-    variant: 'destroy' | 'discard' | 'elevate';
-  }
-> = {
-  archive: {
-    title: (name) => `Archive ${name}?`,
-    message:
-      'It leaves Quick Access and the menu bar. Its folder, instructions and memory stay, and a running session keeps running until you stop it.',
-    confirmLabel: 'Archive',
-    variant: 'discard',
-  },
-  remove: {
-    title: (name) => `Remove ${name}?`,
-    message:
-      'The Project Manager is forgotten. Its folder stays and becomes an ordinary run. Nothing on disk is deleted.',
-    confirmLabel: 'Remove',
-    variant: 'destroy',
-  },
-  restart: {
-    title: (name) => `Restart ${name}?`,
-    message:
-      'Its running session ends and the folder is opened again with the current instructions. Agents it started keep running.',
-    confirmLabel: 'Restart',
-    variant: 'elevate',
-  },
-};
-
-/**
- * The confirmation for archiving, removing or restarting a manager. Quick
- * Access and Settings use it too, so one consequence is worded once.
- */
-export function ManagerConfirmDialog({
-  kind,
-  name,
-  onConfirm,
-  onCancel,
-}: {
-  kind: Confirmation['kind'];
-  name: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const wording = CONFIRMATIONS[kind];
-  return (
-    <ConfirmDialog
-      title={wording.title(name)}
-      message={wording.message}
-      confirmLabel={wording.confirmLabel}
-      variant={wording.variant}
-      onConfirm={onConfirm}
-      onCancel={onCancel}
-    />
-  );
-}
-
 const detailOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 const byName = (a: SupervisorManager, b: SupervisorManager) =>
@@ -508,7 +449,6 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
   const live = useMemo(() => runningSupervisors(agents), [agents]);
   const liveKey = live.map((agent) => `${agent.id}:${agent.repoPath ?? ''}`).join('|');
   const spawnSupervisor = useStore((s) => s.spawnSupervisor);
-  const killRunningAgent = useStore((s) => s.killRunningAgent);
   const showToast = useStore((s) => s.showToast);
   const [runs, setRuns] = useState<SupervisorRun[] | null>(null);
   const [registry, setRegistry] = useState<Registry>(NO_REGISTRY);
@@ -697,15 +637,11 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
     }
   };
 
-  const restart = async (manager: SupervisorManager, running: AgentInfo) => {
-    try {
-      await killRunningAgent(running.id);
-    } catch (cause) {
-      showToast(`Could not stop ${manager.name}: ${detailOf(cause)}`, 'error');
-      return;
-    }
-    await open(manager);
-  };
+  const restart = (manager: SupervisorManager, running: AgentInfo) =>
+    restartManager(useStore.getState, manager, running.id, {
+      onNothingVisible: () => undefined,
+      onShow: onSelectAgent,
+    });
 
   const confirmed = async ({ kind, manager, live: running }: Confirmation) => {
     setConfirmation(null);
@@ -727,8 +663,7 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
     return managerMenu(manager.name, archived, blockedReason, {
       open: () => void open(manager),
       ask: () => ask(manager),
-      editInstructions: () =>
-        onOpenFile(`${run.path.replace(/\/+$/, '')}/${MANAGER_INSTRUCTIONS_FILE}`),
+      editInstructions: () => onOpenFile(instructionsPathOf(run.path)),
       rename: () => setNameSheet({ kind: 'rename', manager }),
       showInFinder: () =>
         void revealInFileManager(run.path).catch((cause: unknown) =>
@@ -797,9 +732,7 @@ export function SupervisorRunsPanel({ onOpenFile, onSelectAgent }: SupervisorRun
         onOpen={() => void open(manager)}
         onAsk={() => ask(manager)}
         onOpenFile={onOpenFile}
-        onEditInstructions={() =>
-          onOpenFile(`${run.path.replace(/\/+$/, '')}/${MANAGER_INSTRUCTIONS_FILE}`)
-        }
+        onEditInstructions={() => onOpenFile(instructionsPathOf(run.path))}
         onRestart={() => running && setConfirmation({ kind: 'restart', manager, live: running })}
       />
     );

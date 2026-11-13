@@ -2,7 +2,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
-import { forgetSupervisorRunResults, type AgentInfo } from '@/lib/tauri/agents';
+import { forgetSupervisorRunResults } from '@/lib/tauri/agents';
+import type { AgentInfo } from '@/lib/agents/types';
 import { AgentsPanel } from './AgentsPanel';
 
 vi.mock('@/lib/tauri/agents', async (importOriginal) => ({
@@ -39,7 +40,7 @@ describe('AgentsPanel — supervisors', () => {
         agents={[WORKER, CHILD, SUPERVISOR]}
         onSpawn={vi.fn()}
         onKill={vi.fn()}
-        onKillRepo={vi.fn()}
+        onStopAgents={vi.fn()}
       />
     );
     const groups = screen.getAllByTestId(/^agent-group-/);
@@ -57,13 +58,13 @@ describe('AgentsPanel — supervisors', () => {
   it("asks before the group's Stop all and then stops only the supervisors", async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    const onKillRepo = vi.fn();
+    const onStopAgents = vi.fn();
     render(
       <AgentsPanel
         agents={[WORKER, SUPERVISOR]}
         onSpawn={vi.fn()}
         onKill={onKill}
-        onKillRepo={onKillRepo}
+        onStopAgents={onStopAgents}
       />
     );
     await user.click(screen.getByRole('button', { name: 'Stop all agents in Supervisor' }));
@@ -74,7 +75,7 @@ describe('AgentsPanel — supervisors', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Stop all' }));
     expect(onKill).toHaveBeenCalledTimes(1);
     expect(onKill).toHaveBeenCalledWith('sup');
-    expect(onKillRepo).not.toHaveBeenCalled();
+    expect(onStopAgents).not.toHaveBeenCalled();
   });
 
   it("does not count the supervisor in its folder's Stop all", async () => {
@@ -84,7 +85,7 @@ describe('AgentsPanel — supervisors', () => {
         agents={[WORKER, agent('other', { repoPath: '/work/project-a' }), SUPERVISOR]}
         onSpawn={vi.fn()}
         onKill={vi.fn()}
-        onKillRepo={vi.fn()}
+        onStopAgents={vi.fn()}
       />
     );
     expect(screen.getByTestId('agents-panel')).toHaveTextContent('3 running');

@@ -1,14 +1,15 @@
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
 import { assertOneOf, STATION_KINDS } from '../../lib/pm/enums';
 import { moveStation, orderedStations } from '../../lib/goals/stationOrder';
 import { parsePredicate, parseStoredPredicateJson } from '../../lib/goals/planner/plannerSchema';
-import type { PmGoalStation } from '../../lib/tauri/goals';
+import type { PmGoalStation } from '../../lib/goals/types';
 import { dispatchNotification } from '../notificationsDb';
 import { evaluatePredicate } from '../../lib/evidence/predicates';
 import { buildServerEvidenceContext, isServerCheckable } from '../stationEvidence';
-import { resolveGoalId, resolveTicketId } from './resolve';
+import { resolveGoalId, resolveId, resolveTicketId } from './resolve';
 
 export interface StationRow {
   id: string;
@@ -27,22 +28,6 @@ export interface StationRow {
   done_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-function now(): string {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
-}
-
-export function resolveStationId(db: Database.Database, prefix: string): string {
-  const exact = db.prepare('SELECT id FROM pm_goal_stations WHERE id = ?').get(prefix) as
-    { id: string } | undefined;
-  if (exact) return exact.id;
-  const matches = db
-    .prepare('SELECT id FROM pm_goal_stations WHERE id LIKE ?')
-    .all(`${prefix}%`) as { id: string }[];
-  if (matches.length === 1) return matches[0].id;
-  if (matches.length === 0) throw new Error(`Station '${prefix}' not found`);
-  throw new Error(`Station prefix '${prefix}' is ambiguous (${matches.length} matches)`);
 }
 
 export function listStations(db: Database.Database, goalId: string): StationRow[] {
@@ -170,7 +155,7 @@ function insertStations(
       lane, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'planned', ?, ?, '', ?, 0, ?, ?, ?)`
   );
-  const ts = now();
+  const ts = formatUtcStamp();
   const ids = stations.map((s, i) => {
     const id = crypto.randomUUID();
     insert.run(
@@ -267,7 +252,7 @@ export async function markStationDone(
       );
     }
     if (result) {
-      const ts = now();
+      const ts = formatUtcStamp();
       db.prepare(
         `UPDATE pm_goal_stations
          SET status = 'done', evidence_kind = 'proof', evidence_note = ?,
@@ -277,7 +262,7 @@ export async function markStationDone(
       return getStation(db, stationId)!;
     }
   }
-  const ts = now();
+  const ts = formatUtcStamp();
   // last_checked_at = NULL marks this a FRESH claim the judge has not ruled on
   // yet, so a re-claim after a reopen is judged anew instead of being skipped.
   db.prepare(
@@ -317,7 +302,7 @@ export function skipStation(db: Database.Database, stationId: string, reason: st
      SET status = 'skipped', evidence_kind = 'claim', evidence_note = ?,
          last_checked_at = NULL, done_at = NULL, updated_at = ?
      WHERE id = ?`
-  ).run(reason.trim(), now(), stationId);
+  ).run(reason.trim(), formatUtcStamp(), stationId);
   return getStation(db, stationId)!;
 }
 
@@ -355,7 +340,7 @@ export function requestHumanCheck(
   }
   db.prepare('UPDATE pm_goal_stations SET evidence_note = ?, updated_at = ? WHERE id = ?').run(
     instructions,
-    now(),
+    formatUtcStamp(),
     stationId
   );
   if (inbox) {
@@ -396,7 +381,7 @@ export function reorderStation(
   const update = db.prepare(
     'UPDATE pm_goal_stations SET sort_order = ?, updated_at = ? WHERE id = ?'
   );
-  const ts = now();
+  const ts = formatUtcStamp();
   for (const s of orderedStations(moved, station.goal_id)) {
     update.run(s.sortOrder, ts, s.id);
   }
@@ -408,7 +393,7 @@ export function updateStation(
   stationId: string,
   params: { name?: string; kind?: string; predicate?: string; ticketId?: string }
 ): StationRow {
-  const id = resolveStationId(db, stationId);
+  const id = resolveId(db, 'pm_goal_stations', stationId);
   const station = getStation(db, id);
   if (!station) throw new Error(`Station '${stationId}' not found`);
   const finalKind = params.kind ?? station.kind;
@@ -421,7 +406,7 @@ export function updateStation(
   const ticketId = params.ticketId ? resolveTicketId(db, params.ticketId) : station.ticket_id;
   db.prepare(
     'UPDATE pm_goal_stations SET name = ?, kind = ?, predicate = ?, ticket_id = ?, updated_at = ? WHERE id = ?'
-  ).run(params.name ?? station.name, finalKind, finalPredicate, ticketId, now(), id);
+  ).run(params.name ?? station.name, finalKind, finalPredicate, ticketId, formatUtcStamp(), id);
   return getStation(db, id)!;
 }
 
@@ -477,7 +462,9 @@ export function registerStationTools(
           kind,
           predicate,
           ticketId: ticketId ? resolveTicketId(db, ticketId) : undefined,
-          afterStationId: afterStationId ? resolveStationId(db, afterStationId) : undefined,
+          afterStationId: afterStationId
+            ? resolveId(db, 'pm_goal_stations', afterStationId)
+            : undefined,
         })
       ),
   });
@@ -499,7 +486,9 @@ export function registerStationTools(
         createStations(db, {
           goalId: resolveGoalId(db, goalId),
           stations,
-          afterStationId: afterStationId ? resolveStationId(db, afterStationId) : undefined,
+          afterStationId: afterStationId
+            ? resolveId(db, 'pm_goal_stations', afterStationId)
+            : undefined,
         })
       ),
   });
@@ -526,7 +515,7 @@ export function registerStationTools(
       stationId: z.string().describe('Station ID (UUID or unique prefix)'),
     }),
     execute: async ({ stationId }) => {
-      const id = resolveStationId(db, stationId);
+      const id = resolveId(db, 'pm_goal_stations', stationId);
       db.prepare('DELETE FROM pm_goal_stations WHERE id = ?').run(id);
       return JSON.stringify({ deleted: id });
     },
@@ -542,7 +531,12 @@ export function registerStationTools(
     }),
     execute: async ({ stationId, evidenceNote }) =>
       JSON.stringify(
-        await markStationDone(db, resolveStationId(db, stationId), evidenceNote, projectRoot)
+        await markStationDone(
+          db,
+          resolveId(db, 'pm_goal_stations', stationId),
+          evidenceNote,
+          projectRoot
+        )
       ),
   });
 
@@ -558,7 +552,7 @@ export function registerStationTools(
         .describe('Why this station is not being done, and where it is written down'),
     }),
     execute: async ({ stationId, reason }) =>
-      JSON.stringify(skipStation(db, resolveStationId(db, stationId), reason)),
+      JSON.stringify(skipStation(db, resolveId(db, 'pm_goal_stations', stationId), reason)),
   });
 
   server.addTool({
@@ -585,7 +579,7 @@ export function registerStationTools(
         requestHumanCheck(
           db,
           humanChecks.inbox,
-          resolveStationId(db, stationId),
+          resolveId(db, 'pm_goal_stations', stationId),
           instructions,
           humanChecks.scope
         )
@@ -601,6 +595,6 @@ export function registerStationTools(
       toIndex: z.number().int().min(0).describe('Target index, 0-based'),
     }),
     execute: async ({ stationId, toIndex }) =>
-      JSON.stringify(reorderStation(db, resolveStationId(db, stationId), toIndex)),
+      JSON.stringify(reorderStation(db, resolveId(db, 'pm_goal_stations', stationId), toIndex)),
   });
 }

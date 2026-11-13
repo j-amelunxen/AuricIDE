@@ -1,4 +1,4 @@
-import type { PmGoal } from '../tauri/goals';
+import type { PmGoal } from '../goals/types';
 import { normalizeBundle, type GoalBlocker } from '../goals/goalDependencies';
 
 /**

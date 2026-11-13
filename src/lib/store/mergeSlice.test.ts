@@ -1,15 +1,8 @@
+import { createTestStore as createFullTestStore } from '@/lib/store/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { GitConflictFile, GitMergeState } from '../tauri/gitMerge';
 import { mergeTabId } from '../git/mergeTabId';
-import {
-  createMergeSlice,
-  selectMergeDoc,
-  selectMergeState,
-  selectRepoConflicts,
-  unresolvedConflictIndexes,
-  type MergeSlice,
-} from './mergeSlice';
+import { selectMergeDoc, selectRepoConflicts, unresolvedConflictIndexes } from './mergeSlice';
 
 const gitMerge = vi.hoisted(() => ({
   getMergeState: vi.fn(),
@@ -84,7 +77,7 @@ interface Host {
   refreshRepoStatus: (repoPath: string) => Promise<void>;
 }
 
-let store: StoreApi<MergeSlice & Host>;
+let store: ReturnType<typeof createFullTestStore>;
 let refreshRepoStatus: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -93,11 +86,10 @@ beforeEach(() => {
   gitMerge.getConflictFile.mockResolvedValue(conflictFile());
   gitMerge.getConflictOrigins.mockResolvedValue({ ours: [], theirs: [], commits: [] });
   refreshRepoStatus = vi.fn(async () => undefined);
-  store = createStore<MergeSlice & Host>()((...a) => ({
-    ...createMergeSlice(...(a as unknown as Parameters<typeof createMergeSlice>)),
+  store = createFullTestStore({
     rootPath: '/work',
     refreshRepoStatus: refreshRepoStatus as unknown as Host['refreshRepoStatus'],
-  }));
+  });
 });
 
 const s = () => store.getState();
@@ -619,7 +611,6 @@ describe('resetMergeInMemory', () => {
 describe('selectors', () => {
   it('return stable values for unknown keys', () => {
     expect(selectRepoConflicts('/nope')(s())).toBe(selectRepoConflicts('/other')(s()));
-    expect(selectMergeState('/nope')(s())).toBeNull();
     expect(selectMergeDoc('nope')(s())).toBeNull();
   });
 

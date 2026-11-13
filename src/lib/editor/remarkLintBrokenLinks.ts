@@ -13,18 +13,14 @@ function isExternalUrl(url: string): boolean {
 }
 
 function resolveLocalPath(url: string, currentFilePath: string, fileList: string[]): string | null {
-  // Strip anchor
   const [pathPart] = url.split('#');
   if (!pathPart) return null;
 
-  // Remove leading ./
   const cleaned = pathPart.replace(/^\.\//, '');
 
-  // Resolve relative to current file directory
   const currentDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
   const resolved = `${currentDir}/${cleaned}`;
 
-  // Check if any file matches the resolved path
   const found = fileList.find((f) => f === resolved || f.endsWith('/' + cleaned));
   return found ?? null;
 }
@@ -58,7 +54,6 @@ export const remarkLintBrokenLinks = lintRule<Root, BrokenLinksOptions>(
         return;
       }
 
-      // Check heading anchor if present
       if (anchor) {
         const headings = headingIndex.get(resolvedPath) ?? [];
         const normalizedAnchor = anchor.toLowerCase();

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatUtcStamp } from '@/lib/time/utcStamp';
 import type { Notification } from './types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import {
@@ -7,7 +8,6 @@ import {
   cellOf,
   clusterRuns,
   firedRuns,
-  formatUtcStamp,
   parseScheduleView,
   projectColor,
   runsInRange,

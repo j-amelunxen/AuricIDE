@@ -1,5 +1,6 @@
 import { useStore } from '@/lib/store';
-import { ContextMenu, type ContextMenuOption } from './ContextMenu';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
 import { TicketCreateModal } from '../pm/TicketCreateModal';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';

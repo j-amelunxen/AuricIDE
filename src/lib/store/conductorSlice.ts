@@ -1,7 +1,9 @@
+import { persistInBackground, withPersistFeedback } from './persistFeedback';
+import { formatUtcStamp } from '@/lib/time/utcStamp';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
 import { setProjectConfigValue } from '../config/projectConfig';
 import type { NotificationInput } from '../tauri/notifications';
-import type { AgentSlice } from './agentSlice';
 import {
   completeLinkedStation,
   handleReviewAgentExit,
@@ -9,7 +11,11 @@ import {
   type ConductorReviewContext,
 } from './conductor/conductorReview';
 import { conductorRunScope, liveConductorGoalAgentIds } from './conductor/conductorHelpers';
-import { executeConductorTick, type ConductorTickContext } from './conductor/conductorTick';
+import {
+  executeConductorTick,
+  stopConductorAgent,
+  type ConductorTickContext,
+} from './conductor/conductorTick';
 import { normalizeConductorWorkCap } from './conductor/workCap';
 import {
   CONDUCTOR_HEARTBEAT_MS,
@@ -20,13 +26,10 @@ import {
   type ConductorDecision,
   type ConductorRunSummary,
   type ConductorSlice,
-  type CrossSlices,
-  type FullConductorStore,
   type RunOverridable,
 } from './conductor/conductorTypes';
-import type { PmGoal } from '../tauri/goals';
-import type { GoalsSlice } from './goalsSlice';
-import { getGoalDescendants } from './goals/goalTreeHelpers';
+import type { PmGoal } from '../goals/types';
+import { getGoalDescendants } from '../goals/model/goalTreeHelpers';
 
 export {
   CONDUCTOR_HEARTBEAT_MS,
@@ -49,7 +52,10 @@ export {
   conductorModelFor,
 } from './conductor/conductorHelpers';
 
-export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => {
+export const createConductorSlice: StateCreator<StoreState, [], [], ConductorSlice> = (
+  set,
+  get
+) => {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   const stopHeartbeat = (): void => {
@@ -79,9 +85,13 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       | 'conductorWorkCap',
     value: string
   ): void => {
-    const rootPath = (get() as { rootPath?: string | null }).rootPath;
+    const rootPath = get().rootPath;
     if (!rootPath) return;
-    void setProjectConfigValue(rootPath, key, value).catch(() => {});
+    persistInBackground(
+      withPersistFeedback(get(), 'the conductor setting', () =>
+        setProjectConfigValue(rootPath, key, value)
+      )
+    );
   };
 
   const addDecision = (decision: Omit<ConductorDecision, 'id' | 'timestamp'>): void => {
@@ -90,24 +100,18 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         {
           ...decision,
           id: crypto.randomUUID(),
-          timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          timestamp: formatUtcStamp(),
         },
         ...s.conductorDecisions,
       ].slice(0, MAX_CONDUCTOR_DECISIONS),
     }));
   };
 
-  const cross = (): FullConductorStore =>
-    get() as unknown as Partial<CrossSlices> &
-      Partial<AgentSlice> &
-      Partial<GoalsSlice> &
-      ConductorSlice;
+  const cross = (): StoreState => get();
 
   const notifyInbox = (input: Omit<NotificationInput, 'source'>): void => {
-    const inbox = get() as ConductorSlice & {
-      dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
-    };
-    void inbox.dispatchNotification?.({ source: 'system', origin: 'Conductor', ...input });
+    const inbox = get();
+    void inbox.dispatchNotification({ source: 'system', origin: 'Conductor', ...input });
   };
 
   const finishRun = (
@@ -145,8 +149,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     const projectPath = full.rootPath;
     if (!projectPath) return;
     try {
-      await full.savePmData?.(projectPath);
-      await full.saveGoals?.(projectPath);
+      await full.savePmData(projectPath);
+      await full.saveGoals(projectPath);
     } catch {
       // Browser mode / DB not initialized · drafts stay in memory
     }
@@ -164,7 +168,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     const tree = [goals.find((g) => g.id === rootId), ...getGoalDescendants(goals, rootId)];
     const drafts = tree.filter((g): g is PmGoal => g?.status === 'draft');
     if (drafts.length === 0) return;
-    for (const goal of drafts) full.updateGoal?.(goal.id, { status: 'active' });
+    for (const goal of drafts) full.updateGoal(goal.id, { status: 'active' });
     addDecision({
       action: 'start',
       detail: `Activated ${drafts.length} draft goal(s): ${drafts.map((g) => g.name).join(', ')}`,
@@ -278,9 +282,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       if (goalId) activateDraftGoals(goalId);
       stopHeartbeat();
       heartbeat = setInterval(() => {
-        void get()
-          .conductorTick()
-          .catch(() => {});
+        void get().conductorTick();
       }, CONDUCTOR_HEARTBEAT_MS);
     },
 
@@ -309,7 +311,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorRunScope({ ...full, conductorGoalId: get().conductorGoalId })
       );
       const killed = [...runningAgentIds, ...goalAgentIds];
-      [...killed, ...runningReviewIds].forEach((agentId) => void full.killRunningAgent?.(agentId));
+      [...killed, ...runningReviewIds].forEach((agentId) => stopConductorAgent(full, agentId));
       addDecision({
         action: 'stop',
         detail:
@@ -358,7 +360,14 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       persistProjectValue('conductorJudgeModel', model || '');
     },
 
-    conductorTick: () => executeConductorTick(tickCtx),
+    // Never rejects: the heartbeat and every event would otherwise repeat a
+    // failing step in silence. The failure is a decision in the run log, once
+    // per distinct message so a repeating one does not push the rest out.
+    conductorTick: () =>
+      executeConductorTick(tickCtx).catch((error: unknown) => {
+        const detail = `Conductor step failed: ${error instanceof Error ? error.message : String(error)}`;
+        if (get().conductorDecisions[0]?.detail !== detail) addDecision({ action: 'fail', detail });
+      }),
 
     approveConductorTicket: async (ticketId) => {
       set((s: ConductorSlice) => ({
@@ -397,7 +406,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           void startReview(ticketId, agentId, reviewCtx);
           return;
         }
-        full.updateTicket?.(ticketId, { status: 'done' });
+        full.updateTicket(ticketId, { status: 'done' });
         completeLinkedStation(
           ticketId,
           'claim',
@@ -416,7 +425,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         });
       } else {
         const fails = (state.conductorFailedTickets[ticketId] ?? 0) + 1;
-        full.updateTicket?.(ticketId, { status: 'open' });
+        full.updateTicket(ticketId, { status: 'open' });
         set({
           conductorAssignments: remaining,
           conductorFailedTickets: { ...state.conductorFailedTickets, [ticketId]: fails },
@@ -432,9 +441,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         });
       }
 
-      void persist()
-        .then(() => get().conductorTick())
-        .catch(() => {});
+      void persist().then(() => get().conductorTick());
     },
 
     conductorHandleAgentKilled: (agentId) => {
@@ -448,7 +455,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         const [ticketId] = reviewEntry;
         const { [ticketId]: _rev, ...restReview } = state.conductorReviewAssignments;
         const { [ticketId]: _at, ...restStarted } = state.conductorReviewStartedAt;
-        full.updateTicket?.(ticketId, { status: 'open' });
+        full.updateTicket(ticketId, { status: 'open' });
         set({
           conductorReviewAssignments: restReview,
           conductorReviewStartedAt: restStarted,
@@ -463,9 +470,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           ticketId,
           agentId,
         });
-        void persist()
-          .then(() => get().conductorTick())
-          .catch(() => {});
+        void persist().then(() => get().conductorTick());
         return;
       }
 
@@ -476,7 +481,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         Object.entries(state.conductorAssignments).filter(([t]) => t !== ticketId)
       );
 
-      full.updateTicket?.(ticketId, { status: 'open' });
+      full.updateTicket(ticketId, { status: 'open' });
       set({
         conductorAssignments: remaining,
         conductorFailedTickets: {
@@ -491,9 +496,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         agentId,
       });
 
-      void persist()
-        .then(() => get().conductorTick())
-        .catch(() => {});
+      void persist().then(() => get().conductorTick());
     },
   };
 };

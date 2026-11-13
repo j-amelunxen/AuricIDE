@@ -13,6 +13,7 @@ import { DISCARD_UNSAVED_PM } from '@/lib/pm/unsavedLeave';
 import type { GitFileStatus } from '@/lib/tauri/git';
 import type { GitRepoState } from '@/lib/store/gitSlice';
 import type { IDEState } from './liveIDEState';
+import { resetProjectView } from './projectView';
 
 /** repoPath -> that repo's fileStatuses, built once per refresh rather than once per tree node. */
 export function statusesByRepo(
@@ -207,25 +208,9 @@ export function useTreeRefresh(
     state.closeProject();
     useStore.getState().closeWorkPlace();
     state.setBottomCollapsed(true);
-    state.closeAllTabs();
+    resetProjectView(state);
     state.setSelectedPaths([]);
     state.setSelectionAnchor(null);
-    state.clearLinkIndex();
-    state.clearHeadingIndex();
-    state.clearEntityIndex();
-    state.resetPmInMemory();
-    state.resetBlueprintsInMemory();
-    state.resetRequirementsInMemory();
-    state.resetExcalidrawInMemory();
-    state.setProjectFiles([]);
-    state.setEditorContent('');
-    state.setImageData(null);
-    state.setVideoSrc(null);
-    state.setPdfData(null);
-    state.setMindmapData(null);
-    state.resetGitInMemory();
-    state.resetReviewInMemory();
-    state.resetMergeInMemory();
   }, [state]);
 
   return {

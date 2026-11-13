@@ -1,6 +1,7 @@
+import { persistInBackground, withPersistFeedback } from './persistFeedback';
+import type { StoreState } from '@/lib/store/types';
 import type { StateCreator } from 'zustand';
-import type { LogEntry } from '@/app/components/terminal/TerminalPanel';
-import type { ReferenceResult } from '@/lib/refactoring/findReferences';
+import type { LogEntry } from '@/lib/terminal/types';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { WorkTab } from '@/lib/work/tabs';
@@ -66,9 +67,6 @@ export interface UISlice {
   videoImportDialogOpen: boolean;
   /** The Spotlight-style quick-capture overlay for the inbox. */
   inboxCaptureOpen: boolean;
-  referencesPanelOpen: boolean;
-  referencesPanelQuery: string;
-  referencesPanelResults: ReferenceResult[];
   providers: ProviderInfo[];
   /** Center place: Goals / Tickets / Requirements / Lines. */
   workPlaceOpen: boolean;
@@ -82,11 +80,10 @@ export interface UISlice {
    * (rows that belong to no project), a string is that one project.
    */
   commandCenterProject: string | null | undefined;
-  supervisorProviderChoice:
-    import('@/app/components/cockpit/SupervisorProviderModal').SupervisorProviderChoice | null;
+  supervisorProviderChoice: import('@/lib/agents/types').SupervisorProviderChoice | null;
 
   openSupervisorProviderChoice: (
-    candidates: import('@/app/components/cockpit/SupervisorProviderModal').SupervisorCandidateInfo[]
+    candidates: import('@/lib/agents/types').SupervisorCandidateInfo[]
   ) => Promise<string | null>;
   closeSupervisorProviderChoice: () => void;
 
@@ -115,7 +112,6 @@ export interface UISlice {
   updateAgentSettings: (settings: Partial<AgentSettings>) => void;
   /** Replaces the project-scoped agent settings with the ones this project stores. */
   loadProjectAgentSettings: (rootPath: string | null) => Promise<void>;
-  setReferencesPanel: (open: boolean, query?: string, results?: ReferenceResult[]) => void;
   setProviders: (providers: ProviderInfo[]) => void;
   openWorkPlace: (tab?: WorkTab) => void;
   closeWorkPlace: () => void;
@@ -129,7 +125,7 @@ export interface UISlice {
   selectCommandCenterProject: (projectPath: string | null | undefined) => void;
 }
 
-export const createUISlice: StateCreator<UISlice> = (set, get) => ({
+export const createUISlice: StateCreator<StoreState, [], [], UISlice> = (set, get) => ({
   terminalLogs: [],
   cursorPos: { line: 1, col: 1 },
   commandPaletteOpen: false,
@@ -151,9 +147,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   importSpecDialogOpen: false,
   videoImportDialogOpen: false,
   inboxCaptureOpen: false,
-  referencesPanelOpen: false,
-  referencesPanelQuery: '',
-  referencesPanelResults: [],
   providers: [FALLBACK_CRUSH_PROVIDER],
   workPlaceOpen: false,
   workTab: 'tickets',
@@ -225,14 +218,18 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
 
     // Persist the ones that describe this codebase — how its branches name
     // tickets, how its commits get written.
-    const rootPath = (get() as { rootPath?: string | null }).rootPath;
+    const rootPath = get().rootPath;
     if (!rootPath) return;
     for (const key of PROJECT_SCOPED_AGENT_SETTINGS) {
       const value = newSettings[key];
       if (value === undefined) continue;
-      // Fire and forget: a settings write must never block the toggle from
-      // moving, and the value is already live in the store either way.
-      void setProjectConfigValue(rootPath, key, value as never).catch(() => {});
+      // Not awaited: the toggle moves at once and the value is live in the
+      // store either way; a write that fails says so.
+      persistInBackground(
+        withPersistFeedback(get(), 'the project setting', () =>
+          setProjectConfigValue(rootPath, key, value as never)
+        )
+      );
     }
   },
 
@@ -257,13 +254,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
       ),
     }));
   },
-
-  setReferencesPanel: (open, query, results) =>
-    set({
-      referencesPanelOpen: open,
-      referencesPanelQuery: query ?? '',
-      referencesPanelResults: results ?? [],
-    }),
 
   setProviders: (providers) => set({ providers }),
 

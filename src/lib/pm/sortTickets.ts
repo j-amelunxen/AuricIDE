@@ -1,5 +1,5 @@
-import type { Priority } from '@/lib/pm/enums';
-import type { PmTicket } from '@/lib/tauri/pm';
+import { priorityUrgency } from '@/lib/pm/enums';
+import type { PmTicket } from '@/lib/pm/types';
 
 /**
  * How the ticket table can be ordered. `custom` is the drag-and-drop order
@@ -26,13 +26,6 @@ export function parseTicketSort(raw: string | null | undefined): TicketSort {
     : TICKET_DEFAULT_SORT;
 }
 
-const PRIORITY_VALUE: Record<Priority, number> = {
-  low: 0,
-  normal: 1,
-  high: 2,
-  critical: 3,
-};
-
 function compare(a: PmTicket, b: PmTicket, sort: TicketSort): number {
   switch (sort) {
     case 'name':
@@ -40,7 +33,7 @@ function compare(a: PmTicket, b: PmTicket, sort: TicketSort): number {
     case 'status':
       return a.status.localeCompare(b.status);
     case 'priority':
-      return PRIORITY_VALUE[a.priority] - PRIORITY_VALUE[b.priority];
+      return priorityUrgency(a.priority) - priorityUrgency(b.priority);
     case 'createdAt':
       return a.createdAt.localeCompare(b.createdAt);
     case 'custom':

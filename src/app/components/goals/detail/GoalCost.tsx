@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import { usageForGoalSubtree, type TicketRef } from '@/lib/pm/usage/aggregate';
-import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { AgentUsageRow } from '@/lib/pm/usage/types';
+import type { PmGoal } from '@/lib/goals/types';
 import { UsageCard } from '@/app/components/pm/cost/UsageCard';
 
 interface GoalCostProps {

@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
-import { createMissionWithSchedule } from '@/lib/missions/create';
+import { missionCreate } from '@/lib/tauri/missions';
 import type { MissionRecurrence } from '@/lib/missions/schedule';
 
 export interface MissionCreateDialogProps {
@@ -54,7 +54,7 @@ export function MissionCreateDialog({
     setSaving(true);
     setError(null);
     try {
-      await createMissionWithSchedule({
+      await missionCreate({
         projectPath,
         projectName,
         name,

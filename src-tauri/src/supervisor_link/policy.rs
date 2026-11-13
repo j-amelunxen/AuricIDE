@@ -21,12 +21,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 use super::glob;
-use crate::supervisor::canonical_project_path;
+use crate::project_path::canonical_project_path;
 
 /// Fixture `policyFileName`.
 pub const POLICY_FILE_NAME: &str = "supervisor-link.json";
@@ -703,8 +702,8 @@ fn read_v1(file: PolicyFileV1) -> StoredPolicy {
 }
 
 /// The file's content, or an empty policy when it is missing, broken or of
-/// an unknown version. Older versions are migrated in memory; the next save
-/// writes the current one.
+/// an unknown version: what the link acts on, so a bad file allows nothing.
+/// Older versions are migrated in memory; the next save writes the current one.
 pub fn read_stored(app_data: &Path) -> StoredPolicy {
     let Ok(text) = std::fs::read_to_string(policy_path_in(app_data)) else {
         return StoredPolicy::default();
@@ -712,20 +711,48 @@ pub fn read_stored(app_data: &Path) -> StoredPolicy {
     parse_stored(&text)
 }
 
-pub fn parse_stored(text: &str) -> StoredPolicy {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-        return StoredPolicy::default();
+/// The file's content for a change built on it (the settings editor, a
+/// proposal): missing is an empty policy, but a file that cannot be read or
+/// parsed is an error. Read leniently, an edit would replace the whole policy
+/// with "empty plus the change".
+pub fn read_stored_for_update(app_data: &Path) -> Result<StoredPolicy, String> {
+    let path = policy_path_in(app_data);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(StoredPolicy::default())
+        }
+        Err(error) => return Err(format!("Cannot read {}: {error}", path.display())),
     };
+    try_parse_stored(&text).map_err(|reason| {
+        format!(
+            "{} is {reason}; fix or remove it before changing the supervisor link settings",
+            path.display()
+        )
+    })
+}
+
+pub fn parse_stored(text: &str) -> StoredPolicy {
+    try_parse_stored(text).unwrap_or_default()
+}
+
+fn try_parse_stored(text: &str) -> Result<StoredPolicy, String> {
+    let value = serde_json::from_str::<serde_json::Value>(text)
+        .map_err(|error| format!("not valid JSON ({error})"))?;
+    let invalid = |error: serde_json::Error| format!("not a valid policy ({error})");
     match value.get("version").and_then(serde_json::Value::as_u64) {
         Some(1) => serde_json::from_value::<PolicyFileV1>(value)
             .map(read_v1)
-            .unwrap_or_default(),
+            .map_err(invalid),
         // Version 2 has no `defaults`; one that names it is not version 2.
-        Some(2) if value.get("defaults").is_some() => StoredPolicy::default(),
+        Some(2) if value.get("defaults").is_some() => {
+            Err("version 2 with a `defaults` section".to_string())
+        }
         Some(2 | 3) => serde_json::from_value::<PolicyFile>(value)
             .map(read_v2_or_v3)
-            .unwrap_or_default(),
-        _ => StoredPolicy::default(),
+            .map_err(invalid),
+        Some(version) => Err(format!("version {version}, which this build does not know")),
+        None => Err("missing its version".to_string()),
     }
 }
 
@@ -768,7 +795,11 @@ pub fn check_stored(policy: &StoredPolicy) -> Result<StoredPolicy, String> {
 /// any rule is broken.
 pub fn write_stored(app_data: &Path, policy: &StoredPolicy) -> Result<StoredPolicy, String> {
     let stored = check_stored(policy)?;
-    write_private_atomic(&policy_path_in(app_data), &stored_payload(&stored)?)?;
+    crate::json_store::write_atomic(
+        &policy_path_in(app_data),
+        &stored_payload(&stored)?,
+        crate::json_store::Mode::Private,
+    )?;
     Ok(stored)
 }
 
@@ -791,44 +822,6 @@ pub(super) fn stored_payload(stored: &StoredPolicy) -> Result<Vec<u8>, String> {
     serde_json::to_vec_pretty(&file).map_err(|error| error.to_string())
 }
 
-/// Temp file at 0600, then a rename, as `supervisor::write_policy_atomic`
-/// does for its typed policy: a read mid-write sees the old file or the new
-/// one. Writes are serialised and each has its own temp file, so two saves
-/// cannot truncate each other.
-pub(super) fn write_private_atomic(path: &Path, payload: &[u8]) -> Result<(), String> {
-    static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static WRITE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let _writing = WRITE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let sequence = WRITE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let temporary = path.with_extension(format!("json.{}-{sequence}.tmp", std::process::id()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    let written = file.write_all(payload).and_then(|_| file.sync_all());
-    drop(file);
-    if let Err(error) = written {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    std::fs::rename(&temporary, path).map_err(|error| {
-        let _ = std::fs::remove_file(&temporary);
-        error.to_string()
-    })
-}
-
 pub(super) fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -838,7 +831,7 @@ pub(super) fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// The file as the settings edit it.
 #[tauri::command]
 pub fn supervisor_link_policy_get(app: tauri::AppHandle) -> Result<StoredPolicy, String> {
-    Ok(read_stored(&app_data_dir(&app)?))
+    read_stored_for_update(&app_data_dir(&app)?)
 }
 
 #[tauri::command]
@@ -864,7 +857,7 @@ pub fn supervisor_link_jobs_usage(app: tauri::AppHandle) -> Result<super::jobs::
     Ok(super::jobs::usage_from_file(
         &dir,
         limits,
-        super::jobs::now_ms(),
+        crate::json_store::now_ms(),
     ))
 }
 

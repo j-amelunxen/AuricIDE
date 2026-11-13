@@ -46,7 +46,6 @@ vi.mock('@/lib/editor/wikiLinkBrokenExtension', () => ({
 
 vi.mock('@/lib/editor/wikiLinkCompletionExtension', () => ({
   wikiLinkCompletion: () => null,
-  fileListFacet: { of: () => [] },
   headingProviderFacet: { of: () => [] },
 }));
 
@@ -111,7 +110,6 @@ vi.mock('@/lib/editor/markdownCompletionSource', () => ({
   headingLevelSource: () => null,
   linkTargetSource: () => null,
   imageTargetSource: () => null,
-  filePathsFacet: { of: () => [] },
 }));
 
 vi.mock('@codemirror/autocomplete', () => ({
@@ -128,24 +126,19 @@ vi.mock('@codemirror/lint', () => ({
 vi.mock('@/lib/editor/markdownLintExtension', () => ({
   markdownLintExtension: [],
   lintConfigFacet: { of: () => [] },
-  fileListForLintFacet: { of: () => [] },
   headingIndexForLintFacet: { of: () => [] },
-  currentFilePathFacet: { of: () => [] },
 }));
 
 vi.mock('@/lib/editor/jsonLintExtension', () => ({
   jsonLintExtension: [],
-  currentFilePathFacetJson: { of: () => [] },
 }));
 
 vi.mock('@/lib/editor/xmlLintExtension', () => ({
   xmlLintExtension: [],
-  currentFilePathFacetXml: { of: () => [] },
 }));
 
 vi.mock('@/lib/editor/yamlLintExtension', () => ({
   yamlLintExtension: [],
-  currentFilePathFacetYaml: { of: () => [] },
 }));
 
 const mockGetGitDiff = vi.hoisted(() => vi.fn().mockResolvedValue(''));
@@ -192,9 +185,9 @@ const mockStoreState = vi.hoisted(() => ({
 vi.mock('@/lib/store', () => {
   const snapshot = () => ({
     allFilePaths: [],
+    linkIndex: new Map(),
     getBrokenLinkTargets: () => new Set(),
     customSlashCommands: [],
-    headingIndex: new Map(),
     lintConfig: { enabled: true, disabledRules: new Set() },
     enableDeepNlp: false,
     setDiagnostics: () => {},

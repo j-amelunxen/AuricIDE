@@ -4,7 +4,7 @@ import { memo, useMemo } from 'react';
 import { ReactFlow, Background, Handle, Position, MarkerType, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
-import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency } from '@/lib/goals/types';
 import {
   buildSubGoalPlanGraph,
   type SubGoalPlanGroup,

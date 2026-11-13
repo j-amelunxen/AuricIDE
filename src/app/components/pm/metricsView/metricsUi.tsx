@@ -10,12 +10,6 @@ export const BASIS_OPTIONS: { label: string; value: number | undefined }[] = [
 export const FORECAST_DAYS = 30;
 export const CLOCK_TICK_MS = 60_000;
 export const DASH = '—';
-export const COMPLETED_STATUSES = new Set(['done', 'archived']);
-
-export function statusLabel(status: string): string {
-  const words = status.replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 export function MetricCard({
   label,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { ContextMenu } from '@/app/components/ui/ContextMenu';
+import type { ContextMenuOption } from '@/lib/ui/contextMenu';
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { graphColorHex } from '@/lib/git/graphColors';
 import { openGraphTab } from '@/lib/git/graphEntry';
@@ -57,6 +58,7 @@ function useReloadOnFocus(repoPath: string) {
       const { refreshRefs, loadFirstPage } = useStore.getState();
       void refreshRefs(repoPath)
         .then((changed) => (changed ? loadFirstPage(repoPath) : undefined))
+        // The graph stays as drawn; the next focus tries again.
         .catch(() => undefined);
     };
     window.addEventListener('focus', onFocus);

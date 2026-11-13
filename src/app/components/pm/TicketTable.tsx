@@ -1,14 +1,12 @@
 'use client';
 
+import { formatTokens } from '@/lib/usage/breakdown';
 import { useState, useMemo, useCallback, type MouseEvent } from 'react';
-import type { PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import type { PmTicket, PmDependency, PmTestCase } from '@/lib/pm/types';
 import { useStore } from '@/lib/store';
-import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
-import {
-  priorityLabel,
-  priorityIcon,
-  buildTicketStatusPriorityPowerOptions,
-} from './ticketContextMenu';
+import { ContextMenu } from '../ui/ContextMenu';
+import type { ContextMenuOption } from '../../../lib/ui/contextMenu';
+import { priorityIcon, buildTicketStatusPriorityPowerOptions } from './ticketContextMenu';
 import { calculateHeat, getHeatStyles } from '@/lib/pm/heat';
 import {
   TICKET_STATUS_BADGE_CLASS,
@@ -36,7 +34,8 @@ import {
   toggleTicketUsageColumn,
   type TicketUsageColumn,
 } from './cost/ticketUsageColumns';
-import { NO_PRICE, formatTokens, formatTotalCost, unpricedNote } from './cost/usageFormat';
+import { NO_PRICE, formatTotalCost, unpricedNote } from './cost/usageFormat';
+import { PRIORITY_NAME } from '@/lib/pm/labels';
 
 interface TicketTableProps {
   tickets: PmTicket[];
@@ -212,7 +211,6 @@ export function TicketTable({
       data-usage-columns={usageColumns.length > 0 ? '' : undefined}
       className="flex h-full flex-col"
     >
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3.5 py-2.5 border-b border-white/[0.08]">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-muted/50">
           Tickets
@@ -234,7 +232,6 @@ export function TicketTable({
         </div>
       </div>
 
-      {/* Ticket list */}
       <div className="flex-1 overflow-y-auto">
         {sorted.length === 0 && loadError && (
           <div
@@ -304,11 +301,10 @@ export function TicketTable({
               className={`shrink-0 h-1.5 w-1.5 rounded-full ${TICKET_STATUS_DOT_CLASS[ticket.status]}`}
             />
 
-            {/* Priority icon */}
             <AuricIcon
               name={priorityIcon[ticket.priority]}
               className="text-[14px] text-foreground-muted/40 select-none"
-              title={`Priority: ${priorityLabel[ticket.priority]}`}
+              title={`Priority: ${PRIORITY_NAME[ticket.priority]}`}
             />
 
             {/* Name — direct child of row div so closest('div[class]') finds the row */}
@@ -336,7 +332,6 @@ export function TicketTable({
               </span>
             )}
 
-            {/* Human Supervision Indicator */}
             {ticket.needsHumanSupervision && (
               <AuricIcon
                 name="visibility"
@@ -345,7 +340,6 @@ export function TicketTable({
               />
             )}
 
-            {/* Agent strength Badge */}
             {ticket.modelPower && (
               <span
                 className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider border ${
@@ -357,7 +351,6 @@ export function TicketTable({
               </span>
             )}
 
-            {/* Heat Badge */}
             {(() => {
               const heat = calculateHeat(ticket.id, dependencies);
               if (heat === 0) return null;
@@ -374,7 +367,6 @@ export function TicketTable({
               );
             })()}
 
-            {/* Actions + badge */}
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
@@ -394,7 +386,6 @@ export function TicketTable({
         ))}
       </div>
 
-      {/* Footer */}
       <div className="border-t border-white/[0.08] p-2">
         <button
           type="button"

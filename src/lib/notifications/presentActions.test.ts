@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  QuickAccessCombo,
-  QuickAccessSkill,
-  StarredProject,
-} from '@/lib/store/starredProjectsSlice';
+import type { QuickAccessCombo, QuickAccessSkill, StarredProject } from '@/lib/quickAccess/types';
 import { presentNotificationActions, type RepoDirStatus } from './presentActions';
 import type { NotificationAction } from './types';
 

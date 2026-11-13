@@ -5,7 +5,6 @@ import {
   isSameOrInside,
   rangeBetween,
   rangeSelection,
-  remapPath,
   toggleSelection,
   topLevelPaths,
 } from './treeSelection';
@@ -166,16 +165,10 @@ describe('dragItems', () => {
   });
 });
 
-describe('isSameOrInside / remapPath', () => {
+describe('isSameOrInside', () => {
   it('matches the path itself and its subtree, not name-prefix siblings', () => {
     expect(isSameOrInside('/p/a', '/p/a')).toBe(true);
     expect(isSameOrInside('/p/a/one.ts', '/p/a')).toBe(true);
     expect(isSameOrInside('/p/ab.md', '/p/a')).toBe(false);
-  });
-
-  it('re-points a moved path and its subtree only', () => {
-    expect(remapPath('/p/a', '/p/a', '/p/x/a')).toBe('/p/x/a');
-    expect(remapPath('/p/a/one.ts', '/p/a', '/p/x/a')).toBe('/p/x/a/one.ts');
-    expect(remapPath('/p/ab.md', '/p/a', '/p/x/a')).toBe('/p/ab.md');
   });
 });

@@ -1,12 +1,10 @@
+import { baseName } from '@/lib/paths/baseName';
+import type { StoreState } from '@/lib/store/types';
+import type { LinkIndexEntry } from '@/lib/markdown/types';
 import type { StateCreator } from 'zustand';
-import { parseWikiLinks, type WikiLink } from '@/lib/editor/wikiLinkParser';
+import { parseWikiLinks, type WikiLink } from '@/lib/markdown/wikiLinkParser';
 import { detachString } from '@/lib/detachString';
-
-export interface LinkIndexEntry {
-  outgoingLinks: WikiLink[];
-  targets: string[]; // resolved target filenames
-  fragmentLinks: Array<{ target: string; fragment: string }>;
-}
+import { extractHeadings, type HeadingRange } from '@/lib/markdown/markdownHeadingParser';
 
 export interface WikiLinkSlice {
   linkIndex: Map<string, LinkIndexEntry>;
@@ -27,7 +25,7 @@ export interface WikiLinkSlice {
 }
 
 function basename(filePath: string): string {
-  return filePath.split('/').pop()?.toLowerCase() ?? '';
+  return baseName(filePath).toLowerCase();
 }
 
 export function buildLinkIndexEntry(content: string): LinkIndexEntry {
@@ -41,7 +39,8 @@ export function buildLinkIndexEntry(content: string): LinkIndexEntry {
   const fragmentLinks = links
     .filter((l) => l.fragment !== undefined)
     .map((l) => ({ target: l.target, fragment: l.fragment! }));
-  return { outgoingLinks: links, targets, fragmentLinks };
+  const headings = extractHeadings(content).map((h) => ({ ...h, title: detachString(h.title) }));
+  return { outgoingLinks: links, targets, fragmentLinks, headings };
 }
 
 function brokenTargetsOf(entry: LinkIndexEntry, allFileNames: Set<string>): string[] {
@@ -64,6 +63,12 @@ function computeBrokenLinks(
 
 function sameStrings(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function sameHeadings(a: readonly HeadingRange[], b: readonly HeadingRange[]): boolean {
+  return (
+    a.length === b.length && a.every((h, i) => h.title === b[i].title && h.level === b[i].level)
+  );
 }
 
 function sameLinks(a: readonly WikiLink[], b: readonly WikiLink[]): boolean {
@@ -118,7 +123,7 @@ function brokenLinksAfterUpdate(
   return updated;
 }
 
-export const createWikiLinkSlice: StateCreator<WikiLinkSlice> = (set, get) => ({
+export const createWikiLinkSlice: StateCreator<StoreState, [], [], WikiLinkSlice> = (set, get) => ({
   linkIndex: new Map(),
   allFileNames: new Set(),
   allFilePaths: [],
@@ -149,13 +154,17 @@ export const createWikiLinkSlice: StateCreator<WikiLinkSlice> = (set, get) => ({
     const entry = buildLinkIndexEntry(content);
     const { linkIndex, allFileNames, brokenLinks } = get();
     const prev = linkIndex.get(filePath);
-    if (prev && sameLinks(prev.outgoingLinks, entry.outgoingLinks)) return;
+    const linksUnchanged = prev !== undefined && sameLinks(prev.outgoingLinks, entry.outgoingLinks);
+    // Positions move with every edit above a heading; only what a reader shows counts.
+    if (linksUnchanged && sameHeadings(prev.headings, entry.headings)) return;
 
     const newIndex = new Map(linkIndex);
     newIndex.set(filePath, entry);
     set({
       linkIndex: newIndex,
-      brokenLinks: brokenLinksAfterUpdate(brokenLinks, newIndex, allFileNames, filePath),
+      brokenLinks: linksUnchanged
+        ? brokenLinks
+        : brokenLinksAfterUpdate(brokenLinks, newIndex, allFileNames, filePath),
     });
   },
 
